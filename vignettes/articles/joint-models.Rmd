@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 This article fits two surveys of the same region with one model: a count
 survey that covers every map unit and a detection survey that covers only part
@@ -158,7 +151,7 @@ detect <- list(y = y2, n_trials = rep(10L, length(y2)),
 ctl <- list(n_threads = 2L, store_Q = TRUE, progress = FALSE)
 ```
 
-```{r fit}
+```{r fit, fit = c("fit")}
 fit <- tulpa_nested_laplace_joint(
   responses = list(counts = counts, detect = detect),
   prior = icar, control = ctl)
@@ -280,7 +273,7 @@ The same detection data, fitted alone, carries its own field with its own
 amplitude and no information from the counts. A joint fit with one arm is
 that model.
 
-```{r fit-separate}
+```{r fit-separate, fit = c("fit_d")}
 detect_alone <- detect
 detect_alone$field_coef <- NULL
 fit_d <- tulpa_nested_laplace_joint(
@@ -351,7 +344,7 @@ compared with the copy model. With `field_coef = 0` the detection arm carries
 no field; with `field_coef = 1` it carries the field at the count arm's
 strength. Both fit only $\sigma$ on the outer grid.
 
-```{r compare}
+```{r compare, fit = TRUE}
 detect_0 <- detect; detect_0$field_coef <- 0
 detect_1 <- detect; detect_1$field_coef <- 1
 fit_0 <- tulpa_nested_laplace_joint(list(counts = counts, detect = detect_0),
@@ -374,7 +367,7 @@ The second data set keeps the counts and replaces the detections by data
 simulated with $\alpha = 0$: the detection arm has its covariate effect and
 no spatial field.
 
-```{r fit-zero}
+```{r fit-zero, fit = c("fit_z")}
 set.seed(4)
 detect_z <- detect
 detect_z$y <- rbinom(length(s2), 10L, plogis(-0.3 + 0.8 * x2))
@@ -408,7 +401,7 @@ How much the detection arm can say about $\alpha$ depends on how much
 information it carries. Refitting the first data set with each detection
 reduced to a single binary trial, still at the true $\alpha = 0.6$:
 
-```{r fit-weak}
+```{r fit-weak, fit = TRUE}
 set.seed(5)
 detect_w <- detect
 detect_w$n_trials <- rep(1L, length(s2))

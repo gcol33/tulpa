@@ -15,17 +15,10 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-# Read here, not in a gated chunk: chunk options are evaluated whether or not
-# the chunk runs, so a flag a chunk option reads has to exist either way.
+```{r dependencies, include = FALSE}
 has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
@@ -66,7 +59,7 @@ where $\beta_0$ and $\beta_1$ are the fixed effects: one coefficient per
 column of the design matrix, shared by every observation. `coef()` returns
 their posterior means.
 
-```{r fixed}
+```{r fixed, fit = TRUE}
 fit0 <- tulpa(y ~ x, data = d, family = "gaussian",
               mode = "laplace", phi = 0.8^2)
 coef(fit0)
@@ -94,7 +87,7 @@ hyperparameters. The fit below conditions on `sigma_re = 0.6`, so the
 hyperparameter is held at that value and `VarCorr()` labels it
 `conditioned`.
 
-```{r latent}
+```{r latent, fit = c("fit1")}
 fit1 <- tulpa(y ~ x + (1 | g), data = d, family = "gaussian",
               mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
 VarCorr(fit1)
@@ -124,7 +117,7 @@ the precision for `beta`. `binomial` and `poisson` have none. The fits above
 pass `phi = 0.8^2`, the variance the data were simulated with. A Poisson fit
 of a count response takes no `phi`, and its coefficients are log rates.
 
-```{r poisson}
+```{r poisson, fit = TRUE}
 dp <- data.frame(y = rpois(n, exp(0.2 + 0.6 * x)), x = x)
 coef(tulpa(y ~ x, data = dp, family = "poisson", mode = "laplace"))
 ```
@@ -170,7 +163,7 @@ Its hyperparameter is the precision `tau`, which sets how far neighbouring
 time points may differ. No value for `tau` is passed, so the fit integrates
 over it.
 
-```{r fit-time}
+```{r fit-time, fit = c("fit_t")}
 fit_t <- tulpa(y ~ x, data = dt, family = "poisson",
                temporal = temporal_rw1("time"),
                control = list(n_threads = 2))
@@ -197,7 +190,7 @@ between the heaviest ones. The cells at `tau` below 1 carry weights under
 weighted mixture of the per-cell inner posteriors, so the fixed-effect
 interval already contains the uncertainty in `tau`.
 
-```{r outer-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Outer-grid weight of each cell against the random-walk precision tau on a log axis"}
+```{r outer-plot, eval = has_ggplot, fig.alt = "Outer-grid weight of each cell against the random-walk precision tau on a log axis"}
 library(ggplot2)
 ggplot(data.frame(tau = og$nodes[, 1], weight = og$weights),
        aes(tau, weight)) +
@@ -219,7 +212,7 @@ the exact posterior. Its acceptance rate is a check on the Laplace fit: a rate
 near 1 says the Gaussian was close to the posterior. The data `db` reuse `x`
 and the groups as a binary response.
 
-```{r debias}
+```{r debias, fit = c("db", "fit_imh")}
 db <- data.frame(y = rbinom(n, 1, plogis(-0.3 + x + u[g])), x = x, g = g)
 fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6)
@@ -354,7 +347,7 @@ structure. Everything that changes how the computation runs (threads,
 iterations, tolerances, grid settings) goes in one `control = list()`. A knob
 given as a top-level argument stops the fit and names the place it belongs.
 
-```{r knob-dots, error = TRUE}
+```{r knob-dots, error = TRUE, fit = TRUE}
 tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
       phi = 0.8^2, n_threads = 2)
 ```
@@ -364,14 +357,14 @@ tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
 A knob the selected backend does not read is refused, with the list of the
 knobs it does read. A Laplace fit has no iterations to set.
 
-```{r knob-mode, error = TRUE}
+```{r knob-mode, error = TRUE, fit = TRUE}
 tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
       phi = 0.8^2, control = list(n_iter = 2000))
 ```
 
 The same call with a knob the Laplace backend reads runs.
 
-```{r knob-ok}
+```{r knob-ok, fit = TRUE}
 coef(tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
            phi = 0.8^2, control = list(n_threads = 2)))
 ```
@@ -382,7 +375,7 @@ coef(tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
 records why in `selection_reason`. It chooses only Tier 1 or Tier 2 backends.
 A Tier 3 backend runs only when it is named.
 
-```{r auto}
+```{r auto, fit = TRUE}
 fit_auto <- tulpa(y ~ x, data = db, family = "binomial")
 fit_vi   <- tulpa(y ~ x, data = db, family = "binomial", mode = "vi")
 rbind(auto = c(fit_auto$backend, fit_auto$inference_tier,

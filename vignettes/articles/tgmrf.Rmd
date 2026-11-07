@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260518)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -214,7 +207,7 @@ X     <- matrix(1, n, 1L)
 
 ### Tier 2 (structured): nested Laplace
 
-```{r laplace}
+```{r laplace, fit = c("fit_lap")}
 fit_lap <- tulpa_nested_laplace(
   y = y, n_trials = rep(1L, n), X = X,
   prior  = blk,
@@ -229,7 +222,7 @@ summary(fit_lap)$hyperparameters   # posterior over the outer grid
 Gaussian at the optimum. Same tier as the nested-Laplace posterior but
 gives you a full covariance matrix rather than a discrete grid.
 
-```{r vi}
+```{r vi, fit = c("fit_vi")}
 fit_vi <- tulpa_tgmrf(
   y = y, n_trials = rep(1L, n), X = X, block = blk,
   family  = "poisson", mode = "vi",
@@ -245,7 +238,7 @@ The Tier-1 upgrade composes the Laplace body with an
 independence-MH bias correction. Its proposal is a multivariate t centred
 on the outer mode, with the inverse curvature there as its scale matrix.
 
-```{r imh}
+```{r imh, fit = c("fit_imh")}
 fit_imh <- tulpa_tgmrf(
   y = y, n_trials = rep(1L, n), X = X, block = blk,
   family = "poisson", mode = "imh",

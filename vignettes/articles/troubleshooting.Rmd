@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Each entry below starts from a situation, shows the message tulpa prints in
 that situation, and ends on a corrected call that runs. The entries are
@@ -74,14 +67,14 @@ ds <- data.frame(y = rbinom(n, 1, plogis(-0.2 + 0.7 * x)), x = x,
 computation runs are not arguments of `tulpa()`. Given as one, the fit stops
 before any work and says where the setting goes.
 
-```{r knob-dots, error = TRUE}
+```{r knob-dots, error = TRUE, fit = TRUE}
 tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
       phi = 0.8^2, n_threads = 2)
 ```
 
 Move it into `control`.
 
-```{r knob-dots-fix}
+```{r knob-dots-fix, fit = c("fit")}
 fit <- tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
              phi = 0.8^2, control = list(n_threads = 2))
 coef(fit)
@@ -92,7 +85,7 @@ coef(fit)
 A name in `control` that no backend reads is refused, and the message lists
 every name `tulpa()` accepts.
 
-```{r knob-typo, error = TRUE}
+```{r knob-typo, error = TRUE, fit = TRUE}
 tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
       phi = 0.8^2, control = list(n_thread = 2))
 ```
@@ -106,7 +99,7 @@ Once `mode` is fixed, `control` is checked against the backend that will run.
 A Laplace fit has no chain, so a chain length is refused, and the message
 lists the three knobs the Laplace backend reads.
 
-```{r knob-backend, error = TRUE}
+```{r knob-backend, error = TRUE, fit = TRUE}
 tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "laplace",
       sigma_re = 0.6, phi = 0.8^2, control = list(n_iter = 2000))
 ```
@@ -114,7 +107,7 @@ tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "laplace",
 Either drop the knob or pick a backend that reads it. `n_iter` and `warmup`
 belong to the samplers.
 
-```{r knob-backend-fix}
+```{r knob-backend-fix, fit = c("fit")}
 fit <- tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "mala",
              sigma_re = 0.6, phi = 0.8^2,
              control = list(n_iter = 2000, warmup = 500))
@@ -126,7 +119,7 @@ coef(fit)
 A covariate missing from `data` stops the fit with R's own message. A missing
 grouping variable is named by tulpa.
 
-```{r missing-var, error = TRUE}
+```{r missing-var, error = TRUE, fit = TRUE}
 tulpa(y ~ z, data = d, family = "gaussian", mode = "laplace", phi = 0.8^2)
 tulpa(y ~ x + (1 | h), data = d, family = "gaussian", mode = "laplace",
       phi = 0.8^2)
@@ -135,7 +128,7 @@ tulpa(y ~ x + (1 | h), data = d, family = "gaussian", mode = "laplace",
 Check `names(d)` against every variable in the formula, including the one
 after the bar.
 
-```{r missing-var-fix}
+```{r missing-var-fix, fit = TRUE}
 names(d)
 coef(tulpa(y ~ x + (1 | g), data = d, family = "gaussian",
            mode = "laplace", sigma_re = 0.6, phi = 0.8^2))
@@ -146,13 +139,13 @@ coef(tulpa(y ~ x + (1 | g), data = d, family = "gaussian",
 `dc$y` counts successes out of 5. Without `n_trials`, `binomial` expects a 0/1
 response and stops.
 
-```{r trials, error = TRUE}
+```{r trials, error = TRUE, fit = TRUE}
 tulpa(y ~ x, data = dc, family = "binomial", mode = "laplace")
 ```
 
 Pass the trials, one per row.
 
-```{r trials-fix}
+```{r trials-fix, fit = TRUE}
 coef(tulpa(y ~ x, data = dc, family = "binomial", mode = "laplace",
            n_trials = rep(5, n)))
 ```
@@ -166,7 +159,7 @@ A missing response value stops a Laplace fit, and the message counts the
 rows and names the path that reads them: on the nested-Laplace path a row with
 no response is a forecast, with its likelihood term masked.
 
-```{r na, error = TRUE}
+```{r na, error = TRUE, fit = c("dna")}
 dna <- d
 dna$y[3] <- NA
 tulpa(y ~ x, data = dna, family = "gaussian", mode = "laplace", phi = 0.8^2)
@@ -176,7 +169,7 @@ A model with no latent field has no nested-Laplace path (see
 [Nested Laplace on a model with no latent field](#nested-laplace-on-a-model-with-no-latent-field)),
 so remove the incomplete rows, or impute them, before fitting.
 
-```{r na-fix}
+```{r na-fix, fit = TRUE}
 coef(tulpa(y ~ x, data = dna[!is.na(dna$y), ], family = "gaussian",
            mode = "laplace", phi = 0.8^2))
 ```
@@ -186,7 +179,7 @@ coef(tulpa(y ~ x, data = dna[!is.na(dna$y), ], family = "gaussian",
 An integer region code is a row of the adjacency matrix. `W` has 10 rows, so
 codes 11 and 12 point outside it.
 
-```{r adj-range, error = TRUE}
+```{r adj-range, error = TRUE, fit = TRUE}
 ds_bad <- ds
 ds_bad$region[1:2] <- c(11, 12)
 tulpa(y ~ x + spatial(region), data = ds_bad, family = "binomial",
@@ -204,7 +197,7 @@ check_adjacency(W_bad)
 
 With codes in `1:10` and the symmetric `W`, the fit runs.
 
-```{r adj-fix}
+```{r adj-fix, fit = TRUE}
 fit_sp <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                 spatial = list(type = "icar", adjacency = W),
                 mode = "laplace")
@@ -240,7 +233,7 @@ For `gaussian`, `phi` is the residual variance, and `mode = "laplace"` and
 the samplers hold it fixed at the value passed. Left out, it is fixed at 1
 with a warning.
 
-```{r phi}
+```{r phi, fit = c("fit")}
 fit <- tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace")
 ```
 
@@ -249,7 +242,7 @@ When the residual variance is known, pass it as a variance: here `0.8^2`, not
 `mode = "eb"` with `estimate_phi = TRUE` estimates it along with the
 random-effect standard deviation.
 
-```{r phi-fix}
+```{r phi-fix, fit = TRUE}
 fit_eb <- tulpa(y ~ x + (1 | g), data = d, family = "gaussian",
                 mode = "eb", estimate_phi = TRUE)
 VarCorr(fit_eb)
@@ -265,7 +258,7 @@ Both standard deviations are labelled `estimated`: 0.48 for the groups and
 Some combinations of terms are refused before fitting. A random slope next to
 a spatial field is one.
 
-```{r combo-slope, error = TRUE}
+```{r combo-slope, error = TRUE, fit = TRUE}
 tulpa(y ~ x + (1 + x | site) + spatial(region), data = ds,
       family = "binomial", spatial = list(type = "icar", adjacency = W))
 ```
@@ -273,7 +266,7 @@ tulpa(y ~ x + (1 + x | site) + spatial(region), data = ds,
 A temporal field with one trend per panel group (`group_var`) next to a
 spatial field is another.
 
-```{r combo-panel, error = TRUE}
+```{r combo-panel, error = TRUE, fit = TRUE}
 tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
       spatial = list(type = "icar", adjacency = W),
       temporal = temporal_rw1("time", group_var = "site"))
@@ -282,7 +275,7 @@ tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
 Each message names the combination that does fit. With a random intercept in
 place of the slope, the spatial model runs.
 
-```{r combo-fix}
+```{r combo-fix, fit = c("fit")}
 fit <- tulpa(y ~ x + (1 | site) + spatial(region), data = ds,
              family = "binomial",
              spatial = list(type = "icar", adjacency = W),
@@ -296,7 +289,7 @@ coef(fit)
 temporal, smooth or custom field. A model with only a random intercept has
 none of these, and the message names the modes that fit it.
 
-```{r nl-none, error = TRUE}
+```{r nl-none, error = TRUE, fit = TRUE}
 tulpa(y ~ x + (1 | g), data = db, family = "binomial",
       mode = "nested_laplace")
 ```
@@ -304,7 +297,7 @@ tulpa(y ~ x + (1 | g), data = db, family = "binomial",
 `mode = "structured"` stays in Tier 2 and integrates the random-effect
 standard deviation.
 
-```{r nl-none-fix}
+```{r nl-none-fix, fit = TRUE}
 fit <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
              mode = "structured")
 c(backend = fit$backend, tier = fit$inference_tier)
@@ -317,7 +310,7 @@ outer grid crosses the two axes, one inner solve per cell.
 `control$max_grid_cells` caps the cell count, and a grid past the cap is
 refused before any solve, with the axes that produced the count.
 
-```{r grid-cap, error = TRUE}
+```{r grid-cap, error = TRUE, fit = TRUE}
 tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
       spatial = list(type = "icar", adjacency = W),
       temporal = temporal_rw1("time"),
@@ -328,7 +321,7 @@ Raise the cap above the count the message gives, or leave it unset.
 `?tulpa_nested_laplace` documents that an unset cap solves a grid of any size
 and warns first when it passes 2048 cells.
 
-```{r grid-cap-fix}
+```{r grid-cap-fix, fit = c("fit_st")}
 fit_st <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                 spatial = list(type = "icar", adjacency = W),
                 temporal = temporal_rw1("time"),
@@ -345,7 +338,7 @@ A sampler fit checks its own chain. A short chain on the binary data leaves
 too few effective draws, and the fit warns, naming the parameters and their
 Rhat and bulk effective sample size.
 
-```{r chain}
+```{r chain, fit = TRUE}
 fit_short <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                    mode = "mala", sigma_re = 0.6,
                    control = list(n_iter = 150, warmup = 30))
@@ -355,7 +348,7 @@ check_diagnostics(fit_short)
 `check_diagnostics()` lists the checks that failed. A longer chain clears
 them.
 
-```{r chain-fix}
+```{r chain-fix, fit = TRUE}
 fit_long <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 3000, warmup = 1000))
@@ -368,7 +361,7 @@ head(diagnostics(fit_long), 2)
 A plain Laplace fit computes no reliability quantity, so `diagnostics()`
 returns `NULL` with a message.
 
-```{r diag-laplace}
+```{r diag-laplace, fit = c("fit_lap")}
 fit_lap <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "laplace", sigma_re = 0.6)
 diagnostics(fit_lap)
@@ -379,7 +372,7 @@ Metropolis-Hastings sampler. A high acceptance rate says the Laplace
 approximation was close to the posterior, and the fit then carries a chain
 that `diagnostics()` reads.
 
-```{r diag-laplace-fix}
+```{r diag-laplace-fix, fit = TRUE}
 fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6)
 round(fit_imh$mean_accept, 2)
@@ -393,7 +386,7 @@ integration over the hyperparameters, and of the inner Laplace layer where
 the backend scores it. The fit below puts a random walk over the 15 time
 points of `ds`.
 
-```{r diag-read}
+```{r diag-read, fit = c("fit_rw")}
 fit_rw <- tulpa(y ~ x, data = ds, family = "binomial",
                 temporal = temporal_rw1("time"),
                 control = list(n_threads = 2))

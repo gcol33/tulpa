@@ -11,16 +11,9 @@ vignette: >
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4)
 set.seed(20260716)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 This article fits a Poisson model in which every group has its own intercept
 and its own slope, recovers the covariance of those group effects from
@@ -133,7 +126,7 @@ that the per-group estimates can be compared with them below.
 A `(1 + x | g)` term with `mode = "laplace"` routes the fit to the
 nested-Laplace integration over $\Sigma$ (`tulpa_re_cov_nested()`).
 
-```{r fit}
+```{r fit, fit = c("fit")}
 fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
              mode = "laplace", control = list(n_threads = 2))
 fit
@@ -210,8 +203,8 @@ legend("topleft", c("estimate and 95% interval", "truth"),
 
 The slope intervals contain the true deviation for 59 of the 60 groups, and
 the intercept intervals for 57. The slope interval widths range from
-`r if (EVAL_FITS) round(min(re_slp$conf.high - re_slp$conf.low), 2) else "(computed when built)"`
-to `r if (EVAL_FITS) round(max(re_slp$conf.high - re_slp$conf.low), 2) else "(computed when built)"`,
+`r round(min(re_slp$conf.high - re_slp$conf.low), 2)`
+to `r round(max(re_slp$conf.high - re_slp$conf.low), 2)`,
 so a slope estimated for one group can be much less certain than the slope of
 its neighbour in the ordering.
 
@@ -245,8 +238,8 @@ cm <- check_model(fit)
 unlist(cm)
 ```
 
-`ks_p` is `r if (EVAL_FITS) round(cm$ks_p, 2) else "(computed when built)"`
-and `disp_ratio` is `r if (EVAL_FITS) round(cm$disp_ratio, 2) else "(computed when built)"`:
+`ks_p` is `r round(cm$ks_p, 2)`
+and `disp_ratio` is `r round(cm$disp_ratio, 2)`:
 the PIT residuals are consistent with uniformity and the replicates reproduce
 the spread of the counts. The middle panel reads `fitted()`, which returns the
 conditional mean with each group's own effect;
@@ -256,7 +249,7 @@ The exact Metropolis-within-Gibbs fit samples $\Sigma$ and the group effects
 together and gives an independent read of the covariance. Ask for it with
 `control$re_cov = "gibbs"`.
 
-```{r fit-gibbs}
+```{r fit-gibbs, fit = TRUE}
 fit_gibbs <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
                    mode = "laplace",
                    control = list(re_cov = "gibbs", n_iter = 2000L,
@@ -335,7 +328,7 @@ design declines to report an evidence, so both fits use the tensor-product
 grid (`integration = "grid"`), on which the evidence is read under the
 hyperprior.
 
-```{r compare}
+```{r compare, fit = c("fit_slp", "fit_int")}
 ctl <- list(integration = "grid", n_threads = 2)
 fit_slp <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
                  mode = "laplace", control = ctl)
@@ -345,7 +338,7 @@ compare_models(intercept = fit_int, slopes = fit_slp, criterion = "loglik")
 ```
 
 The log evidence of the random-slope model is higher by
-`r if (EVAL_FITS) round(as.numeric(logLik(fit_slp)) - as.numeric(logLik(fit_int)), 1) else "(computed when built)"`
+`r round(as.numeric(logLik(fit_slp)) - as.numeric(logLik(fit_int)),      1)`
 nats. The evidence integrates over $\Sigma$ under its prior, so it already
 charges the slope model for its two extra covariance parameters.
 `compare_models(criterion = "waic")` and `"loo"` also run on the nested door,
@@ -368,7 +361,7 @@ integrated. The fits below run on the data above or on small variants of it.
 
 `||` drops the correlation, leaving two log-SD coordinates.
 
-```{r diag}
+```{r diag, fit = TRUE}
 fit_diag <- tulpa(y ~ x + (1 + x || g), data = d, family = "poisson",
                   mode = "laplace", control = list(n_threads = 2))
 VarCorr(fit_diag)
@@ -385,7 +378,7 @@ observer visits many sites and each site has many observers. The simulation
 adds a second factor `h` with 15 levels assigned at random, with intercept SD
 0.5.
 
-```{r crossed}
+```{r crossed, fit = c("h")}
 set.seed(3)
 h  <- factor(sample(1:15, N, replace = TRUE))
 yc <- rpois(N, exp(0.2 + 0.5 * x + u[grp, 1] + rnorm(15, 0, 0.5)[h]))
@@ -407,7 +400,7 @@ single level of the outer one: 5 plots inside each of 12 sites here, with SD
 expands to `(1 | site) + (1 | site:plot)`, so plot labels can repeat across
 sites.
 
-```{r nested}
+```{r nested, fit = TRUE}
 site <- factor(rep(1:12, each = 60))
 plot_id <- factor(rep(1:5, each = 12, times = 12))
 sp   <- interaction(site, plot_id)
@@ -445,7 +438,7 @@ At the front door, the same two settings are passed as
 how much they move the posterior: the default, a tighter scale prior
 $P(\sigma_i > 1) = 0.01$ with `eta = 4`, and a uniform correlation prior.
 
-```{r prior-sens}
+```{r prior-sens, fit = TRUE}
 priors <- list(default = NULL,
                tight   = list(prior_sigma = c(1, 0.01), eta = 4),
                uniform = list(eta = 1))
@@ -491,7 +484,7 @@ sim_bin <- function(seed) {
 }
 ```
 
-```{r binary-compare, warning = FALSE}
+```{r binary-compare, warning = FALSE, fit = c("reps")}
 med3 <- function(f) summary(f)$hyperparameters$median[1:3]
 reps <- sapply(1:20, function(s) {
   db <- sim_bin(s)
@@ -530,7 +523,7 @@ accurately. It costs far more than the Laplace step: the call below, on one of
 the binary data sets, takes about 50 seconds where the Laplace fit takes about
 20.
 
-```{r aghq}
+```{r aghq, fit = TRUE}
 db1 <- sim_bin(1)
 fit_aghq <- tulpa(y ~ x + (1 + x | g), data = db1, family = "binomial",
                   mode = "laplace",
@@ -555,7 +548,7 @@ for $\sigma_2$ and $\rho$. A fit whose slope SD collapses to zero has no
 interval for $\rho$; the `collapsed` column counts those fits, and the width
 of $\rho$ is the median over the others.
 
-```{r groups-sweep}
+```{r groups-sweep, fit = TRUE}
 sim_pois <- function(G, seed) {
   set.seed(seed)
   gg <- rep(seq_len(G), each = npg)

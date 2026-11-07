@@ -15,16 +15,11 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+knitr::opts_chunk$set(fit_omit = c("Q_csc_p_per_grid", "Q_csc_i_per_grid",
+                                 "Q_csc_x_per_grid"))
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Counts recorded per region and per year carry two kinds of structure at once.
 Neighbouring regions look alike, consecutive years look alike, and sometimes
@@ -181,7 +176,7 @@ The additive model needs no new syntax. The spatial field goes in as in
 [Temporal models](temporal-models.html), through `temporal =`. `ctl` keeps the
 fits to two threads and switches off the progress lines.
 
-```{r fit-additive}
+```{r fit-additive, fit = c("ctl", "fit_add")}
 ctl <- list(n_threads = 2, progress = FALSE)
 fit_add <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
                  spatial = list(type = "icar", adjacency = W),
@@ -229,7 +224,7 @@ legend("topright", c("estimate", "truth"), lty = c(1, NA), pch = c(NA, 19),
 matrix and integer indices, without a formula. Its default temporal field is
 an AR(1) process; with `temporal_type = "rw1"` it is the model above.
 
-```{r st-nested}
+```{r st-nested, fit = c("fit_st")}
 fit_st <- fit_st_nested(d$y, cbind(1, d$x), d$region, W, d$time, Tn,
                         temporal_type = "rw1", family = "poisson",
                         control = list(n_threads = 2))
@@ -241,7 +236,7 @@ The two doors agree on the coefficients to the fourth decimal and on the log
 evidence to 0.05. The AR(1) variant replaces the random walk by a stationary
 process whose correlation `rho` is integrated on its own grid axis.
 
-```{r st-ar1}
+```{r st-ar1, fit = TRUE}
 fit_ar1 <- fit_st_nested(d$y, cbind(1, d$x), d$region, W, d$time, Tn,
                          temporal_type = "ar1", family = "poisson",
                          control = list(n_threads = 2))
@@ -260,7 +255,7 @@ When the regions are points with coordinates, the spatial block can be a
 nearest-neighbour Gaussian process (NNGP) on the coordinates instead of an
 ICAR field on the adjacency. Here the lattice positions serve as coordinates.
 
-```{r continuous}
+```{r continuous, fit = c("d")}
 d$lon <- xy$col[d$region]; d$lat <- xy$row[d$region]
 fit_gp <- tulpa(y ~ x, data = d, family = "poisson",
                 spatial = spatial_gp(~ lon + lat),
@@ -319,7 +314,7 @@ version of the same check: fit a residual slope over time in each region, then
 test whether neighbouring regions have similar slopes with Moran's I on the
 lattice coordinates.
 
-```{r residual-moran}
+```{r residual-moran, fit = c("slope")}
 slope <- apply(r_mat, 1, function(r) coef(lm(r ~ seq_len(Tn)))[2])
 moran_i(slope, as.matrix(xy), weights = "knn", k = 4)
 ```
@@ -345,7 +340,7 @@ A type I interaction is one random intercept per region-time cell, so it goes
 into the formula as `(1 | cell)`. On the nested-Laplace path its standard
 deviation is integrated on a third grid axis, `b3.sigma`.
 
-```{r type-I, warning = FALSE}
+```{r type-I, warning = FALSE, fit = c("fit_I")}
 dI <- transform(d, cell = factor(cell))
 fit_I <- tulpa(y ~ x + spatial(region) + (1 | cell), data = dI,
                family = "poisson",
@@ -375,7 +370,7 @@ constraints of the model section, and adds the interaction as a third block
 whose precision $\tau_\delta$ is integrated on its own grid axis, `b3.tau`.
 `fit_int()` adds an interaction of the given type to the additive model.
 
-```{r fit-interactions, warning = FALSE}
+```{r fit-interactions, warning = FALSE, fit = c("fit_int", "fit_II", "fit_III", "fit_IV")}
 fit_int <- function(type, data = d) {
   tulpa(y ~ x + spatial(region), data = data, family = "poisson",
         spatial = list(type = "icar", adjacency = W),
@@ -467,7 +462,7 @@ its covariate value enters its linear predictor as usual.
 To check the forecast against data, set the counts at times 9 and 10 to `NA`
 and fit the additive and the type II models to what is left.
 
-```{r fit-past, warning = FALSE}
+```{r fit-past, warning = FALSE, fit = c("held", "fp_add", "fp_II")}
 held <- d$time > 8
 d_na <- d
 d_na$y[held] <- NA
@@ -581,7 +576,7 @@ One block puts $\mathcal{N}(3, 1.5^2)$ on $\log \tau_\delta$. The second
 centres it at 6 with standard deviation 0.25, a prior that expects an
 interaction with roughly a twentieth of the first one's variance.
 
-```{r prior-sens, warning = FALSE}
+```{r prior-sens, warning = FALSE, fit = TRUE}
 fit_blk <- function(blk) {
   tulpa(y ~ x + spatial(region) + latent(blk), data = d, family = "poisson",
         spatial = list(type = "icar", adjacency = W),
@@ -620,7 +615,7 @@ The main effects are less sensitive. `fit_st_nested()` takes
 `hyperprior = "flat"` in place of the default penalised-complexity priors on
 the two precisions.
 
-```{r prior-flat}
+```{r prior-flat, fit = TRUE}
 fit_flat <- fit_st_nested(d$y, cbind(1, d$x), d$region, W, d$time, Tn,
                           temporal_type = "rw1", family = "poisson",
                           hyperprior = "flat", control = list(n_threads = 2))
@@ -661,7 +656,7 @@ over `Tk` time points and times one fit, additive or with a type IV
 interaction. The table reports the outer grid size and the wall time, measured
 while this article was built (two threads, Windows workstation).
 
-```{r cost, warning = FALSE}
+```{r cost, warning = FALSE, fit = c("cost")}
 time_fit <- function(nside, Tk, type_IV = FALSE) {
   xy_k <- expand.grid(col = 1:nside, row = 1:nside); Sk <- nrow(xy_k)
   W_k <- 1 * (as.matrix(dist(xy_k, method = "manhattan")) == 1)

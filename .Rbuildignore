@@ -23,6 +23,7 @@
 ^data-raw$
 ^sidecars$
 ^experimental$
+^lib$
 ^.*\.tar\.gz$
 ^.*\.Rcheck$
 ^src/.*\.gch$

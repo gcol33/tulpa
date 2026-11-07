@@ -16,16 +16,9 @@ knitr::opts_chunk$set(
 )
 set.seed(20260529)
 has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -123,7 +116,7 @@ in both directions is the one you want for choosing structure.
 When you fit with `mode = "laplace"`, tulpa computes this quantity and
 stores it on the fit. `logLik()` returns it.
 
-```{r first-evidence}
+```{r first-evidence, fit = c("n", "x", "fit")}
 n  <- 500
 x  <- rnorm(n)
 y0 <- 0.5 + 1.2 * x + rnorm(n, sd = 0.8)
@@ -182,7 +175,7 @@ second rung adds the `x` slope. The third adds a random intercept on
 `g`, conditioning on the random-effect standard deviation. The fourth
 adds the second covariate `z`. Each fit is a single Laplace solve.
 
-```{r fit-ladder}
+```{r fit-ladder, fit = c("m0", "m1", "m2", "m3")}
 m0 <- tulpa(y ~ 1, data = dat, family = "gaussian",
             mode = "laplace", phi = 0.8^2)
 m1 <- tulpa(y ~ x, data = dat, family = "gaussian",
@@ -224,7 +217,7 @@ numbers. Each bar is one rung's evidence relative to the null, so the bar
 heights are the cumulative gain and the steps between them are the
 per-rung gains from the table.
 
-```{r ladder-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Bar chart of cumulative log evidence by ladder rung"}
+```{r ladder-plot, eval = has_ggplot, fig.alt = "Bar chart of cumulative log evidence by ladder rung"}
 library(ggplot2)
 pd <- data.frame(model = factor(names(ll), levels = names(ll)),
                  rel = ll - ll[1])
@@ -249,7 +242,7 @@ the response, and watch the evidence refuse to reward it. The full model
 already holds the two real slopes and the random intercept; the extra
 term `w` is independent of `y` by construction.
 
-```{r noise-term}
+```{r noise-term, fit = c("dat")}
 dat$w <- rnorm(n)
 m4 <- tulpa(y ~ x + z + w + (1 | g), data = dat, family = "gaussian",
             mode = "laplace", sigma_re = 0.7, phi = 0.8^2)
@@ -303,7 +296,7 @@ The same call shape works for a binary response. Simulate a logistic
 process with a real intercept, a real `x` slope, and a real `z` slope,
 then fit the same three-rung ladder.
 
-```{r binom-ladder}
+```{r binom-ladder, fit = c("b1", "b2")}
 set.seed(101)
 xb  <- rnorm(n); zb <- rnorm(n)
 yb  <- rbinom(n, 1, plogis(-0.4 + 1.1 * xb + 0.9 * zb))
@@ -332,7 +325,7 @@ them on the same scale; what you lose is the clean reading of one term's
 contribution, since the difference now bundles together everything that
 changed between the two specifications.
 
-```{r non-nested}
+```{r non-nested, fit = TRUE}
 mx <- tulpa(y ~ x, data = dat, family = "gaussian",
             mode = "laplace", phi = 0.8^2)
 mz <- tulpa(y ~ z, data = dat, family = "gaussian",

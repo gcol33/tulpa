@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -250,7 +243,7 @@ adjacency matrix. A `spatial(region)` term in the formula names the column
 that maps each row to its region. Drop either piece and `tulpa()` stops
 with a message rather than guessing.
 
-```{r fit}
+```{r fit, fit = c("fit")}
 fit <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
              spatial = list(type = "icar", adjacency = W),
              mode = "nested_laplace")
@@ -430,7 +423,8 @@ grid-marginalised fixed-effect covariance the summary uses.
 
 ```{r predict}
 nd <- data.frame(x = seq(-2.5, 2.5, length.out = 50))
-pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
+pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE,
+              include_field = FALSE)
 head(pr, 3)
 ```
 
@@ -472,7 +466,7 @@ by those masses, on the probability scale, before taking logs again.
 scalar log marginal likelihood is already the evidence of a model with nothing
 left to integrate.
 
-```{r compare}
+```{r compare, fit = c("cmp")}
 m0 <- tulpa(y ~ x, data = ds, family = "binomial", mode = "laplace")
 cmp <- compare_models(nonspatial = m0, spatial = fit, criterion = "loglik")
 cmp
@@ -521,7 +515,7 @@ actionable.
   is constrained to sum to zero, so the intercept carries the overall level
   and the field only the departures from it; the fit above reports an
   intercept standard error of
-  `r if (EVAL_FITS) signif(coef(summary(fit))["(Intercept)", "std.error"], 2) else "about 0.08"`.
+  `r signif(coef(summary(fit))["(Intercept)", "std.error"], 2)`.
   [Identifiability](https://gillescolling.com/tulpa/articles/identifiability.html) shows the alias the constraint
   removes.
 
@@ -586,7 +580,7 @@ precision on the mesh, and solves the field by sparse Laplace. Simulate a
 smooth Poisson surface on scattered coordinates and fit it with the range
 and marginal SD held fixed:
 
-```{r spde-fit}
+```{r spde-fit, fit = TRUE}
 set.seed(20260531)
 n      <- 300
 coords <- data.frame(lon = runif(n), lat = runif(n))

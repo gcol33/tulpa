@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 A parameter is identifiable when different values of it give different
 distributions of the data. Two kinds of failure appear in the models tulpa
@@ -99,7 +92,7 @@ d_icar <- data.frame(y = y, x = x, region = factor(region))
 
 Fit the field by nested Laplace and read the intercept and slope.
 
-```{r icar-fit}
+```{r icar-fit, fit = c("fit_icar")}
 fit_icar <- tulpa(y ~ x + spatial(region), data = d_icar,
                   family = "poisson",
                   spatial = list(type = "icar", adjacency = W),
@@ -169,7 +162,7 @@ d_tvc <- data.frame(y = y, x = x, time = time)
 Fit the coefficient once with an intrinsic `rw1` prior and once with a proper
 `ar1` prior. Both fits run the NUTS sampler, here with two chains.
 
-```{r tvc-fit, message = FALSE}
+```{r tvc-fit, message = FALSE, fit = c("fit_tvc")}
 fit_tvc <- lapply(c(rw1 = "rw1", ar1 = "ar1"), function(s) {
   tulpa(y ~ x, data = d_tvc, family = "poisson",
         temporal = temporal_tvc("time", terms = ~ x - 1, structure = s),
@@ -293,7 +286,7 @@ re_one <- function(J, seed, m = 10, sigma = 0.7) {
 }
 ```
 
-```{r re-run}
+```{r re-run, fit = c("J_set", "re", "re_tab")}
 J_set <- c(3, 5, 10, 20, 40)
 re <- do.call(rbind, lapply(J_set, function(J) {
   do.call(rbind, lapply(1:20, function(s) re_one(J, s)))
@@ -376,7 +369,7 @@ bym2_one <- function(k, seed) {
 }
 ```
 
-```{r bym2-run}
+```{r bym2-run, fit = c("k_set", "bym")}
 k_set <- c(4, 7, 10, 14)
 bym <- do.call(rbind, lapply(k_set, function(k) {
   do.call(rbind, lapply(1:4, function(s) bym2_one(k, s)))
@@ -447,7 +440,7 @@ gp_one <- function(n, seed) {
 }
 ```
 
-```{r gp-run}
+```{r gp-run, fit = c("n_set", "gp", "gp_tab")}
 n_set <- c(100, 200, 400, 800)
 gp <- do.call(rbind, lapply(n_set, function(n) {
   do.call(rbind, lapply(1:3, function(s) gp_one(n, s)))

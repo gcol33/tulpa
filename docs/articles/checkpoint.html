@@ -17,6 +17,9 @@
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
 <meta property="og:title" content="Checkpointing">
+<meta name="description" content="Save the progress of a long fit to disk, resume it after an interruption, and see the fingerprint refuse a file written for other inputs.">
+<meta property="og:description" content="Save the progress of a long fit to disk, resume it after an interruption, and see the fingerprint refuse a file written for other inputs.">
+<meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg">
 <script>
 (function () {
   var D = String.fromCharCode(36);
@@ -40,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -51,25 +54,44 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -92,58 +114,40 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Checkpointing</h1>
-            
-      
+
+
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/checkpoint.Rmd" class="external-link"><code>vignettes/articles/checkpoint.Rmd</code></a></small>
       <div class="d-none name"><code>checkpoint.Rmd</code></div>
     </div>
 
-    
-    
-<div class="section level2">
-<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
-</h2>
+
+
+<p>A nested Laplace fit solves one inner problem per cell of its
+hyperparameter grid, and a NUTS fit runs several independent chains.
+Either can run for hours, and a reboot or a killed job near the end
+would otherwise lose all of it. With <code>control$checkpoint</code>
+set, tulpa appends every finished cell or chain to a file; a later call
+with the same inputs loads what is finished and computes only the rest.
+This article turns checkpointing on, cuts the file the way a kill during
+a write would, resumes from it, and shows the file being refused once
+the data change.</p>
+<p>Installation is covered in <a href="tulpa.html">Get started</a>.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
-<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
-<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Development version from GitHub</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Pin a release</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
-<p><code>pak</code> resolves the dependency tree, including
-<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
-<code>tulpa</code> compiles its C++ backend on first install, so a C++17
-toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
-<code>r-base-dev</code> on Linux.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="why-checkpoint">Why checkpoint<a class="anchor" aria-label="anchor" href="#why-checkpoint"></a>
-</h2>
-<p>A nested-Laplace fit is a loop over independent hyperparameter grid
-cells; a multi-chain NUTS fit is a loop over independent chains. Both
-can run for a long time, and a killed or rebooted run should not have to
-start over. tulpa writes each finished unit to a content-addressed
-append log: on resume it reloads the completed units and runs only the
-rest, and a run interrupted mid-write is detected and re-run rather than
-trusted.</p>
-</div>
 <div class="section level2">
 <h2 id="turn-it-on">Turn it on<a class="anchor" aria-label="anchor" href="#turn-it-on"></a>
 </h2>
-<p>Every nested-Laplace fitter takes
-<code>control$checkpoint = list(path =, resume =)</code>.
-<code>path</code> is the checkpoint file; <code>resume = TRUE</code>
-reloads any completed cells from it, <code>resume = FALSE</code> (the
-default) starts fresh and overwrites.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># A small nested-Laplace fit over an ICAR field on a chain graph.</span></span>
+<p><code>control$checkpoint = list(path =, resume =)</code> takes the
+file and whether to continue from it. With a <code>path</code> given,
+<code>resume</code> defaults to <code>TRUE</code>;
+<code>resume = FALSE</code> removes any existing file and starts over.
+The example is a binomial model with an intrinsic CAR field on a chain
+of 30 regions, fitted by nested Laplace through
+<code>mode = "structured"</code>. <code>fit_ckpt()</code> wraps the call
+so the later sections can repeat it with other data or another
+<code>resume</code>.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">20260716</span><span class="op">)</span></span>
 <span><span class="va">S</span> <span class="op">&lt;-</span> <span class="fl">30L</span></span>
 <span><span class="va">W</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0</span>, <span class="va">S</span>, <span class="va">S</span><span class="op">)</span></span>
 <span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="op">(</span><span class="va">S</span> <span class="op">-</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span>, <span class="va">i</span> <span class="op">+</span> <span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span> <span class="op">+</span> <span class="fl">1</span>, <span class="va">i</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span></span>
@@ -152,44 +156,132 @@ default) starts fresh and overwrites.</p>
 <span><span class="va">df</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">S</span>, <span class="fl">20</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.4</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">ckpt</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".ckpt"</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>             n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="va">S</span><span class="op">)</span>,</span>
-<span>             spatial <span class="op">=</span> <span class="fu"><a href="../reference/spatial_car.html">spatial_car</a></span><span class="op">(</span><span class="va">W</span>, level <span class="op">=</span> <span class="st">"obs"</span><span class="op">)</span>,</span>
-<span>             mode <span class="op">=</span> <span class="st">"structured"</span>,</span>
-<span>             control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>checkpoint <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">ckpt</span>, resume <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">fit_ckpt</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">data</span>, <span class="va">resume</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">data</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
+<span>        n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="va">S</span><span class="op">)</span>, spatial <span class="op">=</span> <span class="fu"><a href="../reference/spatial_car.html">spatial_car</a></span><span class="op">(</span><span class="va">W</span>, level <span class="op">=</span> <span class="st">"obs"</span><span class="op">)</span>,</span>
+<span>        mode <span class="op">=</span> <span class="st">"structured"</span>,</span>
+<span>        control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span>,</span>
+<span>                       checkpoint <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">ckpt</span>, resume <span class="op">=</span> <span class="va">resume</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">fit_ckpt</span><span class="op">(</span><span class="va">df</span>, resume <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;  -0.2784176   0.4239201</span></span></code></pre></div>
-<p>The grid cells are now on disk:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/files.html" class="external-link">file.exists</a></span><span class="op">(</span><span class="va">ckpt</span><span class="op">)</span> <span class="op">&amp;&amp;</span> <span class="fu"><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.info</a></span><span class="op">(</span><span class="va">ckpt</span><span class="op">)</span><span class="op">$</span><span class="va">size</span> <span class="op">&gt;</span> <span class="fl">0</span></span>
-<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<span><span class="co">#&gt;  -0.2760639   0.4225753</span></span>
+<span><span class="va">full_size</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.size</a></span><span class="op">(</span><span class="va">ckpt</span><span class="op">)</span></span>
+<span><span class="va">full_size</span></span>
+<span><span class="co">#&gt; [1] 80349</span></span></code></pre></div>
+<p>The file starts with a header holding a fingerprint of the inputs:
+the response, trial counts, design matrix, offsets, the field’s
+structure and the solver settings. Each solved grid cell follows as one
+record, keyed by its hyperparameter coordinate and closed by a checksum
+over key and payload.</p>
 </div>
 <div class="section level2">
-<h2 id="resume">Resume<a class="anchor" aria-label="anchor" href="#resume"></a>
+<h2 id="resume-after-an-interruption">Resume after an interruption<a class="anchor" aria-label="anchor" href="#resume-after-an-interruption"></a>
 </h2>
-<p>A second call with the same data, settings, and grid plus
-<code>resume = TRUE</code> reloads every completed cell instead of
-re-solving it – so this call returns essentially instantly and to the
-same result.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">fit2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>              n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="va">S</span><span class="op">)</span>,</span>
-<span>              spatial <span class="op">=</span> <span class="fu"><a href="../reference/spatial_car.html">spatial_car</a></span><span class="op">(</span><span class="va">W</span>, level <span class="op">=</span> <span class="st">"obs"</span><span class="op">)</span>,</span>
-<span>              mode <span class="op">=</span> <span class="st">"structured"</span>,</span>
-<span>              control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>checkpoint <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">ckpt</span>, resume <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<p>A job killed while it writes leaves a file that ends in the middle of
+a record. Cutting the file to 45% of its bytes reproduces that: the
+records before the cut are intact, the last one is torn, and the rest
+are missing.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">bytes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readBin.html" class="external-link">readBin</a></span><span class="op">(</span><span class="va">ckpt</span>, <span class="st">"raw"</span>, <span class="va">full_size</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/readBin.html" class="external-link">writeBin</a></span><span class="op">(</span><span class="va">bytes</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">floor</a></span><span class="op">(</span><span class="fl">0.45</span> <span class="op">*</span> <span class="va">full_size</span><span class="op">)</span><span class="op">)</span><span class="op">]</span>, <span class="va">ckpt</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.size</a></span><span class="op">(</span><span class="va">ckpt</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 36157</span></span></code></pre></div>
+<p>The same call with <code>resume = TRUE</code> reads the intact
+records, detects the torn one by its short length or failed checksum,
+truncates the file to the last good record, and solves the cells that
+are not on disk, appending each as it finishes.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">fit2</span> <span class="op">&lt;-</span> <span class="fu">fit_ckpt</span><span class="op">(</span><span class="va">df</span>, resume <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/2 cells (50%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 2/2 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>size_after_resume <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.size</a></span><span class="op">(</span><span class="va">ckpt</span><span class="op">)</span>, size_uninterrupted <span class="op">=</span> <span class="va">full_size</span><span class="op">)</span></span>
+<span><span class="co">#&gt;  size_after_resume size_uninterrupted </span></span>
+<span><span class="co">#&gt;              80349              80349</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/all.equal.html" class="external-link">all.equal</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>The file is complete again, and the resumed fit returns the
+coefficients of the uninterrupted one.</p>
 </div>
 <div class="section level2">
-<h2 id="what-the-fingerprint-protects">What the fingerprint protects<a class="anchor" aria-label="anchor" href="#what-the-fingerprint-protects"></a>
+<h2 id="a-changed-input-is-refused">A changed input is refused<a class="anchor" aria-label="anchor" href="#a-changed-input-is-refused"></a>
 </h2>
-<p>The checkpoint header carries a fingerprint of the data, settings,
-and grid. Resuming onto a file written for a <em>different</em> fit
-errors rather than silently mixing results, and a torn final record (a
-run killed mid-write) is truncated and re-run. A multi-chain NUTS resume
-is bit-for-bit identical to the uninterrupted run, because a chain is
-deterministic in its seed and data.</p>
+<p>Resuming onto a file written for other inputs would mix cells from
+two models. Changing a single count changes the fingerprint, and the
+resume stops before solving anything:</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">df_changed</span> <span class="op">&lt;-</span> <span class="va">df</span></span>
+<span><span class="va">df_changed</span><span class="op">$</span><span class="va">y</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">df_changed</span><span class="op">$</span><span class="va">y</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="fl">1L</span></span>
+<span><span class="fu">fit_ckpt</span><span class="op">(</span><span class="va">df_changed</span>, resume <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Error:</span></span>
+<span><span class="co">#&gt; ! checkpoint: 'C:\Users\GILLES~1\AppData\Local\Temp\RtmpOQniHR\filef6f848d570b8.ckpt' was written for different data or solver settings (fingerprint mismatch). Resume needs the same inputs + grid + control; use a fresh path or set checkpoint$resume = FALSE to start over.</span></span></code></pre></div>
+<p><code>resume = FALSE</code> on the same path discards the old file
+and fits the new data from the start:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">fit3</span> <span class="op">&lt;-</span> <span class="fu">fit_ckpt</span><span class="op">(</span><span class="va">df_changed</span>, resume <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2341845   0.4000448</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="sampler-chains">Sampler chains<a class="anchor" aria-label="anchor" href="#sampler-chains"></a>
+</h2>
+<p>The sampler kernel of <code>mode = "hmc"</code> takes the same
+<code>control$checkpoint</code>, with a chain as the unit. A chain is
+deterministic in its seed, its chain number, the data and the settings,
+so a resumed run returns exactly the draws of the uninterrupted one. The
+example is a Poisson model with a random intercept over 10 groups, four
+chains, cut at 60% of the file:</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">g</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">10</span>, each <span class="op">=</span> <span class="fl">10</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>g <span class="op">=</span> <span class="va">g</span>, x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">100</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">d</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.3</span> <span class="op">+</span> <span class="fl">0.4</span> <span class="op">*</span> <span class="va">d</span><span class="op">$</span><span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">[</span><span class="va">g</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">ckpt_chains</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".ckpt"</span><span class="op">)</span></span>
+<span><span class="va">fit_chains</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">resume</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"hmc"</span>,</span>
+<span>        control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_chains <span class="op">=</span> <span class="fl">4</span>, n_iter <span class="op">=</span> <span class="fl">1000</span>, warmup <span class="op">=</span> <span class="fl">500</span>, seed <span class="op">=</span> <span class="fl">11</span>,</span>
+<span>                       checkpoint <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>path <span class="op">=</span> <span class="va">ckpt_chains</span>, resume <span class="op">=</span> <span class="va">resume</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">run1</span> <span class="op">&lt;-</span> <span class="fu">fit_chains</span><span class="op">(</span>resume <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="va">size</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/file.info.html" class="external-link">file.size</a></span><span class="op">(</span><span class="va">ckpt_chains</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/readBin.html" class="external-link">writeBin</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/readBin.html" class="external-link">readBin</a></span><span class="op">(</span><span class="va">ckpt_chains</span>, <span class="st">"raw"</span>, <span class="va">size</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">floor</a></span><span class="op">(</span><span class="fl">0.6</span> <span class="op">*</span> <span class="va">size</span><span class="op">)</span><span class="op">)</span><span class="op">]</span>,</span>
+<span>         <span class="va">ckpt_chains</span><span class="op">)</span></span>
+<span><span class="va">run2</span> <span class="op">&lt;-</span> <span class="fu">fit_chains</span><span class="op">(</span>resume <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">run1</span><span class="op">$</span><span class="va">draws</span>, <span class="va">run2</span><span class="op">$</span><span class="va">draws</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>The records are stored in the byte order of the machine that wrote
+them, so a checkpoint is for resuming on that machine, not for moving a
+fit between platforms. The fitters that take
+<code>control$checkpoint</code> are the nested Laplace doors
+(<code><a href="../reference/tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code>,
+<code><a href="../reference/tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint()</a></code>, <code><a href="../reference/fit_spde.html">fit_spde()</a></code> and
+<code><a href="../reference/tulpa.html">tulpa()</a></code> when it routes to them) and the NUTS/HMC sampler;
+other sampler backends refuse the key.</p>
+</div>
+<div class="section level2">
+<h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a>
+</h2>
+<ul>
+<li>
+<a href="inference-modes.html">Inference modes</a>: which mode
+routes to nested Laplace and which to a sampler.</li>
+<li>
+<code><a href="../reference/tulpa_nested_laplace.html">?tulpa_nested_laplace</a></code>, section on <code>control</code>,
+for the checkpoint entry alongside the other grid knobs.</li>
+</ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

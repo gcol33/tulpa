@@ -15,17 +15,10 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-# Read here, not in a gated chunk: chunk options are evaluated whether or not
-# the chunk runs, so a flag a chunk option reads has to exist either way.
+```{r dependencies, include = FALSE}
 has_mass <- requireNamespace("MASS", quietly = TRUE)
 has_nnet <- requireNamespace("nnet", quietly = TRUE)
 ```
@@ -140,7 +133,7 @@ baseline. Each class has at least 100 observations.
 factor. It hands the fit to `tulpa_multinomial()`, which can also be called
 directly with the same formula and data.
 
-```{r fit-multinomial}
+```{r fit-multinomial, fit = c("fm")}
 fm <- tulpa(habitat ~ elev + water, data = dh, family = "multinomial")
 fm
 ```
@@ -265,7 +258,7 @@ nnet's `multinom()` fits the same model by maximum likelihood and takes the
 first level as its baseline. Reordering the levels so wetland comes first
 puts both fits on the same baseline.
 
-```{r nnet, eval = EVAL_FITS && has_nnet}
+```{r nnet, eval = has_nnet, fit = TRUE}
 dh_nnet <- transform(dh, habitat = relevel(habitat, ref = "wetland"))
 fn <- nnet::multinom(habitat ~ elev + water, data = dh_nnet, trace = FALSE)
 round(rbind(nnet  = as.vector(t(coef(fn))),
@@ -310,7 +303,7 @@ the model uses.
 `family = "ordinal"` routes the fit to `tulpa_ordinal()`. An intercept in
 the formula is dropped, since the cutpoints carry the level.
 
-```{r fit-ordinal}
+```{r fit-ordinal, fit = c("fo")}
 fo <- tulpa(cover ~ moist + graze, data = dc, family = "ordinal")
 fo
 ```
@@ -396,7 +389,7 @@ rbind(observed = table(dc$cover),
 with the same sign convention, $P(y \le k) = \operatorname{logit}^{-1}(c_k -
 x^\top \beta)$, and the same names for the cutpoints.
 
-```{r polr, eval = EVAL_FITS && has_mass}
+```{r polr, eval = has_mass, fit = TRUE}
 fp <- MASS::polr(cover ~ moist + graze, data = dc)
 round(rbind(polr  = c(coef(fp), fp$zeta),
             tulpa = c(coef(fo), fo$cutpoints)), 3)
@@ -410,7 +403,7 @@ normal variable with unit variance, and they come out smaller than the logit
 ones by about the ratio of the two distributions' standard deviations,
 $\pi / \sqrt{3} \approx 1.8$.
 
-```{r fit-probit}
+```{r fit-probit, fit = TRUE}
 fo_pr <- tulpa(cover ~ moist + graze, data = dc, family = "ordinal_probit")
 round(rbind(logit = coef(fo), probit = coef(fo_pr),
             ratio = coef(fo) / coef(fo_pr)), 3)
@@ -432,7 +425,7 @@ which `logLik()` returns and `compare_models()` ranks with
 posterior draw, so `criterion = "waic"` works too. The first comparison drops
 grazing from the ordinal model.
 
-```{r compare-drop}
+```{r compare-drop, fit = TRUE}
 fo_m <- tulpa(cover ~ moist, data = dc, family = "ordinal")
 compare_models(full = fo, moisture_only = fo_m, criterion = "waic")
 compare_models(full = fo, moisture_only = fo_m, criterion = "loglik")
@@ -451,7 +444,7 @@ and gives every class its own intercept and slopes, 9 parameters here against
 the ordinal model's 5. On data that satisfy proportional odds, the extra
 parameters buy nothing.
 
-```{r compare-ord-multi}
+```{r compare-ord-multi, fit = TRUE}
 dc_nom <- transform(dc, cover = factor(cover, ordered = FALSE))
 fm_c <- tulpa(cover ~ moist + graze, data = dc_nom, family = "multinomial")
 compare_models(ordinal = fo, multinomial = fm_c, criterion = "waic")
@@ -473,7 +466,7 @@ of its range and the middle class at the other has no such direction. The
 next dataset has three ordered classes, and `x` lowers the logits of both
 `low` and `high` against `mid` by the same amount.
 
-```{r sim-nonpo}
+```{r sim-nonpo, fit = TRUE}
 set.seed(5)
 n_x <- 500
 xx  <- rnorm(n_x)
@@ -504,7 +497,7 @@ multinomial model it is the whole coefficient vector of that class. The
 cover data below are simulated as before, but with a top cutpoint of 3.5, so
 that the high class is rare.
 
-```{r sim-sparse}
+```{r sim-sparse, fit = c("dc_s")}
 set.seed(7)
 cuts_s <- c(-1.5, 0, 3.5)
 F_s <- plogis(outer(-eta_c, cuts_s, "+"))
@@ -528,7 +521,7 @@ subsetting, when a factor keeps a level none of the remaining rows have. The
 subset below keeps the plots below high cover, for an analysis of the lower
 classes alone.
 
-```{r empty-level, error = TRUE}
+```{r empty-level, error = TRUE, fit = c("dc_low")}
 dc_low <- subset(dc_s, cover != "high")
 table(dc_low$cover)
 tulpa(cover ~ moist + graze, data = dc_low, family = "ordinal")
@@ -539,7 +532,7 @@ neighbouring one. Here the high class was removed on purpose, so
 `droplevels()` is the fix, and the model is fitted on the three classes that
 remain, with two cutpoints.
 
-```{r empty-level-fix}
+```{r empty-level-fix, fit = TRUE}
 fo_low <- tulpa(cover ~ moist + graze, data = droplevels(dc_low),
                 family = "ordinal")
 fo_low$cutpoints
@@ -552,7 +545,7 @@ habitat data, keeping only 12 wetland sites makes wetland the sparse
 baseline. The fits below compare the default prior with a wider and a
 narrower one.
 
-```{r prior-sparse}
+```{r prior-sparse, fit = TRUE}
 set.seed(7)
 keep <- dh$habitat != "wetland" |
   seq_len(n_h) %in% sample(which(dh$habitat == "wetland"), 12)
@@ -613,7 +606,7 @@ smoothers and spatial or temporal fields for a categorical response, and it
 fits by the Laplace driver only, so `mode` accepts `"auto"`, `"structured"`
 or `"laplace"`.
 
-```{r unsupported, error = TRUE}
+```{r unsupported, error = TRUE, fit = TRUE}
 dc_g <- transform(dc, site = rep(1:25, each = 20))
 tulpa(cover ~ moist + (1 | site), data = dc_g, family = "ordinal")
 ```

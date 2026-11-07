@@ -14,16 +14,9 @@ knitr::opts_chunk$set(
   comment  = "#>",
   fig.width = 6, fig.height = 4
 )
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Some models carry a discrete latent variable that, once known, turns the fit
 into ordinary weighted GLMs: occupancy (was the site occupied?), N-mixture
@@ -160,7 +153,7 @@ change in any coefficient falls below `tol` (default `1e-4`). The E-step
 weights are damped between iterations, `(1 - d) * new + d * previous` with
 `damping = 0.3` by default.
 
-```{r fit}
+```{r fit, fit = c("fit")}
 fit <- tulpa_em_laplace(cb$e_step, cb$m_step_encode, verbose = FALSE)
 c(converged = fit$converged, iterations = fit$n_iter)
 ```
@@ -206,7 +199,7 @@ $P(y_i = k) = \psi_i \,\mathrm{Poisson}(k; \lambda_i)$ for $k > 0$, so it can
 be maximised directly and its standard errors read off the observed
 information of the marginal likelihood. That is the answer EM approximates.
 
-```{r mle}
+```{r mle, fit = c("zip_mle", "exact")}
 zip_mle <- function(d) {
   nll <- function(p) {
     psi <- plogis(drop(d$Z %*% p[1:2]))
@@ -246,7 +239,7 @@ Both rerun EM first and return the EM fit in `$fits` as before; the pooled
 result is in `$pooled`, one entry per block with `mean`, `se` and the two
 variance components.
 
-```{r corrections}
+```{r corrections, fit = c("fit_mi", "fit_gibbs", "pooled_table")}
 set.seed(1)
 fit_mi <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
                            correction = "mi", verbose = FALSE)
@@ -315,7 +308,7 @@ One dataset shows the widths; coverage needs many. The chunk below repeats
 the simulation and every fit 100 times and counts how often each 95%
 interval contains the truth. It takes about a minute and a half.
 
-```{r replicate}
+```{r replicate, fit = c("runs")}
 one_run <- function(d) {
   cb <- zip_callbacks(d)
   f  <- tulpa_em_laplace(cb$e_step, cb$m_step_encode, verbose = FALSE)
@@ -357,7 +350,7 @@ datasets, the corrections in 94.
 every block, in the EM loop and in the correction refits alike. A tight prior
 at zero pulls the estimates toward zero:
 
-```{r beta-prior}
+```{r beta-prior, fit = TRUE}
 fit_prior <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
                               beta_prior = list(mean = 0, sd = 0.5),
                               verbose = FALSE)
@@ -381,7 +374,7 @@ shape the `e_step` of `tulpa_em_laplace()` receives: per submodel, `mode`
 `beta` and `se`. The sampler can therefore reuse the closed-form `e_step` and
 draw labels from its weights, which is enough to show the contract:
 
-```{r em-mc}
+```{r em-mc, fit = TRUE}
 e_step_sample <- function(fits, n_mc, ...) {
   w <- cb$e_step(fits)$weights
   lapply(seq_len(n_mc), function(s) rbinom(length(w), 1, w))

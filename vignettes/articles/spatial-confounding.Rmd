@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 A covariate that varies smoothly over space, such as elevation or a climate
 surface, shares its pattern with any unmeasured spatial driver of the
@@ -104,7 +97,7 @@ data with both truths: `beta_c` is the slope used to simulate, and `beta_m`
 adds the slope of the regression of the field on the covariate over the
 observations.
 
-```{r sim-areal}
+```{r sim-areal, fit = c("sim_areal", "sim")}
 sim_areal <- function(seed, beta = 1, gamma = 0.8, rho = 0.8, m = 6) {
   set.seed(seed)
   K  <- exp(-as.matrix(dist(xy)) / 3) + diag(1e-8, nrow(xy))
@@ -135,7 +128,7 @@ spatial fits run on nested Laplace (`mode = "nested_laplace"`), which
 integrates the field's precision over a grid; the non-spatial fit is a plain
 Laplace fit.
 
-```{r fit-areal}
+```{r fit-areal, fit = c("car", "ctl", "fit_u", "fit_r", "fit_0")}
 car <- spatial_car(W, level = "group", group_var = "region")
 rsr <- spatial_rsr(car, restrict_to = ~ x)
 ctl <- list(n_threads = 2, progress = FALSE)
@@ -194,7 +187,7 @@ three_fits <- function(sim, spec, f_sp, n_trials) {
 }
 ```
 
-```{r seeds-areal}
+```{r seeds-areal, fit = c("areal")}
 areal <- do.call(rbind, lapply(1:4, function(seed) {
   cbind(seed = seed, three_fits(sim_areal(seed), car, y ~ x + spatial(region),
                                 rep(20L, 384)))
@@ -296,7 +289,7 @@ sim_points <- function(seed, n = 150, beta = 1, gamma = 0.8, rho = 0.9) {
 The NNGP specification names the coordinate columns, so the formula carries
 no `spatial()` term. The projector is built at the unique locations.
 
-```{r seeds-points}
+```{r seeds-points, fit = c("points")}
 gp <- spatial_gp(~ lon + lat)
 points <- do.call(rbind, lapply(1:4, function(seed) {
   cbind(seed = seed, three_fits(sim_points(seed), gp, y ~ x, rep(25L, 150)))

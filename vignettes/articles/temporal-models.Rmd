@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -249,7 +242,7 @@ and pass the spec through `temporal=`. The spec carries the time variable
 itself, the same way a continuous spatial spec carries its coordinates, so there
 is no `temporal(col)` term in the formula.
 
-```{r fit-binomial}
+```{r fit-binomial, fit = c("tspec", "fit")}
 tspec <- temporal_rw1("time")
 fit <- tulpa(y ~ x, data = df, family = "binomial",
              temporal = tspec, mode = "auto")
@@ -420,7 +413,8 @@ intercept's uncertainty as well as the slope's.
 
 ```{r predict-link}
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
-pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
+pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE,
+              include_field = FALSE)
 round(head(pr, 2), 3)
 ```
 
@@ -454,7 +448,7 @@ you want: the nested-Laplace fit leaves their likelihood term out and still
 forms their linear predictor, and `posterior_linpred()` summarises it. The rows
 below sit at the last observed time and the three after it, at $x = 0$.
 
-```{r forecast}
+```{r forecast, fit = TRUE}
 h      <- 0:3
 df_fc  <- rbind(df, data.frame(y = NA, x = 0, time = T_pts + h))
 fit_fc <- tulpa(y ~ x, data = df_fc, family = "binomial",
@@ -479,7 +473,7 @@ compare evidence. On a Laplace-tier fit `logLik()` returns the approximate log
 marginal likelihood, and with no hyperparameter left to integrate that is already
 the model evidence.
 
-```{r fit-notemporal}
+```{r fit-notemporal, fit = c("m_nt")}
 m_nt <- tulpa(y ~ x, data = df, family = "binomial", mode = "laplace")
 as.numeric(logLik(m_nt))
 ```
@@ -522,7 +516,7 @@ The same call shape works for a Gaussian response; only `family` and the
 dispersion `phi` change. Reuse the trend and slope, swap the binary draw for a
 Gaussian one.
 
-```{r fit-gaussian}
+```{r fit-gaussian, fit = TRUE}
 set.seed(7)
 yg  <- -0.2 + 0.9 * x + trend[time] + rnorm(n, sd = 0.5)
 dfg <- data.frame(y = yg, x = x, time = time)
@@ -580,7 +574,7 @@ A handful of rules of thumb for everyday use.
 The front door through `tulpa()` carries all three temporal priors. `temporal_rw2()`
 penalizes second differences for a smoother trend than RW1:
 
-```{r rw2}
+```{r rw2, fit = TRUE}
 fit_rw2 <- tulpa(y ~ x, data = df, family = "binomial",
                  temporal = temporal_rw2("time"), mode = "auto")
 coef(fit_rw2)

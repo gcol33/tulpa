@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 This article fits counts of eight species at the same 120 sites with two
 latent site factors: unmeasured site properties that every species responds
@@ -110,7 +103,7 @@ spec <- latent_factor(n_factors = 2, unit = "site", response = "species")
 spec
 ```
 
-```{r fit}
+```{r fit, fit = c("fit")}
 fit <- tulpa(y ~ x, data = d, family = "poisson", factors = spec)
 fit
 ```

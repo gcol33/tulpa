@@ -15,17 +15,10 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-# Read here, not in a gated chunk: chunk options are evaluated whether or not
-# the chunk runs, so a flag a chunk option reads has to exist either way.
+```{r dependencies, include = FALSE}
 has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
@@ -133,7 +126,7 @@ curvature there. For a Gaussian likelihood that curvature is exact, so the
 fit returns the analytic posterior immediately, with no iteration and no
 Monte Carlo error.
 
-```{r fit-gaussian}
+```{r fit-gaussian, fit = c("fit")}
 fit <- tulpa(y ~ x, data = df, family = "gaussian",
              mode = "laplace", phi = 0.8^2)
 coef(fit)
@@ -216,7 +209,7 @@ standard deviation 0.6, then add that offset to the linear predictor. The
 fixed structure is the same intercept and slope as before, so the only new
 ingredient is the group effect.
 
-```{r sim-re}
+```{r sim-re, fit = c("g", "u", "df", "fit_re")}
 g  <- factor(sample(1:12, n, replace = TRUE))
 u  <- rnorm(12, sd = 0.6)
 df$y <- 0.5 + 1.2 * df$x + u[g] + rnorm(n, sd = 0.8)
@@ -289,7 +282,7 @@ Build a three-rung ladder on the grouped data: an intercept-only model, a
 model adding the slope, and a model adding the random intercept on top of the
 slope. Each is a single `tulpa()` call differing only in the formula.
 
-```{r compare}
+```{r compare, fit = TRUE}
 m0 <- tulpa(y ~ 1,     data = df, family = "gaussian", mode = "laplace", phi = 0.8^2)
 m1 <- tulpa(y ~ x,     data = df, family = "gaussian", mode = "laplace", phi = 0.8^2)
 m2 <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
@@ -344,7 +337,7 @@ credible band turns the table into the marginal effect you would put in a
 paper: the line is the expected response across the covariate, and the
 ribbon is the 95% credible region around it.
 
-```{r predict-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Predicted response across x with a 95 percent credible band"}
+```{r predict-plot, eval = has_ggplot, fig.alt = "Predicted response across x with a 95 percent credible band"}
 library(ggplot2)
 ggplot(data.frame(x = nd$x, fit = pr$fit, lo = pr$lower, hi = pr$upper),
        aes(x, fit)) +
@@ -374,7 +367,7 @@ read the fit stay the same. The two fits below simulate a Poisson count and a
 beta proportion with known coefficients and fit each with the Laplace
 approximation.
 
-```{r families}
+```{r families, fit = c("dp")}
 # Poisson counts
 dp <- data.frame(y = rpois(n, exp(0.2 + 0.6 * x)), x = x)
 coef(tulpa(y ~ x, data = dp, family = "poisson", mode = "laplace"))
@@ -411,7 +404,7 @@ one-sided `ziformula`: with probability `plogis(X_zi beta_zi)` an observation
 is a structural zero, otherwise it is drawn from `family`. The counts below
 are simulated with a structural-zero probability of `plogis(-0.5)`, about 0.38.
 
-```{r zero-inflated}
+```{r zero-inflated, fit = TRUE}
 zi <- rbinom(n, 1, plogis(-0.5))
 dz <- data.frame(y = ifelse(zi == 1, 0, rpois(n, exp(0.2 + 0.6 * x))), x = x)
 coef(tulpa(y ~ x, data = dz, family = "poisson", ziformula = ~ 1,
@@ -454,7 +447,7 @@ Fit the binomial grouped model two ways, once with the deterministic Laplace
 approximation and once with MALA, a gradient sampler that draws from the
 posterior directly.
 
-```{r tiers}
+```{r tiers, fit = c("fit_lap", "fit_mala")}
 df_b <- df
 df_b$y <- rbinom(n, 1, plogis(-0.3 + 1.0 * df$x + u[df$g]))
 
@@ -552,7 +545,7 @@ conditional-autoregressive field on the units. Here twenty regions sit on a
 ring, each adjacent to its two neighbours, with a smooth wave of regional
 effect around the loop.
 
-```{r spatial-build}
+```{r spatial-build, fit = c("region", "fit_sp")}
 K <- 20
 W <- matrix(0, K, K)
 for (i in 1:K) { j <- if (i < K) i + 1 else 1; W[i, j] <- W[j, i] <- 1 }
@@ -574,7 +567,7 @@ the wave the fit pulled out of binary data: `field_effects()` returns the
 field at each region, here its posterior mode, and traces the smooth signal
 the covariate could not explain.
 
-```{r spatial-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Estimated spatial field effect per region around the ring"}
+```{r spatial-plot, eval = has_ggplot, fig.alt = "Estimated spatial field effect per region around the ring"}
 library(ggplot2)
 fe <- field_effects(fit_sp)
 ggplot(data.frame(region = fe$unit, effect = fe$estimate), aes(region, effect)) +
@@ -618,7 +611,7 @@ Simulate counts over thirty time points with a smooth sinusoidal trend, a
 real covariate effect, and Poisson noise, then fit with the random-walk trend
 in place.
 
-```{r temporal-fit}
+```{r temporal-fit, fit = c("Tt", "time", "trend", "fit_t")}
 Tt    <- 30
 time  <- sample(seq_len(Tt), n, replace = TRUE)
 trend <- 1.2 * sin(2 * pi * seq_len(Tt) / Tt)

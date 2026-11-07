@@ -15,19 +15,12 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-# The data and the polygon operations come from sf; the neighbour cross-check
-# uses spdep. Both are suggested packages, so the article runs only with them.
-has_sf    <- requireNamespace("sf", quietly = TRUE)
+```{r dependencies, include = FALSE}
+has_sf <- requireNamespace("sf", quietly = TRUE)
 has_spdep <- requireNamespace("spdep", quietly = TRUE)
-knitr::opts_chunk$set(eval = EVAL_FITS && has_sf)
 ```
 
 This article analyses a real dataset from start to finish: counts of sudden
@@ -159,7 +152,7 @@ chk <- check_adjacency(g$adjacency)
 
 The same contiguity rule in spdep gives the same matrix:
 
-```{r spdep-check, eval = EVAL_FITS && has_sf && has_spdep}
+```{r spdep-check, eval = has_sf && has_spdep}
 nb <- spdep::poly2nb(nc, queen = TRUE)
 W_spdep <- spdep::nb2mat(nb, style = "B")
 all(W_spdep == as.matrix(g$adjacency))
@@ -181,7 +174,7 @@ head(d, 3)
 The offset enters the formula as `offset(log(E))`. Fit the Poisson model
 without a county effect first:
 
-```{r fit-nonspatial}
+```{r fit-nonspatial, fit = c("fit0")}
 fit0 <- tulpa(SID74 ~ x + offset(log(E)), data = d,
               family = "poisson", mode = "laplace")
 summary(fit0)
@@ -206,7 +199,7 @@ graph, whose mean is 4.9 neighbours per county.
 Start with the raw risk: the Pearson residuals of a model with an intercept
 only.
 
-```{r moran-raw}
+```{r moran-raw, fit = c("cc")}
 cc <- st_coordinates(st_centroid(st_geometry(nc)))
 fit_int <- tulpa(SID74 ~ 1 + offset(log(E)), data = d,
                  family = "poisson", mode = "laplace")
@@ -233,7 +226,7 @@ the graph, and a `spatial(county)` term in the formula names the column that
 maps rows to nodes. `mode = "nested_laplace"` integrates the field's
 hyperparameters over a grid.
 
-```{r fit-icar}
+```{r fit-icar, fit = c("fit_icar")}
 fit_icar <- tulpa(SID74 ~ x + offset(log(E)) + spatial(county), data = d,
                   family = "poisson",
                   spatial = list(type = "icar", adjacency = W),
@@ -251,7 +244,7 @@ cells out of 9, so the interval for $\tau$ is resolved to about one grid cell.
 
 BYM2 adds an independent part per county to the ICAR field:
 
-```{r fit-bym2}
+```{r fit-bym2, fit = c("fit_bym2")}
 fit_bym2 <- tulpa(SID74 ~ x + offset(log(E)) + spatial(county), data = d,
                   family = "poisson",
                   spatial = list(type = "bym2", adjacency = W),
@@ -419,7 +412,7 @@ of $\sigma$ or $\tau$ the axis integrates. `hyperprior = "flat"` removes it,
 so the field's scale is integrated under the grid's own measure. Refit both
 spatial models that way:
 
-```{r fit-flat}
+```{r fit-flat, fit = c("fit_icar_flat", "fit_bym2_flat")}
 fit_icar_flat <- tulpa(
   SID74 ~ x + offset(log(E)) + spatial(county), data = d,
   family = "poisson", spatial = list(type = "icar", adjacency = W),
@@ -458,7 +451,7 @@ expected counts and the covariate from the later columns, keeping the
 1974-78 mean for the centring so that $x = 0$ means the same share in both
 periods, and refit the BYM2 model:
 
-```{r fit-79}
+```{r fit-79, fit = TRUE}
 d79 <- st_drop_geometry(nc)[, c("FIPS", "SID79", "BIR79", "NWBIR79")]
 d79$E <- d79$BIR79 * sum(d79$SID79) / sum(d79$BIR79)
 d79$x <- 10 * (d79$NWBIR79 / d79$BIR79 - pnw_mean)

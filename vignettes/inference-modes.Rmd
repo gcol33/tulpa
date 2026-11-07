@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -169,7 +162,7 @@ Fitting with `mode = "auto"` lets the rule pick. For a binomial ICAR field
 it selects the exact Polya-Gamma Gibbs sampler, a Tier 1 backend, and says
 so.
 
-```{r auto-spatial}
+```{r auto-spatial, fit = c("fit_auto")}
 fit_auto <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                   spatial = list(type = "icar", adjacency = W), mode = "auto")
 summary(fit_auto)$inference[c("backend", "inference_tier", "selection_reason")]
@@ -186,13 +179,14 @@ case where the strongest guarantee was affordable and took it. Now change
 the situation to a large, plain Gaussian model where a full sampler would
 be slow.
 
-```{r auto-large}
+```{r auto-large, fit = c("big_coef")}
 nL <- 60000L
 xL <- rnorm(nL)
 dL <- data.frame(y = 0.5 + 1.2 * xL + rnorm(nL, sd = 0.8), x = xL)
 fit_big <- tulpa(y ~ x, data = dL, family = "gaussian", mode = "auto",
                  phi = 0.8^2)
 summary(fit_big)$inference[c("backend", "inference_tier", "selection_reason")]
+big_coef <- coef(fit_big)
 ```
 
 Here auto stepped down to the Laplace path. The reason names the dataset
@@ -201,7 +195,7 @@ the sensible default and takes the Tier 2 route instead, which for a
 Gaussian likelihood is exact anyway. The estimates land on the truth.
 
 ```{r auto-large-coef}
-coef(fit_big)
+big_coef
 ```
 
 Two models, two different branches, each recorded. The same rule that
@@ -233,7 +227,7 @@ curvature as its precision. For a Gaussian likelihood this is exact and
 returns immediately. For other families it is the Gaussian approximation
 to the posterior, accurate when the posterior is close to Gaussian.
 
-```{r laplace-fit}
+```{r laplace-fit, fit = c("g", "db")}
 set.seed(101)
 g  <- factor(sample(1:12, n, replace = TRUE))
 u  <- rnorm(12, sd = 0.6)
@@ -259,7 +253,7 @@ samples. What it adds over a plain Laplace fit is a set of draws and a
 diagnostic. The draws make it a drop-in where downstream code expects
 samples, and the ELBO gauges how well the Gaussian fits.
 
-```{r pathfinder-fit}
+```{r pathfinder-fit, fit = TRUE}
 fit_pf <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                 mode = "pathfinder", sigma_re = 0.6,
                 control = list(n_draws = 450))
@@ -281,7 +275,7 @@ because no leapfrog trajectory needs integrating, and mixing beats a random
 walk because the drift term nudges proposals toward higher density. The
 step size adapts during warmup toward an acceptance rate near 0.574.
 
-```{r mala-fit}
+```{r mala-fit, fit = TRUE}
 fit_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 2000, warmup = 500))
@@ -305,7 +299,7 @@ doubles as a verdict on the Laplace approximation: high acceptance means
 the posterior is close to the Gaussian, low acceptance means it is far and
 Laplace was biased.
 
-```{r imh-fit}
+```{r imh-fit, fit = TRUE}
 fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6,
                  control = list(n_iter = 2000, warmup = 500))
@@ -350,7 +344,7 @@ Laplace path redirects to this backend automatically and integrates the
 covariance on an aligned tensor grid and a PC or LKJ prior. You reach it not by
 name but by writing a slope term and fitting at `mode = "laplace"`.
 
-```{r re-cov-slope}
+```{r re-cov-slope, fit = c("rc_cov", "rc_k")}
 set.seed(20260531)
 ng <- 60; ni <- 15
 g   <- rep(seq_len(ng), each = ni)
@@ -365,6 +359,8 @@ dsl <- data.frame(y = rbinom(ng * ni, 1, plogis(eta)),
 fit_rc <- tulpa(y ~ x + (1 + x | g), data = dsl,
                 family = "binomial", mode = "laplace")
 summary(fit_rc)$inference$backend
+rc_cov <- attr(VarCorr(fit_rc), "cov")$g
+rc_k <- attr(diagnostics(fit_rc), "pareto_k")
 ```
 
 The slope term routed the fit to `re_cov_nested` without being named. What
@@ -374,7 +370,7 @@ their covariance off it. `VarCorr()` reports the standard deviations and
 carries the matrix in its `cov` attribute, one per random-effect term.
 
 ```{r re-cov-sigma}
-round(attr(VarCorr(fit_rc), "cov")$g, 3)
+round(rc_cov, 3)
 ```
 
 Integrating the covariance through a Gaussian grid over the hyperparameters
@@ -382,7 +378,7 @@ means the fit carries a Pareto-k-hat accuracy diagnostic, the
 nested-approximation counterpart to the Rhat a sampler reports.
 
 ```{r re-cov-k}
-round(attr(diagnostics(fit_rc), "pareto_k"), 2)
+round(rc_k, 2)
 ```
 
 Here k-hat sits below the 0.7 threshold, so the Gaussian grid fits the
@@ -423,7 +419,7 @@ and lay the results side by side. Take the binomial random-intercept model
 from above and fit it at Laplace, MALA, and Pathfinder, timing each with
 `system.time()`.
 
-```{r timing}
+```{r timing, fit = c("t_lap", "f_lap", "t_mala", "f_mala", "t_pf", "f_pf")}
 t_lap  <- system.time(
   f_lap  <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "laplace", sigma_re = 0.6))[["elapsed"]]

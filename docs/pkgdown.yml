@@ -2,20 +2,33 @@ pandoc: 3.9.0.2
 pkgdown: 2.2.1
 pkgdown_sha: ~
 articles:
+  articles/case-study-sids: case-study-sids.html
+  articles/categorical-responses: categorical-responses.html
   articles/checkpoint: checkpoint.html
+  articles/compatibility: compatibility.html
+  articles/concepts: concepts.html
   articles/data-formatting: data-formatting.html
+  articles/diagnostics: diagnostics.html
   articles/em-laplace: em-laplace.html
+  articles/identifiability: identifiability.html
   inference-modes: inference-modes.html
+  articles/joint-models: joint-models.html
+  articles/latent-factors: latent-factors.html
   articles/model-comparison: model-comparison.html
   articles/priors: priors.html
   articles/random-slopes: random-slopes.html
   articles/reliability-pareto-k: reliability-pareto-k.html
   articles/sbc: sbc.html
+  articles/space-time: space-time.html
+  articles/spatial-confounding: spatial-confounding.html
   spatial-models: spatial-models.html
+  articles/spde: spde.html
   articles/temporal-models: temporal-models.html
   articles/tgmrf: tgmrf.html
+  articles/troubleshooting: troubleshooting.html
   tulpa: tulpa.html
-last_built: 2026-11-01T23:27Z
+  articles/varying-coefficients: varying-coefficients.html
+last_built: 2026-11-07T00:58Z
 urls:
   reference: https://gillescolling.com/tulpa/reference
   article: https://gillescolling.com/tulpa/articles

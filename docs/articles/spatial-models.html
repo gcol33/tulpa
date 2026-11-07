@@ -17,6 +17,9 @@
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
 <meta property="og:title" content="Spatial models">
+<meta name="description" content="Areal and continuous spatial fields end to end: simulate, fit, check, map, predict and compare with a non-spatial fit.">
+<meta property="og:description" content="Areal and continuous spatial fields end to end: simulate, fit, check, map, predict and compare with a non-spatial fit.">
+<meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg">
 <script>
 (function () {
   var D = String.fromCharCode(36);
@@ -40,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -51,25 +54,44 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -92,37 +114,17 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Spatial models</h1>
-            
-      
+
+
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/spatial-models.Rmd" class="external-link"><code>vignettes/spatial-models.Rmd</code></a></small>
       <div class="d-none name"><code>spatial-models.Rmd</code></div>
     </div>
 
-    
-    
-<div class="section level2">
-<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
-</h2>
+
+
+<p>Installation is covered in <a href="tulpa.html">Get started</a>.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
-<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
-<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Development version from GitHub</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Pin a release</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
-<p><code>pak</code> resolves the dependency tree, including
-<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
-<code>tulpa</code> compiles its C++ backend on first install, so a C++17
-toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
-<code>r-base-dev</code> on Linux.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
-</div>
 <div class="section level2">
 <h2 id="why-a-spatial-field">Why a spatial field<a class="anchor" aria-label="anchor" href="#why-a-spatial-field"></a>
 </h2>
@@ -327,7 +329,7 @@ and has an obvious smooth field on it. A regular graph keeps every
 region with the same neighbour count, so no region is privileged by the
 topology, and a ring’s single loop gives the field one clean wavelength
 to recover.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">K</span> <span class="op">&lt;-</span> <span class="fl">25</span></span>
 <span><span class="va">W</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0</span>, <span class="va">K</span>, <span class="va">K</span><span class="op">)</span></span>
 <span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="va">K</span><span class="op">)</span> <span class="op">{</span></span>
@@ -346,7 +348,7 @@ a trough on the other, that no single intercept can capture, so the
 random effect has to do genuine work. A pattern of pure noise would be
 the opposite test, one an ICAR prior is designed to smooth away, and
 recovering it would say little.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">field_true</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="fl">2</span> <span class="op">*</span> <span class="va">pi</span> <span class="op">*</span> <span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="va">K</span><span class="op">)</span> <span class="op">/</span> <span class="va">K</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">beta0</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span></span>
 <span><span class="va">beta1</span> <span class="op">&lt;-</span>  <span class="fl">0.8</span></span></code></pre></div>
@@ -356,7 +358,7 @@ a binomial response on the logit scale. The intercept is
 the covariate slope
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.8</mn><annotation encoding="application/x-tex">0.8</annotation></semantics></math>,
 and the region’s field value adds to the linear predictor.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">n</span>      <span class="op">&lt;-</span> <span class="fl">800</span></span>
 <span><span class="va">x</span>      <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
 <span><span class="va">region</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="va">K</span>, <span class="va">n</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
@@ -381,10 +383,12 @@ field <code>type</code> and the adjacency matrix. A
 <code>spatial(region)</code> term in the formula names the column that
 maps each row to its region. Drop either piece and <code><a href="../reference/tulpa.html">tulpa()</a></code>
 stops with a message rather than guessing.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">ds</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>             spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span>,</span>
 <span>             mode <span class="op">=</span> <span class="st">"nested_laplace"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">inference</span><span class="op">$</span><span class="va">backend</span></span>
 <span><span class="co">#&gt; [1] "nested_laplace"</span></span></code></pre></div>
 <p><code>mode = "nested_laplace"</code> runs the Tier-2 path that
@@ -413,10 +417,10 @@ summary are available to plot and check. For a routine binomial areal
 model where only the slopes matter, <code>mode = "auto"</code> is the
 lighter call.</p>
 <p>The fixed effects come back from <code><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef()</a></code>.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;  -0.3185314   0.8184737</span></span></code></pre></div>
+<span><span class="co">#&gt;  -0.3180747   0.8172562</span></span></code></pre></div>
 <p>The slope lands near the simulated
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.8</mn><annotation encoding="application/x-tex">0.8</annotation></semantics></math>.
 With the regional wave absorbed into the field, the covariate reports
@@ -436,7 +440,7 @@ spread of the within-point means across the grid. tulpa retains the
 per-grid covariance (<code>control$keep_grid_hessians</code> defaults to
 on for precisely this reason) and combines both terms, so the reported
 error absorbs the cost of not knowing how smooth the surface is.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt; tulpa fit  (nested_laplace, tier 2) </span></span>
 <span><span class="co">#&gt; Call: tulpa(formula = y ~ x + spatial(region), data = ds, family = "binomial", mode = "nested_laplace", spatial = list(type = "icar", adjacency = W))</span></span>
@@ -447,18 +451,20 @@ error absorbs the cost of not knowing how smooth the surface is.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Fixed effects:</span></span>
 <span><span class="co">#&gt;             estimate std.error   2.5 %  97.5 %</span></span>
-<span><span class="co">#&gt; (Intercept)  -0.3185   0.08391 -0.4830 -0.1541</span></span>
-<span><span class="co">#&gt; x             0.8185   0.09491  0.6326  1.0046</span></span>
-<span><span class="co">#&gt;   interval read: mixture_cdf </span></span>
-<span><span class="co">#&gt;   interval declined: NA </span></span>
+<span><span class="co">#&gt; (Intercept)  -0.3181   0.08385 -0.4872 -0.1586</span></span>
+<span><span class="co">#&gt; x             0.8173   0.09479  0.6519  1.0235</span></span>
+<span><span class="co">#&gt;   interval read: skew_map_cell </span></span>
+<span><span class="co">#&gt;   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Hyperparameters:</span></span>
 <span><span class="co">#&gt;  parameter  mean    sd median ci_lo ci_hi</span></span>
-<span><span class="co">#&gt;        tau 4.848 2.357  4.353 1.665 10.76</span></span>
+<span><span class="co">#&gt;        tau 4.851 2.358  4.356 1.667 10.76</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Fixed-effect prior: normal(0, 2.5)</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Reliability (iid draws):</span></span>
-<span><span class="co">#&gt;   outer pareto_k -1.494 (good); grid ESS 5.987 of 12 cells; inner skew NA (NA)</span></span>
-<span><span class="co">#&gt;   verdict: outer integration good; inner Laplace not assessed</span></span></code></pre></div>
+<span><span class="co">#&gt;   outer pareto_k -1.517 (good); grid ESS 5.987 of 12 cells; inner skew 0.0689 (good)</span></span>
+<span><span class="co">#&gt;   verdict: reliable (both layers good)</span></span></code></pre></div>
 <div class="section level3">
 <h3 id="extracting-the-field-per-region">Extracting the field per region<a class="anchor" aria-label="anchor" href="#extracting-the-field-per-region"></a>
 </h3>
@@ -478,11 +484,11 @@ is the weighted average of its own column across grid points: take
 column <code>n_fixed + u</code>, weight each grid point’s entry by its
 integration weight, and sum. This is the same marginalisation the slopes
 get, applied to the latent field instead of the fixed effects.</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g</span>         <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_outer_grid.html">tulpa_outer_grid</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="va">field_hat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colSums</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">weights</span> <span class="op">*</span> <span class="va">g</span><span class="op">$</span><span class="va">modes</span><span class="op">)</span><span class="op">[</span><span class="va">g</span><span class="op">$</span><span class="va">n_fixed</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">field_hat</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.272 0.374 0.805 0.774 1.501 1.499</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 0.272 0.374 0.805 0.773 1.501 1.499</span></span></code></pre></div>
 <p>That recipe is the same one the temporal path uses for a random-walk
 field, since an RW1 chain is an ICAR on a line: time
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>t</mi><annotation encoding="application/x-tex">t</annotation></semantics></math>
@@ -503,16 +509,16 @@ smoothing precision sits where the data put it.</p>
 <p>Plot the fitted values against the simulated ones. The intrinsic
 prior identifies the field only up to an additive constant, so centre
 both sequences before comparing.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">field_true</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">field_true</span><span class="op">)</span>,</span>
 <span>     <span class="va">field_hat</span>  <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">field_hat</span><span class="op">)</span>,</span>
 <span>     xlab <span class="op">=</span> <span class="st">"true field (centred)"</span>, ylab <span class="op">=</span> <span class="st">"estimated field (centred)"</span>,</span>
 <span>     pch <span class="op">=</span> <span class="fl">19</span>, col <span class="op">=</span> <span class="st">"steelblue"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span>, lwd <span class="op">=</span> <span class="fl">2</span>, col <span class="op">=</span> <span class="st">"grey40"</span><span class="op">)</span></span></code></pre></div>
 <p><img src="spatial-models_files/figure-html/field-plot-1.png" class="r-plt" alt="Estimated spatial field per region against the simulated truth, near the identity line" width="576"></p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">field_true</span>, <span class="va">field_hat</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 0.9809531</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 0.9809454</span></span></code></pre></div>
 <p>The points fall along the identity line and the correlation is high.
 The fit has recovered the wave from binary data spread thin across
 twenty-five regions, which is exactly what neighbour borrowing buys. A
@@ -530,10 +536,10 @@ is summarised in the <code>hyperparameters</code> table of
 <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>: <code>mean</code> is the posterior mean over the
 grid, on the natural precision scale, and <code>ci_lo</code> /
 <code>ci_hi</code> give a credible interval.</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"mean"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt;   parameter     mean    ci_lo    ci_hi</span></span>
-<span><span class="co">#&gt; 1       tau 4.848278 1.664748 10.76048</span></span></code></pre></div>
+<span><span class="co">#&gt; 1       tau 4.851152 1.667424 10.75661</span></span></code></pre></div>
 <p>A larger
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
 would mean a stiffer penalty on neighbour differences and a flatter
@@ -564,18 +570,18 @@ at one value. It is marginalised over the grid of
 values, so it already includes the cost of not knowing how smooth the
 field is. <code><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint()</a></code> returns the same bounds as a matrix,
 and <code><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov()</a></code> the fixed-effect covariance.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                  2.5 %     97.5 %</span></span>
-<span><span class="co">#&gt; (Intercept) -0.4830167 -0.1540832</span></span>
-<span><span class="co">#&gt; x            0.6325718  1.0045989</span></span>
+<span><span class="co">#&gt; (Intercept) -0.4872383 -0.1585693</span></span>
+<span><span class="co">#&gt; x            0.6519301  1.0235047</span></span>
 <span><span class="co">#&gt; attr(,"skew_applied")</span></span>
 <span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;       FALSE       FALSE </span></span>
+<span><span class="co">#&gt;        TRUE        TRUE </span></span>
 <span><span class="co">#&gt; attr(,"interval_source")</span></span>
-<span><span class="co">#&gt; [1] "mixture_cdf"</span></span>
+<span><span class="co">#&gt; [1] "skew_map_cell"</span></span>
 <span><span class="co">#&gt; attr(,"interval_declined")</span></span>
-<span><span class="co">#&gt; [1] NA</span></span>
+<span><span class="co">#&gt; [1] "skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had"</span></span>
 <span><span class="co">#&gt; attr(,"retained_mass")</span></span>
 <span><span class="co">#&gt; [1] 1</span></span></code></pre></div>
 <p>The second point is the intercept, and it follows directly from the
@@ -587,48 +593,44 @@ and the intercept
 are confounded: shifting every
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>ϕ</mi><mi>r</mi></msub><annotation encoding="application/x-tex">\phi_r</annotation></semantics></math>
 up by a constant and the intercept down by the same constant leaves the
-linear predictor, and therefore the likelihood, unchanged. The two
-parameters trade off along a flat ridge, and no amount of data can pin
-them both. tulpa handles this by letting the intercept float against a
-near-flat prior, which shows up as a very wide intercept standard error
-in the summary above. The slopes are unaffected, because a covariate’s
-effect does not live on that ridge. Read the slopes, which are
-identified, and treat the intercept as a nuisance level rather than a
-quantity to interpret.</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+linear predictor, and therefore the likelihood, unchanged. tulpa removes
+that direction with a hard sum-to-zero constraint on
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ϕ</mi><annotation encoding="application/x-tex">\phi</annotation></semantics></math>:
+the field’s mean is held at zero, so the intercept is the overall level
+and the field carries only the departures from it. The data inform that
+level directly, and its standard error is of the size a model with one
+fixed effect per region under sum-to-zero contrasts would give.</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">)</span><span class="op">[</span><span class="st">"(Intercept)"</span>, <span class="st">"std.error"</span><span class="op">]</span></span>
-<span><span class="co">#&gt; [1] 0.08391077</span></span></code></pre></div>
-<p>The wide value here is by design, not a fitting failure. A proper CAR
-or a BYM2 field with its IID part tamed will narrow it, at the cost of
-an extra estimated parameter. Whenever you report results from an
-intrinsic model, say so plainly: the intercept is a floating reference,
-the slopes are the inferential payload, and a reader who treats the
-intercept as an absolute baseline rate will be misled. This caveat
-travels with every disease-map or species-distribution table that
-smooths over an adjacency graph.</p>
+<span><span class="co">#&gt; [1] 0.0838457</span></span></code></pre></div>
+<p>What the intercept means follows from the constraint: it is the level
+at the average over regions, not a baseline rate of any one region. A
+table reporting it from an intrinsic model says which average it refers
+to.</p>
 </div>
 <div class="section level2">
 <h2 id="prediction">Prediction<a class="anchor" aria-label="anchor" href="#prediction"></a>
 </h2>
 <p><code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> gives the fixed-effect prediction at new
-covariate values. The spatial field is held at its population level, so
-the result is the marginal covariate trend with the regional signal
+covariate values. The areal field is held at zero, its population level,
+so the result is the marginal covariate trend with the regional signal
 averaged out. This is the right default for a question like “what does
 the covariate do on average across the map”, as opposed to “what happens
 in region 7”, which needs that region’s field value added back.
 <code>se.fit = TRUE</code> adds the link-scale standard error and
 credible bounds, drawn from the same grid-marginalised fixed-effect
 covariance the summary uses.</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nd</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="op">-</span><span class="fl">2.5</span>, <span class="fl">2.5</span>, length.out <span class="op">=</span> <span class="fl">50</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>              include_field <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pr</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         fit    se.fit     lower     upper</span></span>
-<span><span class="co">#&gt; 1 -2.364716 0.2590453 -2.872435 -1.856996</span></span>
-<span><span class="co">#&gt; 2 -2.281198 0.2498980 -2.770989 -1.791407</span></span>
-<span><span class="co">#&gt; 3 -2.197680 0.2407926 -2.669625 -1.725735</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 -2.361215 0.2587212 -2.868299 -1.854131</span></span>
+<span><span class="co">#&gt; 2 -2.277822 0.2495854 -2.767000 -1.788643</span></span>
+<span><span class="co">#&gt; 3 -2.194428 0.2404916 -2.665783 -1.723073</span></span></code></pre></div>
 <p>Plot the trend on the link scale with its credible band.</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="va">pr</span><span class="op">$</span><span class="va">fit</span>, type <span class="op">=</span> <span class="st">"n"</span>, xlab <span class="op">=</span> <span class="st">"x"</span>, ylab <span class="op">=</span> <span class="st">"predicted logit"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/polygon.html" class="external-link">polygon</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">pr</span><span class="op">$</span><span class="va">lower</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">pr</span><span class="op">$</span><span class="va">upper</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>        col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"steelblue"</span>, <span class="fl">0.25</span><span class="op">)</span>, border <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
@@ -666,16 +668,16 @@ masses, on the probability scale, before taking logs again.
 <code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code> returns that sum. The non-spatial Laplace fit has
 no grid, and its scalar log marginal likelihood is already the evidence
 of a model with nothing left to integrate.</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">m0</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">ds</span>, family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
 <span><span class="va">cmp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>nonspatial <span class="op">=</span> <span class="va">m0</span>, spatial <span class="op">=</span> <span class="va">fit</span>, criterion <span class="op">=</span> <span class="st">"loglik"</span><span class="op">)</span></span>
 <span><span class="va">cmp</span></span>
 <span><span class="co">#&gt;        model n_params    logLik     quantity conditioned_on</span></span>
 <span><span class="co">#&gt; 1 nonspatial        2 -511.5366 log_evidence               </span></span>
-<span><span class="co">#&gt; 2    spatial        2 -466.0906 log_evidence</span></span></code></pre></div>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<span><span class="co">#&gt; 2    spatial        2 -455.5594 log_evidence</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/diff.html" class="external-link">diff</a></span><span class="op">(</span><span class="va">cmp</span><span class="op">$</span><span class="va">logLik</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 45.44601</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 55.9772</span></span></code></pre></div>
 <p>The spatial fit carries the higher evidence by a wide margin,
 matching how the data were built. The difference is the log Bayes factor
 for the field, and a value this large is decisive: the data are vastly
@@ -714,13 +716,11 @@ its own floating level, and the intercept can no longer anchor them
 jointly. The number of zero eigenvalues of the graph Laplacian
 <code>diag(rowSums(W)) - W</code> counts the connected components; more
 than one means the graph is split.</p></li>
-<li><p><strong>Read slopes, never the intercept, under ICAR.</strong>
-The intercept confounds with the field level and its standard error runs
-to the prior scale, on the order of 100 on the link scale, against slope
-errors three orders of magnitude smaller. That gap is expected and is
-the signature of the intrinsic ridge, not a convergence problem. If you
-need a clean intercept, move to a proper CAR or a BYM2 field, whose IID
-part breaks the exact confounding.</p></li>
+<li><p><strong>Read the intercept as the level of a centred
+field.</strong> The ICAR field is constrained to sum to zero, so the
+intercept carries the overall level and the field only the departures
+from it; the fit above reports an intercept standard error of 0.084. <a href="https://gillescolling.com/tulpa/articles/identifiability.html">Identifiability</a>
+shows the alias the constraint removes.</p></li>
 <li><p><strong>ICAR versus BYM2.</strong> Reach for <code>icar</code>
 when you want the simplest smooth field and do not need to separate
 structured from unstructured variation; it has one fewer parameter and a
@@ -768,7 +768,7 @@ moderate ranges.</li>
 through the SPDE representation on a mesh, routed to the dedicated
 <code>spde</code> backend.</li>
 </ul>
-<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">gp_spec</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/spatial_gp.html">spatial_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span><span class="op">)</span></span>
 <span><span class="va">gp_spec</span><span class="op">$</span><span class="va">type</span></span>
 <span><span class="co">#&gt; [1] "gp"</span></span></code></pre></div>
@@ -788,7 +788,7 @@ the response, a design matrix, and the <code>spatial_spde</code> spec
 directly, builds the Matern precision on the mesh, and solves the field
 by sparse Laplace. Simulate a smooth Poisson surface on scattered
 coordinates and fit it with the range and marginal SD held fixed:</p>
-<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">20260531</span><span class="op">)</span></span>
 <span><span class="va">n</span>      <span class="op">&lt;-</span> <span class="fl">300</span></span>
 <span><span class="va">coords</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>lon <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, lat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
@@ -802,11 +802,11 @@ coordinates and fit it with the range and marginal SD held fixed:</p>
 <span>                 family <span class="op">=</span> <span class="st">"poisson"</span>, range <span class="op">=</span> <span class="fl">0.4</span>, sigma <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt; (Intercept)        xcov </span></span>
-<span><span class="co">#&gt;       0.988       0.540</span></span></code></pre></div>
-<p>The fixed-effect estimates land on the generating intercept and
-slope; <code>field_effects(fit)</code> returns the field at each mesh
-node, ready to project onto a prediction grid. Leaving
-<code>range</code> and <code>sigma</code> at their default
+<span><span class="co">#&gt;       0.807       0.552</span></span></code></pre></div>
+<p>The slope lands near the generating 0.5, and the intercept reads 0.81
+against the generating 1.0; <code>field_effects(fit)</code> returns the
+field at each mesh node, ready to project onto a prediction grid.
+Leaving <code>range</code> and <code>sigma</code> at their default
 <code>NULL</code> switches <code><a href="../reference/fit_spde.html">fit_spde()</a></code> to nested Laplace
 over the two hyperparameters and adds an outer Pareto-k-hat, which
 <code><a href="../reference/diagnostics.html">diagnostics()</a></code> reports as it does for the areal nested

@@ -15,17 +15,10 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-# Read here, not in a gated chunk: chunk options are evaluated whether or not
-# the chunk runs, so a flag a chunk option reads has to exist either way.
+```{r dependencies, include = FALSE}
 has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
@@ -397,7 +390,7 @@ df <- data.frame(y = y, x = x)
 Fit it once with the default weak prior. The slope estimate is driven by the
 likelihood.
 
-```{r fe-weak}
+```{r fe-weak, fit = c("fit_weak")}
 fit_weak <- tulpa(y ~ x, data = df, family = "gaussian",
                   mode = "laplace", phi = 1.5^2)
 coef(fit_weak)
@@ -407,7 +400,7 @@ Now impose a tight prior that says the slope is near zero: mean 0 and a small
 standard deviation. The intercept keeps a loose prior, so only the slope is
 pulled.
 
-```{r fe-tight}
+```{r fe-tight, fit = c("fit_tight")}
 fit_tight <- tulpa(y ~ x, data = df, family = "gaussian",
                    mode = "laplace", phi = 1.5^2,
                    beta_prior = list(mean = c(0, 0), sd = c(10, 0.2)))
@@ -563,7 +556,7 @@ and plotting the two `group_spread` distributions side by side shows the prior's
 effect at a glance. The wide PC prior pushes a long right tail onto the
 between-group spread; the tight default keeps it compact.
 
-```{r pc-pp-plot, message = FALSE, eval = has_ggplot && EVAL_FITS, fig.alt = "Between-group spread under two PC priors on sigma"}
+```{r pc-pp-plot, message = FALSE, eval = has_ggplot, fig.alt = "Between-group spread under two PC priors on sigma"}
 library(ggplot2)
 sp <- rbind(
   data.frame(prior = "tight (U=1)", spread = group_spread(pp_tight)),

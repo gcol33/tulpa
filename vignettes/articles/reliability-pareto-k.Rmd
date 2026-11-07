@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260619)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -96,7 +89,7 @@ Fit the two arms together. The diagnostic runs by default, so the k-hat comes
 back on the fitted object with no extra request, and `diagnostics()` reads it
 off the fit.
 
-```{r fit}
+```{r fit, fit = c("resp", "d")}
 resp <- list(occ = mk_arm(200L, "binomial"),
              pos = mk_arm(200L, "gaussian"))
 fit <- tulpa_nested_laplace_joint(
@@ -218,7 +211,7 @@ the fit and its draw count. The draw count is what moves it. The chunk refits
 the same model at four draw counts and reads the k-hat and its bootstrap
 interval at each.
 
-```{r redraws, results = "hide", message = FALSE}
+```{r redraws, results = "hide", message = FALSE, fit = c("by_S")}
 S_draws <- c(100L, 400L, 1500L, 4000L)
 by_S <- do.call(rbind, lapply(S_draws, function(S) {
   dS <- diagnostics(tulpa_nested_laplace_joint(
@@ -259,7 +252,7 @@ off-grid Laplace re-solve, and more of them give the generalized-Pareto fit more
 tail ratios, a tighter k-hat, and a narrower bootstrap interval. Refit the same
 model with more draws and read the interval again.
 
-```{r more-draws}
+```{r more-draws, fit = TRUE}
 fit_hi <- tulpa_nested_laplace_joint(
   responses = resp,
   prior     = prior,
@@ -318,7 +311,7 @@ hand. `control$k_quality` collapses the report-and-judge step into a single
 statement of intent: you name the reliability you require, the engine sets the
 draw budget for it, and the fit carries an honest verdict.
 
-```{r k-quality}
+```{r k-quality, fit = TRUE}
 fit_q <- tulpa_nested_laplace_joint(
   responses = resp,
   prior     = prior,

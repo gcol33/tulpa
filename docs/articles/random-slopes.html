@@ -17,6 +17,9 @@
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
 <meta property="og:title" content="Random slopes">
+<meta name="description" content="Random slopes with a correlated or diagonal covariance: fit, check, extract per-group effects, predict and compare.">
+<meta property="og:description" content="Random slopes with a correlated or diagonal covariance: fit, check, extract per-group effects, predict and compare.">
+<meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg">
 <script>
 (function () {
   var D = String.fromCharCode(36);
@@ -40,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -51,25 +54,44 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
@@ -92,57 +114,152 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Random slopes</h1>
-            
-      
+
+
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/random-slopes.Rmd" class="external-link"><code>vignettes/articles/random-slopes.Rmd</code></a></small>
       <div class="d-none name"><code>random-slopes.Rmd</code></div>
     </div>
 
-    
-    
-<div class="section level2">
-<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
-</h2>
+
+
+<p>This article fits a Poisson model in which every group has its own
+intercept and its own slope, recovers the covariance of those group
+effects from simulated data, and ends with guidance on how many groups a
+covariance needs. Along the way it extracts the per-group effects,
+checks the fit, predicts for a known and a new group, compares against a
+random-intercept model, and runs the crossed, nested and uncorrelated
+formula terms. Installation is covered in <a href="tulpa.html">Get
+started</a>.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
-<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
-<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Development version from GitHub</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Pin a release</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
-<p><code>pak</code> resolves the dependency tree, including
-<code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
-<code>tulpa</code> compiles its C++ backend on first install, so a C++17
-toolchain is required: Rtools on Windows, Xcode CLI tools on macOS,
-<code>r-base-dev</code> on Linux.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
-</div>
 <div class="section level2">
-<h2 id="the-covariance-is-the-quantity-not-a-nuisance">The covariance is the quantity, not a nuisance<a class="anchor" aria-label="anchor" href="#the-covariance-is-the-quantity-not-a-nuisance"></a>
+<h2 id="the-covariance-is-the-quantity-of-interest">The covariance is the quantity of interest<a class="anchor" aria-label="anchor" href="#the-covariance-is-the-quantity-of-interest"></a>
 </h2>
 <p>A random-intercept model, <code>y ~ x + (1 | g)</code>, has a single
 variance component: how much the groups differ in their baseline. A
 random-slope model, <code>y ~ x + (1 + x | g)</code>, has three: the
 intercept variance, the slope variance, and the correlation between
-them. That correlation is often the scientific question – do groups that
-start high also respond more steeply? – so it should be
-<em>inferred</em>, with its own uncertainty, not fixed at a point
-estimate.</p>
+them. That correlation is often the scientific question (do groups that
+start high also respond more steeply?), so it is inferred with its own
+uncertainty.</p>
 <p><code><a href="../reference/tulpa.html">tulpa()</a></code> treats the whole random-effect covariance
-<code>Sigma</code> as the inferred object. When a term carries slopes it
-does not condition on a plug-in <code>Sigma</code>; it integrates over
-it.</p>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+as the inferred object. When a term carries slopes, the fit integrates
+over
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+instead of conditioning on a plug-in value.</p>
 </div>
 <div class="section level2">
-<h2 id="simulate-a-correlated-random-slope-data-set">Simulate a correlated random-slope data set<a class="anchor" aria-label="anchor" href="#simulate-a-correlated-random-slope-data-set"></a>
+<h2 id="the-model">The model<a class="anchor" aria-label="anchor" href="#the-model"></a>
 </h2>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<p>Index the groups by
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi><mo>=</mo><mn>1</mn><mo>,</mo><mi>…</mi><mo>,</mo><mi>J</mi></mrow><annotation encoding="application/x-tex">j = 1, \ldots, J</annotation></semantics></math>
+and the observations within group
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>j</mi><annotation encoding="application/x-tex">j</annotation></semantics></math>
+by
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi><mo>=</mo><mn>1</mn><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>n</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">i = 1, \ldots, n_j</annotation></semantics></math>.
+Let
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>y</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">y_{ij}</annotation></semantics></math>
+be the count of observation
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math>
+in group
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>j</mi><annotation encoding="application/x-tex">j</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">x_{ij}</annotation></semantics></math>
+its covariate. The count is Poisson with mean
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>μ</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">\mu_{ij}</annotation></semantics></math>,
+and its log is linear in the covariate with a group-specific intercept
+and slope,</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">log</mi><mo>⁡</mo></mrow><msub><mi>μ</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>=</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>β</mi><mn>0</mn></msub><mo>+</mo><msub><mi>b</mi><mrow><mn>0</mn><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo><mo>+</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>β</mi><mn>1</mn></msub><mo>+</mo><msub><mi>b</mi><mrow><mn>1</mn><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo><mspace width="0.167em"></mspace><msub><mi>x</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>,</mo></mrow><annotation encoding="application/x-tex">
+\log \mu_{ij} = (\beta_0 + b_{0j}) + (\beta_1 + b_{1j})\, x_{ij},
+</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>0</mn></msub><annotation encoding="application/x-tex">\beta_0</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\beta_1</annotation></semantics></math>
+are the population intercept and slope (the fixed effects) and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mi>j</mi></msub><mo>=</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>b</mi><mrow><mn>0</mn><mi>j</mi></mrow></msub><mo>,</mo><msub><mi>b</mi><mrow><mn>1</mn><mi>j</mi></mrow></msub><msup><mo stretchy="false" form="postfix">)</mo><mi>⊤</mi></msup></mrow><annotation encoding="application/x-tex">b_j = (b_{0j}, b_{1j})^\top</annotation></semantics></math>
+is the deviation of group
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>j</mi><annotation encoding="application/x-tex">j</annotation></semantics></math>
+from them (its random effects). The deviations are independent across
+groups and share one bivariate normal distribution,</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mi>j</mi></msub><mo>∼</mo><mi mathvariant="script">𝒩</mi><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi mathvariant="normal">Σ</mi><mo stretchy="false" form="postfix">)</mo><mo>,</mo><mspace width="2.0em"></mspace><mi mathvariant="normal">Σ</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mtable><mtr><mtd columnalign="center" style="text-align: center"><msubsup><mi>σ</mi><mn>1</mn><mn>2</mn></msubsup></mtd><mtd columnalign="center" style="text-align: center"><mi>ρ</mi><mspace width="0.167em"></mspace><msub><mi>σ</mi><mn>1</mn></msub><msub><mi>σ</mi><mn>2</mn></msub></mtd></mtr><mtr><mtd columnalign="center" style="text-align: center"><mi>ρ</mi><mspace width="0.167em"></mspace><msub><mi>σ</mi><mn>1</mn></msub><msub><mi>σ</mi><mn>2</mn></msub></mtd><mtd columnalign="center" style="text-align: center"><msubsup><mi>σ</mi><mn>2</mn><mn>2</mn></msubsup></mtd></mtr></mtable><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">
+b_j \sim \mathcal{N}(0, \Sigma), \qquad
+\Sigma =
+\begin{pmatrix}
+\sigma_1^2 &amp; \rho\, \sigma_1 \sigma_2 \\
+\rho\, \sigma_1 \sigma_2 &amp; \sigma_2^2
+\end{pmatrix},
+</annotation></semantics></math></p>
+<p>with
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\sigma_1</annotation></semantics></math>
+the standard deviation of the group intercepts,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
+that of the group slopes, and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+their correlation. The formula term <code>(1 + x | g)</code> declares
+this full
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>;
+<code>(1 + x || g)</code> fixes
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\rho = 0</annotation></semantics></math>.</p>
+<p>The fit needs coordinates in which every value is a valid covariance
+matrix. Write
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Σ</mi><mo>=</mo><mi>L</mi><msup><mi>L</mi><mi>⊤</mi></msup></mrow><annotation encoding="application/x-tex">\Sigma = L L^\top</annotation></semantics></math>
+with
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>L</mi><annotation encoding="application/x-tex">L</annotation></semantics></math>
+lower triangular and positive diagonal (the Cholesky factor). The three
+numbers</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi mathvariant="normal">log</mi><msub><mi>L</mi><mn>11</mn></msub><mo>,</mo><mspace width="0.222em"></mspace><mi mathvariant="normal">log</mi><msub><mi>L</mi><mn>22</mn></msub><mo>,</mo><mspace width="0.222em"></mspace><msub><mi>L</mi><mn>21</mn></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">
+\theta = \left(\log L_{11},\ \log L_{22},\ L_{21}\right)
+</annotation></semantics></math></p>
+<p>range over all of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi mathvariant="double-struck">ℝ</mi><mn>3</mn></msup><annotation encoding="application/x-tex">\mathbb{R}^3</annotation></semantics></math>,
+and each
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>
+gives a positive-definite
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>.
+These log-Cholesky coordinates are the space the engine integrates over;
+a diagonal block uses
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi><mo>=</mo><mo stretchy="false" form="prefix">(</mo><mrow><mi mathvariant="normal">log</mi><mo>⁡</mo></mrow><msub><mi>σ</mi><mn>1</mn></msub><mo>,</mo><mrow><mi mathvariant="normal">log</mi><mo>⁡</mo></mrow><msub><mi>σ</mi><mn>2</mn></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\theta = (\log \sigma_1, \log \sigma_2)</annotation></semantics></math>
+instead. For a term with
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math>
+coefficients a full block has
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi><mo stretchy="false" form="prefix">(</mo><mi>c</mi><mo>+</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo><mi>/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">c(c+1)/2</annotation></semantics></math>
+coordinates and a diagonal block
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math>.</p>
+<p>The integration has two layers. At a fixed
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>,
+a Laplace approximation integrates out
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>
+and every
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mi>j</mi></msub><annotation encoding="application/x-tex">b_j</annotation></semantics></math>
+and returns the marginal likelihood of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>.
+Over
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>,
+a central composite design (CCD) places nodes around the mode of that
+marginal likelihood, rotated by its curvature, and weights each node by
+marginal likelihood times hyperprior. The default hyperprior is a
+penalized-complexity (PC) prior on each
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mi>i</mi></msub><annotation encoding="application/x-tex">\sigma_i</annotation></semantics></math>
+and an LKJ prior on the correlation, described under <a href="#priors-on-the-covariance">Priors on the covariance</a>. A
+reported
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\sigma_1</annotation></semantics></math>,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
+or
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+is a weighted quantile over the nodes, so a skewed posterior keeps its
+skew.</p>
+</div>
+<div class="section level2">
+<h2 id="simulating-data">Simulating data<a class="anchor" aria-label="anchor" href="#simulating-data"></a>
+</h2>
+<p>The simulation has 60 groups of 12 observations, a population
+intercept of 0.2 and a population slope of 0.5 on the log scale. The
+group intercepts vary with standard deviation 0.7 and the group slopes
+with 0.5, at correlation 0.4: groups with a higher baseline tend to
+respond more steeply to <code>x</code>.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">G</span>   <span class="op">&lt;-</span> <span class="fl">60L</span>                 <span class="co"># groups</span></span>
 <span><span class="va">npg</span> <span class="op">&lt;-</span> <span class="fl">12L</span>                 <span class="co"># observations per group</span></span>
 <span><span class="va">N</span>   <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">npg</span></span>
@@ -155,56 +272,718 @@ it.</p>
 <span><span class="va">u</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/chol.html" class="external-link">chol</a></span><span class="op">(</span><span class="va">Sigma</span><span class="op">)</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">2</span> <span class="op">*</span> <span class="va">G</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span>   <span class="co"># G x 2 group effects</span></span>
 <span><span class="va">eta</span> <span class="op">&lt;-</span> <span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">u</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">u</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">x</span></span>
 <span><span class="va">y</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">N</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">d</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span>, x <span class="op">=</span> <span class="va">x</span>, g <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="va">grp</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">d</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span>, x <span class="op">=</span> <span class="va">x</span>, g <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="va">grp</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">d</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   y          x g</span></span>
+<span><span class="co">#&gt; 1 4 -0.3134385 1</span></span>
+<span><span class="co">#&gt; 2 7  0.5719575 1</span></span>
+<span><span class="co">#&gt; 3 3 -0.1357020 1</span></span></code></pre></div>
+<p><code>u</code> holds the true group effects, one row per group:
+column 1 the intercept deviation
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mrow><mn>0</mn><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">b_{0j}</annotation></semantics></math>,
+column 2 the slope deviation
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mrow><mn>1</mn><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">b_{1j}</annotation></semantics></math>.
+They are kept so that the per-group estimates can be compared with them
+below.</p>
 </div>
 <div class="section level2">
-<h2 id="fit-the-covariance-is-integrated-not-plugged-in">Fit: the covariance is integrated, not plugged in<a class="anchor" aria-label="anchor" href="#fit-the-covariance-is-integrated-not-plugged-in"></a>
+<h2 id="fitting">Fitting<a class="anchor" aria-label="anchor" href="#fitting"></a>
 </h2>
-<p>A <code>(1 + x | g)</code> term makes <code><a href="../reference/tulpa.html">tulpa()</a></code> route the
-Laplace path through the nested-Laplace integration over
-<code>Sigma</code> (<code><a href="../reference/tulpa_re_cov_nested.html">tulpa_re_cov_nested()</a></code>): a CCD grid in
-log-Cholesky coordinates, centred and rotated at the marginal-likelihood
-mode, with a weakly-informative PC + LKJ hyperprior. Each derived
-quantity – the standard deviations <code>sigma_1</code>,
-<code>sigma_2</code> and the correlation <code>rho_12</code> – is
-summarised <em>after</em> integration, as a weighted quantile of the
-joint posterior, so a skewed component is not collapsed to its mode.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<p>A <code>(1 + x | g)</code> term with <code>mode = "laplace"</code>
+routes the fit to the nested-Laplace integration over
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+(<code><a href="../reference/tulpa_re_cov_nested.html">tulpa_re_cov_nested()</a></code>).</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
-<span>             mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span>             mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">fit</span></span>
+<span><span class="co">#&gt; tulpa fit  (re_cov_nested, tier 2) </span></span>
+<span><span class="co">#&gt; Call: tulpa(formula = y ~ x + (1 + x | g), data = d, family = "poisson", mode = "laplace", control = list(n_threads = 2))</span></span>
+<span><span class="co">#&gt;   n_obs: 720 </span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Coefficients:</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;      0.1558      0.4995 </span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Use summary() for intervals, variance components, hyperparameters and reliability.</span></span></code></pre></div>
+<p>The printed header names the backend, <code>re_cov_nested</code>.
+<code><a href="../reference/fixef.html">fixef()</a></code> returns the population intercept and slope, and
+<code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> adds their intervals.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/fixef.html">fixef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;   0.1558283   0.4995184</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">coefficients</span></span>
+<span><span class="co">#&gt;              estimate  std.error       2.5 %    97.5 %</span></span>
+<span><span class="co">#&gt; (Intercept) 0.1558283 0.09675611 -0.04133764 0.3397208</span></span>
+<span><span class="co">#&gt; x           0.4995184 0.08116211  0.34390156 0.6626894</span></span></code></pre></div>
+<p><code><a href="../reference/VarCorr.html">VarCorr()</a></code> reports the standard deviation of each
+random-effect coefficient; its <code>cov</code> attribute holds the
+posterior mean of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>,
+with the correlation matrix attached.</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">vc</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="va">vc</span></span>
+<span><span class="co">#&gt;   term        coef        sd    source</span></span>
+<span><span class="co">#&gt; 1    g (Intercept) 0.6790617 estimated</span></span>
+<span><span class="co">#&gt; 2    g           x 0.5498792 estimated</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">vc</span>, <span class="st">"cov"</span><span class="op">)</span><span class="op">$</span><span class="va">g</span></span>
+<span><span class="co">#&gt;             (Intercept)          x</span></span>
+<span><span class="co">#&gt; (Intercept)  0.46112476 0.09294939</span></span>
+<span><span class="co">#&gt; x            0.09294939 0.30236712</span></span>
+<span><span class="co">#&gt; attr(,"correlation")</span></span>
+<span><span class="co">#&gt;             (Intercept)         x</span></span>
+<span><span class="co">#&gt; (Intercept)   1.0000000 0.2489259</span></span>
+<span><span class="co">#&gt; x             0.2489259 1.0000000</span></span></code></pre></div>
+<p>The full posterior summary of the covariance is the
+<code>hyperparameters</code> table of <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>: the two
+standard deviations, the correlation, and the three entries of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>,
+each with a 95% interval.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt;   parameter     median       ci_lo     ci_hi</span></span>
-<span><span class="co">#&gt; 1   sigma_1 0.66750590  0.53632452 0.8307734</span></span>
-<span><span class="co">#&gt; 2   sigma_2 0.53971080  0.43067893 0.6763455</span></span>
-<span><span class="co">#&gt; 3    rho_12 0.25869066 -0.05141170 0.5232948</span></span>
-<span><span class="co">#&gt; 4  Sigma_11 0.44556413  0.28764399 0.6901844</span></span>
-<span><span class="co">#&gt; 5  Sigma_12 0.09172985 -0.01662728 0.2000870</span></span>
-<span><span class="co">#&gt; 6  Sigma_22 0.29128774  0.18548434 0.4574432</span></span></code></pre></div>
-<p>The posterior medians track the truth (<code>sigma_1 = 0.7</code>,
-<code>sigma_2 = 0.5</code>, <code>rho_12 = 0.4</code>), each with a
-credible interval rather than a bare number.</p>
+<span><span class="co">#&gt; 1   sigma_1 0.66910023  0.53930147 0.8410680</span></span>
+<span><span class="co">#&gt; 2   sigma_2 0.54153967  0.43160669 0.6866828</span></span>
+<span><span class="co">#&gt; 3    rho_12 0.25813411 -0.05405206 0.5306970</span></span>
+<span><span class="co">#&gt; 4  Sigma_11 0.44769511  0.29084608 0.7073954</span></span>
+<span><span class="co">#&gt; 5  Sigma_12 0.09138158 -0.02076807 0.2156442</span></span>
+<span><span class="co">#&gt; 6  Sigma_22 0.29326521  0.18628434 0.4715332</span></span></code></pre></div>
+<p>The intervals contain the true
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mn>1</mn></msub><mo>=</mo><mn>0.7</mn></mrow><annotation encoding="application/x-tex">\sigma_1 = 0.7</annotation></semantics></math>,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mn>2</mn></msub><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\sigma_2 = 0.5</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi><mo>=</mo><mn>0.4</mn></mrow><annotation encoding="application/x-tex">\rho = 0.4</annotation></semantics></math>.
+The correlation interval also contains zero: with 60 groups the data
+cannot separate a correlation of 0.4 from none.</p>
+<p><code><a href="../reference/ranef.html">ranef()</a></code> returns one row per group and coefficient. Terms
+named <code>g[j]</code> are the intercept deviations and
+<code>g.x[j]</code> the slope deviations; <code>estimate</code>,
+<code>sd</code> and the interval come from the node mixture
+(<code>source = "mixture"</code>), so they carry both the within-node
+uncertainty and the uncertainty in
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>.</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">re</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span><span class="fu"><a href="../reference/ranef.html">ranef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">re</span>, <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="co">#&gt;     term   estimate        sd   conf.low  conf.high  source</span></span>
+<span><span class="co">#&gt; 1   g[1]  1.0500600 0.1800964  0.6987102  1.4049765 mixture</span></span>
+<span><span class="co">#&gt; 2 g.x[1]  1.0986018 0.1215947  0.8609155  1.3379796 mixture</span></span>
+<span><span class="co">#&gt; 3   g[2] -1.1001988 0.3758995 -1.8542529 -0.3783968 mixture</span></span>
+<span><span class="co">#&gt; 4 g.x[2] -0.0520496 0.3794415 -0.7865480  0.7041457 mixture</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="exact-debias-for-small-low-count-groups">Exact debias for small, low-count groups<a class="anchor" aria-label="anchor" href="#exact-debias-for-small-low-count-groups"></a>
+<h2 id="interpreting-the-per-group-effects">Interpreting the per-group effects<a class="anchor" aria-label="anchor" href="#interpreting-the-per-group-effects"></a>
 </h2>
-<p>The nested Laplace is fast and accurate when the per-group likelihood
-is close to Gaussian. For binary or low-count data in <em>small</em>
-groups the Laplace under-disperses <code>Sigma</code> – it pulls the
-variance components low. The exact counterpart, a
-Metropolis-within-Gibbs sampler with a conjugate inverse-Wishart draw
-for <code>Sigma</code>, corrects that bias. Ask for it with
-<code>control$re_cov = "gibbs"</code>:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<p>Split the table into intercepts and slopes, line each up with its
+true value, and count how many intervals contain the truth.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">re_int</span> <span class="op">&lt;-</span> <span class="va">re</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/grep.html" class="external-link">grepl</a></span><span class="op">(</span><span class="st">"^g\\["</span>, <span class="va">re</span><span class="op">$</span><span class="va">term</span><span class="op">)</span>, <span class="op">]</span></span>
+<span><span class="va">re_slp</span> <span class="op">&lt;-</span> <span class="va">re</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/grep.html" class="external-link">grepl</a></span><span class="op">(</span><span class="st">"^g\\.x\\["</span>, <span class="va">re</span><span class="op">$</span><span class="va">term</span><span class="op">)</span>, <span class="op">]</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>intercept <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">re_int</span><span class="op">$</span><span class="va">conf.low</span> <span class="op">&lt;=</span> <span class="va">u</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">&amp;</span> <span class="va">u</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">&lt;=</span> <span class="va">re_int</span><span class="op">$</span><span class="va">conf.high</span><span class="op">)</span>,</span>
+<span>  slope     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">re_slp</span><span class="op">$</span><span class="va">conf.low</span> <span class="op">&lt;=</span> <span class="va">u</span><span class="op">[</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">&amp;</span> <span class="va">u</span><span class="op">[</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">&lt;=</span> <span class="va">re_slp</span><span class="op">$</span><span class="va">conf.high</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; intercept     slope </span></span>
+<span><span class="co">#&gt; 0.9500000 0.9833333</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">re_slp</span><span class="op">$</span><span class="va">conf.high</span> <span class="op">-</span> <span class="va">re_slp</span><span class="op">$</span><span class="va">conf.low</span><span class="op">)</span>   <span class="co"># slope interval widths</span></span>
+<span><span class="co">#&gt; [1] 0.4342901 1.4906937</span></span></code></pre></div>
+<p>The figure orders the groups by their estimated slope deviation and
+draws each 95% interval with the true value as an open circle.</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">o</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="va">re_slp</span><span class="op">$</span><span class="va">estimate</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, <span class="va">re_slp</span><span class="op">$</span><span class="va">estimate</span><span class="op">[</span><span class="va">o</span><span class="op">]</span>, pch <span class="op">=</span> <span class="fl">19</span>, cex <span class="op">=</span> <span class="fl">0.7</span>,</span>
+<span>     ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">re_slp</span><span class="op">$</span><span class="va">conf.low</span>, <span class="va">re_slp</span><span class="op">$</span><span class="va">conf.high</span>, <span class="va">u</span><span class="op">[</span>, <span class="fl">2</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>     xlab <span class="op">=</span> <span class="st">"group (ordered by estimate)"</span>, ylab <span class="op">=</span> <span class="st">"slope deviation b1"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/segments.html" class="external-link">segments</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, <span class="va">re_slp</span><span class="op">$</span><span class="va">conf.low</span><span class="op">[</span><span class="va">o</span><span class="op">]</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, <span class="va">re_slp</span><span class="op">$</span><span class="va">conf.high</span><span class="op">[</span><span class="va">o</span><span class="op">]</span>,</span>
+<span>         col <span class="op">=</span> <span class="st">"grey50"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/points.html" class="external-link">points</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, <span class="va">u</span><span class="op">[</span><span class="va">o</span>, <span class="fl">2</span><span class="op">]</span>, pch <span class="op">=</span> <span class="fl">1</span>, col <span class="op">=</span> <span class="st">"darkorange"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span>h <span class="op">=</span> <span class="fl">0</span>, lty <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"topleft"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"estimate and 95% interval"</span>, <span class="st">"truth"</span><span class="op">)</span>,</span>
+<span>       pch <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">19</span>, <span class="fl">1</span><span class="op">)</span>, col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"black"</span>, <span class="st">"darkorange"</span><span class="op">)</span>, bty <span class="op">=</span> <span class="st">"n"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="random-slopes_files/figure-html/ranef-plot-1.png" class="r-plt" alt="Estimated slope deviation for each of the 60 groups with its 95 percent interval, ordered by estimate, with the true simulated slope deviation drawn as an open circle on each interval" width="576"></p>
+<p>The slope intervals contain the true deviation for 59 of the 60
+groups, and the intercept intervals for 57. The slope interval widths
+range from 0.43 to 1.49, so a slope estimated for one group can be much
+less certain than the slope of its neighbour in the ordering.</p>
+</div>
+<div class="section level2">
+<h2 id="checking-the-fit">Checking the fit<a class="anchor" aria-label="anchor" href="#checking-the-fit"></a>
+</h2>
+<p>A predictive check simulates replicate data sets from the posterior
+and compares them with the observed counts. On the nested fit,
+<code><a href="../reference/posterior_predict.html">posterior_predict()</a></code> draws each replicate’s fixed effects
+from one integration node and the group effects jointly with them from
+that node’s Gaussian, so every replicate carries the group lines.
+<code><a href="../reference/pp_check.html">pp_check()</a></code> overlays the density of 50 replicate data sets
+on the observed counts and returns a ggplot; the counts reach above 100
+in a few steep groups, so the plot is cut at 15 to show the bulk.</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/pp_check.html">pp_check</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span> <span class="op">+</span> <span class="fu">ggplot2</span><span class="fu">::</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/coord_cartesian.html" class="external-link">coord_cartesian</a></span><span class="op">(</span>xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">15</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Coordinate system already present.</span></span>
+<span><span class="co">#&gt; i Adding new coordinate system, which will replace the existing one.</span></span></code></pre></div>
+<p><img src="random-slopes_files/figure-html/ppcheck-1.png" class="r-plt" alt="Densities of 50 posterior predictive replicate count data sets overlaid on the density of the observed counts, for counts from 0 to 15" width="576"></p>
+<p>The observed density lies inside the band of replicates over the
+whole range.</p>
+<p><code><a href="../reference/check_model.html">check_model()</a></code> gives the formal version: a
+Kolmogorov-Smirnov test of the randomized PIT residuals against the
+uniform distribution (<code>ks_p</code>), and the ratio of observed to
+replicated variance (<code>disp_ratio</code>, near 1 when the model
+reproduces the spread of the data).</p>
+<p>It also draws three panels: the PIT residuals against the uniform
+quantiles, Pearson residuals against fitted values, and the observed
+variance against its replicate distribution.</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">cm</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/check_model.html">check_model</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<p><img src="random-slopes_files/figure-html/checkmodel-1.png" class="r-plt" alt="Three diagnostic panels: PIT residuals against uniform quantiles, Pearson residuals against fitted values, and the observed variance of the counts against its distribution over replicate data sets" width="672"></p>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">cm</span><span class="op">)</span></span>
+<span><span class="co">#&gt;       ks_p disp_ratio </span></span>
+<span><span class="co">#&gt;  0.2869773  0.9989860</span></span></code></pre></div>
+<p><code>ks_p</code> is 0.29 and <code>disp_ratio</code> is 1: the PIT
+residuals are consistent with uniformity and the replicates reproduce
+the spread of the counts. The middle panel reads <code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>,
+which returns the conditional mean with each group’s own effect;
+<code>fitted(fit, effects = "population")</code> holds the group effects
+at zero.</p>
+<p>The exact Metropolis-within-Gibbs fit samples
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+and the group effects together and gives an independent read of the
+covariance. Ask for it with <code>control$re_cov = "gibbs"</code>.</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_gibbs</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>                   mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
-<span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"gibbs"</span>,</span>
-<span>                                  n_iter <span class="op">=</span> <span class="fl">2000L</span>, warmup <span class="op">=</span> <span class="fl">1000L</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p>Both fits return the same accessors:
-<code>summary(fit)$hyperparameters</code> holds the <code>Sigma</code>
-summary, and <code>coef(fit)</code> / <code>summary(fit)</code> report
-the fixed effects. The choice between them is the engine’s design in
-miniature – a cheap deterministic approximation, with an exact sampler
-available exactly where the approximation is biased.</p>
+<span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"gibbs"</span>, n_iter <span class="op">=</span> <span class="fl">2000L</span>,</span>
+<span>                                  warmup <span class="op">=</span> <span class="fl">1000L</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_gibbs</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>,</span>
+<span>                                          <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   parameter    median       ci_lo     ci_hi</span></span>
+<span><span class="co">#&gt; 1   sigma_1 0.6681900  0.54127640 0.8407927</span></span>
+<span><span class="co">#&gt; 2   sigma_2 0.5382695  0.43772302 0.6841904</span></span>
+<span><span class="co">#&gt; 3    rho_12 0.2784001 -0.04806068 0.5514856</span></span></code></pre></div>
+<p>The sampler and the nested integration agree on all three covariance
+parameters to within 0.02.</p>
+</div>
+<div class="section level2">
+<h2 id="prediction">Prediction<a class="anchor" aria-label="anchor" href="#prediction"></a>
+</h2>
+<p><code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> conditions on the groups named in
+<code>newdata</code>. With <code>re_form = NA</code> it returns the
+population-level prediction: fixed effects only, random effects at
+zero.</p>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">nd</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="op">-</span><span class="fl">2</span>, <span class="fl">2</span>, length.out <span class="op">=</span> <span class="fl">41</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">pop</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span>, re_form <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pop</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;          fit    se.fit     lower      upper</span></span>
+<span><span class="co">#&gt; 1 -0.8432084 0.1793983 -1.194823 -0.4915942</span></span>
+<span><span class="co">#&gt; 2 -0.7932566 0.1725761 -1.131499 -0.4550137</span></span>
+<span><span class="co">#&gt; 3 -0.7433047 0.1658745 -1.068413 -0.4181968</span></span></code></pre></div>
+<p>A new group draws its own
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>b</mi><mn>0</mn></msub><mo>,</mo><msub><mi>b</mi><mn>1</mn></msub><msup><mo stretchy="false" form="postfix">)</mo><mi>⊤</mi></msup></mrow><annotation encoding="application/x-tex">b = (b_0, b_1)^\top</annotation></semantics></math>
+from
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">𝒩</mi><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo>,</mo><mi mathvariant="normal">Σ</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\mathcal{N}(0, \Sigma)</annotation></semantics></math>.
+At covariate
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>
+its linear predictor adds
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mn>0</mn></msub><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mi>x</mi></mrow><annotation encoding="application/x-tex">b_0 + b_1 x</annotation></semantics></math>,
+whose variance is
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>z</mi><mi>⊤</mi></msup><mi mathvariant="normal">Σ</mi><mi>z</mi></mrow><annotation encoding="application/x-tex">z^\top \Sigma z</annotation></semantics></math>
+with
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo>,</mo><mi>x</mi><msup><mo stretchy="false" form="postfix">)</mo><mi>⊤</mi></msup></mrow><annotation encoding="application/x-tex">z = (1, x)^\top</annotation></semantics></math>.
+A group label the fit did not see gets that predictive interval:
+<code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code> reads it over joint draws of the fixed effects
+and of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>b</mi><annotation encoding="application/x-tex">b</annotation></semantics></math>,
+with
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+drawn from its posterior.</p>
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">new</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span><span class="va">nd</span>, g <span class="op">=</span> <span class="st">"new"</span><span class="op">)</span>, type <span class="op">=</span> <span class="st">"link"</span>,</span>
+<span>               se.fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>pop_width <span class="op">=</span> <span class="va">pop</span><span class="op">$</span><span class="va">upper</span><span class="op">[</span><span class="fl">21</span><span class="op">]</span> <span class="op">-</span> <span class="va">pop</span><span class="op">$</span><span class="va">lower</span><span class="op">[</span><span class="fl">21</span><span class="op">]</span>,</span>
+<span>        new_width <span class="op">=</span> <span class="va">new</span><span class="op">$</span><span class="va">upper</span><span class="op">[</span><span class="fl">21</span><span class="op">]</span> <span class="op">-</span> <span class="va">new</span><span class="op">$</span><span class="va">lower</span><span class="op">[</span><span class="fl">21</span><span class="op">]</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="co">#&gt; pop_width new_width </span></span>
+<span><span class="co">#&gt;      0.38      2.67</span></span></code></pre></div>
+<p>At
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">x = 0</annotation></semantics></math>
+the link-scale interval for a new group is about seven times wider than
+the population interval, because it carries the spread of group
+intercepts. A known group instead takes its own posterior effect: a
+label the fit saw draws that group’s intercept and slope jointly with
+the fixed effects. The figure shows the population and new-group bands
+on the count scale, with the fitted lines and bands of the two groups
+with the smallest and largest estimated slope.</p>
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">jj</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/levels.html" class="external-link">levels</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">g</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/which.min.html" class="external-link">which.min</a></span><span class="op">(</span><span class="va">re_slp</span><span class="op">$</span><span class="va">estimate</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/which.min.html" class="external-link">which.max</a></span><span class="op">(</span><span class="va">re_slp</span><span class="op">$</span><span class="va">estimate</span><span class="op">)</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">known</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">jj</span>, <span class="kw">function</span><span class="op">(</span><span class="va">gj</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span><span class="va">nd</span>, g <span class="op">=</span> <span class="va">gj</span><span class="op">)</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">band</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">p</span>, <span class="va">col</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/graphics/polygon.html" class="external-link">polygon</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>                                 <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">p</span><span class="op">$</span><span class="va">lower</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">p</span><span class="op">$</span><span class="va">upper</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>                                 col <span class="op">=</span> <span class="va">col</span>, border <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">pop</span><span class="op">$</span><span class="va">fit</span><span class="op">)</span>, type <span class="op">=</span> <span class="st">"n"</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">8</span><span class="op">)</span>,</span>
+<span>     xlab <span class="op">=</span> <span class="st">"x"</span>, ylab <span class="op">=</span> <span class="st">"expected count"</span><span class="op">)</span></span>
+<span><span class="fu">band</span><span class="op">(</span><span class="va">new</span>, <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"grey60"</span>, <span class="fl">0.3</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu">band</span><span class="op">(</span><span class="va">pop</span>, <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"steelblue"</span>, <span class="fl">0.4</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">pop</span><span class="op">$</span><span class="va">fit</span><span class="op">)</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="kw">for</span> <span class="op">(</span><span class="va">k</span> <span class="kw">in</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_along</a></span><span class="op">(</span><span class="va">known</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu">band</span><span class="op">(</span><span class="va">known</span><span class="op">[[</span><span class="va">k</span><span class="op">]</span><span class="op">]</span>, <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"darkorange"</span>, <span class="fl">0.2</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">known</span><span class="op">[[</span><span class="va">k</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">fit</span><span class="op">)</span>, lty <span class="op">=</span> <span class="va">k</span> <span class="op">+</span> <span class="fl">1</span>, col <span class="op">=</span> <span class="st">"darkorange"</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"topleft"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"population (95%)"</span>, <span class="st">"new group (95%)"</span>,</span>
+<span>                    <span class="st">"flattest group"</span>, <span class="st">"steepest group"</span><span class="op">)</span>,</span>
+<span>       fill <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"steelblue"</span>, <span class="fl">0.4</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"grey60"</span>, <span class="fl">0.3</span><span class="op">)</span>,</span>
+<span>                <span class="cn">NA</span>, <span class="cn">NA</span><span class="op">)</span>, border <span class="op">=</span> <span class="cn">NA</span>, lty <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="cn">NA</span>, <span class="cn">NA</span>, <span class="fl">2</span>, <span class="fl">3</span><span class="op">)</span>,</span>
+<span>       col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="cn">NA</span>, <span class="cn">NA</span>, <span class="st">"darkorange"</span>, <span class="st">"darkorange"</span><span class="op">)</span>,</span>
+<span>       bg <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"white"</span>, <span class="fl">0.85</span><span class="op">)</span>, box.col <span class="op">=</span> <span class="st">"grey80"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="random-slopes_files/figure-html/predict-plot-1.png" class="r-plt" alt="Expected count against x for the population with its 95 percent band, a wider 95 percent band for a new unobserved group, and the fitted lines with 95 percent bands of the two groups with the smallest and largest estimated slope" width="576"></p>
+</div>
+<div class="section level2">
+<h2 id="comparing-against-a-random-intercept-model">Comparing against a random-intercept model<a class="anchor" aria-label="anchor" href="#comparing-against-a-random-intercept-model"></a>
+</h2>
+<p>Does the slope variance earn its place? Fit <code>(1 | g)</code> on
+the same data and compare model evidence. Two settings matter. Under
+<code>mode = "laplace"</code> a plain <code>(1 | g)</code> term
+conditions on a supplied <code>sigma_re</code>;
+<code>control$re_cov = "nested"</code> integrates its scale like any
+other covariance block. And <code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code> on a CCD design
+declines to report an evidence, so both fits use the tensor-product grid
+(<code>integration = "grid"</code>), on which the evidence is read under
+the hyperprior.</p>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">ctl</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>integration <span class="op">=</span> <span class="st">"grid"</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="va">fit_slp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>                 mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
+<span><span class="va">fit_int</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>                 mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">ctl</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"nested"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>intercept <span class="op">=</span> <span class="va">fit_int</span>, slopes <span class="op">=</span> <span class="va">fit_slp</span>, criterion <span class="op">=</span> <span class="st">"loglik"</span><span class="op">)</span></span>
+<span><span class="co">#&gt;       model n_params    logLik     quantity conditioned_on</span></span>
+<span><span class="co">#&gt; 1 intercept        2 -1307.619 log_evidence               </span></span>
+<span><span class="co">#&gt; 2    slopes        2 -1147.858 log_evidence</span></span></code></pre></div>
+<p>The log evidence of the random-slope model is higher by 159.8 nats.
+The evidence integrates over
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+under its prior, so it already charges the slope model for its two extra
+covariance parameters. <code>compare_models(criterion = "waic")</code>
+and <code>"loo"</code> also run on the nested door, on replicates that
+carry the per-group effects.</p>
+</div>
+<div class="section level2">
+<h2 id="formula-syntax">Formula syntax<a class="anchor" aria-label="anchor" href="#formula-syntax"></a>
+</h2>
+<p>Each term inside <code>( | )</code> becomes one covariance block, and
+every block is integrated. The fits below run on the data above or on
+small variants of it.</p>
+<table class="table">
+<thead><tr class="header">
+<th>Term</th>
+<th>Covariance block</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td><code>(1 \| g)</code></td>
+<td>1 x 1: intercept SD</td>
+</tr>
+<tr class="even">
+<td><code>(1 + x \| g)</code></td>
+<td>2 x 2 full: two SDs and a correlation</td>
+</tr>
+<tr class="odd">
+<td><code>(1 + x \|\| g)</code></td>
+<td>2 x 2 diagonal: two SDs, correlation fixed at 0</td>
+</tr>
+<tr class="even">
+<td><code>(1 \| g) + (1 \| h)</code></td>
+<td>two 1 x 1 blocks, crossed factors</td>
+</tr>
+<tr class="odd">
+<td><code>(1 \| site/plot)</code></td>
+<td>two 1 x 1 blocks, <code>site</code> and <code>site:plot</code>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="section level3">
+<h3 id="uncorrelated-slopes">Uncorrelated slopes<a class="anchor" aria-label="anchor" href="#uncorrelated-slopes"></a>
+</h3>
+<p><code>||</code> drops the correlation, leaving two log-SD
+coordinates.</p>
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">fit_diag</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">||</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>                  mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit_diag</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   term        coef        sd    source</span></span>
+<span><span class="co">#&gt; 1    g (Intercept) 0.6935839 estimated</span></span>
+<span><span class="co">#&gt; 2    g           x 0.5591409 estimated</span></span></code></pre></div>
+<p>The two standard deviations are close to those of the correlated fit.
+With the true
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi><mo>=</mo><mn>0.4</mn></mrow><annotation encoding="application/x-tex">\rho = 0.4</annotation></semantics></math>
+and an interval for
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+that contains zero, the diagonal block loses little here.</p>
+</div>
+<div class="section level3">
+<h3 id="crossed-factors">Crossed factors<a class="anchor" aria-label="anchor" href="#crossed-factors"></a>
+</h3>
+<p>Crossed factors are groupings that do not nest, such as observer and
+site: each observer visits many sites and each site has many observers.
+The simulation adds a second factor <code>h</code> with 15 levels
+assigned at random, with intercept SD 0.5.</p>
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">3</span><span class="op">)</span></span>
+<span><span class="va">h</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">15</span>, <span class="va">N</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">yc</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">N</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">u</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">15</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">[</span><span class="va">h</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">dc</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">yc</span>, x <span class="op">=</span> <span class="va">x</span>, g <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="va">grp</span><span class="op">)</span>, h <span class="op">=</span> <span class="va">h</span><span class="op">)</span></span>
+<span><span class="va">fit_crossed</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">h</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">dc</span>,</span>
+<span>                     family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
+<span>                     control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"nested"</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit_crossed</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   term        coef        sd    source</span></span>
+<span><span class="co">#&gt; 1    g (Intercept) 0.7756095 estimated</span></span>
+<span><span class="co">#&gt; 2    h (Intercept) 0.4165296 estimated</span></span></code></pre></div>
+<p>The true intercept SDs are 0.7 for <code>g</code> (the same
+<code>u[, 1]</code> as above) and 0.5 for <code>h</code>.</p>
+</div>
+<div class="section level3">
+<h3 id="nested-factors">Nested factors<a class="anchor" aria-label="anchor" href="#nested-factors"></a>
+</h3>
+<p>Nested factors are groupings where each level of the inner one sits
+inside a single level of the outer one: 5 plots inside each of 12 sites
+here, with SD 0.6 between sites and 0.3 between plots within a site.
+<code>(1 | site/plot)</code> expands to
+<code>(1 | site) + (1 | site:plot)</code>, so plot labels can repeat
+across sites.</p>
+<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">site</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">12</span>, each <span class="op">=</span> <span class="fl">60</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">plot_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">5</span>, each <span class="op">=</span> <span class="fl">12</span>, times <span class="op">=</span> <span class="fl">12</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">sp</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/interaction.html" class="external-link">interaction</a></span><span class="op">(</span><span class="va">site</span>, <span class="va">plot_id</span><span class="op">)</span></span>
+<span><span class="va">yn</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">N</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">12</span>, <span class="fl">0</span>, <span class="fl">0.6</span><span class="op">)</span><span class="op">[</span><span class="va">site</span><span class="op">]</span> <span class="op">+</span></span>
+<span>                       <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">60</span>, <span class="fl">0</span>, <span class="fl">0.3</span><span class="op">)</span><span class="op">[</span><span class="va">sp</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">dn</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">yn</span>, x <span class="op">=</span> <span class="va">x</span>, site <span class="op">=</span> <span class="va">site</span>, plot <span class="op">=</span> <span class="va">plot_id</span><span class="op">)</span></span>
+<span><span class="va">fit_nested</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">site</span><span class="op">/</span><span class="va">plot</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">dn</span>,</span>
+<span>                    family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
+<span>                    control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"nested"</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit_nested</span><span class="op">)</span></span>
+<span><span class="co">#&gt;        term        coef        sd    source</span></span>
+<span><span class="co">#&gt; 1      site (Intercept) 0.6001453 estimated</span></span>
+<span><span class="co">#&gt; 2 site:plot (Intercept) 0.3272891 estimated</span></span></code></pre></div>
+</div>
+</div>
+<div class="section level2">
+<h2 id="priors-on-the-covariance">Priors on the covariance<a class="anchor" aria-label="anchor" href="#priors-on-the-covariance"></a>
+</h2>
+<p>The default hyperprior of a full block is built by
+<code><a href="../reference/re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code>. Each standard deviation gets a PC
+prior, an exponential distribution calibrated by
+<code>prior_sigma = c(U, alpha)</code> so that
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>σ</mi><mi>i</mi></msub><mo>&gt;</mo><mi>U</mi><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mi>α</mi></mrow><annotation encoding="application/x-tex">P(\sigma_i &gt; U) = \alpha</annotation></semantics></math>;
+the default is
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>σ</mi><mi>i</mi></msub><mo>&gt;</mo><mn>3</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>0.01</mn></mrow><annotation encoding="application/x-tex">P(\sigma_i &gt; 3) = 0.01</annotation></semantics></math>.
+The correlation matrix gets an LKJ prior with shape <code>eta</code>,
+density proportional to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">det</mi><mo>⁡</mo></mrow><mo stretchy="false" form="prefix">(</mo><mi>R</mi><msup><mo stretchy="false" form="postfix">)</mo><mrow><mi>η</mi><mo>−</mo><mn>1</mn></mrow></msup></mrow><annotation encoding="application/x-tex">\det(R)^{\eta - 1}</annotation></semantics></math>,
+which for a 2 x 2 block is
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo>−</mo><msup><mi>ρ</mi><mn>2</mn></msup><msup><mo stretchy="false" form="postfix">)</mo><mrow><mi>η</mi><mo>−</mo><mn>1</mn></mrow></msup></mrow><annotation encoding="application/x-tex">(1 - \rho^2)^{\eta - 1}</annotation></semantics></math>.
+The default <code>eta = 2</code> favours weak correlations mildly;
+<code>eta = 1</code> is uniform on
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>.
+The function returns the log density in the block’s log-Cholesky
+coordinates, Jacobian included, so it can be read at the true
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+directly.</p>
+<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">L</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/chol.html" class="external-link">chol</a></span><span class="op">(</span><span class="va">Sigma</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">theta_true</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">L</span><span class="op">[</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">]</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">L</span><span class="op">[</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">]</span><span class="op">)</span>, <span class="va">L</span><span class="op">[</span><span class="fl">2</span>, <span class="fl">1</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="va">lp2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior</a></span><span class="op">(</span><span class="fl">2</span><span class="op">)</span></span>
+<span><span class="va">lp4</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior</a></span><span class="op">(</span><span class="fl">2</span>, eta <span class="op">=</span> <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>eta2 <span class="op">=</span> <span class="fu">lp2</span><span class="op">(</span><span class="va">theta_true</span><span class="op">)</span>, eta4 <span class="op">=</span> <span class="fu">lp4</span><span class="op">(</span><span class="va">theta_true</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      eta2      eta4 </span></span>
+<span><span class="co">#&gt; -3.771227 -4.078503</span></span></code></pre></div>
+<p>At the front door, the same two settings are passed as
+<code>re_prior = list(prior_sigma =, eta =)</code>. Three priors on the
+same data show how much they move the posterior: the default, a tighter
+scale prior
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>σ</mi><mi>i</mi></msub><mo>&gt;</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>0.01</mn></mrow><annotation encoding="application/x-tex">P(\sigma_i &gt; 1) = 0.01</annotation></semantics></math>
+with <code>eta = 4</code>, and a uniform correlation prior.</p>
+<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">priors</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>default <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>               tight   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>prior_sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">0.01</span><span class="op">)</span>, eta <span class="op">=</span> <span class="fl">4</span><span class="op">)</span>,</span>
+<span>               uniform <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>eta <span class="op">=</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">sens</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/do.call.html" class="external-link">do.call</a></span><span class="op">(</span><span class="va">rbind</span>, <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">priors</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">p</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">f</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>             mode <span class="op">=</span> <span class="st">"laplace"</span>, re_prior <span class="op">=</span> <span class="va">priors</span><span class="op">[[</span><span class="va">p</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>             control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">h</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">f</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="op">]</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>prior <span class="op">=</span> <span class="va">p</span>, parameter <span class="op">=</span> <span class="va">h</span><span class="op">$</span><span class="va">parameter</span>, median <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">h</span><span class="op">$</span><span class="va">median</span>, <span class="fl">3</span><span class="op">)</span>,</span>
+<span>             ci_lo <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">h</span><span class="op">$</span><span class="va">ci_lo</span>, <span class="fl">3</span><span class="op">)</span>, ci_hi <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">h</span><span class="op">$</span><span class="va">ci_hi</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">sens</span></span>
+<span><span class="co">#&gt;     prior parameter median  ci_lo ci_hi</span></span>
+<span><span class="co">#&gt; 1 default   sigma_1  0.669  0.539 0.841</span></span>
+<span><span class="co">#&gt; 2 default   sigma_2  0.542  0.432 0.687</span></span>
+<span><span class="co">#&gt; 3 default    rho_12  0.258 -0.054 0.531</span></span>
+<span><span class="co">#&gt; 4   tight   sigma_1  0.652  0.528 0.814</span></span>
+<span><span class="co">#&gt; 5   tight   sigma_2  0.529  0.423 0.666</span></span>
+<span><span class="co">#&gt; 6   tight    rho_12  0.238 -0.052 0.498</span></span>
+<span><span class="co">#&gt; 7 uniform   sigma_1  0.669  0.539 0.841</span></span>
+<span><span class="co">#&gt; 8 uniform   sigma_2  0.542  0.432 0.687</span></span>
+<span><span class="co">#&gt; 9 uniform    rho_12  0.272 -0.048 0.548</span></span></code></pre></div>
+<p>With 60 groups the medians move by a few hundredths across the three
+priors, and the tighter prior shifts all three parameters slightly
+toward zero. The Gibbs backend uses a conjugate inverse-Wishart prior
+instead, set through
+<code>re_prior = list(prior_df =, prior_scale =)</code>.</p>
+</div>
+<div class="section level2">
+<h2 id="small-binary-groups-when-the-exact-sampler-matters">Small binary groups: when the exact sampler matters<a class="anchor" aria-label="anchor" href="#small-binary-groups-when-the-exact-sampler-matters"></a>
+</h2>
+<p>The Laplace approximation inside each node treats every group’s
+likelihood as Gaussian in
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mi>j</mi></msub><annotation encoding="application/x-tex">b_j</annotation></semantics></math>.
+For binary responses in small groups that likelihood is far from
+Gaussian, and the approximation pulls the variance components low. The
+Gibbs sampler draws
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+from its exact conditional distribution, an inverse-Wishart, given the
+sampled
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mi>j</mi></msub><annotation encoding="application/x-tex">b_j</annotation></semantics></math>,
+and does not have that bias.</p>
+<p>The simulation below has 50 groups of 6 binary observations, true
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mn>1</mn></msub><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\sigma_1 =
+1</annotation></semantics></math>,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mn>2</mn></msub><mo>=</mo><mn>0.7</mn></mrow><annotation encoding="application/x-tex">\sigma_2 = 0.7</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\rho = 0</annotation></semantics></math>.
+Each of 20 replicate data sets is fitted with both backends. The table
+averages the posterior medians of the two standard deviations and counts
+the fits whose slope SD collapsed (posterior median below 0.05).</p>
+<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">sim_bin</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">gg</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">50</span>, each <span class="op">=</span> <span class="fl">6</span><span class="op">)</span></span>
+<span>  <span class="va">xx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">300</span><span class="op">)</span></span>
+<span>  <span class="va">b0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">50</span>, <span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span></span>
+<span>  <span class="va">b1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">50</span>, <span class="fl">0</span>, <span class="fl">0.7</span><span class="op">)</span></span>
+<span>  <span class="va">yy</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fl">300</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.3</span> <span class="op">+</span> <span class="fl">0.8</span> <span class="op">*</span> <span class="va">xx</span> <span class="op">+</span> <span class="va">b0</span><span class="op">[</span><span class="va">gg</span><span class="op">]</span> <span class="op">+</span> <span class="va">b1</span><span class="op">[</span><span class="va">gg</span><span class="op">]</span> <span class="op">*</span> <span class="va">xx</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">yy</span>, x <span class="op">=</span> <span class="va">xx</span>, g <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="va">gg</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">med3</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">f</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">f</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">$</span><span class="va">median</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">]</span></span>
+<span><span class="va">reps</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">20</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">sim_bin</span><span class="op">(</span><span class="va">s</span><span class="op">)</span></span>
+<span>  <span class="va">fn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
+<span>              mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">fg</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/warning.html" class="external-link">suppressWarnings</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>,</span>
+<span>              family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
+<span>              control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"gibbs"</span>, n_iter <span class="op">=</span> <span class="fl">2000L</span>,</span>
+<span>                             warmup <span class="op">=</span> <span class="fl">1000L</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu">med3</span><span class="op">(</span><span class="va">fn</span><span class="op">)</span>, <span class="fu">med3</span><span class="op">(</span><span class="va">fg</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>truth     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">0.7</span><span class="op">)</span>,</span>
+<span>           nested    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">rowMeans</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">2</span>, <span class="op">]</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
+<span>           gibbs     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">rowMeans</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span><span class="fl">4</span><span class="op">:</span><span class="fl">5</span>, <span class="op">]</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
+<span>           row.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sigma_1"</span>, <span class="st">"sigma_2"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;         truth nested gibbs</span></span>
+<span><span class="co">#&gt; sigma_1   1.0  0.769 0.897</span></span>
+<span><span class="co">#&gt; sigma_2   0.7  0.520 0.759</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>nested <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span><span class="fl">2</span>, <span class="op">]</span> <span class="op">&lt;</span> <span class="fl">0.05</span><span class="op">)</span>, gibbs <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span><span class="fl">5</span>, <span class="op">]</span> <span class="op">&lt;</span> <span class="fl">0.05</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; nested  gibbs </span></span>
+<span><span class="co">#&gt;      0      0</span></span></code></pre></div>
+<p>The loop hides its warnings to keep the output readable. The Gibbs
+fits warn about chain length, and the nested fits of replicates whose
+slope SD collapses repeat a warning that the marginal fixed-effect
+precision could not be formed. On a single analysis they are worth
+reading. Averaged over the replicates, the nested Laplace estimates both
+standard deviations below their true values, the slope SD most (0.45
+against 0.7), and in 5 of the 20 replicates it places the slope SD at
+zero. The Gibbs averages are within 0.1 of the truth, and none of its
+fits collapses.</p>
+<div class="section level3">
+<h3 id="adaptive-gauss-hermite-quadrature">Adaptive Gauss-Hermite quadrature<a class="anchor" aria-label="anchor" href="#adaptive-gauss-hermite-quadrature"></a>
+</h3>
+<p>A deterministic alternative keeps the nested integration over
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
+and replaces the per-group Laplace step by adaptive Gauss-Hermite
+quadrature with <code>n_quad</code> points per dimension
+(<code>control$re_cov = "aghq"</code>). <code>n_quad = 1</code> is the
+Laplace step; higher orders integrate each group’s non-Gaussian
+likelihood more accurately. It costs far more than the Laplace step: the
+call below, on one of the binary data sets, takes about 50 seconds where
+the Laplace fit takes about 20.</p>
+<div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">db1</span> <span class="op">&lt;-</span> <span class="fu">sim_bin</span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">fit_aghq</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db1</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
+<span>                  mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
+<span>                  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"aghq"</span>, n_quad <span class="op">=</span> <span class="fl">3L</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_aghq</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>,</span>
+<span>                                         <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   parameter     median       ci_lo     ci_hi</span></span>
+<span><span class="co">#&gt; 1   sigma_1 0.51111913  0.03512889 1.0417341</span></span>
+<span><span class="co">#&gt; 2   sigma_2 0.90974587  0.20144000 1.5745693</span></span>
+<span><span class="co">#&gt; 3    rho_12 0.08522013 -0.67092129 0.7677516</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>   <span class="co"># nested Laplace, then Gibbs, on the same data set</span></span>
+<span><span class="co">#&gt; [1] 0.428 0.787 0.086 0.614 0.870 0.150</span></span></code></pre></div>
+<p><code>reps[, 1]</code> holds the nested and Gibbs medians of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\sigma_1</annotation></semantics></math>,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+for the same data set. Quadrature of order 3 raises both standard
+deviations above the Laplace values:
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\sigma_1</annotation></semantics></math>
+from 0.45 to 0.54, against 0.65 from the Gibbs sampler, and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
+from 0.80 to 0.91, against 0.99.</p>
+</div>
+</div>
+<div class="section level2">
+<h2 id="how-many-groups-a-covariance-needs">How many groups a covariance needs<a class="anchor" aria-label="anchor" href="#how-many-groups-a-covariance-needs"></a>
+</h2>
+<p>The interval for a correlation narrows slowly with the number of
+groups, because each group contributes one noisy pair
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><msub><mi>b</mi><mrow><mn>0</mn><mi>j</mi></mrow></msub><mo>,</mo><msub><mi>b</mi><mrow><mn>1</mn><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(b_{0j}, b_{1j})</annotation></semantics></math>.
+The sweep below refits the Poisson model of the first sections at 10,
+20, 40 and 80 groups, three data sets each, and reports the median width
+of the 95% interval for
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
+and
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>.
+A fit whose slope SD collapses to zero has no interval for
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>;
+the <code>collapsed</code> column counts those fits, and the width of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+is the median over the others.</p>
+<div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">sim_pois</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">G</span>, <span class="va">seed</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">gg</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">npg</span><span class="op">)</span></span>
+<span>  <span class="va">xx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span> <span class="op">*</span> <span class="va">npg</span><span class="op">)</span></span>
+<span>  <span class="va">uu</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/chol.html" class="external-link">chol</a></span><span class="op">(</span><span class="va">Sigma</span><span class="op">)</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">2</span> <span class="op">*</span> <span class="va">G</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">yy</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">G</span> <span class="op">*</span> <span class="va">npg</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">xx</span> <span class="op">+</span> <span class="va">uu</span><span class="op">[</span><span class="va">gg</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">uu</span><span class="op">[</span><span class="va">gg</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">xx</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">yy</span>, x <span class="op">=</span> <span class="va">xx</span>, g <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="va">gg</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">sweep</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/do.call.html" class="external-link">do.call</a></span><span class="op">(</span><span class="va">rbind</span>, <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">10L</span>, <span class="fl">20L</span>, <span class="fl">40L</span>, <span class="fl">80L</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">G</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">w</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">h</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="fu">sim_pois</span><span class="op">(</span><span class="va">G</span>, <span class="va">s</span><span class="op">)</span>,</span>
+<span>                       family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
+<span>                       control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span></span>
+<span>    <span class="va">k</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/match.html" class="external-link">match</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sigma_2"</span>, <span class="st">"rho_12"</span><span class="op">)</span>, <span class="va">h</span><span class="op">$</span><span class="va">parameter</span><span class="op">)</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">h</span><span class="op">$</span><span class="va">median</span><span class="op">[</span><span class="va">k</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>, <span class="op">(</span><span class="va">h</span><span class="op">$</span><span class="va">ci_hi</span> <span class="op">-</span> <span class="va">h</span><span class="op">$</span><span class="va">ci_lo</span><span class="op">)</span><span class="op">[</span><span class="va">k</span><span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="op">}</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>groups <span class="op">=</span> <span class="va">G</span>, collapsed <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">w</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span> <span class="op">&lt;</span> <span class="fl">0.05</span><span class="op">)</span>,</span>
+<span>             width_sigma_2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/median.html" class="external-link">median</a></span><span class="op">(</span><span class="va">w</span><span class="op">[</span><span class="fl">2</span>, <span class="op">]</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span>,</span>
+<span>             width_rho <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/median.html" class="external-link">median</a></span><span class="op">(</span><span class="va">w</span><span class="op">[</span><span class="fl">3</span>, <span class="op">]</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">sweep</span></span>
+<span><span class="co">#&gt;   groups collapsed width_sigma_2 width_rho</span></span>
+<span><span class="co">#&gt; 1     10         0          0.55      1.42</span></span>
+<span><span class="co">#&gt; 2     20         0          0.44      0.91</span></span>
+<span><span class="co">#&gt; 3     40         0          0.30      0.76</span></span>
+<span><span class="co">#&gt; 4     80         0          0.21      0.46</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="practical-guidance">Practical guidance<a class="anchor" aria-label="anchor" href="#practical-guidance"></a>
+</h2>
+<p>The numbers below come from the fits in this article: Poisson counts
+with 12 observations per group, and binary responses with 6.</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>Situation</th>
+<th>Measured here</th>
+<th>Choice</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>10 groups, full 2 x 2 block</td>
+<td>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+interval width 1.20 of 2; 1 of 3 fits collapsed the slope SD</td>
+<td>read
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+as unidentified; drop the correlation or the slope</td>
+</tr>
+<tr class="even">
+<td>20 to 40 groups</td>
+<td>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+width 0.93 to 0.78</td>
+<td>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+gives its sign at best</td>
+</tr>
+<tr class="odd">
+<td>80 groups</td>
+<td>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+width 0.49,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
+width 0.21</td>
+<td>the full block is informed</td>
+</tr>
+<tr class="even">
+<td>6 binary observations per group</td>
+<td>nested
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
+0.45 against 0.7; 5 of 20 fits collapsed</td>
+<td><code>control$re_cov = "gibbs"</code></td>
+</tr>
+<tr class="odd">
+<td>12 Poisson observations per group</td>
+<td>nested and Gibbs medians within 0.02 on every parameter</td>
+<td>nested Laplace</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><p>A full block of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math>
+coefficients has
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi><mo stretchy="false" form="prefix">(</mo><mi>c</mi><mo>+</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo><mi>/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">c(c+1)/2</annotation></semantics></math>
+covariance parameters, three for an intercept and one slope. The sweep
+above suggests budgeting several tens of groups before reading the
+correlation, and treating a fit with fewer than about 20 groups as
+informative about the standard deviations only.</p></li>
+<li><p>When the interval for
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
+covers zero, <code>(1 + x || g)</code> keeps both standard deviations
+with one parameter fewer. In the example its SDs differed by 0.02 or
+less from those of the correlated fit.</p></li>
+<li><p>Compare a slope model against the random-intercept model with
+both fits on <code>integration = "grid"</code>, as in <a href="#comparing-against-a-random-intercept-model">Comparing against a
+random-intercept model</a>. The evidence already charges the slope model
+for its extra parameters.</p></li>
+<li><p>With 60 groups the three priors above moved the medians by 0.03
+or less. With fewer groups the prior carries more of the posterior, so
+refit with a tighter <code>prior_sigma</code> and with
+<code>eta = 1</code> and compare.</p></li>
+<li><p>A random slope needs the covariate to vary within each group. If
+<code>x</code> takes one value per group,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>b</mi><mrow><mn>1</mn><mi>j</mi></mrow></msub><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">b_{1j} x_j</annotation></semantics></math>
+cannot be told apart from
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>b</mi><mrow><mn>0</mn><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">b_{0j}</annotation></semantics></math>
+and the slope variance is not identified; leave the slope out.</p></li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a>
+</h2>
+<ul>
+<li>
+<code><a href="../reference/tulpa_re_cov_nested.html">?tulpa_re_cov_nested</a></code>, <code><a href="../reference/tulpa_re_cov_gibbs.html">?tulpa_re_cov_gibbs</a></code>
+and <code><a href="../reference/tulpa_re_aghq.html">?tulpa_re_aghq</a></code>: the three backends behind the formula
+door.</li>
+<li>
+<code><a href="../reference/re_cov_pc_lkj_prior.html">?re_cov_pc_lkj_prior</a></code>: the default hyperprior.</li>
+<li>
+<a href="tulpa.html">Get started</a>: the basic fit, check and
+compare loop.</li>
+<li>The inference-modes vignette: how the Laplace and sampler tiers
+relate.</li>
+</ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

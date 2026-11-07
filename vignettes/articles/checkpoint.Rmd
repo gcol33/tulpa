@@ -10,16 +10,10 @@ vignette: >
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(fit_stateful = TRUE)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 A nested Laplace fit solves one inner problem per cell of its hyperparameter
 grid, and a NUTS fit runs several independent chains. Either can run for
@@ -45,7 +39,7 @@ binomial model with an intrinsic CAR field on a chain of 30 regions, fitted
 by nested Laplace through `mode = "structured"`. `fit_ckpt()` wraps the call
 so the later sections can repeat it with other data or another `resume`.
 
-```{r fit}
+```{r fit, fit = c("df", "ckpt", "fit_ckpt", "fit", "full_size")}
 set.seed(20260716)
 S <- 30L
 W <- matrix(0, S, S)
@@ -79,7 +73,7 @@ A job killed while it writes leaves a file that ends in the middle of a
 record. Cutting the file to 45% of its bytes reproduces that: the records
 before the cut are intact, the last one is torn, and the rest are missing.
 
-```{r interrupt}
+```{r interrupt, fit = TRUE}
 bytes <- readBin(ckpt, "raw", full_size)
 writeBin(bytes[seq_len(floor(0.45 * full_size))], ckpt)
 file.size(ckpt)
@@ -90,7 +84,7 @@ one by its short length or failed checksum, truncates the file to the last
 good record, and solves the cells that are not on disk, appending each as it
 finishes.
 
-```{r resume}
+```{r resume, fit = TRUE}
 fit2 <- fit_ckpt(df, resume = TRUE)
 c(size_after_resume = file.size(ckpt), size_uninterrupted = full_size)
 all.equal(coef(fit), coef(fit2))
@@ -105,7 +99,7 @@ Resuming onto a file written for other inputs would mix cells from two
 models. Changing a single count changes the fingerprint, and the resume
 stops before solving anything:
 
-```{r fingerprint, error = TRUE}
+```{r fingerprint, error = TRUE, fit = c("df_changed")}
 df_changed <- df
 df_changed$y[1] <- df_changed$y[1] + 1L
 fit_ckpt(df_changed, resume = TRUE)
@@ -114,7 +108,7 @@ fit_ckpt(df_changed, resume = TRUE)
 `resume = FALSE` on the same path discards the old file and fits the new
 data from the start:
 
-```{r restart}
+```{r restart, fit = TRUE}
 fit3 <- fit_ckpt(df_changed, resume = FALSE)
 coef(fit3)
 ```
@@ -127,7 +121,7 @@ number, the data and the settings, so a resumed run returns exactly the
 draws of the uninterrupted one. The example is a Poisson model with a random
 intercept over 10 groups, four chains, cut at 60% of the file:
 
-```{r chains}
+```{r chains, fit = c("ckpt_chains")}
 set.seed(1)
 g <- factor(rep(1:10, each = 10))
 d <- data.frame(g = g, x = rnorm(100))
@@ -147,7 +141,7 @@ run2 <- fit_chains(resume = TRUE)
 identical(run1$draws, run2$draws)
 ```
 
-```{r cleanup, include = FALSE}
+```{r cleanup, include = FALSE, fit = TRUE}
 unlink(c(ckpt, ckpt_chains))
 ```
 

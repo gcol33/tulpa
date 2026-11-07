@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Survey points, traps and sensors sit on coordinates, and a spatial signal
 between them is smooth in distance. A Matern Gaussian field is a prior for such
@@ -173,7 +166,7 @@ Pass the specification through `spatial=` in `tulpa()`. The coordinates are
 already in the specification, so the formula has no `spatial()` term, and the
 fit goes to the SPDE backend.
 
-```{r fit}
+```{r fit, fit = c("fit")}
 fit <- tulpa(y ~ x, data = obs, family = "poisson", spatial = fine,
              control = list(n_threads = 2))
 fit$backend
@@ -219,7 +212,7 @@ To see how much the range prior moves the fit, refit with a prior median of
 `tulpa()` called above; it takes the response, a design matrix and the
 specification directly.
 
-```{r priors-compare}
+```{r priors-compare, fit = c("X")}
 X <- model.matrix(~ x, obs)
 prior_fit <- function(pr) {
   sp <- spatial_spde(~ lon + lat, data = obs, max_edge = c(0.1, 0.4),
@@ -337,7 +330,7 @@ mesh_fit <- function(edge, cutoff) {
 }
 ```
 
-```{r mesh-compare}
+```{r mesh-compare, fit = TRUE}
 res_mesh <- rbind(mesh_fit(0.05, 0.02), mesh_fit(0.15, 0.08),
                   mesh_fit(0.3, 0.15))
 round(res_mesh, 3)
@@ -359,7 +352,7 @@ with 12 basis functions per dimension). `predict()` adds each continuous
 field to the prediction, so subtracting the prediction without the field
 (`include_field = FALSE`) gives the field on the grid.
 
-```{r fit-others}
+```{r fit-others, fit = c("nd", "fits", "time")}
 ctl <- list(n_threads = 2)
 nd  <- data.frame(grid, x = 0)
 fits <- list(spde = fit)
@@ -421,7 +414,7 @@ Laplace fitter `fit_spde()` at fixed or integrated hyperparameters. At
 $\nu = 0.5$ the Matern covariance is exponential. A fit at fixed range and SD
 shows the call:
 
-```{r fractional}
+```{r fractional, fit = TRUE}
 sp_half <- spatial_spde(~ lon + lat, data = obs, max_edge = c(0.1, 0.4),
                         cutoff = 0.03, nu = 0.5)
 f_half <- fit_spde(obs$y, X, sp_half, family = "poisson",
@@ -440,7 +433,7 @@ too. The sampler path (`mode = "nuts"`) takes fractional $\nu$ at fixed
 projector directly, for a mesh built elsewhere. Built from the finite-element
 matrices of the fine mesh, it should give the same fit as `spatial_spde()`.
 
-```{r custom}
+```{r custom, fit = TRUE}
 fem <- tulpaMesh::fem_matrices(fine$mesh,
                                obs_coords = as.matrix(obs[, c("lon", "lat")]))
 sp_custom <- spatial_spde_custom(fem$C, fem$G, fem$A,

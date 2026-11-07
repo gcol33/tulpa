@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -231,7 +224,7 @@ successes paired with `n_trials`, or a two-column `cbind(succ, fail)`
 response, describe the same model. Binary data is the special case where
 every denominator is one, so a plain `0/1` response needs neither route.
 
-```{r binom-ntrials}
+```{r binom-ntrials, fit = TRUE}
 db$tot <- 15L
 fit_b <- tulpa(succ ~ x, data = db, family = "binomial",
                n_trials = db$tot, mode = "laplace")
@@ -266,7 +259,7 @@ a Poisson model and the slope recovers near its true value of 0.5, with the
 exposure absorbed through the offset rather than estimated as a free
 coefficient.
 
-```{r offset-fit}
+```{r offset-fit, fit = TRUE}
 fit_o <- tulpa(y ~ x + offset(log(expo)), data = dp,
                family = "poisson", mode = "laplace")
 coef(fit_o)
@@ -307,7 +300,7 @@ but the field structure (the adjacency for an areal model, coordinates for
 a continuous one) arrives through the `spatial=` argument. Leaving it out
 stops the fit with guidance on what to pass.
 
-```{r err-spatial-spec, error = TRUE}
+```{r err-spatial-spec, error = TRUE, fit = TRUE}
 tulpa(y ~ x + spatial(g), data = df, family = "poisson", mode = "laplace")
 ```
 

@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 7, fig.height = 5
 )
 set.seed(20260828)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The fits below are evaluated when the article is built locally, in CI and for
-# the pkgdown site (all of which set NOT_CRAN). Each experiment here runs a few
-# hundred fits, which does not fit inside CRAN's ten-minute budget for the whole
-# check, so there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 Installation is covered in [Get started](tulpa.html).
 
@@ -156,7 +149,7 @@ outside the band.
 
 ## The prior-predictive experiment
 
-```{r prior-predictive}
+```{r prior-predictive, fit = c("res")}
 res <- sbc("prior_predictive",
            simulator  = simulate_one,
            fitter     = arms,
@@ -258,7 +251,7 @@ score all carry over, and it needs no proper prior at all.
 
 It takes six callbacks.
 
-```{r posterior-model}
+```{r posterior-model, fit = c("d_obs", "model")}
 d_obs <- simulate_one(99L)
 
 model <- list(
@@ -307,7 +300,7 @@ model <- list(
   group_ids = function(data) data$region)
 ```
 
-```{r posterior-run}
+```{r posterior-run, fit = c("pres")}
 pres <- sbc("posterior", model = model, n_sim = 200L)
 pres
 ```
@@ -373,7 +366,7 @@ a nominal 0.05, and power reaches 80% at roughly a 10% dispersion error or a
 
 `diagnostics()` reads both at once when you hand it the calibration result.
 
-```{r combined}
+```{r combined, fit = TRUE}
 fit <- fit_one(d_obs, diagnose = TRUE)
 diagnostics(fit, sbc = res)
 ```

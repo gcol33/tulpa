@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 This article fits regression coefficients that change with location or with
 time. It covers a spatially varying slope and a spatially varying intercept,
@@ -150,7 +143,7 @@ another.
 on its eight nearest neighbours. The spec goes through `spatial=`, and the
 formula carries no `spatial()` term.
 
-```{r svc-fit}
+```{r svc-fit, fit = c("fit_svc")}
 fit_svc <- tulpa(y ~ x, data = ds, family = "poisson",
                  spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 8),
                  mode = "exact", control = ctl)
@@ -270,7 +263,7 @@ log-likelihood, so `compare_models()` ranks them by the widely applicable
 information criterion (WAIC), on the scale of the expected log predictive
 density (`elpd`, higher is better).
 
-```{r svc-compare}
+```{r svc-compare, fit = TRUE}
 fit_const <- tulpa(y ~ x, data = ds, family = "poisson",
                    mode = "exact", control = ctl)
 coef(summary(fit_const))["x", ]
@@ -370,7 +363,7 @@ A fit without the field leaves the spatial baseline in the residuals. Moran's
 I on the Pearson residuals of the constant model, with inverse-distance
 weights, tests for that structure:
 
-```{r svci-moran}
+```{r svci-moran, fit = TRUE}
 fit_i0 <- tulpa(y2 ~ x, data = ds, family = "poisson",
                 mode = "exact", control = ctl)
 moran_i(fit_i0, coords = cbind(ds$lon, ds$lat))
@@ -380,7 +373,7 @@ The statistic is positive and the p-value below $10^{-5}$: neighbouring sites
 leave residuals of the same sign. Fitting the SVC on the intercept gives the
 baseline at each site.
 
-```{r svci-fit}
+```{r svci-fit, fit = c("icpt")}
 fit_svci <- tulpa(y2 ~ x, data = ds, family = "poisson",
                   spatial = spatial_svc(~ lon + lat, nn = 8),
                   mode = "exact", control = ctl)
@@ -436,7 +429,7 @@ slope, $0.5$.
 `temporal_tvc()` names the time column, the coefficient and the structure. The
 spec goes through `temporal=`.
 
-```{r tvc-fit}
+```{r tvc-fit, fit = c("fit_rw1")}
 fit_rw1 <- tulpa(y ~ x, data = dt, family = "poisson",
                  temporal = temporal_tvc("year", terms = ~ x - 1,
                                          structure = "rw1"),
@@ -501,7 +494,7 @@ The same call takes the other grid structures. `rw2` penalises changes in the
 year-to-year increments, so it favours a slope that changes direction slowly;
 `ar1` pulls the slope back toward its mean at a rate set by $\rho$.
 
-```{r tvc-rw2-ar1}
+```{r tvc-rw2-ar1, fit = c("fit_rw2")}
 fit_rw2 <- tulpa(y ~ x, data = dt, family = "poisson",
                  temporal = temporal_tvc("year", terms = ~ x - 1,
                                          structure = "rw2"),
@@ -532,7 +525,7 @@ interaction `x * t_s` lets the slope change linearly with standardized time
 `t_s`. Time is standardized because the sampler mixes poorly when a covariate
 and its interaction sit on very different scales.
 
-```{r tvc-compare}
+```{r tvc-compare, fit = c("dt", "fit_c", "fit_lin")}
 dt$t_s <- (dt$year - mean(dt$year)) / sd(dt$year)
 fit_c   <- tulpa(y ~ x, data = dt, family = "poisson",
                  mode = "exact", control = ctl)
@@ -615,7 +608,7 @@ interval widens with the horizon, from 0.62 wide in year 25 to 1.62 in year
 `terms = 1`, the default, lets the baseline drift over time with the slope held
 fixed. Simulate counts with the same sine as a baseline and a slope of $0.5$:
 
-```{r tvci}
+```{r tvci, fit = c("dt")}
 set.seed(5)
 dt$y3 <- rpois(nrow(dt), exp(0.3 + wt[dt$year] + 0.5 * dt$x))
 fit_tvci <- tulpa(y3 ~ x, data = dt, family = "poisson",
@@ -658,7 +651,7 @@ slope as a Gaussian process over the dates with `structure = "gp"`, which needs
 a numeric time column, and as an `rw1` for comparison. The default kernel is
 exponential, which evaluates as a Markov chain in time.
 
-```{r gp-fit}
+```{r gp-fit, fit = c("fit_gp", "fit_gr1")}
 fit_gp  <- tulpa(y ~ x, data = dg, family = "poisson",
                  temporal = temporal_tvc("day", terms = ~ x - 1,
                                          structure = "gp"),
@@ -712,7 +705,7 @@ is unlikely to wander by more than one unit on the link scale. Refit the
 time-varying slope under a prior ten times tighter, $P(\sigma > 0.1) = 0.01$,
 and a much looser one, $P(\sigma > 3) = 0.5$:
 
-```{r prior-fits}
+```{r prior-fits, fit = c("fits_p")}
 fit_prior <- function(U, alpha) {
   tulpa(y ~ x, data = dt, family = "poisson",
         temporal = temporal_tvc("year", terms = ~ x - 1, structure = "rw1",

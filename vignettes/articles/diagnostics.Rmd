@@ -15,16 +15,9 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+source(system.file("knitr/fit-cache.R", package = "tulpa"))
 ```
 
-```{r cran-gate, include = FALSE}
-# The model fits below are evaluated when the article is built locally, in CI
-# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
-# the whole check a ten-minute budget, which these fits do not fit inside, so
-# there the code is shown without being run.
-EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
-knitr::opts_chunk$set(eval = EVAL_FITS)
-```
 
 This article takes one model, Poisson counts with a covariate and an areal
 spatial field, and runs it through each diagnostic tulpa provides: the
@@ -107,7 +100,7 @@ the region factor, the year and the grid coordinates `cx`, `cy` of each
 observation's region. Fit both responses with the same Poisson ICAR model on
 the nested-Laplace path.
 
-```{r fit}
+```{r fit, fit = c("sp", "ctl", "fit", "fit_od")}
 sp  <- list(type = "icar", adjacency = W)
 ctl <- list(n_threads = 2)
 fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
@@ -296,7 +289,7 @@ Refit the overdispersed counts with a negative binomial likelihood. The
 nested-Laplace path conditions on the dispersion `phi` rather than estimating
 it, so pass the size the data were drawn with.
 
-```{r fit-nb}
+```{r fit-nb, fit = TRUE}
 fit_nb <- tulpa(y_od ~ x + spatial(region), data = d,
                 family = "neg_binomial_2", phi = 1.5,
                 spatial = sp, mode = "nested_laplace", control = ctl)
@@ -317,7 +310,7 @@ leaves spatial structure. Fit the non-spatial model and test its residuals
 with `moran_i()`, which uses inverse-distance weights on the coordinates by
 default.
 
-```{r fit-nonspatial}
+```{r fit-nonspatial, fit = c("fit0")}
 fit0 <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
               control = ctl)
 moran_i(fit0, coords)
@@ -400,7 +393,7 @@ iterations, 200 of them warmup, on 4 chains, with the step-size adaptation
 target `adapt_delta` lowered from its default 0.8 to 0.3, which makes the
 sampler take steps too large for the posterior.
 
-```{r fit-hmc-bad}
+```{r fit-hmc-bad, fit = c("fit_bad")}
 fit_bad <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
                  spatial = sp, mode = "hmc",
                  control = list(n_iter = 400L, warmup = 200L,
@@ -476,7 +469,7 @@ warmup. The same checks now pass, and the slope reads 0.40.
 `plot_diagnostics()` collects Rhat, ESS, a trace of the worst parameter and
 the energy distribution in one figure.
 
-```{r fit-hmc-good}
+```{r fit-hmc-good, fit = c("fit_hmc")}
 fit_hmc <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
                  spatial = sp, mode = "hmc",
                  control = list(n_iter = 2000L, warmup = 1000L,
@@ -517,7 +510,7 @@ applicable information criterion (WAIC) or by Pareto-smoothed leave-one-out
 cross-validation (LOO). Higher elpd is better; `delta` is each model's gap to
 the best, and `se_diff` the standard error of that gap.
 
-```{r fit-nox}
+```{r fit-nox, fit = c("cmp_waic", "cmp_loo")}
 fit_nox <- tulpa(y ~ 1 + spatial(region), data = d, family = "poisson",
                  spatial = sp, mode = "nested_laplace", control = ctl)
 cmp_waic <- compare_models(full = fit, field_only = fit_nox,
@@ -543,13 +536,13 @@ Refit-based K-fold cross-validation, `tulpa_kfold()`, refits the model on
 each training split. It refuses a spatial fit, because dropping observations
 breaks the field's structure, and names PSIS-LOO as the alternative.
 
-```{r kfold-spatial, error = TRUE}
+```{r kfold-spatial, error = TRUE, fit = TRUE}
 tulpa_kfold(fit, data = d, K = 5, seed = 1)
 ```
 
 On a fixed-effect fit it runs:
 
-```{r kfold}
+```{r kfold, fit = TRUE}
 cv0 <- tulpa_kfold(fit0, data = d, K = 5, seed = 1)
 c(elpd_kfold = cv0$elpd_kfold, se = cv0$se_elpd_kfold)
 ```
@@ -569,7 +562,7 @@ runs on the covariate-only model with two Gaussian priors on the coefficients:
 a wide one with standard deviation 5, and a tight one with standard deviation
 0.1 centred on zero.
 
-```{r prior-wide}
+```{r prior-wide, fit = c("fit_wide")}
 fit_wide <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
                   beta_prior = list(mean = 0, sd = 5), control = ctl)
 tulpa_powerscale_sensitivity(fit_wide, prior = list(mean = 0, sd = 5))
@@ -580,7 +573,7 @@ coefficients. The likelihood sensitivity of about 0.08 is above the threshold,
 which is what a likelihood that informs the posterior looks like, and with a
 quiet prior the diagnosis column stays empty.
 
-```{r prior-tight}
+```{r prior-tight, fit = c("fit_tight")}
 fit_tight <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
                    beta_prior = list(mean = 0, sd = 0.1), control = ctl)
 tulpa_powerscale_sensitivity(fit_tight, prior = list(mean = 0, sd = 0.1))
