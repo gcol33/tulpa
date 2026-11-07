@@ -146,3 +146,42 @@ test_that("tulpa_re_em takes a per-coordinate theta prior and checks b0", {
   expect_error(tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
                            b0 = matrix(0, 3, 1)), "b0")
 })
+
+test_that("the AGHQ moment step leaves a Gaussian fit unchanged and moves a binary one", {
+  # A Gaussian conditional makes each group's posterior exactly Gaussian, so
+  # its quadrature moments are the Laplace ones and the step is one more EM
+  # update, which at a converged fixed point moves nothing.
+  fx <- .re_em_glmm("gaussian", 11L)
+  l <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
+                   theta_update = "latent", tol = 1e-14, max_iter = 2000L)
+  a <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
+                   theta_update = "latent", aghq_debias = 7L, tol = 1e-14,
+                   max_iter = 2000L)
+  expect_true(a$aghq_debiased)
+  expect_false(l$aghq_debiased)
+  expect_equal(a$Sigma_list, l$Sigma_list, tolerance = 1e-6)
+  expect_equal(a$theta_se, l$theta_se, tolerance = 1e-6)
+  expect_equal(a$blup_cov_g, l$blup_cov_g, tolerance = 1e-6)
+  # Binary data at eight observations per group: the moments are not Gaussian.
+  fb <- .re_em_glmm("binomial", 13L)
+  lb <- tulpa_re_em(fb$beta, fb$re_terms, list(fb$Sig), oracle = fb$orc,
+                    theta_update = "latent")
+  ab <- tulpa_re_em(fb$beta, fb$re_terms, list(fb$Sig), oracle = fb$orc,
+                    theta_update = "latent", aghq_debias = 9L)
+  expect_true(ab$aghq_debiased)
+  expect_gt(abs(ab$Sigma_list[[1]][1, 1] - lb$Sigma_list[[1]][1, 1]), 1e-4)
+  expect_identical(ab$theta, lb$theta)
+  expect_error(tulpa_re_em(fb$beta, fb$re_terms, list(fb$Sig), oracle = fb$orc,
+                           aghq_debias = 5L), "latent")
+})
+
+test_that("tulpa_re_cov_update projects, symmetrizes and floors", {
+  M <- matrix(c(0.5, 0.2, 0.2, 1e-9), 2, 2)
+  S <- tulpa_re_cov_update(M, sigma_floor = 0.01)
+  expect_true(isSymmetric(S))
+  expect_gte(min(eigen(S, symmetric = TRUE)$values), 1e-4 - 1e-12)
+  D <- tulpa_re_cov_update(M, correlated = FALSE, sigma_floor = 0.01)
+  expect_equal(D, diag(c(0.5, 1e-4)))
+  expect_equal(tulpa_re_cov_update(diag(c(2, 3))), diag(c(2, 3)))
+  expect_error(tulpa_re_cov_update(matrix(1, 2, 3)), "square")
+})

@@ -44,6 +44,7 @@ reference:
   - tulpa_re_cov_nested
   - tulpa_re_aghq
   - tulpa_re_em
+  - tulpa_re_cov_update
   - tulpa_eb
   - tulpa_em_laplace
   - tulpa_em_mc

@@ -23,6 +23,15 @@
   the group modes, and the `tulpa.nl_progress` option reaches the EM loop
   (gcol33/tulpaObs#431).
 
+* `tulpa_re_em(aghq_debias = n_quad)` adds one adaptive Gauss-Hermite moment
+  step to the latent rule: each group's posterior second moment on the AGHQ
+  engine's tensor grid replaces the Laplace one in the covariance update, and
+  the group and `theta` covariances are recomputed at the new covariance
+  through the likelihood curvature. `tulpa_re_cov_update()` and the header
+  `<tulpa/re_cov_update.h>` are the one covariance update (symmetrize,
+  diagonal projection for an uncorrelated block, eigenvalue floor) every
+  grouped-RE EM takes, compiled consumers included (gcol33/tulpaObs#431).
+
 * The engine default fixed-effect prior is N(0, 2.5^2) on every door
   (`DEFAULT_SIGMA_BETA`); `beta_prior` overrides it, including on the SPDE
   Laplace path (#1045, #1056).

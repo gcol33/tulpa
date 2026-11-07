@@ -52,6 +52,14 @@
 #'   (`theta_update = "latent"`).
 #' @param progress_label Label of the progress line and heartbeat (the
 #'   `tulpa.nl_progress` option sets whether they are written).
+#' @param aghq_debias Latent rule only: a per-axis node count `> 1` adds one
+#'   adaptive Gauss-Hermite moment step at the converged mode. Each group's
+#'   posterior second moment is integrated on the AGHQ engine's tensor grid
+#'   (centred at the mode, scaled by the group's posterior covariance) and the
+#'   covariance update takes their mean, which removes the Laplace
+#'   small-cluster attenuation of the variance components; the group
+#'   covariances and the `theta` covariance are then recomputed at the new
+#'   covariance through the likelihood curvature. `0` (default) skips it.
 #' @param sigma_floor Floor on every random-effect standard deviation, applied
 #'   to the eigenvalues of each covariance update.
 #' @param tol Relative tolerance on the change in the Laplace log-marginal.
@@ -67,8 +75,9 @@
 #'   the `Bf` of [tulpa_re_aghq()]), `group_ok`, `converged`, `n_iter`,
 #'   `blup_cross_available`, `log_marginal_trace`, `stuck` (latent rule: the
 #'   final joint Newton accepted no step at any damping, so `converged` is
-#'   `FALSE`); `NULL` with a warning when the per-group solve fails at the
-#'   start.
+#'   `FALSE`), `aghq_debiased` (whether the `aghq_debias` step ran; it leaves
+#'   the Laplace fit in place when a factorization or quadrature sum fails);
+#'   `NULL` with a warning when the per-group solve fails at the start.
 #' @seealso [tulpa_re_aghq()] for the exact-marginal (adaptive Gauss-Hermite)
 #'   fit on the same oracle.
 #' @export
@@ -79,8 +88,17 @@ tulpa_re_em <- function(theta0, re_terms, Sigma0,
                         tol = 1e-8, max_iter = 200L, theta_iter = 3L,
                         n_threads = 1L,
                         theta_update = c("marginal", "latent"), b0 = NULL,
-                        newton_max = 30L, progress_label = "re-em") {
+                        newton_max = 30L, progress_label = "re-em",
+                        aghq_debias = 0L) {
   theta_update <- match.arg(theta_update)
+  aghq_debias <- as.integer(aghq_debias)
+  if (length(aghq_debias) != 1L || is.na(aghq_debias) || aghq_debias < 0L) {
+    stop("`aghq_debias` must be a single non-negative node count.", call. = FALSE)
+  }
+  if (aghq_debias > 1L && theta_update != "latent") {
+    stop("`aghq_debias` is a step of the latent theta rule; use ",
+         "tulpa_re_aghq() for the exact-marginal fit.", call. = FALSE)
+  }
   native <- !is.null(oracle)
   if (!native && (is.null(make_site) == is.null(make_group))) {
     stop("Supply exactly one of `make_site` (single-arm), `make_group` ",
@@ -130,7 +148,7 @@ tulpa_re_em <- function(theta0, re_terms, Sigma0,
                    nc_terms, full_vec, prec, sigma_floor, tol,
                    as.integer(max_iter), as.integer(theta_iter),
                    as.integer(n_threads), as.integer(theta_update == "latent"),
-                   b0, as.integer(newton_max), progress)
+                   b0, as.integer(newton_max), progress, aghq_debias)
   if (!isTRUE(res$ok)) {
     par0 <- c(theta0, .re_cov_L_list_to_theta(lapply(Sigma0, .re_chol_spd), layout))
     gok <- .aghq_group_status(par0, orc, nc_terms, full_vec)
@@ -186,7 +204,41 @@ tulpa_re_em <- function(theta0, re_terms, Sigma0,
     group_ok     = as.logical(bl$group_ok),
     converged    = isTRUE(res$converged),
     stuck        = isTRUE(res$stuck),
+    aghq_debiased = isTRUE(res$aghq_debias_ok),
     n_iter       = as.integer(res$n_iter),
     log_marginal_trace = as.numeric(res$trace)
   )
+}
+
+
+#' Closed-form covariance update of a grouped random-effect EM
+#'
+#' The covariance update every tulpa EM over a grouped random effect uses
+#' (`tulpa_re_em()`, and compiled consumers through
+#' `<tulpa/re_cov_update.h>`): the group-averaged posterior second moment of one
+#' covariance block, symmetrized, projected to its diagonal for an uncorrelated
+#' block, with its eigenvalues floored at `sigma_floor^2`.
+#'
+#' @param M The `c x c` group-averaged posterior second moment
+#'   `mean_g(E[b_g] E[b_g]' + Cov(b_g))` of the block.
+#' @param correlated `FALSE` keeps only the diagonal.
+#' @param sigma_floor Floor on every standard deviation, applied to the
+#'   eigenvalues.
+#' @return The updated `c x c` covariance.
+#' @export
+#' @examples
+#' M <- matrix(c(0.5, 0.2, 0.2, 1e-9), 2, 2)
+#' tulpa_re_cov_update(M)
+#' tulpa_re_cov_update(M, correlated = FALSE, sigma_floor = 0.01)
+tulpa_re_cov_update <- function(M, correlated = TRUE, sigma_floor = 1e-4) {
+  M <- as.matrix(M)
+  if (!is.numeric(M) || nrow(M) != ncol(M) || anyNA(M)) {
+    stop("`M` must be a square numeric matrix.", call. = FALSE)
+  }
+  if (!is.numeric(sigma_floor) || length(sigma_floor) != 1L ||
+      !is.finite(sigma_floor) || sigma_floor <= 0) {
+    stop("`sigma_floor` must be a single positive number.", call. = FALSE)
+  }
+  storage.mode(M) <- "double"
+  cpp_re_cov_update(M, isTRUE(correlated), sigma_floor)
 }

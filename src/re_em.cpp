@@ -44,6 +44,7 @@
 #include "aghq_re_core.h"
 #include "aghq_re_oracles.h"
 #include <tulpa/nested_progress.h>
+#include <tulpa/re_cov_update.h>
 #include <Rcpp.h>
 #include <RcppEigen.h>
 #include <memory>
@@ -91,12 +92,71 @@ void em_sigma_update(std::vector<Eigen::MatrixXd>& S, const EmBlocks& bl,
             const Eigen::VectorXd bg = b[g].segment(o, c);
             Sm += bg * bg.transpose() + C[g].block(o, o, c, c);
         }
-        Sm /= ng;
-        if (!bl.full[m]) Sm = Eigen::MatrixXd(Sm.diagonal().asDiagonal());
-        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(0.5 * (Sm + Sm.transpose()));
-        Eigen::VectorXd ev = es.eigenvalues().cwiseMax(sigma_floor * sigma_floor);
-        S[m] = es.eigenvectors() * ev.asDiagonal() * es.eigenvectors().transpose();
+        S[m] = re_cov_update(Sm / ng, bl.full[m], sigma_floor);
     }
+}
+
+// AGHQ moment step at the converged latent-rule mode. Each group's posterior
+// second moment E[b_g b_g' | y] is integrated by adaptive Gauss-Hermite
+// quadrature on the tensor grid the AGHQ engine uses, centred at b_g and scaled
+// by chol(C_g); the covariance update takes the group mean of those moments in
+// place of the Laplace b_g b_g' + C_g, which removes the Laplace small-cluster
+// attenuation of the variance components. Each C_g is then reprojected at the
+// new precision through its likelihood curvature negH_g = C_g^-1 - P_old, and
+// the theta precision with it, S_new = S + sum_g X_g (C_g_old - C_g_new) X_g'
+// (X_g is likelihood curvature, independent of Sigma), so Sigma, C_g and S
+// describe one fit. Returns false, leaving every input untouched, when a
+// factorization fails or a quadrature sum is not finite.
+bool em_aghq_debias(REGroupOracle& orc, const EmBlocks& bl, int n_quad,
+                    double sigma_floor, const std::vector<Eigen::VectorXd>& b,
+                    std::vector<Eigen::MatrixXd>& C, const std::vector<Eigen::MatrixXd>& X,
+                    std::vector<Eigen::MatrixXd>& S, Eigen::MatrixXd& Sth,
+                    const AghqSigmaFactor& sf_old) {
+    const int ng = orc.n_groups, d = bl.d;
+    const AghqGrid grid = aghq_build_grid(std::vector<int>(d, n_quad));
+    const int nN = grid.n_nodes;
+    std::vector<Eigen::MatrixXd> Rg(ng);
+    std::vector<double> hv(nN);
+    for (int g = 0; g < ng; ++g) {
+        Eigen::LLT<Eigen::MatrixXd> lltC(0.5 * (C[g] + C[g].transpose()));
+        if (lltC.info() != Eigen::Success) return false;
+        const Eigen::MatrixXd Lc = lltC.matrixL();
+        RowMat B = grid.Znodes * Lc.transpose();
+        B.rowwise() += b[g].transpose();
+        orc.node_ll(g, B.data(), nN, hv.data());
+        const Eigen::VectorXd quad = (B * sf_old.P).cwiseProduct(B).rowwise().sum();
+        Eigen::VectorXd terms(nN);
+        for (int k = 0; k < nN; ++k)
+            terms(k) = grid.logw(k) + hv[k] - 0.5 * quad(k) + 0.5 * grid.z2(k);
+        const double mx = terms.maxCoeff();
+        const double lse = mx + std::log((terms.array() - mx).exp().sum());
+        if (!std::isfinite(lse)) return false;
+        const Eigen::VectorXd wt = (terms.array() - lse).exp();
+        Rg[g] = B.transpose() * wt.asDiagonal() * B;
+    }
+    std::vector<Eigen::MatrixXd> Snew(S.size());
+    for (size_t m = 0; m < S.size(); ++m) {
+        const int o = bl.off[m], c = bl.nc[m];
+        Eigen::MatrixXd Mm = Eigen::MatrixXd::Zero(c, c);
+        for (int g = 0; g < ng; ++g) Mm += Rg[g].block(o, o, c, c);
+        Snew[m] = re_cov_update(Mm / ng, bl.full[m], sigma_floor);
+    }
+    const AghqSigmaFactor sf_new = aghq_sigma_factor(em_block_diag(Snew, bl), d);
+    if (!sf_new.ok) return false;
+    std::vector<Eigen::MatrixXd> Cnew(ng);
+    Eigen::MatrixXd Snew_th = Sth;
+    for (int g = 0; g < ng; ++g) {
+        Eigen::FullPivLU<Eigen::MatrixXd> luC(C[g]);
+        if (!luC.isInvertible()) return false;
+        const Eigen::MatrixXd negH = Eigen::MatrixXd(luC.inverse()) - sf_old.P;
+        Eigen::FullPivLU<Eigen::MatrixXd> luN(negH + sf_new.P);
+        if (!luN.isInvertible()) return false;
+        Cnew[g] = luN.inverse();
+        if (X[g].rows() > 0) Snew_th += X[g] * (C[g] - Cnew[g]) * X[g].transpose();
+    }
+    if (!Snew_th.allFinite()) return false;
+    S = Snew; C = Cnew; Sth = Snew_th;
+    return true;
 }
 
 // log|M| of a symmetric matrix through its LDLT; -Inf when not positive
@@ -420,7 +480,8 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
                IntegerVector nc, LogicalVector full,
                NumericVector theta_prior_prec, double sigma_floor, double tol,
                int max_iter, int theta_iter, int n_threads,
-               int theta_mode, SEXP b0, int newton_max, List progress) {
+               int theta_mode, SEXP b0, int newton_max, List progress,
+               int aghq_debias) {
     XPtr<REGroupOracle> orc(oracle);
     const int ng = orc->n_groups, nth = orc->n_theta;
     EmBlocks bl;
@@ -478,7 +539,7 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
     int it = 0;
     EmSweep sw;
     Eigen::MatrixXd Hth = Eigen::MatrixXd::Zero(nth, nth);
-    bool hess_ok = false;
+    bool hess_ok = false, debias_ok = false;
     std::vector<Eigen::MatrixXd> Xout;
 
     if (latent) {
@@ -512,8 +573,13 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
         sw.b = lm.b; sw.C = lm.C; sw.ok.assign(ng, 1); sw.all_ok = true;
         sw.L = em_latent_logml(lm, sf, prec) - prior(theta);
         Hth = 0.5 * (lm.S + lm.S.transpose());
-        hess_ok = Hth.allFinite();
         Xout = lm.X;
+        if (aghq_debias > 1) {
+            debias_ok = em_aghq_debias(*orc, bl, aghq_debias, sigma_floor, sw.b, sw.C,
+                                       Xout, S, Hth, sf);
+            Hth = 0.5 * (Hth + Hth.transpose());
+        }
+        hess_ok = Hth.allFinite();
     } else {
         orc->rebind(theta.data());
         sw = em_sweep(*orc, sf, d, n_threads, has_b0 ? &warm0 : nullptr);
@@ -621,6 +687,7 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
                             _["trace"] = wrap(trace), _["bhat"] = BHAT, _["bcov"] = BCOV,
                             _["group_ok"] = GOK, _["converged"] = converged,
                             _["stuck"] = stuck, _["n_iter"] = std::min(it, max_iter));
+    out["aghq_debias_ok"] = debias_ok;
     NumericVector th(nth);
     for (int i = 0; i < nth; ++i) th(i) = theta(i);
     out["theta"] = th;
@@ -634,5 +701,17 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
                     BX(g + (size_t)ng * (i + (size_t)nth * j)) = Xout[g](i, j);
         out["bcross"] = BX;
     }
+    return out;
+}
+
+// The shared covariance update (tulpa/re_cov_update.h) for an R caller.
+// [[Rcpp::export]]
+NumericMatrix cpp_re_cov_update(NumericMatrix M, bool full, double floor_sd) {
+    const int c = M.nrow();
+    if (M.ncol() != c) stop("cpp_re_cov_update: M must be square.");
+    const Eigen::MatrixXd S = re_cov_update(
+        Eigen::Map<Eigen::MatrixXd>(REAL(M), c, c), full, floor_sd);
+    NumericMatrix out(c, c);
+    for (int i = 0; i < c; ++i) for (int j = 0; j < c; ++j) out(i, j) = S(i, j);
     return out;
 }

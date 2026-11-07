@@ -22,7 +22,8 @@ tulpa_re_em(
   theta_update = c("marginal", "latent"),
   b0 = NULL,
   newton_max = 30L,
-  progress_label = "re-em"
+  progress_label = "re-em",
+  aghq_debias = 0L
 )
 }
 \arguments{
@@ -97,6 +98,15 @@ group's own solve.}
 
 \item{progress_label}{Label of the progress line and heartbeat (the
 \code{tulpa.nl_progress} option sets whether they are written).}
+
+\item{aghq_debias}{Latent rule only: a per-axis node count \verb{> 1} adds one
+adaptive Gauss-Hermite moment step at the converged mode. Each group's
+posterior second moment is integrated on the AGHQ engine's tensor grid
+(centred at the mode, scaled by the group's posterior covariance) and the
+covariance update takes their mean, which removes the Laplace
+small-cluster attenuation of the variance components; the group
+covariances and the \code{theta} covariance are then recomputed at the new
+covariance through the likelihood curvature. \code{0} (default) skips it.}
 }
 \value{
 A list with \code{theta}, \code{theta_cov}, \code{theta_hessian} (the \code{theta}
@@ -107,8 +117,9 @@ posterior covariances), \code{blup_cross_g} (mode/theta cross-Hessian blocks,
 the \code{Bf} of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}), \code{group_ok}, \code{converged}, \code{n_iter},
 \code{blup_cross_available}, \code{log_marginal_trace}, \code{stuck} (latent rule: the
 final joint Newton accepted no step at any damping, so \code{converged} is
-\code{FALSE}); \code{NULL} with a warning when the per-group solve fails at the
-start.
+\code{FALSE}), \code{aghq_debiased} (whether the \code{aghq_debias} step ran; it leaves
+the Laplace fit in place when a factorization or quadrature sum fails);
+\code{NULL} with a warning when the per-group solve fails at the start.
 }
 \description{
 The \code{n_quad = 1} sibling of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} on the same per-group oracle:

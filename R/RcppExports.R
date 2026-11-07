@@ -501,8 +501,12 @@ cpp_recov_block_grad <- function(Smat, L, full, lkj_eta = 1.0) {
     .Call(`_tulpa_cpp_recov_block_grad`, Smat, L, full, lkj_eta)
 }
 
-cpp_re_em <- function(oracle, theta0, Sigma0, nc, full, theta_prior_prec, sigma_floor, tol, max_iter, theta_iter, n_threads, theta_mode, b0, newton_max, progress) {
-    .Call(`_tulpa_cpp_re_em`, oracle, theta0, Sigma0, nc, full, theta_prior_prec, sigma_floor, tol, max_iter, theta_iter, n_threads, theta_mode, b0, newton_max, progress)
+cpp_re_em <- function(oracle, theta0, Sigma0, nc, full, theta_prior_prec, sigma_floor, tol, max_iter, theta_iter, n_threads, theta_mode, b0, newton_max, progress, aghq_debias) {
+    .Call(`_tulpa_cpp_re_em`, oracle, theta0, Sigma0, nc, full, theta_prior_prec, sigma_floor, tol, max_iter, theta_iter, n_threads, theta_mode, b0, newton_max, progress, aghq_debias)
+}
+
+cpp_re_cov_update <- function(M, full, floor_sd) {
+    .Call(`_tulpa_cpp_re_cov_update`, M, full, floor_sd)
 }
 
 tulpa_set_integrator_cpp <- function(name, mts_substeps = 4L) {
