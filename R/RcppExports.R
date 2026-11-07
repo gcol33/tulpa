@@ -413,6 +413,18 @@ cpp_nl_lq_mixture_cdf <- function(pieces, mass, x) {
     .Call(`_tulpa_cpp_nl_lq_mixture_cdf`, pieces, mass, x)
 }
 
+cpp_outer_read_design <- function(n, d, shift_seed) {
+    .Call(`_tulpa_cpp_outer_read_design`, n, d, shift_seed)
+}
+
+cpp_outer_tensor_partition <- function(nodes, query, mass) {
+    .Call(`_tulpa_cpp_outer_tensor_partition`, nodes, query, mass)
+}
+
+cpp_outer_tensor_interpolate <- function(nodes, values, query, cubic = TRUE) {
+    .Call(`_tulpa_cpp_outer_tensor_interpolate`, nodes, values, query, cubic)
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }

@@ -1078,6 +1078,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
          ccd    = "moment_rule",
          sample = "sample",
          qmc    = "sample",
+         user   = "sample",
+         aghq   = "sample",
          "density")
 }
 
@@ -1970,6 +1972,16 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 #  * per-block marginal moments: integrate out the other blocks' axes.
 .nl_posterior_moments_multi <- function(out, prepared, axis_offsets, joint_grid,
                                         within = NULL) {
+  if (!is.null(out$outer_posterior)) {
+    view <- .nl_outer_hyper_view(out)
+    moments <- .nl_posterior_moments_multi(view, prepared, axis_offsets,
+      view$theta_grid, within)
+    fields <- c(grep("^theta_", names(moments), value = TRUE), "block_moments",
+                "within_cell_requested", "outer_grid_railed_axes", "outer_grid_edge_mass_axes")
+    fields <- setdiff(fields, c("theta_grid", "theta_names"))
+    out[fields] <- moments[fields]
+    return(out)
+  }
   within <- .nl_within_cell_mode(within)
   w  <- out$weights
   tg <- joint_grid
@@ -2014,7 +2026,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     joint_grid, out$log_marginal, out$refining_axis, log_quad = out$log_quad,
     domains = geo$domain, within = within, atoms = geo$atom, sd = TRUE,
     support = .nl_node_support(out$integration),
-    weights = if (identical(out$integration, "qmc")) out$weights)
+    weights = if (isTRUE(out$integration %in% c("qmc", "user", "aghq"))) out$weights)
   out$theta_median <- qs$median
   out$theta_ci_lo  <- qs$ci_lo
   out$theta_ci_hi  <- qs$ci_hi

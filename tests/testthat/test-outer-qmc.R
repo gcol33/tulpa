@@ -179,7 +179,7 @@ test_that("chunked solves retain cell arrays and model metadata", {
     list(log_marginal = v, modes = cbind(v, v^2), n_grid = nrow(x), n_x = 2L,
       model = list(family = "gaussian"), grid_hessians = lapply(v, function(z) matrix(z, 1L)))
   }
-  out <- tulpa:::.nl_qmc_solve(cells, solve, TRUE)
+  out <- tulpa:::.nl_outer_solve(cells, solve, TRUE)
   expect_equal(out$log_marginal, cells[, 1L])
   expect_equal(out$modes, solve(cells, TRUE)$modes)
   expect_identical(out$model, list(family = "gaussian"))
@@ -223,9 +223,9 @@ test_that("unattained importance precision reaches diagnostics and print", {
   for (object in list(fit, tulpa:::.finalize_fit(list(draws = fit$draws,
     joint_fit = fit), backend = "nested_laplace"))) {
     d <- diagnostics(object)
-    expect_false(attr(d, "summary")$qmc_converged)
-    expect_equal(attr(d, "summary")$qmc_error, .12)
-    expect_equal(attr(d, "summary")$qmc_tol, .05)
+    expect_false(attr(d, "summary")$outer_converged)
+    expect_equal(attr(d, "summary")$outer_error, .12)
+    expect_equal(attr(d, "summary")$outer_tol, .05)
     expect_output(print(object), "target unattained")
     expect_output(print(d), "target unattained")
   }

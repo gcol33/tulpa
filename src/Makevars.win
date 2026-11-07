@@ -63,6 +63,7 @@ unity_core.o: \
   gpu_backend.cpp \
   hyperprior_density_export.cpp \
   multinomial_logit_export.cpp \
+  outer_interpolate.cpp \
   sysmem.cpp \
   tgmrf_nuts.cpp \
   tgmrf_registry.cpp \

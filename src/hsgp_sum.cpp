@@ -81,6 +81,9 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
     }
     struct Cell {
         std::vector<double> theta;
+        std::vector<double> lengths;
+        std::vector<HsgpObservation> components;
+        std::vector<Eigen::VectorXd> spectral;
         std::vector<RowMatrix> basis;
         std::vector<Eigen::VectorXd> residual;
     };
@@ -102,21 +105,25 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
             cache->publish(cell);
             return true;
         }
-        Eigen::MatrixXd at(width, n_training);
-        std::vector<Eigen::VectorXd> spectral;
-        int col = 0;
-        for (const auto& p : *parts) {
+        out.components.resize(parts->size());
+        out.spectral.resize(parts->size());
+        out.lengths.resize(parts->size(), -1.0);
+        std::vector<double> scales;
+        for (std::size_t b = 0; b < parts->size(); ++b) {
+            const auto& p = (*parts)[b];
             const double sigma2 = theta_grid(cell, p.axis), ell = theta_grid(cell, p.axis + 1);
             if (!(sigma2 > 0) || !(ell > 0)) return false;
-            spectral.emplace_back(p.eigenvalues.size());
-            priors::hsgp_sqrt_spectral_2d(p.kernel, sigma2, ell, p.eigenvalues.data(),
-                                        p.eigenvalues.size(), spectral.back().data());
-            at.middleRows(col, p.eigenvalues.size()).noalias() =
-                spectral.back().asDiagonal() * p.training.transpose();
-            col += p.eigenvalues.size();
+            scales.push_back(std::sqrt(sigma2));
+            if (out.lengths[b] != ell) {
+                out.spectral[b].resize(p.eigenvalues.size());
+                priors::hsgp_sqrt_spectral_2d(p.kernel, 1.0, ell, p.eigenvalues.data(),
+                                            p.eigenvalues.size(), out.spectral[b].data());
+                out.components[b].compute(p.training, out.spectral[b], !at_training);
+                out.lengths[b] = ell;
+            }
         }
         HsgpObservation representation;
-        representation.compute_loading(at, !at_training);
+        representation.combine(out.components, scales, !at_training);
         out.basis.resize(n_arms);
         out.residual.resize(n_arms);
         int row = 0;
@@ -132,7 +139,7 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
                 for (std::size_t b = 0; b < parts->size(); ++b) {
                     const auto& p = (*parts)[b];
                     loading.middleCols(offset, p.eigenvalues.size()).noalias() =
-                        p.phi[k] * spectral[b].asDiagonal();
+                        scales[b] * p.phi[k] * out.spectral[b].asDiagonal();
                     offset += p.eigenvalues.size();
                 }
                 out.basis[k].noalias() = loading * representation.rotation;

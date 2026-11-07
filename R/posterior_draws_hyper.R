@@ -481,6 +481,8 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
     }
   }
 
+  if (!is.null(fit$outer_posterior)) return(.nl_outer_hyper_draws(fit, cells, within))
+
   # An axis whose support the registry will not name carries NA and mirrors its
   # outer edge in the coordinate the guess picks, exactly as the interval read
   # does; a fit the registry cannot read at all leaves every axis undeclared

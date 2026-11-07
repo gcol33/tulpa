@@ -417,8 +417,53 @@ records the pass). Other axes keep the nodes they were laid on.
 \item \code{adaptive_grid} (\code{FALSE}), \code{adaptive_grid_edge_thresh} (\code{0.02}),
 \code{adaptive_grid_max_passes} (\code{1L}) -- the opt-in boundary / interior pass,
 on the same axes.
-\item \code{integration} (\code{"qmc"} for a local/regional multi-scale field, \code{"grid"}
-otherwise) -- \code{"qmc"} integrates continuous hyperparameters with
+\item \code{integration} (\code{"aghq"} for a local/regional HSGP field, \code{"qmc"} for
+a local/regional NNGP field, \code{"grid"} otherwise) -- \code{"aghq"} uses
+mode-scaled Gauss-Hermite quadrature on the local log variance and
+lengthscale, and Gauss-Legendre quadrature on the prior CDFs of the
+regional standard deviation and inverse lengthscale.
+A smooth logit shift centres each regional coordinate at its placement
+posterior median and preserves both prior-CDF endpoints.
+The automatic choice uses four freely extending axes. With \code{"aghq"},
+grids seed placement and integration covers the positive prior support.
+The local mode and covariance use the regional marginal evaluated with
+a five-point regional rule. Posterior contours two log-density units
+below that mode set a smooth per-side scale on each whitened coordinate.
+The transport includes its Jacobian and preserves both infinite tails.
+A tensor cubic spline of the log posterior ratio supplies a positive
+continuous hyperparameter posterior. A positive coupling preserves its
+marginal masses and the native quadrature masses on solved conditional
+Gaussian cells used by fixed effects and field predictions.
+Matrix scaling balances a local linear partition with a positive
+rank-one completion. Hyperparameter draws condition on this coupling.
+The quadrature is currently four-dimensional.
+\code{quad_order} (\code{5L}) and \code{quad_max_order} (\code{17L}) bound the odd Hermite
+orders; the regional rule uses two more points per axis.
+\code{quad_read_nodes} (\code{65536L}, divisible by eight) controls inexpensive
+shifted Sobol reads of the log spline through a seven-degree Student
+proposal on the local pair. These reads use no inner solves.
+\code{quad_tol} (\code{0.05} posterior SD)
+and \code{quad_evidence_tol} (\code{0.005} nats) control successive-order checks.
+The quantile estimate includes a geometric envelope for resolved,
+contracting quantile changes, conditional-mixture resolution and
+shifted-read uncertainty. The evidence estimate retains the largest
+observed order change during oscillation or increasing changes. With
+same-direction contraction it uses a geometric remainder, bounded below
+by the last two changes. Three orders are required for a
+finite estimate. \code{outer_quadrature} records these
+estimates, solve counts and order history.
+
+\code{"user"} uses \code{outer_design = list(points =, weights =)}.
+\code{points} is a finite numeric matrix with the fitted outer-axis column
+names; columns may be reordered.
+Values use the kernel's physical coordinates. Weights are finite,
+nonnegative integration masses in the axes' integration coordinates
+(log coordinates for positive scale axes). They multiply the stored
+joint density including its hyperprior. They need not sum to one.
+Supplying \code{outer_design} selects \code{"user"} when \code{integration} is omitted.
+Evidence, summaries and predictions use these same weighted cells.
+
+\code{"qmc"} integrates continuous hyperparameters with
 quasi Monte Carlo importance quadrature in transformed coordinates.
 Each free covariance block uses its declared grid coordinates for the proposal.
 A mixture of diagonal product Student distributions is fitted to the

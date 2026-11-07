@@ -3,6 +3,8 @@
 
 #include <Eigen/QR>
 #include <Eigen/Core>
+#include <vector>
+#include <utility>
 
 namespace tulpa {
 
@@ -27,6 +29,37 @@ struct HsgpObservation {
             rotation = qr.householderQ() * Eigen::MatrixXd::Identity(at.rows(), rank);
         basis = qr.matrixQR().topRows(rank).template triangularView<Eigen::Upper>()
                     .toDenseMatrix().transpose();
+    }
+
+    void combine(const std::vector<HsgpObservation>& components,
+                 const std::vector<double>& scales, bool need_rotation = true) {
+        int reduced = 0, original = 0;
+        for (const auto& p : components) {
+            reduced += p.basis.cols();
+            original += p.rotation.rows();
+        }
+        const int rows = components.front().basis.rows();
+        Eigen::MatrixXd at(reduced, rows);
+        int offset = 0;
+        for (std::size_t b = 0; b < components.size(); ++b) {
+            const auto& p = components[b];
+            at.middleRows(offset, p.basis.cols()).noalias() =
+                scales[b] * p.basis.transpose();
+            offset += p.basis.cols();
+        }
+        compute_loading(at, need_rotation);
+        if (need_rotation) {
+            Eigen::MatrixXd full(original, rotation.cols());
+            int row = 0;
+            offset = 0;
+            for (const auto& p : components) {
+                full.middleRows(row, p.rotation.rows()).noalias() =
+                    p.rotation * rotation.middleRows(offset, p.basis.cols());
+                row += p.rotation.rows();
+                offset += p.basis.cols();
+            }
+            rotation = std::move(full);
+        }
     }
 
     Eigen::MatrixXd project(const Eigen::MatrixXd& phi,

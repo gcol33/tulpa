@@ -61,6 +61,6 @@ test_that("a multi-scale Gaussian field resolves both variance arms against dens
   if (!qmc$converged) {
     expect_equal(qmc$n, tulpa:::.NL_QMC$nodes)
     expect_output(print(fit), "target unattained")
-    expect_false(attr(diagnostics(fit), "summary")$qmc_converged)
+    expect_false(attr(diagnostics(fit), "summary")$outer_converged)
   }
 })

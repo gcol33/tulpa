@@ -190,16 +190,16 @@ Rcpp::List cpp_hsgp_sum_projection(Rcpp::List training, Rcpp::List prediction,
         pred.emplace_back(Eigen::Map<const Eigen::MatrixXd>(p.begin(), p.nrow(), p.ncol()) *
             Eigen::Map<const Eigen::VectorXd>(s.begin(), s.size()).asDiagonal());
     }
-    Eigen::MatrixXd at(width, n);
+    std::vector<tulpa::HsgpObservation> components(count);
     for (int b = 0; b < count; ++b) {
         Rcpp::NumericMatrix t = training[b];
         Rcpp::NumericVector s = spectral[b];
-        at.middleRows(offsets[b], s.size()).noalias() =
-            Eigen::Map<const Eigen::VectorXd>(s.begin(), s.size()).asDiagonal() *
-            Eigen::Map<const Eigen::MatrixXd>(t.begin(), t.nrow(), t.ncol()).transpose();
+        components[b].compute(
+            Eigen::Map<const Eigen::MatrixXd>(t.begin(), t.nrow(), t.ncol()),
+            Eigen::Map<const Eigen::VectorXd>(s.begin(), s.size()));
     }
     tulpa::HsgpObservation representation;
-    representation.compute_loading(at);
+    representation.combine(components, std::vector<double>(count, 1.0));
     Rcpp::List out(count);
     for (int b = 0; b < count; ++b) {
         Eigen::MatrixXd basis = pred[b] * representation.rotation.middleRows(offsets[b], pred[b].cols());

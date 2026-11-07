@@ -331,8 +331,53 @@
 #'   * `adaptive_grid` (`FALSE`), `adaptive_grid_edge_thresh` (`0.02`),
 #'     `adaptive_grid_max_passes` (`1L`) -- the opt-in boundary / interior pass,
 #'     on the same axes.
-#'   * `integration` (`"qmc"` for a local/regional multi-scale field, `"grid"`
-#'     otherwise) -- `"qmc"` integrates continuous hyperparameters with
+#'   * `integration` (`"aghq"` for a local/regional HSGP field, `"qmc"` for
+#'     a local/regional NNGP field, `"grid"` otherwise) -- `"aghq"` uses
+#'     mode-scaled Gauss-Hermite quadrature on the local log variance and
+#'     lengthscale, and Gauss-Legendre quadrature on the prior CDFs of the
+#'     regional standard deviation and inverse lengthscale.
+#'     A smooth logit shift centres each regional coordinate at its placement
+#'     posterior median and preserves both prior-CDF endpoints.
+#'     The automatic choice uses four freely extending axes. With `"aghq"`,
+#'     grids seed placement and integration covers the positive prior support.
+#'     The local mode and covariance use the regional marginal evaluated with
+#'     a five-point regional rule. Posterior contours two log-density units
+#'     below that mode set a smooth per-side scale on each whitened coordinate.
+#'     The transport includes its Jacobian and preserves both infinite tails.
+#'     A tensor cubic spline of the log posterior ratio supplies a positive
+#'     continuous hyperparameter posterior. A positive coupling preserves its
+#'     marginal masses and the native quadrature masses on solved conditional
+#'     Gaussian cells used by fixed effects and field predictions.
+#'     Matrix scaling balances a local linear partition with a positive
+#'     rank-one completion. Hyperparameter draws condition on this coupling.
+#'     The quadrature is currently four-dimensional.
+#'     `quad_order` (`5L`) and `quad_max_order` (`17L`) bound the odd Hermite
+#'     orders; the regional rule uses two more points per axis.
+#'     `quad_read_nodes` (`65536L`, divisible by eight) controls inexpensive
+#'     shifted Sobol reads of the log spline through a seven-degree Student
+#'     proposal on the local pair. These reads use no inner solves.
+#'     `quad_tol` (`0.05` posterior SD)
+#'     and `quad_evidence_tol` (`0.005` nats) control successive-order checks.
+#'     The quantile estimate includes a geometric envelope for resolved,
+#'     contracting quantile changes, conditional-mixture resolution and
+#'     shifted-read uncertainty. The evidence estimate retains the largest
+#'     observed order change during oscillation or increasing changes. With
+#'     same-direction contraction it uses a geometric remainder, bounded below
+#'     by the last two changes. Three orders are required for a
+#'     finite estimate. `outer_quadrature` records these
+#'     estimates, solve counts and order history.
+#'
+#'     `"user"` uses `outer_design = list(points =, weights =)`.
+#'     `points` is a finite numeric matrix with the fitted outer-axis column
+#'     names; columns may be reordered.
+#'     Values use the kernel's physical coordinates. Weights are finite,
+#'     nonnegative integration masses in the axes' integration coordinates
+#'     (log coordinates for positive scale axes). They multiply the stored
+#'     joint density including its hyperprior. They need not sum to one.
+#'     Supplying `outer_design` selects `"user"` when `integration` is omitted.
+#'     Evidence, summaries and predictions use these same weighted cells.
+#'
+#'     `"qmc"` integrates continuous hyperparameters with
 #'     quasi Monte Carlo importance quadrature in transformed coordinates.
 #'     Each free covariance block uses its declared grid coordinates for the proposal.
 #'     A mixture of diagonal product Student distributions is fitted to the
@@ -471,6 +516,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             control = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
+  outer_design <- control$outer_design
+  if (!is.null(outer_design)) outer_design <- .nl_validate_outer_design(outer_design)
+  quad_config <- .nl_aghq_config(control)
   # A typo is named here, against the family registry, rather than by the C++
   # family lookup, whose message names a header (gcol33/tulpa#886). A consumer
   # `likelihood` supplies its own density and bypasses the builtin family.
@@ -616,8 +664,17 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           vapply(prior, function(p)
             if (tolower(p$type %||% "") %in% c("nngp", "hsgp"))
               p$name %||% "" else "", character(1)))
-  integration <- match.arg(control$integration %||% if (ms) "qmc" else "grid",
-                           c("grid", "qmc"))
+  integration <- match.arg(control$integration %||%
+    if (!is.null(outer_design)) "user" else if (ms && .nl_aghq_supported(prior, control)) "aghq"
+    else if (ms) "qmc" else "grid", c("grid", "qmc", "user", "aghq"))
+  if (identical(integration, "aghq") && is.null(.nl_aghq_blocks(prior))) {
+    stop("`control$integration = \"aghq\"` requires local and regional HSGP blocks ",
+         "with four free axes.", call. = FALSE)
+  }
+  if (identical(integration, "user") != !is.null(outer_design)) {
+    stop("`control$integration = \"user\"` requires `control$outer_design`; ",
+         "an outer design is used only with user integration.", call. = FALSE)
+  }
   qmc_nodes <- control$qmc_nodes %||% .NL_QMC$nodes
   qmc_tol <- control$qmc_tol %||% .NL_QMC$tol
   if (!is.numeric(qmc_tol) || length(qmc_tol) != 1L ||
@@ -630,7 +687,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     stop("`control$qmc_nodes` must be an integer >= 2.", call. = FALSE)
   }
   use_qmc <- identical(integration, "qmc")
-  if (use_qmc && !.is_multi_block_prior(prior)) prior <- list(prior)
+  use_design <- integration %in% c("qmc", "user", "aghq")
+  if (use_design && !.is_multi_block_prior(prior)) prior <- list(prior)
   .prov <- .nl_grid_provenance(prior)
   prior <- .prov$prior
   # And refuse an axis this path cannot read: a grid field
@@ -639,6 +697,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   .op_axis <- .nl_publish_axis_dropped(
     .nl_check_axis_fields(prior, "registry", auto = .prov$auto))
   on.exit(options(.op_axis), add = TRUE)
+  if (!is.null(outer_design)) {
+    outer_design <- .nl_validate_outer_design_prior(outer_design, prior)
+  }
   # A model-supplied `likelihood` is only honoured by the spec-driven multi-block
   # driver (run_multi_block_nested_laplace); the single-kernel path (.nl_dispatch)
   # has no spec hook. Route a single LatentBlock-type prior through the
@@ -718,8 +779,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           likelihood = likelihood, theta_grid_override = theta_mat),
         prior_i, TRUE, .prov$auto,
         declared = prior_declared,
-        consistency = var_of_means_consistency && !use_qmc,
-        adaptive_grid = adaptive_grid && !use_qmc,
+        consistency = var_of_means_consistency && !use_design,
+        adaptive_grid = adaptive_grid && !use_design,
         edge_thresh = adaptive_grid_edge_thresh,
         max_passes = adaptive_grid_max_passes,
         user = control$axis_refine)
@@ -778,7 +839,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res   <- multi_rescue$res
     prior <- multi_rescue$prior
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
-    if (use_qmc) {
+    if (use_design) {
       tags <- .nl_registry_axis_tags(res, prior, TRUE)
       qmc_view <- .hp_design_view(res$theta_grid,
         .hp_grid_designs(res$theta_grid, res$refining_axis)$designs)
@@ -789,15 +850,22 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         if (identical(unname(modes[j]), "extend")) c(-Inf, Inf)
         else range(.joint_pareto_fwd(tags[j], qmc_view$grid[, j]))
       }, numeric(2))
-      res <- .nl_qmc_integrate(res, function(cells, retain) {
+      design_cells <- switch(integration, qmc = qmc_nodes,
+        user = nrow(outer_design$points),
+        aghq = as.double(quad_config$max_order)^2 * (quad_config$max_order + 2)^2)
+      solve_outer <- function(cells, retain) {
         r <- .nl_dispatch_multi(if (retain) cargs_no_ckpt else cargs_lm,
           prior, likelihood = likelihood, theta_grid_override = cells)
         if (retain && isTRUE(keep_grid_hessians)) {
-          r <- .nl_attach_grid_hessians(r, p_fixed, budget_cells = qmc_nodes)
+          r <- .nl_attach_grid_hessians(r, p_fixed, budget_cells = design_cells)
         }
         r
-      },
-        tags, n = qmc_nodes, bounds = bounds, view = qmc_view, tol = qmc_tol)
+      }
+      res <- switch(integration,
+        qmc = .nl_qmc_integrate(res, solve_outer, tags, n = qmc_nodes,
+          bounds = bounds, view = qmc_view, tol = qmc_tol),
+        user = .nl_user_integrate(res, solve_outer, outer_design, tags),
+        aghq = .nl_aghq_integrate(res, solve_outer, prior, quad_config))
       res <- .nl_posterior_moments_multi(res, res$blocks, res$axis_offsets,
                                         res$theta_grid, within = within_cell)
       if (keep_joint_prec) {
@@ -1860,7 +1928,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res$log_quad <- res$outer_log_measure
     res$weights <- .nl_normalise_weights_safe(res$log_marginal, what,
                                                log_quad = res$log_quad)
-    res$outer_qmc$ess <- 1 / sum(res$weights^2)
+    if (!is.null(res$outer_qmc)) res$outer_qmc$ess <- 1 / sum(res$weights^2)
+    if (!is.null(res$outer_quadrature)) {
+      res$outer_quadrature$ess <- 1 / sum(res$weights^2)
+    }
     return(.nl_attach_evidence(res, tg, NULL, log_measure = res$log_quad))
   }
   # A node a refinement pass appended was not declared, so the specs are read
@@ -1989,7 +2060,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     return(res)
   }
   n <- length(res$log_marginal)
-  if (!is.null(tg) && nrow(as.matrix(tg)) == n &&
+  if (is.null(res$outer_log_measure) && !is.null(tg) && nrow(as.matrix(tg)) == n &&
       !length(.hp_integrated_axes(as.matrix(tg)))) {
     # Every axis is pinned, so each is part of the model and the grid integrates
     # nothing: its cells are copies of one point, which together carry measure 1.

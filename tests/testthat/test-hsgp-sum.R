@@ -66,8 +66,8 @@ test_that("component residuals preserve their full joint Gaussian covariance", {
     y <- seq(-1, 1, length.out = 5)
     V <- solve(diag(20) + crossprod(A) / .3)
     m <- as.numeric(V %*% crossprod(A, y) / .3)
-    training_projection <- tulpa:::cpp_hsgp_observation_projection(
-      A, A, rep(1, 20))$basis
+    training_projection <- Reduce(`+`, lapply(
+      tulpa:::cpp_hsgp_sum_projection(train, train, spectral), `[[`, "basis"))
     v <- solve(diag(5) + crossprod(training_projection) / .3)
     mu <- as.numeric(v %*% crossprod(training_projection, y) / .3)
     expect_equal(as.numeric(projected %*% mu), as.numeric(B %*% m), tolerance = 1e-8)

@@ -343,14 +343,14 @@
 # than re-deriving which cells were retained. Only the component variances are
 # returned in `var`, since that is all the mixture CDF needs.
 #' @keywords internal
-.nested_fixed_moments <- function(object) {
+.nested_fixed_moments <- function(object, include_zero = FALSE) {
   H <- object$grid_hessians
   M <- object$grid_modes
   if (is.null(H) || is.null(M) || is.null(object$weights)) return(NULL)
   denom <- sum(object$weights)
   w <- object$weights / denom
   if (length(H) != length(w) || length(M) != length(w)) return(NULL)
-  keep <- which(is.finite(w) & w > 0 &
+  keep <- which(is.finite(w) & (w > 0 | (include_zero & w == 0)) &
                   !vapply(H, is.null, logical(1)) &
                   !vapply(M, is.null, logical(1)))
   if (!length(keep)) return(NULL)
@@ -639,8 +639,8 @@ print.tulpa_fit <- function(x, ...) {
 #' @keywords internal
 .print_fit_body <- function(x) {
   .print_fit_call(x$call)
-  qmc_note <- .tulpa_qmc_note(.tulpa_qmc_state(x))
-  if (!is.null(qmc_note)) cat("  ", qmc_note, "\n", sep = "")
+  outer_note <- .tulpa_outer_integration_note(.tulpa_outer_integration_state(x))
+  if (!is.null(outer_note)) cat("  ", outer_note, "\n", sep = "")
   n_obs <- x$N %||% x$n_obs
   if (!is.null(n_obs)) cat("  n_obs:", n_obs, "\n")
   tab <- tryCatch(.fit_fixed_table(x), error = function(e) NULL)

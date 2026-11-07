@@ -2055,6 +2055,46 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_outer_read_design
+Rcpp::NumericMatrix cpp_outer_read_design(int n, int d, int shift_seed);
+RcppExport SEXP _tulpa_cpp_outer_read_design(SEXP nSEXP, SEXP dSEXP, SEXP shift_seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< int >::type d(dSEXP);
+    Rcpp::traits::input_parameter< int >::type shift_seed(shift_seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_outer_read_design(n, d, shift_seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_outer_tensor_partition
+Eigen::SparseMatrix<double> cpp_outer_tensor_partition(Rcpp::List nodes, Rcpp::NumericMatrix query, Rcpp::NumericVector mass);
+RcppExport SEXP _tulpa_cpp_outer_tensor_partition(SEXP nodesSEXP, SEXP querySEXP, SEXP massSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type nodes(nodesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type query(querySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mass(massSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_outer_tensor_partition(nodes, query, mass));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_outer_tensor_interpolate
+Rcpp::NumericMatrix cpp_outer_tensor_interpolate(Rcpp::List nodes, Rcpp::NumericMatrix values, Rcpp::NumericMatrix query, bool cubic);
+RcppExport SEXP _tulpa_cpp_outer_tensor_interpolate(SEXP nodesSEXP, SEXP valuesSEXP, SEXP querySEXP, SEXP cubicSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type nodes(nodesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type values(valuesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type query(querySEXP);
+    Rcpp::traits::input_parameter< bool >::type cubic(cubicSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_outer_tensor_interpolate(nodes, values, query, cubic));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_pg_binomial_gibbs
 Rcpp::List cpp_pg_binomial_gibbs(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector group, int n_groups, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_scale, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP groupSEXP, SEXP n_groupsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_scaleSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
@@ -3372,6 +3412,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 31},
     {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 2},
     {"_tulpa_cpp_nl_lq_mixture_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_mixture_cdf, 3},
+    {"_tulpa_cpp_outer_read_design", (DL_FUNC) &_tulpa_cpp_outer_read_design, 3},
+    {"_tulpa_cpp_outer_tensor_partition", (DL_FUNC) &_tulpa_cpp_outer_tensor_partition, 3},
+    {"_tulpa_cpp_outer_tensor_interpolate", (DL_FUNC) &_tulpa_cpp_outer_tensor_interpolate, 4},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 23},

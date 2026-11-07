@@ -393,6 +393,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 # row is. NULL when the grid is not retained.
 .nested_hyper_summary <- function(object, probs, transform = NULL,
                                   keep_role = NULL, tag_blocks = FALSE) {
+  object <- .nl_outer_hyper_view(object)
   tg <- object$theta_grid
   w  <- object$weights
   if (is.null(tg) || is.null(w)) return(NULL)

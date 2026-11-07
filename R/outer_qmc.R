@@ -134,10 +134,7 @@
     groups <- lapply(seq_along(proposed_per_rep), function(g) which(replicate == g))
     leave <- lapply(seq_along(groups), function(g) which(replicate != g))
     critical <- stats::qt(.975, length(groups) - 1L)
-    jackknife <- function(q) {
-        critical * apply(q, 1L, stats::sd) *
-            (length(groups) - 1L) / sqrt(length(groups))
-    }
+    jackknife <- function(q) .nl_outer_jackknife(q, critical)
     z <- vapply(groups, function(ix) sum(a[ix]), numeric(1)) / proposed_per_rep
     log_se <- critical * stats::sd(z) / sqrt(length(z)) / mean(z)
     w <- a
@@ -190,18 +187,6 @@
          max = if (all(is.finite(errors))) max(errors) else Inf, complete = TRUE)
 }
 
-.nl_qmc_solve <- function(cells, solve, retain) {
-    n <- nrow(cells)
-    if (n <= .NL_QMC$chunk_nodes) return(solve(cells, retain))
-    first <- solve(cells[1L, , drop = FALSE], retain)
-    ix <- unname(split(seq.int(2L, n), (seq_len(n - 1L) - 1L) %/% .NL_QMC$chunk_nodes))
-    chunks <- lapply(ix, function(i)
-        list(res = solve(cells[i, , drop = FALSE], retain), n = length(i)))
-    out <- .nl_bind_cell_results(first, chunks, 1L)
-    if (!is.null(out$n_grid)) out$n_grid <- n
-    out
-}
-
 .nl_qmc_integrate <- function(res, solve, tags, n = .NL_QMC$nodes,
                                bounds = NULL, view = NULL, tol = .NL_QMC$tol) {
     tg <- .nl_theta_matrix(res)
@@ -252,7 +237,7 @@
         }
         colnames(cells) <- colnames(tg)
         n_evaluated <- n_evaluated + nrow(cells)
-        out <- .nl_qmc_solve(cells, solve, retain = FALSE)
+        out <- .nl_outer_solve(cells, solve, retain = FALSE)
         measure <- jac - nodes$log_q[valid] - log(size)
         w <- .nl_normalise_weights_safe(out$log_marginal, log_quad = measure)
         good <- is.finite(w) & w > 0
@@ -287,7 +272,7 @@
             if (j %in% varying) jac <- jac + inv$log_jac
         }
         colnames(cb) <- colnames(tg)
-        rb <- .nl_qmc_solve(cb[valid, , drop = FALSE], solve, retain = TRUE)
+        rb <- .nl_outer_solve(cb[valid, , drop = FALSE], solve, retain = TRUE)
         # Rejected bound points carry zero mass in the integral's denominator.
         mb <- jac[valid] - nodes$log_q[valid]
         lb <- rb$log_marginal + mb
@@ -308,14 +293,6 @@
         if (error$max <= tol || proposed >= n) break
     }
     measure <- measure - log(proposed)
-    if (!is.null(out$n_grid)) out$n_grid <- nrow(cells)
-    out$theta_grid <- if (mapped) view$to_columns(cells) else cells
-    out$theta_names <- colnames(cells)
-    out$integration <- "qmc"
-    out$outer_log_measure <- measure
-    out$refining_axis <- rep("qmc", nrow(cells))
-    out$weight_kind <- rep("importance", nrow(cells))
-    out$theta_interval_read <- "sample"
     out$outer_qmc <- list(n = proposed, n_evaluated = n_evaluated, proposal = proposal,
                          error = error, tol = tol, converged = error$max <= tol,
                          error_method = "delete_scramble_jackknife",
@@ -323,20 +300,5 @@
                          error_scope = "pointwise",
                          history = do.call(rbind, history))
     if (mapped) out$outer_qmc$design_columns <- view$cols
-    fields <- c("outer_grid_placement", "outer_grid_axis_declined", "outer_grid_moved_axes",
-                "outer_grid_recenter_clamped", "outer_grid_recenter_declined")
-    out[fields] <- res[fields]
-    .nl_attach_outer_integration(out, "importance quadrature")
-}
-
-.tulpa_qmc_state <- function(fit) {
-    fit[["outer_qmc"]] %||% fit[["joint_fit"]][["outer_qmc"]] %||%
-        fit[["nested"]][["outer_qmc"]]
-}
-
-.tulpa_qmc_note <- function(qmc) {
-    if (is.null(qmc)) return(NULL)
-    sprintf("Importance quadrature: estimated error %.3g, target %.3g, %d points (%s).",
-        qmc$error$max, qmc$tol, qmc$n,
-        if (isTRUE(qmc$converged)) "target attained" else "target unattained")
+    .nl_outer_finish(out, res, cells, measure, "qmc", view)
 }
