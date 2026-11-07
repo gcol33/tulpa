@@ -226,8 +226,11 @@
   score_draws <- matrix(NA_real_, n_draws, P)
   for (s in seq_len(n_draws)) {
     bl <- m_step_encode(draw_z(weights), ...)
+    # A block with no design on this draw (no rows) has no width to compare.
+    widths <- vapply(bl, function(b) if (is.null(b$X)) NA_integer_
+                                     else as.integer(ncol(b$X)), integer(1))
     if (!identical(names(bl), names(blocks)) ||
-        !all(vapply(bl, function(b) ncol(b$X), integer(1)) == p)) {
+        anyNA(widths) || !all(widths == p)) {
       return(decline(paste0("m_step_encode() returned a different block ",
                             "layout for a hard latent draw")))
     }

@@ -84,3 +84,30 @@ test_that("Louis standard errors decline on a block with latent structure", {
   expect_match(res$louis$unavailable, "latent structure")
   expect_true(all(is.finite(res$fits$a$se)))
 })
+
+test_that("Louis standard errors decline when a hard draw empties a block", {
+  # An occupancy-style split: the detection block holds the rows of the
+  # occupied units only, so a hard draw with no unit occupied encodes it with
+  # no design. The pass declines with its layout message rather than erroring
+  # (gcol33/tulpa#1155).
+  set.seed(5)
+  n <- 40L; x <- rnorm(n)
+  e_step <- function(fits, ...) list(weights = rep(1e-9, n))
+  m_step_encode <- function(weights, ...) {
+    occ <- list(y = rep(c(1, 0), each = n), X = rbind(cbind(1, x), cbind(1, x)),
+                weights = c(weights, 1 - weights), family = "binomial")
+    on <- weights > 0
+    det <- if (any(on)) {
+      list(y = rep(0, sum(on)), X = matrix(1, sum(on), 1L),
+           weights = weights[on], n_trials = rep(2, sum(on)),
+           family = "binomial")
+    } else {
+      list(y = numeric(0), X = NULL, weights = numeric(0), family = "binomial")
+    }
+    list(occ = occ, det = det)
+  }
+  res <- tulpa_em_laplace(e_step, m_step_encode, verbose = FALSE,
+                          max_iter = 3L)
+  expect_null(res$se)
+  expect_match(res$louis$unavailable, "different block layout")
+})
