@@ -369,6 +369,10 @@
 - Gaussian-mixture quantiles converge at point masses and at any scale (the stopping test follows the mixture's
   scale), and mixture covariances are computed from centred conditional moments, which had cancelled to zero at
   large means.
+- The native GLMM oracle evaluates each observation's normalizing constant once when it is built, so a group loop
+  run across threads never calls R's math library from a worker thread. A binomial `tulpa_re_em(n_threads > 1)`
+  fit had aborted on R's C stack check inside `lchoose()`; it now returns the single-threaded estimates exactly
+  (#1156).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component

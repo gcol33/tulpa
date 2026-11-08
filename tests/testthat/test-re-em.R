@@ -66,12 +66,19 @@ test_that("tulpa_re_em projects an uncorrelated term and applies the floor", {
 })
 
 test_that("tulpa_re_em does not depend on the thread count", {
-  fx <- .re_em_glmm("poisson", 14L, d_re = 2L)
-  e1 <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc, n_threads = 1L)
-  e2 <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc, n_threads = 2L)
-  expect_identical(e1$theta, e2$theta)
-  expect_identical(e1$Sigma_list, e2$Sigma_list)
-  expect_identical(e1$log_marginal, e2$log_marginal)
+  # The binomial density's coefficient goes through R's math library, which
+  # checks R's C stack; the oracle evaluates it per observation at construction
+  # so its group loop stays off R on worker threads (#1156).
+  for (family in c("binomial", "poisson", "gaussian")) {
+    fx <- .re_em_glmm(family, 14L, d_re = 2L)
+    e1 <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
+                      sigma_floor = 0.3, n_threads = 1L)
+    e2 <- tulpa_re_em(fx$beta, fx$re_terms, list(fx$Sig), oracle = fx$orc,
+                      sigma_floor = 0.3, n_threads = 4L)
+    expect_identical(e1$theta, e2$theta, info = family)
+    expect_identical(e1$Sigma_list, e2$Sigma_list, info = family)
+    expect_identical(e1$log_marginal, e2$log_marginal, info = family)
+  }
 })
 
 test_that("the latent theta rule reaches the marginal rule's theta on a Gaussian GLMM", {

@@ -40,6 +40,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
     Eigen::MatrixXd Z;                 // n x nc this block's RE design
     Eigen::VectorXd y;                 // n
     Eigen::VectorXd ntrials;           // n (binomial; 1 otherwise)
+    Eigen::VectorXd lconst;            // n, glmm_log_const per observation
     std::vector<std::vector<int>> rows_by_g;   // 0-based obs indices per group
 
     Eigen::VectorXd xb;                // X beta, set by rebind
@@ -66,6 +67,9 @@ struct SingleArmGLMMOracle : REGroupOracle {
         check_rows(static_cast<int>(idx.size()), n, "idx");
         xb     = Eigen::VectorXd::Zero(n);
         offset = Eigen::VectorXd::Zero(n);
+        lconst.resize(n);
+        for (int i = 0; i < n; ++i)
+            lconst(i) = glmm_log_const(fam, y(i), ntrials(i), phi_var);
         rows_by_g.assign(ng, std::vector<int>());
         // An observation outside [1, n_groups] would contribute to no group at
         // all, so the fit would silently run on a subset of the data.
@@ -90,6 +94,12 @@ struct SingleArmGLMMOracle : REGroupOracle {
                 std::to_string(got) + " rows but the fixed-effect design has " +
                 std::to_string(n) + ".");
         }
+    }
+
+    GLMMElt elt(int i, double eta) const {
+        GLMMElt e = glmm_elt_eta(fam, eta, y(i), ntrials(i), phi_var);
+        e.l += lconst(i);
+        return e;
     }
 
     void rebind(const double* theta) override {
@@ -123,7 +133,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
         for (int i : rows_by_g[g]) {
             const Eigen::RowVectorXd zr = Z.row(i);
             const double eta = xb(i) + offset(i) + zr.dot(bv);
-            const GLMMElt e = glmm_elt(fam, eta, y(i), ntrials(i), phi_var);
+            const GLMMElt e = elt(i, eta);
             logL += e.l;
             gg.noalias() += e.d1 * zr.transpose();
             HH.noalias() += (-e.d2) * (zr.transpose() * zr);
@@ -139,7 +149,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
             double s = 0.0;
             for (int i : rows_by_g[g]) {
                 const double eta = xb(i) + offset(i) + Z.row(i).dot(bv);
-                s += glmm_elt(fam, eta, y(i), ntrials(i), phi_var).l;
+                s += elt(i, eta).l;
             }
             out[k] = s;
         }
@@ -150,7 +160,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
         Eigen::VectorXd s = Eigen::VectorXd::Zero(n_theta);
         for (int i : rows_by_g[g]) {
             const double eta = xb(i) + offset(i) + Z.row(i).dot(bv);
-            const double d1 = glmm_elt(fam, eta, y(i), ntrials(i), phi_var).d1;
+            const double d1 = glmm_elt_eta(fam, eta, y(i), ntrials(i), phi_var).d1;
             s.noalias() += d1 * X.row(i).transpose();
         }
         for (int j = 0; j < n_theta; ++j) dl[j] = s(j);
@@ -169,7 +179,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
             const Eigen::VectorXd bg = B.row(g).transpose();
             for (int i : rows_by_g[g]) {
                 const double eta = xb(i) + offset(i) + Z.row(i).dot(bg);
-                const GLMMElt e = glmm_elt(fam, eta, y(i), ntrials(i), phi_var);
+                const GLMMElt e = elt(i, eta);
                 ll += e.l;
                 if (score) score->noalias() += e.d1 * X.row(i).transpose();
                 if (info) {

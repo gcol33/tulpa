@@ -38,40 +38,63 @@ inline GLMMFamily glmm_family_from_string(const std::string& f) {
 //   takes it back).
 struct GLMMElt { double l, d1, d2; };
 
-inline GLMMElt glmm_elt(GLMMFamily fam, double eta, double y,
-                        double n_trials, double phi_var) {
+// The part of the log-density that does not depend on eta: the binomial
+// coefficient, the Poisson and neg-binomial factorials and gamma ratio, the
+// gaussian normalizer. It goes through R's math library (lchoose checks R's C
+// stack), so a caller running observations across threads evaluates it once
+// per observation on the calling thread and adds it to glmm_elt_eta().
+inline double glmm_log_const(GLMMFamily fam, double y, double n_trials,
+                             double phi_var) {
+    switch (fam) {
+    case GLMMFamily::Binomial: return R::lchoose(n_trials, y);
+    case GLMMFamily::Poisson:  return -R::lgammafn(y + 1.0);
+    case GLMMFamily::Gaussian:
+        return -0.5 * std::log(2.0 * M_PI) - 0.5 * std::log(phi_var);
+    case GLMMFamily::NegBin:
+        return R::lgammafn(y + phi_var) - R::lgammafn(phi_var)
+               - R::lgammafn(y + 1.0);
+    }
+    return 0.0;   // unreachable
+}
+
+// The eta-dependent part of the log-density and its first two eta-derivatives.
+// Plain arithmetic only, so it is safe inside a parallel region.
+inline GLMMElt glmm_elt_eta(GLMMFamily fam, double eta, double y,
+                            double n_trials, double phi_var) {
     switch (fam) {
     case GLMMFamily::Binomial: {
         const double l1p = (eta > 0.0) ? eta + std::log1p(std::exp(-eta))
                                        : std::log1p(std::exp(eta));
         const double mu  = 1.0 / (1.0 + std::exp(-eta));
-        const double l   = y * eta - n_trials * l1p + R::lchoose(n_trials, y);
-        return { l, y - n_trials * mu, -n_trials * mu * (1.0 - mu) };
+        return { y * eta - n_trials * l1p, y - n_trials * mu,
+                 -n_trials * mu * (1.0 - mu) };
     }
     case GLMMFamily::Poisson: {
         const double lam = std::exp(eta);
-        const double l   = y * eta - lam - R::lgammafn(y + 1.0);
-        return { l, y - lam, -lam };
+        return { y * eta - lam, y - lam, -lam };
     }
     case GLMMFamily::Gaussian: {
         const double r = y - eta;
-        const double l = -0.5 * std::log(2.0 * M_PI) - 0.5 * std::log(phi_var)
-                         - 0.5 * r * r / phi_var;
-        return { l, r / phi_var, -1.0 / phi_var };
+        return { -0.5 * r * r / phi_var, r / phi_var, -1.0 / phi_var };
     }
     case GLMMFamily::NegBin: {
         const double rsz = phi_var;                 // size
         const double mu  = std::exp(eta);
         const double rm  = rsz + mu;
-        const double l   = R::lgammafn(y + rsz) - R::lgammafn(rsz)
-                           - R::lgammafn(y + 1.0)
-                           + rsz * std::log(rsz / rm) + y * std::log(mu / rm);
+        const double l   = rsz * std::log(rsz / rm) + y * std::log(mu / rm);
         const double d1  = y - (rsz + y) * mu / rm;
         const double d2  = -(rsz + y) * rsz * mu / (rm * rm);
         return { l, d1, d2 };
     }
     }
     return { 0.0, 0.0, 0.0 };   // unreachable
+}
+
+inline GLMMElt glmm_elt(GLMMFamily fam, double eta, double y,
+                        double n_trials, double phi_var) {
+    GLMMElt e = glmm_elt_eta(fam, eta, y, n_trials, phi_var);
+    e.l += glmm_log_const(fam, y, n_trials, phi_var);
+    return e;
 }
 
 }  // namespace tulpa
