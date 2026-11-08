@@ -413,12 +413,20 @@ cpp_nl_lq_mixture_cdf <- function(pieces, mass, x) {
     .Call(`_tulpa_cpp_nl_lq_mixture_cdf`, pieces, mass, x)
 }
 
+cpp_nl_mixture_quantiles <- function(mu, sd, mass, probability, center, scale, max_iter = 80L) {
+    .Call(`_tulpa_cpp_nl_mixture_quantiles`, mu, sd, mass, probability, center, scale, max_iter)
+}
+
 cpp_outer_read_design <- function(n, d, shift_seed) {
     .Call(`_tulpa_cpp_outer_read_design`, n, d, shift_seed)
 }
 
 cpp_outer_tensor_partition <- function(nodes, query, mass) {
     .Call(`_tulpa_cpp_outer_tensor_partition`, nodes, query, mass)
+}
+
+cpp_outer_nearest_partition <- function(points, query, mass) {
+    .Call(`_tulpa_cpp_outer_nearest_partition`, points, query, mass)
 }
 
 cpp_outer_tensor_interpolate <- function(nodes, values, query, cubic = TRUE) {
@@ -636,4 +644,3 @@ cpp_varying_coef_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sig
 cpp_temporal_field_rows <- function(field, n_times, structure, tau, rho, sigma2, phi, time_values, cov_type, nu, period, query, draw) {
     .Call(`_tulpa_cpp_temporal_field_rows`, field, n_times, structure, tau, rho, sigma2, phi, time_values, cov_type, nu, period, query, draw)
 }
-

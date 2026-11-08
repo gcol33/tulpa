@@ -333,39 +333,44 @@
 #'     on the same axes.
 #'   * `integration` (`"aghq"` for a local/regional HSGP field, `"qmc"` for
 #'     a local/regional NNGP field, `"grid"` otherwise) -- `"aghq"` uses
-#'     mode-scaled Gauss-Hermite quadrature on the local log variance and
-#'     lengthscale, and Gauss-Legendre quadrature on the prior CDFs of the
+#'     nested Genz-Keister quadrature on the local log variance and
+#'     lengthscale, and nested Patterson quadrature on the prior CDFs of the
 #'     regional standard deviation and inverse lengthscale.
 #'     A smooth logit shift centres each regional coordinate at its placement
 #'     posterior median and preserves both prior-CDF endpoints.
-#'     The automatic choice uses four freely extending axes. With `"aghq"`,
+#'     Additional HSGP and independent Gaussian blocks use mode-scaled log
+#'     coordinates. Every varying axis must freely extend. With `"aghq"`,
 #'     grids seed placement and integration covers the positive prior support.
 #'     The local mode and covariance use the regional marginal evaluated with
 #'     a five-point regional rule. Posterior contours two log-density units
 #'     below that mode set a smooth per-side scale on each whitened coordinate.
 #'     The transport includes its Jacobian and preserves both infinite tails.
-#'     A tensor cubic spline of the log posterior ratio supplies a positive
-#'     continuous hyperparameter posterior. A positive coupling preserves its
-#'     marginal masses and the native quadrature masses on solved conditional
-#'     Gaussian cells used by fixed effects and field predictions.
-#'     Matrix scaling balances a local linear partition with a positive
-#'     rank-one completion. Hyperparameter draws condition on this coupling.
-#'     The quadrature is currently four-dimensional.
-#'     `quad_order` (`5L`) and `quad_max_order` (`17L`) bound the odd Hermite
-#'     orders; the regional rule uses two more points per axis.
-#'     `quad_read_nodes` (`65536L`, divisible by eight) controls inexpensive
+#'     Dimension-adaptive Smolyak refinement reuses every solved node.
+#'     Its combination of tensor cubic splines interpolates the log posterior
+#'     ratio. Exponentiating that interpolant supplies positive posterior mass.
+#'     Positive recombination fits conditional Gaussian CDFs, fixed-effect
+#'     moments and hyperparameter moments to the interpolated posterior.
+#'     Matrix scaling couples these
+#'     conditional-cell masses to the continuous hyperparameter read.
+#'     Hyperparameter draws condition on this positive coupling.
+#'     `quad_max_level` (`5L`, between three and five) bounds nested refinement.
+#'     Normal-rule sizes are 1, 3, 9, 19 and 35; bounded-rule sizes are
+#'     1, 3, 7, 15 and 31.
+#'     `quad_read_nodes` (`65536L`, divisible by eight) starts inexpensive
 #'     shifted Sobol reads of the log spline through a seven-degree Student
-#'     proposal on the local pair. These reads use no inner solves.
+#'     proposal on the local pair. The reads grow when their uncertainty
+#'     consumes the remaining quantile budget. They use no inner solves.
+#'     A coarse read fits the proposal moments; independent full reads check
+#'     its precision.
+#'     Read uncertainty uses a simultaneous delete-scramble quantile envelope.
 #'     `quad_tol` (`0.05` posterior SD)
-#'     and `quad_evidence_tol` (`0.005` nats) control successive-order checks.
-#'     The quantile estimate includes a geometric envelope for resolved,
-#'     contracting quantile changes, conditional-mixture resolution and
-#'     shifted-read uncertainty. The evidence estimate retains the largest
-#'     observed order change during oscillation or increasing changes. With
-#'     same-direction contraction it uses a geometric remainder, bounded below
-#'     by the last two changes. Three orders are required for a
-#'     finite estimate. `outer_quadrature` records these
-#'     estimates, solve counts and order history.
+#'     and `quad_evidence_tol` (`0.005` nats) control refinement.
+#'     Quantile indicators include changes in posterior CDFs from active subspaces,
+#'     conditional-mixture resolution and shifted-read uncertainty.
+#'     Evidence is the positive interpolant integral. Its indicator combines
+#'     active differential integrals with their discrepancy from that integral.
+#'     Three refinements precede a finite estimate. `outer_quadrature` records
+#'     the estimates, unique solve count, index set and refinement history.
 #'
 #'     `"user"` uses `outer_design = list(points =, weights =)`.
 #'     `points` is a finite numeric matrix with the fitted outer-axis column
@@ -393,9 +398,13 @@
 #'     the caller supplied retain their integration bounds; points outside
 #'     those bounds carry zero mass and are discarded. The reported
 #'     `outer_qmc` contains the proposal, evaluation count, effective sample size,
-#'     error estimates, stopping history and convergence flag. Pointwise errors are 95%
-#'     Student-t bounds across independent scrambles; quantile bounds use
-#'     leave-one-scramble jackknife estimates on the pooled posterior.
+#'     error estimates, stopping history and convergence flag. A simultaneous
+#'     95% Student-t critical value calibrates the endpoint family and evidence.
+#'     Scramble residuals of pooled CDFs supply simultaneous probability bands.
+#'     Empirical CDF bands include every knot. Inverting each band gives
+#'     endpoint uncertainty on the corresponding parameter's scale.
+#'     The relative normalizer uncertainty is
+#'     transformed through the logarithm to bound evidence uncertainty.
 #'     A stopping candidate and the point ceiling receive the complete
 #'     fixed-effect check. Earlier history entries record `complete = 0` and
 #'     `error = Inf` when a failed hyperparameter or evidence criterion makes
@@ -852,7 +861,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       }, numeric(2))
       design_cells <- switch(integration, qmc = qmc_nodes,
         user = nrow(outer_design$points),
-        aghq = as.double(quad_config$max_order)^2 * (quad_config$max_order + 2)^2)
+        aghq = prod(vapply(seq_len(ncol(res$theta_grid)), function(j) {
+          rules <- .nl_sparse_rules(j > 2L)
+          length(rules[[quad_config$max_level]]$x)
+        }, integer(1))))
       solve_outer <- function(cells, retain) {
         r <- .nl_dispatch_multi(if (retain) cargs_no_ckpt else cargs_lm,
           prior, likelihood = likelihood, theta_grid_override = cells)

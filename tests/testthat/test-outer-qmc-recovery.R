@@ -56,6 +56,8 @@ test_that("a multi-scale Gaussian field resolves both variance arms against dens
   expect_lt(max(abs((got - exact) / sd)), .1)
   expect_lt(abs(fit$log_evidence + 83.3996422521), .015)
   qmc <- fit$outer_qmc
+  expect_true(all(t(abs((got - exact) / sd)) <= qmc$error$hyper_quantiles))
+  expect_gte(qmc$error$log_evidence, abs(fit$log_evidence + 83.3996422521))
   expect_true(is.finite(qmc$error$max))
   expect_identical(qmc$converged, qmc$error$max <= qmc$tol)
   if (!qmc$converged) {

@@ -110,12 +110,169 @@
     list(u = U, log_q = mx + log(rowSums(exp(lp - mx))), proposal = proposal)
 }
 
-# Independent scrambles estimate the error of a self-normalized integral.
-# Quantile error deletes one scramble from the pooled posterior, including the
-# complete conditional Gaussian mixture for each retained fixed effect. Student-t
-# bounds at 95% account for the finite number of independent scrambles.
+.nl_outer_quantile_summary <- function(values, variance, weights, probs) {
+    gaussian <- !is.null(variance)
+    quantile <- function(p, rows = seq_along(values)) {
+        if (!gaussian) return(.nl_wtd_quantile(values[rows], weights[rows], p, outside = "clamp"))
+        summary <- .nl_gauss_mixture_summary(matrix(values[rows], ncol = 1L),
+            matrix(variance[rows], ncol = 1L), weights[rows], p)
+        if (is.null(summary)) rep(NA_real_, length(p)) else as.numeric(summary$quantiles)
+    }
+    if (gaussian) {
+        full <- .nl_gauss_mixture_summary(matrix(values, ncol = 1L),
+            matrix(variance, ncol = 1L), weights, probs)
+        if (is.null(full)) return(NULL)
+        sd <- full$sd
+        location <- as.numeric(full$quantiles)
+    } else {
+        mean <- sum(weights * values)
+        sd <- sqrt(sum(weights * (values - mean)^2))
+        location <- quantile(probs)
+    }
+    list(quantile = quantile, location = location, sd = sd)
+}
+
+.nl_outer_error_context <- function(weights, replicate, proposed, family) {
+    groups <- lapply(seq_along(proposed), function(g) which(replicate == g))
+    critical <- stats::qt(1 - .05 / (2 * family), length(groups) - 1L)
+    z <- vapply(groups, function(at) sum(weights[at]), numeric(1)) / proposed
+    relative <- critical * stats::sd(z) / sqrt(length(z)) / mean(z)
+    list(groups = groups, critical = critical, z = z, mean = mean(z), relative = relative,
+         log_evidence = if (relative < 1) -log1p(-relative) else Inf)
+}
+
+.nl_outer_jackknife_dominated <- function(values, variance, weights, groups,
+                                          distribution, budget, critical, probs) {
+    if (length(budget) != 1L || !is.finite(budget) || budget <= 0 ||
+        length(groups) < 2L || !is.finite(critical) || critical <= 0 ||
+        any(!is.finite(distribution$location)) || any(!is.finite(probs)) ||
+        any(!is.finite(values) | !is.finite(variance) | variance < 0)) return(FALSE)
+    sigma <- sqrt(variance)
+    root_bound <- 8 * .Machine$double.eps * max(1, abs(values) + 10 * sigma)
+    radius <- budget * distribution$sd / (critical * sqrt(length(groups) - 1L)) - root_bound
+    if (!is.finite(radius) || radius <= 0) return(FALSE)
+    retained <- sum(weights) - vapply(groups, function(at) sum(weights[at]), numeric(1))
+    if (any(retained <= 0)) return(FALSE)
+    bounds <- as.vector(rbind(distribution$location - radius, distribution$location + radius))
+    components <- matrix(vapply(bounds, function(x) stats::pnorm(x, values, sigma),
+        numeric(length(values))), nrow = length(values))
+    weighted <- weights * components
+    total <- colSums(weighted)
+    leave <- vapply(seq_along(groups), function(g)
+        (total - colSums(weighted[groups[[g]], , drop = FALSE])) / retained[g],
+        numeric(length(bounds)))
+    gamma <- length(weights) * .Machine$double.eps /
+        (1 - length(weights) * .Machine$double.eps)
+    roundoff <- 8 * gamma / min(retained)
+    lower <- seq.int(1L, length(bounds), by = 2L)
+    # CDF brackets bound every deleted-group quantile. Popoviciu's variance
+    # bound then places its jackknife error below the common budget.
+    all(leave[lower, , drop = FALSE] + roundoff < probs) &&
+        all(leave[lower + 1L, , drop = FALSE] - roundoff >= probs)
+}
+
+.nl_outer_read_error <- function(u, log_weight, replicate, proposed, fixed = NULL,
+                                  probs = c(.025, .5, .975)) {
+    weights <- .nl_normalise_weights_safe(log_weight)
+    keep <- which(is.finite(weights) & weights > 0)
+    u <- u[keep, , drop = FALSE]
+    weights <- weights[keep]
+    replicate <- replicate[keep]
+    if (!is.null(fixed)) fixed <- lapply(fixed, function(x) x[keep, , drop = FALSE])
+    d <- ncol(u)
+    p <- if (is.null(fixed)) 0L else ncol(fixed$mu)
+    if (!length(weights)) return(list(hyper_quantiles = matrix(Inf, length(probs), d),
+        fixed_quantiles = if (p) matrix(Inf, length(probs), p),
+        log_evidence = Inf, max = Inf, complete = TRUE,
+        error_method = "simultaneous_delete_scramble_envelope"))
+    context <- .nl_outer_error_context(weights, replicate, proposed, 1L + length(probs) * (d + p))
+    error <- function(values, variance = NULL, budget = NULL) {
+        distribution <- .nl_outer_quantile_summary(values, variance, weights, probs)
+        if (is.null(distribution)) return(rep(Inf, length(probs)))
+        if (isTRUE(distribution$sd == 0)) return(rep(0, length(probs)))
+        if (!is.null(variance) && .nl_outer_jackknife_dominated(values, variance,
+            weights, context$groups, distribution, budget, context$critical, probs))
+            return(rep(budget, length(probs)))
+        leave <- vapply(seq_along(context$groups), function(g)
+            distribution$quantile(probs, which(replicate != g)), numeric(length(probs)))
+        if (any(!is.finite(leave))) return(rep(Inf, length(probs)))
+        context$critical * apply(leave, 1L, stats::sd) *
+            (length(context$groups) - 1L) / sqrt(length(context$groups)) / distribution$sd
+    }
+    hyper <- vapply(seq_len(d), function(j) error(u[, j]), numeric(length(probs)))
+    fixed_error <- if (p) vapply(seq_len(p), function(j)
+        error(fixed$mu[, j], fixed$var[, j], max(hyper)), numeric(length(probs)))
+    budget <- max(c(hyper, fixed_error))
+    hyper[] <- budget
+    if (p) fixed_error[] <- budget
+    list(hyper_quantiles = hyper, fixed_quantiles = fixed_error,
+         log_evidence = context$log_evidence, max = max(budget, context$log_evidence),
+         complete = TRUE, error_method = "simultaneous_delete_scramble_envelope")
+}
+
+.nl_outer_quantile_distribution <- function(values, variance, weights, probs,
+                                              groups, proposed, critical, normalizer) {
+    summary <- .nl_outer_quantile_summary(values, variance, weights, probs)
+    if (is.null(summary)) return(list(quantile = function(p) rep(NA_real_, length(p)),
+        location = rep(NA_real_, length(probs)), sd = NA_real_, cdf_error = rep(Inf, length(probs))))
+    quantile <- summary$quantile
+    sd <- summary$sd
+    location <- summary$location
+    if (is.null(variance)) {
+        order <- order(values)
+        mass <- weights[order]
+        cumulative <- cumsum(mass)
+        label <- integer(length(values))
+        for (g in seq_along(groups)) label[groups[[g]]] <- g
+        label <- label[order]
+        total <- squared <- numeric(length(values))
+        for (g in seq_along(groups)) {
+            part <- mass
+            part[label != g] <- 0
+            score <- cumsum(part) / proposed[g] - cumulative * normalizer$z[g]
+            total <- total + score
+            squared <- squared + score^2
+        }
+        distinct <- c(which(diff(values[order]) != 0), length(values))
+        variance <- pmax(0, (squared - total^2 / length(groups)) / (length(groups) - 1L))
+        uncertainty <- if (normalizer$relative >= 1) Inf else
+            critical * sqrt(max(variance[distinct])) / sqrt(length(groups)) /
+                normalizer$mean / (1 - normalizer$relative)
+    } else {
+        cdf <- function(q, p) stats::pnorm(q, values, sqrt(variance))
+        uncertainty <- vapply(seq_along(probs), function(k) {
+            distribution <- cdf(location[k], probs[k])
+            if (any(!is.finite(distribution))) return(Inf)
+            center <- sum(weights * distribution)
+            score <- vapply(seq_along(groups), function(g) {
+                at <- groups[[g]]
+                sum(weights[at] * (distribution[at] - center)) / proposed[g]
+            }, numeric(1))
+            if (normalizer$relative >= 1) return(Inf)
+            critical * stats::sd(score) / sqrt(length(groups)) /
+                normalizer$mean / (1 - normalizer$relative)
+        }, numeric(1))
+    }
+    list(quantile = quantile, location = location, sd = sd, cdf_error = uncertainty)
+}
+
+.nl_outer_quantile_band <- function(distribution, probability_error, probs) {
+    if (isTRUE(distribution$sd == 0)) return(rep(0, length(probs)))
+    error <- rep(Inf, length(probs))
+    inside <- which(probs - probability_error > 0 & probs + probability_error < 1)
+    if (length(inside)) {
+        lower <- distribution$quantile(probs[inside] - probability_error)
+        upper <- distribution$quantile(probs[inside] + probability_error)
+        error[inside] <- pmax(abs(lower - distribution$location[inside]),
+                             abs(upper - distribution$location[inside])) / distribution$sd
+    }
+    error
+}
+
+# Scramble residuals estimate CDF and normalizer uncertainty. Inverting their
+# CDF bands retains the nonlinear tail scale of each reported quantile.
 .nl_qmc_error <- function(u, log_weight, replicate, out, proposed_per_rep,
-                          probs = c(.025, .5, .975), tol = Inf) {
+                          probs = c(.025, .5, .975), tol = Inf, family_size = NULL) {
     n <- nrow(u)
     # A common normalization cancels in sd(z) / mean(z).
     a <- .nl_normalise_weights_safe(log_weight)
@@ -131,59 +288,44 @@
             if (length(out[[field]]) == n) out[[field]] <- out[[field]][keep]
         }
     }
-    groups <- lapply(seq_along(proposed_per_rep), function(g) which(replicate == g))
-    leave <- lapply(seq_along(groups), function(g) which(replicate != g))
-    critical <- stats::qt(.975, length(groups) - 1L)
-    jackknife <- function(q) .nl_outer_jackknife(q, critical)
-    z <- vapply(groups, function(ix) sum(a[ix]), numeric(1)) / proposed_per_rep
-    log_se <- critical * stats::sd(z) / sqrt(length(z)) / mean(z)
+    n_fixed <- if (length(out$grid_modes)) max(lengths(out$grid_modes)) else 0L
+    family <- family_size %||% (1L + length(probs) * (ncol(u) + n_fixed))
+    normalizer <- .nl_outer_error_context(a, replicate, proposed_per_rep, family)
+    groups <- normalizer$groups
+    critical <- normalizer$critical
+    log_se <- normalizer$log_evidence
     w <- a
-    qse <- function(values, variance = NULL) {
-        if (is.null(variance)) {
-            mu <- sum(w * values)
-            sd <- sqrt(sum(w * (values - mu)^2))
-            qs <- vapply(leave, function(ix) {
-                if (!length(ix) || !any(a[ix] > 0)) return(rep(NA_real_, length(probs)))
-                .nl_wtd_quantile(values[ix], a[ix], probs, outside = "clamp")
-            }, numeric(length(probs)))
-        } else {
-            full <- .nl_gauss_mixture_summary(matrix(values, ncol = 1L),
-                matrix(variance, ncol = 1L), w, probs)
-            if (is.null(full)) return(rep(Inf, length(probs)))
-            sd <- full$sd
-            qs <- vapply(leave, function(ix) {
-                s <- .nl_gauss_mixture_summary(matrix(values[ix], ncol = 1L),
-                    matrix(variance[ix], ncol = 1L), a[ix], probs)
-                if (is.null(s)) rep(NA_real_, length(probs)) else as.numeric(s$quantiles)
-            }, numeric(length(probs)))
-        }
-        if (isTRUE(sd == 0)) return(rep(0, length(probs)))
-        jackknife(qs) / sd
+    distribution <- function(values, variance = NULL)
+        .nl_outer_quantile_distribution(values, variance, w, probs, groups,
+            proposed_per_rep, critical, normalizer)
+    hyper_distribution <- lapply(seq_len(ncol(u)), function(j) distribution(u[, j]))
+    probability_error <- max(vapply(hyper_distribution, function(x) max(x$cdf_error), numeric(1)))
+    band <- function(x) .nl_outer_quantile_band(x, max(x$cdf_error), probs)
+    hyper <- vapply(hyper_distribution, band, numeric(length(probs)))
+    if (n_fixed && is.finite(tol) && (any(!is.finite(c(log_se, hyper))) || max(log_se, hyper) > tol)) {
+        return(list(log_evidence = log_se, hyper_quantiles = hyper,
+            fixed_quantiles = matrix(Inf, length(probs), n_fixed), max = Inf, complete = FALSE))
     }
-    hyper <- vapply(seq_len(ncol(u)), function(j) qse(u[, j]), numeric(length(probs)))
     fixed <- NULL
-    if (length(out$grid_modes) == nrow(u) && length(out$grid_hessians) == nrow(u)) {
-        p <- max(lengths(out$grid_modes))
-        if (p) {
-            errors <- c(log_se, hyper)
-            # A failed criterion rules out stopping before fixed-effect CDF inversion.
-            if (is.finite(tol) && (any(!is.finite(errors)) || max(errors) > tol)) {
-                return(list(log_evidence = log_se, hyper_quantiles = hyper,
-                    fixed_quantiles = matrix(Inf, length(probs), p),
-                    max = Inf, complete = FALSE))
-            }
-            variance <- lapply(out$grid_hessians, function(h)
-                if (length(h)) diag(.spd_inverse(h)) else rep(NA_real_, p))
-            fixed <- vapply(seq_len(p), function(j) {
-                mu <- vapply(out$grid_modes, function(m)
-                    if (length(m)) m[j] else NA_real_, numeric(1))
-                vv <- vapply(variance, function(v) v[j], numeric(1))
-                qse(mu, vv)
-            }, numeric(length(probs)))
-        }
+    if (n_fixed) {
+        variance <- lapply(out$grid_hessians, function(h)
+            if (length(h)) diag(.spd_inverse(h)) else rep(NA_real_, n_fixed))
+        fixed <- list(mu = t(matrix(vapply(out$grid_modes, function(m)
+            if (length(m) == n_fixed) m else rep(NA_real_, n_fixed), numeric(n_fixed)), nrow = n_fixed)),
+            var = t(matrix(vapply(variance, function(v) v, numeric(n_fixed)), nrow = n_fixed)))
     }
-    errors <- c(log_se, hyper, fixed)
-    list(log_evidence = log_se, hyper_quantiles = hyper, fixed_quantiles = fixed,
+    fixed_error <- NULL
+    if (n_fixed) {
+        fixed_distribution <- lapply(seq_len(n_fixed), function(j)
+            distribution(fixed$mu[, j], fixed$var[, j]))
+        probability_error <- max(probability_error,
+            vapply(fixed_distribution, function(x) max(x$cdf_error), numeric(1)))
+        hyper <- vapply(hyper_distribution, band, numeric(length(probs)))
+        fixed_error <- vapply(fixed_distribution, band, numeric(length(probs)))
+    }
+    errors <- c(log_se, hyper, fixed_error)
+    list(log_evidence = log_se, hyper_quantiles = hyper, fixed_quantiles = fixed_error,
+         cdf = probability_error,
          max = if (all(is.finite(errors))) max(errors) else Inf, complete = TRUE)
 }
 
@@ -295,9 +437,9 @@
     measure <- measure - log(proposed)
     out$outer_qmc <- list(n = proposed, n_evaluated = n_evaluated, proposal = proposal,
                          error = error, tol = tol, converged = error$max <= tol,
-                         error_method = "delete_scramble_jackknife",
+                         error_method = "simultaneous_cdf_envelope",
                          error_confidence = .95,
-                         error_scope = "pointwise",
+                         error_scope = "simultaneous",
                          history = do.call(rbind, history))
     if (mapped) out$outer_qmc$design_columns <- view$cols
     .nl_outer_finish(out, res, cells, measure, "qmc", view)

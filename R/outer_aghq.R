@@ -1,11 +1,14 @@
 .nl_aghq_blocks <- function(prior) {
-    if (!.is_multi_block_prior(prior) || length(prior) != 2L || !all(vapply(prior, function(p)
-        identical(tolower(p$type %||% ""), "hsgp"), logical(1)))) return(NULL)
+    if (!.is_multi_block_prior(prior) || length(prior) < 2L || !all(vapply(prior, function(p)
+        tolower(p$type %||% "") %in% c("hsgp", "iid"), logical(1)))) return(NULL)
     names <- vapply(prior, function(p) p$name %||% "", character(1))
-    if (!setequal(names, c("local", "regional"))) return(NULL)
+    if (!all(c("local", "regional") %in% names) ||
+        !all(vapply(prior[match(c("local", "regional"), names)],
+            function(p) identical(tolower(p$type), "hsgp"), logical(1)))) return(NULL)
     grids <- lapply(prior, function(p) .nl_block_axis_grid(p)$grid)
     free <- all(vapply(grids, function(grid) {
-        ncol(grid) == 2L && all(apply(grid, 2L, function(x) length(unique(x)) > 1L))
+        ncol(grid) > 0L && all(grid > 0) &&
+            all(apply(grid, 2L, function(x) length(unique(x)) > 1L))
     }, logical(1)))
     if (!free) return(NULL)
     list(local = match("local", names), regional = match("regional", names), grids = grids)
@@ -23,24 +26,23 @@
 }
 
 .nl_aghq_config <- function(control) {
-    cfg <- list(order = control$quad_order %||% 5L,
-        max_order = control$quad_max_order %||% 17L,
+    cfg <- list(max_level = control$quad_max_level %||% 5L,
+        progress = isTRUE(control$progress),
         read_nodes = control$quad_read_nodes %||% 65536L,
         read_df = 7,
         tol = control$quad_tol %||% .05,
         evidence_tol = control$quad_evidence_tol %||% .005)
-    for (name in c("order", "max_order", "read_nodes")) {
+    for (name in c("max_level", "read_nodes")) {
         value <- cfg[[name]]
         if (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
             value != floor(value) || value > .Machine$integer.max ||
-            value < if (name == "read_nodes") 128L else 5L) {
+            value < if (name == "read_nodes") 128L else 3L) {
             stop("`control$quad_", name, "` must be a finite integer >= ",
-                 if (name == "read_nodes") 128L else 5L, ".", call. = FALSE)
+                 if (name == "read_nodes") 128L else 3L, ".", call. = FALSE)
         }
     }
-    if (cfg$order %% 2 != 1L || cfg$max_order %% 2 != 1L ||
-        cfg$max_order < cfg$order + 2L || cfg$read_nodes %% 8 != 0L) {
-        stop("Quadrature orders must be odd, max_order must exceed order, ",
+    if (cfg$max_level > 5L || cfg$read_nodes %% 8 != 0L) {
+        stop("Quadrature max_level must be at most five, ",
              "and read_nodes must be divisible by eight.", call. = FALSE)
     }
     for (name in c("tol", "evidence_tol")) {
@@ -106,13 +108,21 @@
     }
     li <- columns[[1L]]
     ri <- columns[[2L]]
+    extra <- setdiff(seq_len(ncol(res$theta_grid)), c(li, ri))
+    extra_center <- mode$mode_u[extra]
+    extra_L <- if (length(extra)) t(chol(mode$cov_u[extra, extra, drop = FALSE]))
     center <- mode$mode_u[li]
     L <- t(chol(mode$cov_u[li, li, drop = FALSE]))
-    grid_u <- log(res$theta_grid[, li, drop = FALSE])
+    gaussian_axes <- c(li, extra)
+    gaussian_columns <- seq.int(3L, ncol(res$theta_grid))
+    initial_L <- matrix(0, length(gaussian_axes), length(gaussian_axes))
+    initial_L[1:2, 1:2] <- L
+    if (length(extra)) initial_L[-(1:2), -(1:2)] <- extra_L
+    grid_u <- log(res$theta_grid[, gaussian_axes, drop = FALSE])
     grid_w <- res$weights / sum(res$weights)
     read_center <- as.numeric(crossprod(grid_w, grid_u))
     delta <- sweep(grid_u, 2L, read_center)
-    read_L <- t(chol(crossprod(delta, grid_w * delta) + tcrossprod(L)))
+    read_L <- t(chol(crossprod(delta, grid_w * delta) + tcrossprod(initial_L)))
     region <- .nl_gp_regional_transport(res$theta_grid[, ri, drop = FALSE],
                                       grid_w, prior[[regional]])
     mode_rule <- .nl_gauss_legendre_unit(5L)
@@ -120,17 +130,27 @@
     regional_points <- region$physical(mode_design[, 1:2, drop = FALSE])
     regional_measure <- rowSums(log(as.matrix(expand.grid(mode_rule$w, mode_rule$w)))) -
         region$log_density(mode_design[, 1:2, drop = FALSE])
+    marginal_density <- new.env(hash = TRUE, parent = emptyenv())
     local_log_density <- function(local_points) {
+        keys <- .nl_outer_point_key(local_points)
+        missing <- !vapply(keys, exists, logical(1), envir = marginal_density, inherits = FALSE)
+        fresh_keys <- unique(keys[missing])
+        if (length(fresh_keys)) {
+            local_points <- local_points[match(fresh_keys, keys), , drop = FALSE]
             count <- nrow(regional_points)
             cells <- matrix(0, nrow(local_points) * count, ncol(res$theta_grid),
                 dimnames = list(NULL, colnames(res$theta_grid)))
             cells[, li] <- local_points[rep(seq_len(nrow(local_points)), each = count), , drop = FALSE]
             cells[, ri] <- regional_points[rep(seq_len(count), nrow(local_points)), , drop = FALSE]
+            if (length(extra)) cells[, extra] <- rep(exp(extra_center), each = nrow(cells))
             evaluations <<- evaluations + nrow(cells)
             lp <- .nl_outer_solve(cells, solve, FALSE)$log_marginal
             scores <- matrix(lp, nrow = count) + regional_measure
-            vapply(seq_len(ncol(scores)), function(j)
+            values <- vapply(seq_len(ncol(scores)), function(j)
                 .tulpa_logsumexp(scores[, j]), numeric(1))
+            for (j in seq_along(fresh_keys)) marginal_density[[fresh_keys[j]]] <- values[j]
+        }
+        vapply(keys, function(key) marginal_density[[key]], numeric(1), USE.NAMES = FALSE)
         }
     mode <- .nl_placement_mode(res$theta_grid[, li, drop = FALSE], grid_w,
         rep("log", 2L), local_log_density)
@@ -138,13 +158,22 @@
     L <- t(chol(mode$cov_u))
     sides <- .nl_outer_mode_transport(center, L, function(u) local_log_density(exp(u)))
     read <- function(query) {
-        standard <- query[, 3:4, drop = FALSE]
-        shifted <- sweep(standard %*% t(read_L), 2L, read_center - center, "+")
-        query[, 3:4] <- sides$inverse(t(forwardsolve(L, t(shifted))))
+        standard <- query[, gaussian_columns, drop = FALSE]
+        shifted <- sweep(standard %*% t(read_L), 2L,
+                         read_center - c(center, extra_center), "+")
+        query[, 3:4] <- sides$inverse(t(forwardsolve(L, t(shifted[, 1:2, drop = FALSE]))))
         correction <- -log(2 * pi) - rowSums(query[, 3:4, drop = FALSE]^2) / 2 -
-            rowSums(stats::dt(standard, read_df, log = TRUE)) +
+            rowSums(stats::dt(standard[, 1:2, drop = FALSE], read_df, log = TRUE)) +
             sum(log(diag(read_L))) - sum(log(diag(L))) -
             sides$log_derivative(query[, 3:4, drop = FALSE])
+        if (length(extra)) {
+            columns <- 4L + seq_along(extra)
+            query[, columns] <- t(forwardsolve(extra_L, t(shifted[, -(1:2), drop = FALSE])))
+            correction <- correction + rowSums(
+                stats::dnorm(query[, columns, drop = FALSE], log = TRUE) -
+                stats::dt(standard[, -(1:2), drop = FALSE], read_df, log = TRUE)) -
+                sum(log(diag(extra_L)))
+        }
         list(query = query, correction = correction)
     }
     physical <- function(v) {
@@ -153,168 +182,31 @@
         cells[, li] <- exp(sweep(sides$forward(v[, 3:4, drop = FALSE]) %*% t(L),
                                 2L, center, "+"))
         cells[, ri] <- region$physical(v[, 1:2, drop = FALSE])
+        if (length(extra)) cells[, extra] <- exp(sweep(
+            v[, 4L + seq_along(extra), drop = FALSE] %*% t(extra_L), 2L, extra_center, "+"))
         cells
     }
     log_density <- function(v) {
-        -log(2 * pi) - sum(log(diag(L))) - rowSums(v[, 3:4, drop = FALSE]^2) / 2 +
+        value <- -log(2 * pi) - sum(log(diag(L))) - rowSums(v[, 3:4, drop = FALSE]^2) / 2 +
             region$log_density(v[, 1:2, drop = FALSE]) -
             sides$log_derivative(v[, 3:4, drop = FALSE])
+        if (length(extra)) value <- value + rowSums(stats::dnorm(
+            v[, 4L + seq_along(extra), drop = FALSE], log = TRUE)) - sum(log(diag(extra_L)))
+        value
+    }
+    adapt_read <- function(points, weights) {
+        weights <- weights / sum(weights)
+        values <- log(points[, gaussian_axes, drop = FALSE])
+        read_center <<- as.numeric(crossprod(weights, values))
+        delta <- sweep(values, 2L, read_center)
+        covariance <- crossprod(delta, weights * delta)
+        read_L <<- t(chol(covariance * (read_df - 2) / read_df))
+        list(center = read_center, L = read_L)
     }
     list(physical = physical, log_density = log_density,
-         read = read, center = center, L = L, regional_log_stretch = region$log_stretch,
+         read = read, adapt_read = adapt_read, center = center, L = L,
+         regional_log_stretch = region$log_stretch,
          read_center = read_center, read_L = read_L,
          local_radii = sides$radii,
          evaluations = evaluations)
-}
-
-.nl_aghq_fixed_projection <- function(native, partition, weights, groups, nodes, query) {
-    moments <- .nested_fixed_moments(native, include_zero = TRUE)
-    if (is.null(moments) || !ncol(moments$mu)) {
-        return(list(primary = NULL, alternative = NULL, resolution = 0,
-                    read_error = NULL))
-    }
-    P <- partition$local[, moments$keep, drop = FALSE]
-    primary <- .nl_gauss_mixture_summary(moments$mu, moments$var, moments$w)
-    p <- ncol(moments$mu)
-    conditional <- cpp_outer_tensor_interpolate(nodes,
-        cbind(moments$mu, log(moments$var)), query)
-    alternative <- .nl_gauss_mixture_summary(conditional[, seq_len(p), drop = FALSE],
-        exp(conditional[, p + seq_len(p), drop = FALSE]), weights)
-    resolution <- max(abs(sweep(primary$quantiles - alternative$quantiles,
-                                1L, alternative$sd, "/")))
-    group_matrix <- Matrix::sparseMatrix(i = seq_along(groups), j = groups,
-        x = 1, dims = c(length(groups), 8L))
-    group_weights <- as.matrix(Matrix::crossprod(P, group_matrix)) +
-        outer(partition$column[moments$keep],
-              as.numeric(Matrix::crossprod(group_matrix, partition$row)))
-    leave <- vapply(seq_len(8L), function(g) {
-        w <- rowSums(group_weights[, -g, drop = FALSE])
-        read <- .nl_gauss_mixture_summary(moments$mu, moments$var, w)
-        if (is.null(read)) rep(NA_real_, length(primary$quantiles)) else
-            as.numeric(read$quantiles)
-    }, numeric(length(primary$quantiles)))
-    error <- .nl_outer_jackknife(leave, stats::qt(.975, 7L)) /
-        rep(alternative$sd, 3L)
-    list(primary = primary, alternative = alternative, resolution = resolution,
-         read_error = t(matrix(error, nrow = length(primary$sd))))
-}
-
-.nl_aghq_integrate <- function(res, solve, prior, cfg) {
-    transform <- .nl_aghq_transform(res, prior, solve, cfg$read_df)
-    groups <- rep(seq_len(8L), each = cfg$read_nodes / 8L)
-    query <- do.call(rbind, lapply(seq_len(8L), function(g)
-        cpp_outer_read_design(cfg$read_nodes / 8L, 4L, 761L + g)))
-    query[, 3:4] <- stats::qt(query[, 3:4], cfg$read_df)
-    read <- transform$read(query)
-    query <- read$query
-    cells <- transform$physical(query)
-    log_q <- transform$log_density(query)
-    u <- log(cells)
-    hyper_quantiles <- function(weights) vapply(seq_len(ncol(u)), function(j)
-        .nl_wtd_quantile(u[, j], weights, c(.025, .5, .975), outside = "clamp"),
-        numeric(3L))
-    previous <- NULL
-    history <- list()
-    reads <- list()
-    evaluated <- transform$evaluations
-    for (order in seq.int(cfg$order, cfg$max_order, by = 2L)) {
-        gh <- gauss_hermite_prob(order)
-        gl <- .nl_gauss_legendre_unit(order + 2L)
-        nodes <- list(gl$x, gl$x, gh$nodes, gh$nodes)
-        design <- as.matrix(expand.grid(nodes, KEEP.OUT.ATTRS = FALSE))
-        points <- transform$physical(design)
-        native <- .nl_outer_solve(points, solve, TRUE)
-        native$theta_grid <- points
-        evaluated <- evaluated + nrow(points)
-        measure <- as.matrix(expand.grid(list(gl$w, gl$w, gh$weights, gh$weights),
-                                        KEEP.OUT.ATTRS = FALSE))
-        log_ratio <- native$log_marginal - transform$log_density(design)
-        log_z <- .tulpa_logsumexp(log_ratio + rowSums(log(measure)))
-        predicted <- as.numeric(cpp_outer_tensor_interpolate(nodes,
-            matrix(log_ratio, ncol = 1L), query))
-        log_weight <- predicted + read$correction - log(cfg$read_nodes)
-        log_read_integral <- .tulpa_logsumexp(log_weight)
-        weights <- .nl_normalise_weights_safe(log_weight)
-        native_weights <- .nl_normalise_weights_safe(log_ratio + rowSums(log(measure)))
-        partition <- .nl_outer_coupling(cpp_outer_tensor_partition(nodes, query, weights),
-                                       native_weights)
-        weights <- .nl_outer_coupling_mass(partition, "row")
-        log_weight <- log(weights) + log_read_integral
-        native$weights <- .nl_outer_coupling_mass(partition, "column")
-        fixed <- .nl_aghq_fixed_projection(native, partition, weights, groups, nodes, query)
-        read_error <- .nl_qmc_error(u, log_weight, groups, list(),
-            rep(cfg$read_nodes / 8L, 8L))
-        read_error$fixed_quantiles <- fixed$read_error
-        read_errors <- c(read_error$hyper_quantiles, fixed$read_error)
-        read_error$max <- if (all(is.finite(read_errors))) max(read_errors) else Inf
-        hyper <- hyper_quantiles(weights)
-        hyper_mean <- as.numeric(crossprod(weights, u))
-        hyper_sd <- sqrt(colSums(weights * sweep(u, 2L, hyper_mean)^2))
-        hyper_read <- sweep(read_error$hyper_quantiles, 2L, hyper_sd, "*")
-        hyper_change <- if (is.null(previous)) NULL else hyper - previous$hyper
-        hyper_change_noise <- if (is.null(previous)) NULL else hyper_read + previous$hyper_read
-        fixed_read <- if (is.null(fixed$alternative)) NULL else
-            sweep(t(fixed$read_error), 1L, fixed$alternative$sd, "*")
-        fixed_change <- if (is.null(previous)) NULL else fixed$alternative$quantiles - previous$fixed
-        fixed_change_noise <- if (is.null(previous)) NULL else fixed_read + previous$fixed_read
-        state <- list(hyper = hyper, fixed = fixed$alternative$quantiles,
-            fixed_read = fixed_read, fixed_change = fixed_change,
-            fixed_change_noise = fixed_change_noise,
-            hyper_read = hyper_read, hyper_change = hyper_change,
-            hyper_change_noise = hyper_change_noise)
-        if (length(history) < 2L) {
-            error <- list(max = Inf, log_evidence = Inf, quantiles = Inf,
-                          read = read_error, refinement = Inf, complete = FALSE)
-        } else {
-            hyper_refinement <- max(sweep(.nl_outer_quantile_error(hyper_change,
-                previous$hyper_change, hyper_change_noise, previous$hyper_change_noise),
-                2L, hyper_sd, "/"))
-            fixed_refinement <- if (is.null(fixed$alternative)) 0 else max(sweep(
-                .nl_outer_quantile_error(fixed_change, previous$fixed_change,
-                    fixed_change_noise, previous$fixed_change_noise),
-                1L, fixed$alternative$sd, "/"))
-            refinement <- max(hyper_refinement, fixed_refinement)
-            hyper_error <- hyper_refinement + max(read_error$hyper_quantiles)
-            fixed_error <- fixed_refinement + fixed$resolution +
-                if (is.null(fixed$read_error)) 0 else max(fixed$read_error)
-            quantile_error <- max(hyper_error, fixed_error)
-            error <- list(max = quantile_error,
-                log_evidence = .nl_outer_evidence_error(c(vapply(history,
-                    function(h) h[["log_evidence"]], numeric(1)), log_z)),
-                quantiles = quantile_error,
-                hyper_refinement = hyper_refinement, fixed_refinement = fixed_refinement,
-                refinement = refinement, conditional_resolution = fixed$resolution,
-                read = read_error, complete = TRUE)
-        }
-        converged <- error$max <= cfg$tol && error$log_evidence <= cfg$evidence_tol
-        history[[length(history) + 1L]] <- c(order = order,
-            points = nrow(points), evaluated = evaluated, error = error$max,
-            evidence_error = error$log_evidence, log_evidence = log_z)
-        reads[[length(reads) + 1L]] <- list(hyper = hyper,
-            hyper_sd = hyper_sd, fixed = fixed$primary$quantiles,
-            fixed_interpolated = fixed$alternative$quantiles, error = error)
-        if (converged || order == cfg$max_order) break
-        previous <- state
-    }
-    out <- native
-    error$hyper_quantiles <- matrix(error$quantiles, 3L, ncol(cells))
-    if (!is.null(fixed$primary)) error$fixed_quantiles <-
-        matrix(error$quantiles, 3L, length(fixed$primary$mean))
-    interpolated_z <- .tulpa_logsumexp(log_weight)
-    log_quad <- -log(cfg$read_nodes) - log_q + read$correction
-    out$outer_posterior <- list(points = cells, weights = weights,
-        partition = partition, log_marginal = log(weights) + log_z - log_quad,
-        log_quad = log_quad)
-    out$outer_quadrature <- list(method = "aghq_log_spline", n = nrow(points),
-        n_evaluated = evaluated, read_nodes = cfg$read_nodes, read_df = cfg$read_df,
-        order = order, error = error, tol = cfg$tol, evidence_tol = cfg$evidence_tol,
-        converged = converged, history = do.call(rbind, history), reads = reads,
-        center = transform$center, L = transform$L,
-        read_center = transform$read_center, read_L = transform$read_L,
-        local_radii = transform$local_radii,
-        regional_log_stretch = transform$regional_log_stretch,
-        normalizer_adjustment = log_z - interpolated_z,
-        error_method = "successive_orders_and_shifted_read_designs")
-    measure <- log_z + log(out$weights) - out$log_marginal
-    .nl_outer_finish(out, res, points, measure, "aghq")
 }

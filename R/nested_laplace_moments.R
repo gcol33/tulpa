@@ -237,16 +237,19 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     v <- c(e[1L], v, e[2L])
   }
   n <- length(v)
-  # `approx` emits "collapsing to unique 'x' values" when tiny floor
-  # weights against a dominant prefix sum produce numerically equal
-  # midpoints. The collapse (tied p -> mean of v) is the right behavior
-  # at that resolution -- the underlying mass between the tied cells is
-  # zero up to floating-point error. Suppress the noise.
+  # Equal cumulative probabilities carry mass below floating-point precision.
+  # Their inverse-CDF knots share the mean coordinate.
   na_outside <- identical(outside, "na")
   inside <- which(probs > p[1L] & probs < p[n])
   interpolated <- rep(NA_real_, length(probs))
-  if (length(inside)) interpolated[inside] <- suppressWarnings(
-    approx(p, v, xout = probs[inside], method = "linear")$y)
+  if (length(inside)) {
+    first <- c(1L, which(diff(p) != 0) + 1L)
+    last <- c(first[-1L] - 1L, length(p))
+    coordinate <- v[first]
+    for (j in which(last > first)) coordinate[j] <- mean(v[first[j]:last[j]])
+    interpolated[inside] <- approx(p[first], coordinate, xout = probs[inside],
+                                  method = "linear", ties = "ordered")$y
+  }
   index <- seq_along(probs)
   names(index) <- if (is.character(probs) && is.null(names(probs))) probs else names(probs)
   vapply(index, function(i) {
@@ -1131,6 +1134,14 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # is usable. `var = NULL`, or variances that are missing / negative / non-finite,
 # give the mixture mean with NA for SD and the quantiles: the between-node spread
 # alone is not the posterior SD, so it is withheld rather than reported small.
+.nl_weighted_center <- function(mu, w) {
+  origin <- as.numeric(mu[which.max(w), ])
+  offset <- sweep(mu, 2L, origin, "-")
+  mean_offset <- as.numeric(crossprod(w, offset))
+  list(mean = origin + mean_offset,
+       centered = sweep(offset, 2L, mean_offset, "-"))
+}
+
 .nl_gauss_mixture_summary <- function(mu, var, w, probs = c(0.025, 0.5, 0.975),
                                       n_bisect = 80L) {
   mu <- as.matrix(mu)
@@ -1140,7 +1151,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   if (!any(ok) || np == 0L) return(NULL)
   mu <- mu[ok, , drop = FALSE]
   w  <- w[ok]; w <- w / sum(w)
-  mean_p <- as.numeric(crossprod(w, mu))
+  location <- .nl_weighted_center(mu, w)
+  mean_p <- location$mean
 
   sdm <- NULL
   if (!is.null(var)) {
@@ -1152,27 +1164,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     return(list(mean = mean_p, sd = rep(NA_real_, np), quantiles = na_q))
   }
 
-  sd_p <- sqrt(pmax(as.numeric(crossprod(w, mu^2 + sdm^2)) - mean_p^2, 0))
+  sd_p <- sqrt(as.numeric(crossprod(w, location$centered^2 + sdm^2)))
 
-  # A degenerate component (zero curvature-implied SD) is a step function in the
-  # CDF; the floor keeps it one without branching the vectorized evaluation.
-  s <- pmax(sdm, 1e-300)
-  cdf <- function(q) {
-    as.numeric(crossprod(w, stats::pnorm(
-      matrix(q, nrow(mu), np, byrow = TRUE), mu, s)))
-  }
-  lo0 <- apply(mu - 10 * sdm, 2L, min)
-  hi0 <- apply(mu + 10 * sdm, 2L, max)
-  qs <- vapply(probs, function(p) {
-    lo <- lo0; hi <- hi0
-    for (it in seq_len(n_bisect)) {
-      mid <- (lo + hi) / 2
-      below <- cdf(mid) < p
-      lo <- ifelse(below, mid, lo)
-      hi <- ifelse(below, hi, mid)
-    }
-    (lo + hi) / 2
-  }, numeric(np))
+  qs <- cpp_nl_mixture_quantiles(mu, sdm, w, probs, mean_p, sd_p, n_bisect)
   list(mean = mean_p, sd = sd_p,
        quantiles = matrix(qs, np, length(probs)))
 }

@@ -93,9 +93,9 @@ test_that("Monte Carlo errors give nonfinite nodes zero mass in the original den
   got <- tulpa:::.nl_qmc_error(u, lw, group, out, rep(8, 8L))
   expect_equal(got, expected, tolerance = 1e-14)
   counts <- c(5, rep(8, 7L))
-  expect_equal(got$log_evidence, qt(.975, 7) * sd(counts) / sqrt(8) / mean(counts),
-               tolerance = 1e-14)
-  expect_true(is.finite(got$max))
+  relative <- qt(1 - .05 / (2 * (1 + 3 * 4)), 7) * sd(counts) / sqrt(8) / mean(counts)
+  expect_equal(got$log_evidence, -log1p(-relative), tolerance = 1e-14)
+  expect_false(is.na(got$max))
 })
 
 test_that("stratified proposal blocks extend each component's scrambled sequence", {

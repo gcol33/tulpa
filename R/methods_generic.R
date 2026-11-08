@@ -362,7 +362,6 @@
   if (!is.finite(mass) || mass <= 0) return(NULL)
   wk <- object$weights[keep] / sub
   p <- length(M[[keep[1]]])
-  m <- numeric(p)
   S <- matrix(0, p, p)
   mu_k  <- matrix(NA_real_, length(keep), p)
   var_k <- matrix(NA_real_, length(keep), p)
@@ -370,12 +369,13 @@
     g  <- keep[i]
     Vg <- .nested_cell_fixed_cov(H[[g]], p)
     mu <- M[[g]]
-    m <- m + wk[i] * mu
-    S <- S + wk[i] * (Vg + tcrossprod(mu))
+    S <- S + wk[i] * Vg
     mu_k[i, ]  <- mu
     var_k[i, ] <- diag(Vg)
   }
-  list(mean = m, cov = S - tcrossprod(m),
+  location <- .nl_weighted_center(mu_k, wk)
+  list(mean = location$mean,
+       cov = S + crossprod(location$centered, wk * location$centered),
        mu = mu_k, var = var_k, w = wk, mass = mass, keep = keep)
 }
 

@@ -170,23 +170,6 @@ test_that("a supplied design reports exact Gaussian evidence and fixed-effect mi
   expect_equal(as.numeric(got$quantiles), exact, tolerance = 1e-6)
 })
 
-test_that("the evidence envelope covers an oscillating quadrature sequence", {
-  log_z <- c(-420.70102716148250, -420.68736839671061, -420.68866012002451,
-    -420.68838902100845, -420.68712850891387, -420.68622921033898, -420.68583965881629)
-  truth <- -420.68568956342850
-  for (i in seq_along(log_z)) {
-    error <- tulpa:::.nl_outer_evidence_error(log_z[seq_len(i)])
-    expect_gte(error, abs(log_z[i] - truth))
-  }
-  expect_gt(tulpa:::.nl_outer_evidence_error(c(0, 0, 0)), 0)
-})
-
-test_that("slow quantile contraction includes its unresolved geometric changes", {
-  expect_gte(tulpa:::.nl_outer_quantile_error(-.016, -.02), .064)
-  expect_lt(tulpa:::.nl_outer_quantile_error(-.01, -.1), .1)
-  expect_equal(tulpa:::.nl_outer_quantile_error(.001, .00099, .01, .01), .001)
-})
-
 test_that("per-side transport preserves contours and its inverse", {
   radii <- rbind(c(1, 4), c(.01, 8))
   map <- tulpa:::.nl_outer_side_map(radii)
@@ -233,9 +216,11 @@ test_that("outer Hermite and CDF quadrature covers analytic posterior reads", {
   expect_lte(max(error), fit$outer_quadrature$error$max)
   expect_lte(abs(fit$log_evidence), fit$outer_quadrature$error$log_evidence + 1e-12)
   expect_lt(abs(fit$log_evidence), .005)
+  expect_equal(as.numeric(crossprod(fit$weights, log(fit$theta_grid))),
+    as.numeric(crossprod(posterior$weights, log(posterior$points))), tolerance = 1e-6)
   with_fixed <- TRUE
   fit <- tulpa:::.nl_aghq_integrate(res, solve, prior,
-    tulpa:::.nl_aghq_config(list(quad_max_order = 9L)))
+    tulpa:::.nl_aghq_config(list(quad_max_level = 4L)))
   expect_true(fit$outer_quadrature$converged)
   fixed <- tulpa:::.nested_fixed_moments(fit)
   fixed <- tulpa:::.nl_gauss_mixture_summary(fixed$mu, fixed$var, fixed$w)
@@ -278,20 +263,23 @@ test_that("a multiscale HSGP fit retains its shared posterior at the public door
   skip_on_cran()
   set.seed(1371)
   d <- data.frame(lon = runif(12), lat = runif(12), x = rnorm(12),
-                  y = rpois(12, 2))
-  fit <- tulpa(y ~ x, data = d, family = "poisson",
-    spatial = spatial_multiscale(~lon + lat, approx = "hsgp", m = 3),
-    control = list(progress = FALSE, quad_order = 5L, quad_max_order = 7L,
-      quad_read_nodes = 2048L, quad_tol = 5, quad_evidence_tol = 1))
-  inner <- if (!is.null(fit$nested)) fit$nested else if (!is.null(fit$joint_fit)) fit$joint_fit else fit
-  expect_identical(inner$integration, "aghq")
-  expect_true(all(inner$weights >= 0))
-  expect_equal(tulpa:::.nl_outer_coupling_mass(inner$outer_posterior$partition, "column"),
-               unname(inner$weights), tolerance = 1e-12)
-  expect_true(is.finite(inner$log_evidence))
-  draws <- tulpa_hyper_draws(inner, n = 200L)
-  expect_equal(dim(draws), c(200L, 4L))
-  expect_true(all(draws > 0))
-  expect_true(all(attr(draws, "within_cell") == "chord"))
-  expect_output(print(inner), "Adaptive quadrature")
+                  y = rpois(12, 2), group = factor(rep(1:3, 4)))
+  formulas <- list(y ~ x, y ~ x + (1 | group))
+  for (i in seq_along(formulas)) {
+    fit <- tulpa(formulas[[i]], data = d, family = "poisson",
+      spatial = spatial_multiscale(~lon + lat, approx = "hsgp", m = 3),
+      control = list(progress = FALSE, quad_max_level = 3L,
+        quad_read_nodes = 2048L, quad_tol = 5, quad_evidence_tol = 1))
+    inner <- if (!is.null(fit$nested)) fit$nested else if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+    expect_identical(inner$integration, "aghq")
+    expect_true(all(inner$weights >= 0))
+    expect_equal(tulpa:::.nl_outer_coupling_mass(inner$outer_posterior$partition, "column"),
+                 unname(inner$weights), tolerance = 1e-12)
+    expect_true(is.finite(inner$log_evidence))
+    draws <- tulpa_hyper_draws(inner, n = 200L)
+    expect_equal(dim(draws), c(200L, 3L + i))
+    expect_true(all(draws > 0))
+    expect_true(all(attr(draws, "within_cell") == "chord"))
+    expect_output(print(inner), "Adaptive quadrature")
+  }
 })

@@ -41,14 +41,6 @@
     list(points = points, weights = weights)
 }
 
-.nl_outer_jackknife <- function(q, critical) {
-    critical * apply(q, 1L, stats::sd) * (ncol(q) - 1L) / sqrt(ncol(q))
-}
-
-.nl_outer_geometric_error <- function(change, previous) {
-    abs(change) / (1 - abs(change / previous))
-}
-
 .nl_outer_side_map <- function(radii) {
     scale <- rowSums(radii) / 4
     smoothing <- pmin(1, 2 * apply(radii, 1L, min) / (rowSums(radii) * log(2)))
@@ -92,29 +84,6 @@
             c(0, 2), extendInt = "upX", tol = 1e-4)$root
     }
     .nl_outer_side_map(radii)
-}
-
-.nl_outer_quantile_error <- function(change, previous, noise = 0, previous_noise = 0) {
-    error <- abs(change)
-    if (is.null(previous)) return(error)
-    contracting <- sign(change) == sign(previous) & abs(change) < abs(previous) &
-        abs(change) > noise & abs(previous) > previous_noise
-    error[contracting] <- .nl_outer_geometric_error(change[contracting], previous[contracting])
-    error
-}
-
-.nl_outer_evidence_error <- function(log_evidence) {
-    changes <- diff(log_evidence)
-    if (length(changes) < 2L || any(!is.finite(changes))) return(Inf)
-    magnitude <- abs(changes)
-    recent <- utils::tail(magnitude, 2L)
-    roundoff <- .Machine$double.eps * max(1, abs(utils::tail(log_evidence, 1L)))
-    if (recent[2L] == 0) return(max(recent, roundoff))
-    contracting <- sign(utils::tail(changes, 1L)) == sign(changes[length(changes) - 1L]) &&
-        recent[2L] < recent[1L]
-    if (!contracting) return(max(magnitude, roundoff))
-    remainder <- .nl_outer_geometric_error(recent[2L], recent[1L])
-    max(recent, remainder, roundoff)
 }
 
 .nl_log_softplus <- function(x) {

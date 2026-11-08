@@ -2055,6 +2055,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_nl_mixture_quantiles
+Rcpp::NumericMatrix cpp_nl_mixture_quantiles(Rcpp::NumericMatrix mu, Rcpp::NumericMatrix sd, Rcpp::NumericVector mass, Rcpp::NumericVector probability, Rcpp::NumericVector center, Rcpp::NumericVector scale, int max_iter);
+RcppExport SEXP _tulpa_cpp_nl_mixture_quantiles(SEXP muSEXP, SEXP sdSEXP, SEXP massSEXP, SEXP probabilitySEXP, SEXP centerSEXP, SEXP scaleSEXP, SEXP max_iterSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type sd(sdSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mass(massSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type probability(probabilitySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type center(centerSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type scale(scaleSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nl_mixture_quantiles(mu, sd, mass, probability, center, scale, max_iter));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_outer_read_design
 Rcpp::NumericMatrix cpp_outer_read_design(int n, int d, int shift_seed);
 RcppExport SEXP _tulpa_cpp_outer_read_design(SEXP nSEXP, SEXP dSEXP, SEXP shift_seedSEXP) {
@@ -2078,6 +2095,19 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type query(querySEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mass(massSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_outer_tensor_partition(nodes, query, mass));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_outer_nearest_partition
+Eigen::SparseMatrix<double> cpp_outer_nearest_partition(Rcpp::NumericMatrix points, Rcpp::NumericMatrix query, Rcpp::NumericVector mass);
+RcppExport SEXP _tulpa_cpp_outer_nearest_partition(SEXP pointsSEXP, SEXP querySEXP, SEXP massSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type points(pointsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type query(querySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mass(massSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_outer_nearest_partition(points, query, mass));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3451,8 +3481,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 31},
     {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 2},
     {"_tulpa_cpp_nl_lq_mixture_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_mixture_cdf, 3},
+    {"_tulpa_cpp_nl_mixture_quantiles", (DL_FUNC) &_tulpa_cpp_nl_mixture_quantiles, 7},
     {"_tulpa_cpp_outer_read_design", (DL_FUNC) &_tulpa_cpp_outer_read_design, 3},
     {"_tulpa_cpp_outer_tensor_partition", (DL_FUNC) &_tulpa_cpp_outer_tensor_partition, 3},
+    {"_tulpa_cpp_outer_nearest_partition", (DL_FUNC) &_tulpa_cpp_outer_nearest_partition, 3},
     {"_tulpa_cpp_outer_tensor_interpolate", (DL_FUNC) &_tulpa_cpp_outer_tensor_interpolate, 4},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
