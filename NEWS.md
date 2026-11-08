@@ -352,6 +352,23 @@
   chunk code or tulpa version no longer matches stops the render. Every page renders in full on CRAN, and the 13
   unpublished articles are on the site (#1150). The temporal article and the spatial vignette request population-level
   predictions with `include_field = FALSE`, as their text describes.
+- Multiscale HSGP fits integrate the outer hyperparameters by adaptive quadrature at the mode: a per-side scaled
+  transport of the local pair and a shifted prior CDF on the regional pair, a dimension-adaptive Smolyak sparse grid
+  of nested Genz-Keister (normal) and Patterson (bounded) rules that reuses every solve across levels, and
+  log-density interpolation, so the signed combination weights never enter as densities. The error estimate comes
+  from the level differences and the hierarchical remainder, with targets of 0.05 posterior SD on every quantile
+  and 0.005 nats on the evidence. The n = 250 two-scale fit fell from 2,440 s to 913 s, and the n = 120 HSGP arm
+  of the prediction tests from 149 s (24,302 importance points) to 126 s (7,924 solves). `control$outer_design =
+  list(points =, weights =)` supplies a user design, and `control$quad_max_level` caps the nested depth (#1139,
+  #1149).
+- Importance-quadrature error estimates hold simultaneously over every reported quantile endpoint and the evidence:
+  the empirical CDF residual counts every distinct knot, a simultaneous Student critical value covers the endpoint
+  family, and each endpoint's estimate inverts its probability band. The Gaussian NNGP upper variance endpoint, error
+  0.014 SD, had been estimated at 0.0047 SD and now reads 0.059 SD; a default NNGP fit spends 8,192 more points
+  before its target is met (#1154).
+- Gaussian-mixture quantiles converge at point masses and at any scale (the stopping test follows the mixture's
+  scale), and mixture covariances are computed from centred conditional moments, which had cancelled to zero at
+  large means.
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component
