@@ -192,15 +192,72 @@ test_that("the ridge ladder solves, retries and never builds a NaN ridge", {
   # A non-finite mean diagonal falls back to a unit ridge scale.
   src <- paste(deparse(body(tulpa:::.latent_ridge_solve)), collapse = " ")
   expect_true(grepl("is.finite(d) && d > 0", src, fixed = TRUE))
-  # The field Newton and the factor Newton both retry through it, and the field
-  # Newton holds a non-finite step before it reaches F.
-  for (fn in c(".latent_field_solve", ".latent_factor_update")) {
+  # The field Newtons and the factor Newton all retry through it (the field
+  # solves via the constrained step), and the field Newton holds a non-finite
+  # step before it reaches F.
+  for (fn in c(".latent_constrained_step", ".latent_factor_update")) {
     fsrc <- paste(deparse(get(fn, envir = asNamespace("tulpa"))), collapse = " ")
     expect_true(grepl(".latent_ridge_solve", fsrc, fixed = TRUE), info = fn)
   }
+  for (fn in c(".latent_field_solve", ".latent_bym2_solve")) {
+    fsrc <- paste(deparse(get(fn, envir = asNamespace("tulpa"))), collapse = " ")
+    expect_true(grepl(".latent_constrained_step", fsrc, fixed = TRUE), info = fn)
+  }
   fsrc <- paste(deparse(tulpa:::.latent_field_solve), collapse = " ")
-  expect_gt(regexpr("Fm + matrix(step", fsrc, fixed = TRUE),
+  expect_gt(regexpr("Fm + t * S", fsrc, fixed = TRUE),
             regexpr("all(is.finite(step))", fsrc, fixed = TRUE))
+})
+
+
+test_that("the constrained step is the Newton step on the constrained subspace", {
+  # On a concave quadratic f(x) = g'x - x'Hx/2 one step from 0 has to land on
+  # the maximiser over {C x = 0}, the solution of the KKT system.
+  set.seed(3)
+  n <- 6L
+  B <- matrix(stats::rnorm(n * n), n); H <- crossprod(B) + diag(n)
+  g <- stats::rnorm(n)
+  Cm <- tulpa:::.latent_constraint_matrix(list(1:3, 4:6), n)
+  s <- tulpa:::.latent_constrained_step(Matrix::Matrix(H, sparse = TRUE), g, Cm)
+  kkt <- solve(rbind(cbind(H, t(Cm)), cbind(Cm, matrix(0, 2, 2))), c(g, 0, 0))
+  expect_equal(s, kkt[seq_len(n)], tolerance = 1e-10)
+  expect_equal(as.numeric(Cm %*% s), c(0, 0), tolerance = 1e-12)
+  expect_equal(tulpa:::.latent_constrained_step(Matrix::Matrix(H, sparse = TRUE), g),
+               as.numeric(solve(H, g)))
+})
+
+
+test_that("the field solves reach the constrained mode on a two-component graph", {
+  # Two components of unequal size whose levels differ: the per-component
+  # constraint leaves each level to the data, so the iteration has to find the
+  # constrained stationary point (gradient constant within each component)
+  # rather than cycle.
+  A <- matrix(0, 36, 36)
+  A[1:6, 1:6] <- .la_chain(6); A[7:36, 7:36] <- .la_chain(30)
+  comps <- list(1:6, 7:36)
+  set.seed(2)
+  S <- 6L
+  f_true <- c(rep(1.2, 6), sin(seq(0, 3, length.out = 30)) - 0.3)
+  y <- matrix(stats::rpois(36 * S, exp(2 + f_true)), 36, S)
+  oracle <- .la_oracle(y, "log")
+  Q <- tulpa_car_precision_Q(A)
+  eta0 <- matrix(2, 36, S)
+  br <- tulpa:::.latent_bym2_solve(oracle, eta0, Q, numeric(36), numeric(36),
+                                   a = 0.58, b = 0.42, max_iter = 200L,
+                                   components = comps)
+  sc <- rowSums(oracle$working(eta0 + 0.58 * br$v + 0.42 * br$u)$score)
+  gv <- 0.58 * sc - as.numeric(Q %*% br$v)
+  gu <- 0.42 * sc - br$u
+  # u is held at overall sum zero, so its gradient is constant, not zero.
+  expect_lt(diff(range(gu)), 1e-6)
+  expect_equal(sum(br$u), 0, tolerance = 1e-10)
+  for (cc in comps) expect_lt(diff(range(gv[cc])), 1e-6)
+  expect_true(is.finite(br$m))
+  fu <- tulpa:::.latent_field_solve(oracle, eta0, Q, matrix(0, 36, 1), 1,
+                                    matrix(1, 36, 1), max_iter = 200L,
+                                    components = comps)
+  scf <- rowSums(oracle$working(eta0 + fu$Fm[, 1])$score)
+  gf  <- scf - as.numeric(Q %*% fu$Fm[, 1])
+  for (cc in comps) expect_lt(diff(range(gf[cc])), 1e-6)
 })
 
 
@@ -283,7 +340,7 @@ test_that("tulpa_latent_ascent() fits a shared field with a profiled CAR rho", {
   expect_equal(sum(res$field$Fm), 0, tolerance = 1e-8)
   expect_gt(stats::cor(res$field$site_off, f), 0.8)
   expect_null(res$factor)
-  expect_identical(res$settings$max_outer, 25L)
+  expect_identical(res$settings$max_outer, 400L)
   expect_true(is.na(res$settings$factor_starts))
 })
 

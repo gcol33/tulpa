@@ -440,13 +440,53 @@
   dd <- if (is.finite(d) && d > 0) d else 1
   out <- function(r) {
     Hr <- if (is.null(r)) H else H + Matrix::Diagonal(n, r)
-    if (is.null(g)) Matrix::solve(Hr) else as.numeric(Matrix::solve(Hr, g))
+    if (is.null(g)) Matrix::solve(Hr)
+    else if (is.matrix(g)) as.matrix(Matrix::solve(Hr, g))
+    else as.numeric(Matrix::solve(Hr, g))
   }
   for (r in list(NULL, 1e-8 * dd, max(1e-4 * dd, 1e-6))) {
     v <- tryCatch(out(r), error = function(e) NULL)
     if (!is.null(v)) return(v)
   }
-  if (is.null(g)) NULL else rep(NA_real_, length(g))
+  if (is.null(g)) NULL
+  else if (is.matrix(g)) matrix(NA_real_, nrow(g), ncol(g))
+  else rep(NA_real_, length(g))
+}
+
+# Sum-to-zero constraint matrix over the first `n` coordinates of a vector of
+# length `n_total`: one row per node set in `components`, ones on the set's
+# coordinates (shifted by `offset`). NULL when there is no constraint.
+.latent_constraint_matrix <- function(components, n_total, offset = 0L) {
+  if (!length(components)) return(NULL)
+  Cm <- matrix(0, length(components), n_total)
+  for (k in seq_along(components)) Cm[k, offset + components[[k]]] <- 1
+  Cm
+}
+
+# Newton step for the ascent direction H^-1 g restricted to {s : Cm s = 0},
+# the exact step on the constrained subspace (conditioning by kriging, Rue and
+# Held 2005, sec. 2.3.3): s - H^-1 Cm' (Cm H^-1 Cm')^-1 Cm s, from one solve
+# against [g, Cm']. Projecting an unconstrained step onto the subspace instead
+# is not a Newton step there, and with several constrained components it can
+# cycle and diverge.
+.latent_constrained_step <- function(H, g, Cm = NULL) {
+  if (is.null(Cm)) return(.latent_ridge_solve(H, g))
+  X <- .latent_ridge_solve(H, cbind(g, t(Cm)))
+  if (!all(is.finite(X))) return(rep(NA_real_, length(g)))
+  s <- X[, 1L]; Z <- X[, -1L, drop = FALSE]
+  as.numeric(s - Z %*% solve(Cm %*% Z, Cm %*% s))
+}
+
+# Backtracking along a Newton step: the largest t in 1, 1/2, ... (down to
+# 2^-19) with obj(t) > f0. 0 when no such t exists (the iterate is held).
+.latent_backtrack <- function(obj, f0) {
+  t <- 1
+  while (t > 1e-6) {
+    f <- obj(t)
+    if (is.finite(f) && f > f0) return(t)
+    t <- t / 2
+  }
+  0
 }
 
 # Centre each column of `Fm` over every node set in `components` (NULL: none).
@@ -483,6 +523,15 @@
       do.call(cbind, blocks[((k - 1L) * K + 1L):(k * K)])))
   }
   field_off_of <- function(Ff) rowSums(W * as.matrix(Mt %*% Ff))
+  obj_of <- function(Ff) {
+    v <- oracle$data_ll(eta_base + field_off_of(Ff)) -
+      0.5 * sum(vapply(seq_len(K), function(k)
+        tau[k] * as.numeric(crossprod(Ff[, k], Q %*% Ff[, k])), 0))
+    if (is.finite(v)) v else -Inf
+  }
+  Cm <- if (length(components))
+    do.call(rbind, lapply(seq_len(K), function(k)
+      .latent_constraint_matrix(components, K * Nn, (k - 1L) * Nn))) else NULL
 
   # The data term M diag(w) M' has rank at most n_sites; a mesh with more nodes
   # than sites relies on tau Q for full rank, so a small tau can leave H
@@ -492,13 +541,16 @@
     sc <- rowSums(wk$score); cw <- rowSums(wk$curv)
     g  <- unlist(lapply(seq_len(K), function(k)
       as.numeric(M %*% (W[, k] * sc)) - tau[k] * as.numeric(Q %*% Fm[, k])))
-    step <- .latent_ridge_solve(build_H(cw), g)
+    step <- .latent_constrained_step(build_H(cw), g, Cm)
     # A non-finite step is held rather than applied: it would poison F and make
     # the convergence test NA.
     if (!all(is.finite(step))) break
-    Fm <- Fm + matrix(step, Nn, K)
-    Fm <- .latent_center_components(Fm, components)
-    if (max(abs(step)) < tol) break
+    S  <- matrix(step, Nn, K)
+    f0 <- obj_of(Fm)
+    t  <- .latent_backtrack(function(t) obj_of(Fm + t * S), f0)
+    if (t == 0) break
+    Fm <- .latent_center_components(Fm + t * S, components)
+    if (t * max(abs(step)) < tol) break
   }
 
   # tau M-step. The field's Laplace covariance uses cov_curv when the family
@@ -569,7 +621,11 @@
 # enters eta, with v the structured part (precision `Qic`, sum-to-zero per
 # component) and u ~ N(0, I) the unstructured part; a = sigma sqrt(rho / scale),
 # b = sigma sqrt(1 - rho). Joint Newton over (v, u) at fixed (sigma, rho); `m`
-# is the Laplace field marginal the hyperparameters are profiled on.
+# is the Laplace field marginal the hyperparameters are profiled on. u is held
+# at overall sum zero: its mean enters eta exactly as the intercept does, and
+# the intercept carries a flat prior, so the mean is redundant. Left free it is
+# a ridge the block-coordinate ascent creeps along (intercept in the coefficient
+# EM, field level here), which does not converge in the outer passes it is given.
 .latent_bym2_solve <- function(oracle, eta_base, Qic, v, u, a, b,
                                max_iter = 50L, tol = 1e-8,
                                components = list(seq_along(v))) {
@@ -583,6 +639,14 @@
     rbind(cbind(a * a * Dw + Qic, a * b * Dw),
           cbind(a * b * Dw,       b * b * Dw + Imat)) + ridge
   }
+  obj_of <- function(v, u) {
+    val <- oracle$data_ll(eta_base + a * v + b * u) -
+      0.5 * as.numeric(crossprod(v, Qic %*% v)) - 0.5 * sum(u * u)
+    if (is.finite(val)) val else -Inf
+  }
+  Cm <- rbind(.latent_constraint_matrix(components, 2L * Ns),
+              .latent_constraint_matrix(list(seq_len(Ns)), 2L * Ns, Ns))
+  u <- u - mean(u)
   for (it in seq_len(max_iter)) {
     phi <- a * v + b * u
     wk  <- oracle$working(eta_base + phi)
@@ -590,13 +654,16 @@
     gv  <- a * sc - as.numeric(Qic %*% v)
     gu  <- b * sc - u
     H   <- build_H(cw, a, b)
-    step <- tryCatch(as.numeric(Matrix::solve(H, c(gv, gu))),
-                     error = function(e)
-                       as.numeric(Matrix::solve(
-                         H + Matrix::Diagonal(2L * Ns, 1e-3), c(gv, gu))))
-    v <- v + step[seq_len(Ns)]; u <- u + step[Ns + seq_len(Ns)]
+    step <- .latent_constrained_step(H, c(gv, gu), Cm)
+    if (!all(is.finite(step))) break
+    sv <- step[seq_len(Ns)]; su <- step[Ns + seq_len(Ns)]
+    t  <- .latent_backtrack(function(t) obj_of(v + t * sv, u + t * su),
+                            obj_of(v, u))
+    if (t == 0) break
+    v <- v + t * sv; u <- u + t * su
     v <- as.numeric(.latent_center_components(matrix(v), components))
-    if (max(abs(step)) < tol) break
+    u <- u - mean(u)
+    if (t * max(abs(step)) < tol) break
   }
   # Laplace marginal at the mode (constant normalisers dropped).
   phi <- a * v + b * u
@@ -839,7 +906,9 @@
 #'   * `tol` (`1e-4`) -- convergence tolerance on the largest change of the
 #'     field or factor offset between passes.
 #'   * `max_outer` (`NULL`) -- outer-pass budget; `NULL` takes `factor_outer`
-#'     when factors are present, else 25.
+#'     when factors are present, else 400 (a field run stops at `tol`, so this
+#'     is a cap; how many passes it needs depends on how strongly the field
+#'     overlaps the coefficient block).
 #'   * `factor_outer` (`25`) -- the budget a factor model takes by default (the
 #'     factor block alternates with the coefficient block along a slow mode and
 #'     rarely meets `tol`).
@@ -917,11 +986,14 @@ tulpa_latent_ascent <- function(make_oracle, em_fit, offset_of,
   verbose      <- isTRUE(control[["verbose"]])
   label        <- control[["label"]] %||% "latent"
 
-  # The field block reaches `tol` and stops early, so its budget is a cap; the
-  # factor block alternates with the coefficient block along a slow mode and
-  # takes `factor_outer` passes unless the caller sets `max_outer`.
+  # A field run stops at `tol`, so its budget is a cap set well above what it
+  # takes: how many passes it needs grows with how much the field overlaps the
+  # coefficient block (a BYM2 field's iid part overlaps a site covariate's
+  # effect, and takes tens to a few hundred). The factor block alternates with
+  # the coefficient block along a slow mode and takes `factor_outer` passes
+  # unless the caller sets `max_outer`.
   max_outer <- control[["max_outer"]]
-  if (is.null(max_outer)) max_outer <- if (has_factor) factor_outer else 25L
+  if (is.null(max_outer)) max_outer <- if (has_factor) factor_outer else 400L
   max_outer <- as.integer(max_outer)
 
   # Each candidate direction costs a full loading-EM run on the first pass.

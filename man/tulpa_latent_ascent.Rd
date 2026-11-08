@@ -69,7 +69,9 @@ divided by.
 \item \code{tol} (\code{1e-4}) -- convergence tolerance on the largest change of the
 field or factor offset between passes.
 \item \code{max_outer} (\code{NULL}) -- outer-pass budget; \code{NULL} takes \code{factor_outer}
-when factors are present, else 25.
+when factors are present, else 400 (a field run stops at \code{tol}, so this
+is a cap; how many passes it needs depends on how strongly the field
+overlaps the coefficient block).
 \item \code{factor_outer} (\code{25}) -- the budget a factor model takes by default (the
 factor block alternates with the coefficient block along a slow mode and
 rarely meets \code{tol}).

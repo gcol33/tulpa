@@ -364,6 +364,20 @@
   standard-normal Gauss-Hermite rule, and `tulpa_car_precision_Q()`, the
   `tau (D - rho W)` precision of an adjacency graph (gcol33/tulpaObs#428).
 
+* `tulpa_latent_ascent()`: the field Newton steps (one or several covariate-
+  weighted fields, and BYM2's structured plus unstructured pair) are the exact
+  Newton steps on the per-component sum-to-zero subspace, by conditioning on
+  the constraints, with step halving on the field objective. The previous
+  step, an unconstrained Newton step centred afterwards, cycled and then
+  diverged on a graph with two components, and on a connected graph never met
+  its tolerance (every BYM2 solve on a 10 x 10 grid ran its 50 iterations;
+  they now take 3 to 20). BYM2's unstructured part is held at overall sum
+  zero, its mean being the intercept's. A field-only ascent takes up to 400
+  outer passes by default (was 25), a cap it stops short of at `tol`: a BYM2
+  field needs 45 to 200 passes beside a site covariate, and stopping at 25
+  left the community slope 0.035 high on average over 16 seeds
+  (gcol33/tulpaObs#444).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;
