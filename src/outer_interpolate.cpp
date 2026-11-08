@@ -8,82 +8,7 @@
 #include <functional>
 #include "sobol.h"
 
-namespace tulpa_outer_spline {
-
-struct Axis {
-    std::vector<double> x, knots;
-    int degree;
-
-    Axis(Rcpp::NumericVector nodes, bool cubic) : x(nodes.begin(), nodes.end()),
-        degree(nodes.size() == 1 ? 0 : (cubic && nodes.size() >= 4 ? 3 : 1)) {
-        if (x.empty() || !std::is_sorted(x.begin(), x.end()) ||
-            std::adjacent_find(x.begin(), x.end()) != x.end())
-            Rcpp::stop("Spline axes require distinct increasing nodes.");
-        for (double value : x) if (!std::isfinite(value))
-            Rcpp::stop("Spline axes must be finite.");
-        knots.assign(degree + 1, x.front());
-        if (degree == 3) {
-            for (std::size_t j = 2; j + 2 < x.size(); ++j) knots.push_back(x[j]);
-        } else {
-            for (std::size_t j = 1; j + 1 < x.size(); ++j) knots.push_back(x[j]);
-        }
-        knots.insert(knots.end(), degree + 1, x.back());
-    }
-
-    int basis(double value, std::array<double, 4>& weights) const {
-        if (degree == 0) {
-            weights.fill(0);
-            weights[0] = 1;
-            return 0;
-        }
-        value = std::max(x.front(), std::min(x.back(), value));
-        int span = static_cast<int>(std::upper_bound(knots.begin(), knots.end(), value) -
-                                    knots.begin()) - 1;
-        span = std::max(degree, std::min(static_cast<int>(x.size()) - 1, span));
-        std::array<double, 4> left{}, right{};
-        weights.fill(0);
-        weights[0] = 1;
-        for (int j = 1; j <= degree; ++j) {
-            left[j] = value - knots[span + 1 - j];
-            right[j] = knots[span + j] - value;
-            double saved = 0;
-            for (int r = 0; r < j; ++r) {
-                const double t = weights[r] / (right[r + 1] + left[j - r]);
-                weights[r] = saved + right[r + 1] * t;
-                saved = left[j - r] * t;
-            }
-            weights[j] = saved;
-        }
-        return span - degree;
-    }
-};
-
-struct TensorCorners {
-    std::vector<std::size_t> stride, offset;
-    std::vector<unsigned char> digit;
-
-    explicit TensorCorners(const std::vector<Axis>& axes) {
-        std::size_t total = 1, corners = 1;
-        for (const auto& axis : axes) {
-            stride.push_back(total);
-            total *= axis.x.size();
-            corners *= axis.degree + 1;
-        }
-        offset.assign(corners, 0);
-        digit.resize(corners * axes.size());
-        for (std::size_t c = 0; c < corners; ++c) {
-            std::size_t digits = c;
-            for (std::size_t j = 0; j < axes.size(); ++j) {
-                const int radix = axes[j].degree + 1, at = digits % radix;
-                digits /= radix;
-                digit[c * axes.size() + j] = static_cast<unsigned char>(at);
-                offset[c] += at * stride[j];
-            }
-        }
-    }
-};
-
-} // namespace tulpa_outer_spline
+#include "outer_spline.h"
 
 namespace tulpa_outer_mixture {
 
@@ -313,62 +238,8 @@ Rcpp::NumericMatrix cpp_outer_tensor_interpolate(Rcpp::List nodes,
     }
     if (total != static_cast<std::size_t>(values.nrow()))
         Rcpp::stop("Spline values must cover the full tensor in axis order.");
-    const TensorCorners layout(axes);
-    Eigen::MatrixXd coefficients = Eigen::Map<const Eigen::MatrixXd>(
-        values.begin(), values.nrow(), fields);
-    if (!coefficients.allFinite()) Rcpp::stop("Spline values must be finite.");
-    for (int j = 0; j < d; ++j) {
-        if (axes[j].degree <= 1) continue;
-        const int n = axes[j].x.size();
-        Eigen::MatrixXd B = Eigen::MatrixXd::Zero(n, n);
-        for (int i = 0; i < n; ++i) {
-            std::array<double, 4> weights;
-            const int first = axes[j].basis(axes[j].x[i], weights);
-            for (int r = 0; r <= axes[j].degree; ++r) B(i, first + r) = weights[r];
-        }
-        const std::size_t step = layout.stride[j], block = step * n;
-        const std::size_t lines = total / n;
-        Eigen::MatrixXd rhs(n, lines * fields);
-        for (int f = 0; f < fields; ++f) {
-            std::size_t line = 0;
-            for (std::size_t outer = 0; outer < total; outer += block)
-                for (std::size_t offset = 0; offset < step; ++offset, ++line)
-                    for (int r = 0; r < n; ++r)
-                        rhs(r, line + lines * f) = coefficients(outer + offset + r * step, f);
-        }
-        Eigen::MatrixXd fitted = B.partialPivLu().solve(rhs);
-        for (int f = 0; f < fields; ++f) {
-            std::size_t line = 0;
-            for (std::size_t outer = 0; outer < total; outer += block)
-                for (std::size_t offset = 0; offset < step; ++offset, ++line)
-                    for (int r = 0; r < n; ++r)
-                        coefficients(outer + offset + r * step, f) = fitted(r, line + lines * f);
-        }
-    }
+    const Eigen::MatrixXd coefficients = tulpa_outer_spline::coefficients(axes, values);
     Rcpp::NumericMatrix out(query.nrow(), fields);
-    double* output = out.begin();
-    const double* fitted_values = coefficients.data();
-    std::vector<int> first(d);
-    std::vector<std::array<double, 4>> weights(d);
-    for (int i = 0; i < query.nrow(); ++i) {
-        if (i % 4096 == 0) Rcpp::checkUserInterrupt();
-        for (int j = 0; j < d; ++j) {
-            if (!std::isfinite(query(i, j))) Rcpp::stop("Spline queries must be finite.");
-            first[j] = axes[j].basis(query(i, j), weights[j]);
-        }
-        std::size_t base = 0;
-        for (int j = 0; j < d; ++j) base += first[j] * layout.stride[j];
-        for (std::size_t corner = 0; corner < layout.offset.size(); ++corner) {
-            double weight = 1;
-            for (int j = 0; j < d; ++j) {
-                const int at = layout.digit[corner * d + j];
-                weight *= weights[j][at];
-            }
-            const std::size_t row = base + layout.offset[corner];
-            if (weight != 0) for (int f = 0; f < fields; ++f)
-                output[i + static_cast<std::size_t>(query.nrow()) * f] +=
-                    weight * fitted_values[row + total * f];
-        }
-    }
+    tulpa_outer_spline::accumulate(axes, coefficients, query, out);
     return out;
 }

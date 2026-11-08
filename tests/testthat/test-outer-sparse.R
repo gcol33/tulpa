@@ -59,6 +59,49 @@ test_that("sparse log interpolation preserves additive cubic fields", {
   expect_true(all(exp(got) > 0))
 })
 
+test_that("read interpolation caches probe rows and nested scramble prefixes exactly", {
+  rules <- lapply(c(FALSE, FALSE), tulpa:::.nl_sparse_rules)
+  cache <- tulpa:::.nl_sparse_cache(rules, identity,
+    function(cells, retain) list(log_marginal = rowSums(cells)))
+  grid <- cache$tensor(c(3L, 3L))
+  smaller <- cache$tensor(c(2L, 2L))
+  points <- cache$state()$points
+  values <- cbind(points[, 1]^3 + points[, 2]^2, points[, 1] * points[, 2])
+  design <- function(n) do.call(rbind, lapply(1:8, function(g)
+    tulpa:::cpp_outer_read_design(n / 8L, 2L, 891L + g)))
+  small <- design(128L); large <- design(256L)
+  original <- tulpa:::cpp_outer_tensor_interpolate
+  expected_small <- original(grid$nodes, values[grid$rows, ], small)
+  expected_large <- original(grid$nodes, values[grid$rows, ], large)
+  expected_other <- original(smaller$nodes, values[smaller$rows, ], large)
+  seen <- integer()
+  local_mocked_bindings(cpp_outer_tensor_interpolate = function(nodes, values, query, cubic = TRUE) {
+    seen <<- c(seen, nrow(query))
+    original(nodes, values, query, cubic)
+  }, .package = "tulpa")
+  predictions <- new.env(parent = emptyenv())
+  combination <- list(list(index = c(3L, 3L), coefficient = 1))
+  probe <- c(1L, 1L, 2L, 65L)
+  got <- tulpa:::.nl_sparse_interpolate(combination, cache, values, small, predictions,
+                                        rows = probe, groups = 8L)
+  expect_identical(got, expected_small[probe, , drop = FALSE])
+  expect_identical(seen, 3L)
+  got <- tulpa:::.nl_sparse_interpolate(combination, cache, values, small, predictions, groups = 8L)
+  expect_identical(got, expected_small)
+  expect_identical(seen, c(3L, 125L))
+  got <- tulpa:::.nl_sparse_interpolate(combination, cache, values, large, predictions, groups = 8L)
+  expect_identical(got, expected_large)
+  expect_identical(seen, c(3L, 125L, 128L))
+  got <- tulpa:::.nl_sparse_interpolate(combination, cache, values, small, predictions, groups = 8L)
+  expect_identical(got, expected_small)
+  expect_identical(seen, c(3L, 125L, 128L))
+  combination[[1L]]$index <- c(2L, 2L)
+  got <- tulpa:::.nl_sparse_interpolate(combination, cache, values, large, predictions,
+                                        rows = probe, groups = 8L)
+  expect_identical(got, expected_other[probe, , drop = FALSE])
+  expect_identical(seen, c(3L, 125L, 128L, 3L))
+})
+
 test_that("positive recombination recovers target mixture probabilities", {
   x <- seq(-3, 3, length.out = 31)
   features <- cbind(x, x^2, pnorm(.7, x, .5))
@@ -90,7 +133,47 @@ test_that("positive moment projection reports infeasible support with finite mas
   expect_equal(sum(fit$weights * c(0, 1)), 1, tolerance = 1e-9)
 })
 
+test_that("read budgets follow the binding quantity and measured sampling rate", {
+  expect_error(tulpa:::.nl_aghq_config(list(quad_read_max_nodes = 129L)),
+               "divisible by eight")
+  expect_error(tulpa:::.nl_aghq_config(list(quad_read_nodes = 1024L,
+                                        quad_read_max_nodes = 512L)),
+               "must not exceed")
+  action <- function(...) tulpa:::.nl_sparse_read_action(...)$action
+  expect_identical(tulpa:::.nl_sparse_read_action(65536, 524288,
+    c(.01, .03), c(.1, .001), c(.05, .005))$goal, 2L)
+  expect_identical(action(4096, 524288, c(.01, .1), c(.1, .001), c(.05, .02)),
+                   "refine")
+  expect_identical(action(65536, 524288, c(.005, .001), c(.1, .001), c(.05, .02)),
+                   "grow")
+  expect_identical(action(131072, 524288, c(.005, .001), c(.09, .001), c(.05, .02),
+                         previous = list(nodes = 65536, error = c(.1, .001))), "refine")
+  expect_identical(action(131072, 524288, c(.005, .001), c(.06, .001), c(.05, .02),
+                         previous = list(nodes = 65536, error = c(.1, .001))), "grow")
+  expect_identical(action(524288, 524288, c(.005, .001), c(.06, .001), c(.05, .02)),
+                   "refine")
+  expect_identical(action(65536, 524288, c(.045, .001), c(.02, .001), c(.05, .02)),
+                   "refine")
+  expect_identical(action(131072, 524288, c(.005, .001), c(Inf, .001), c(.05, .02),
+                         previous = list(nodes = 65536, error = c(Inf, .001))), "refine")
+  expect_identical(action(524288, 524288, c(.005, .001), c(.06, .001), c(.05, .02),
+                         refit = TRUE), "refine")
+  expect_identical(action(65536, 524288, c(.08, .001), c(.1, .001), c(.05, .02),
+                         refit = TRUE), "refine")
+  expect_identical(action(131072, 524288, c(.03, .001), c(.03, .001), c(.05, .02),
+                         previous = list(nodes = 65536, error = c(.05, .001))), "grow")
+  expect_identical(action(65536, 524288, c(.04, .001), c(.08, .001), c(.05, .02)),
+                   "refine")
+  expect_identical(action(131072, 524288, c(.005, .001), c(.09, .001), c(.05, .02),
+                         previous = list(nodes = 65536, error = c(.1, .001)),
+                         refit = TRUE), "refresh")
+  expect_identical(action(196608, 196608, c(.001, .001), c(.075, .001), c(.05, .02),
+                         previous = list(nodes = 131072, error = c(.1, .001)),
+                         refit = TRUE), "refine")
+})
+
 test_that("adaptive quadrature resolves a five-axis analytic posterior and mixture", {
+  skip_on_cran()
   prior <- lapply(c("local", "regional"), function(name)
     list(type = "hsgp", name = name, prior_sigma = c(1, .1), prior_range = c(1, .1)))
   prior[[3L]] <- list(type = "iid", name = "group", sigma_grid = exp(c(-2, 0, 2)))
@@ -161,4 +244,20 @@ test_that("adaptive quadrature resolves a five-axis analytic posterior and mixtu
   expect_lte(max(abs(final$fixed_sd - final$fixed_interpolated_sd)), 1e-6)
   expect_equal(tulpa:::.nl_outer_coupling_mass(fit$outer_posterior$partition, "column"),
     unname(fit$weights), tolerance = 1e-12)
+
+  local_mocked_bindings(.nl_outer_read_error = function(u, log_weight, replicate, proposed,
+                                                       fixed = NULL, ...) {
+    list(hyper_quantiles = matrix(.2, 3L, ncol(u)),
+      fixed_quantiles = matrix(.2, 3L, ncol(fixed$mu)), log_evidence = .001,
+      max = .2, complete = TRUE)
+  }, .package = "tulpa")
+  bounded <- tulpa:::.nl_aghq_integrate(res, solve, prior,
+    tulpa:::.nl_aghq_config(list(quad_read_nodes = 128L, quad_read_max_nodes = 512L,
+                              quad_max_level = 3L, quad_evidence_tol = 1)))
+  state <- bounded$outer_quadrature
+  expect_false(state$converged)
+  expect_true(is.finite(state$error$max))
+  expect_gte(state$error$max, .2)
+  expect_lte(max(state$read_history[, "read_nodes"]), 512L)
+  expect_gt(length(unique(state$read_history[, "points"])), 3L)
 })

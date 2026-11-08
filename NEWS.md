@@ -357,7 +357,7 @@
   of nested Genz-Keister (normal) and Patterson (bounded) rules that reuses every solve across levels, and
   log-density interpolation, so the signed combination weights never enter as densities. The error estimate comes
   from the level differences and the hierarchical remainder, with targets of 0.05 posterior SD on every quantile
-  and 0.005 nats on the evidence. The n = 250 two-scale fit fell from 2,440 s to 913 s, and the n = 120 HSGP arm
+  and 0.02 nats on the evidence. The n = 250 two-scale fit fell from 2,440 s to 913 s, and the n = 120 HSGP arm
   of the prediction tests from 149 s (24,302 importance points) to 126 s (7,924 solves). `control$outer_design =
   list(points =, weights =)` supplies a user design, and `control$quad_max_level` caps the nested depth (#1139,
   #1149).
@@ -373,6 +373,14 @@
   run across threads never calls R's math library from a worker thread. A binomial `tulpa_re_em(n_threads > 1)`
   fit had aborted on R's C stack check inside `lchoose()`; it now returns the single-threaded estimates exactly
   (#1156).
+- The quadrature read of the sparse-grid interpolant is promoted once the quantile grid term is resolved, without
+  waiting for the evidence target, and grows only while its error falls at the sampling rate, up to
+  `control$quad_read_max_nodes` (524,288); a read that stalls refits its proposal once and then directs the work to
+  grid refinement. The default evidence target is 0.02 nats, so a difference of two log evidences carries at most
+  0.04 nats. Spline tensors are compiled into common B-spline bases, which reads 131,072 points in 1.2 s where the
+  direct tensor sum took 19 s. A seed-3 HSGP fit fell from 1,393 s (110,917 solves, 8.8 GB) to 644 s (58,885 solves,
+  1.7 GB); at `quad_evidence_tol = 0.05` the read had doubled without bound past 17.8 GB and now stops at 262,144
+  points. Answers moved by at most 0.015 posterior SD and 0.001 nats (#1157).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component

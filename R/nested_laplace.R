@@ -358,17 +358,28 @@
 #'     1, 3, 7, 15 and 31.
 #'     `quad_read_nodes` (`65536L`, divisible by eight) starts inexpensive
 #'     shifted Sobol reads of the log spline through a seven-degree Student
-#'     proposal on the local pair. The reads grow when their uncertainty
-#'     consumes the remaining quantile budget. They use no inner solves.
+#'     proposal on the Gaussian axes, with twice the fitted covariance.
+#'     A stalled read refits its proposal once per grid; independent shifts
+#'     check the refit. Each doubling tests
+#'     whether uncertainty decreases at the sampling rate.
+#'     `quad_read_max_nodes` (`524288L`, divisible by eight) bounds each read.
+#'     The sampling-rate forecast at that bound directs refinement when
+#'     a larger read cannot close the remaining error budget.
+#'     A stalled read directs work to grid refinement. Reads use no inner solves.
 #'     A coarse read fits the proposal moments; independent full reads check
-#'     its precision.
+#'     its precision once the quantile interpolation budget is resolved,
+#'     independently of the evidence target.
 #'     Read uncertainty uses a simultaneous delete-scramble quantile envelope.
 #'     `quad_tol` (`0.05` posterior SD)
-#'     and `quad_evidence_tol` (`0.005` nats) control refinement.
+#'     and `quad_evidence_tol` (`0.02` nats) control refinement.
+#'     The quantity with the largest error relative to its target directs
+#'     both read allocation and grid refinement.
+#'     Two attained evidence budgets give a log Bayes factor budget of 0.04 nats.
 #'     Quantile indicators include changes in posterior CDFs from active subspaces,
 #'     conditional-mixture resolution and shifted-read uncertainty.
 #'     Evidence is the positive interpolant integral. Its indicator combines
-#'     active differential integrals with their discrepancy from that integral.
+#'     active differential integrals, their discrepancy from that integral,
+#'     and shifted-read uncertainty.
 #'     Three refinements precede a finite estimate. `outer_quadrature` records
 #'     the estimates, unique solve count, index set and refinement history.
 #'

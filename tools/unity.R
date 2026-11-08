@@ -32,6 +32,22 @@ if (length(missing)) stop("in no unity file: ", paste(missing, collapse = ", "))
 if (length(unknown)) stop("named by a unity file but absent from src/: ", paste(unknown, collapse = ", "))
 
 objs <- sub("\\.cpp$", ".o", unity)
+prerequisites <- function(files) {
+  seen <- character()
+  pending <- files
+  while (length(pending)) {
+    current <- pending[1L]
+    pending <- pending[-1L]
+    if (current %in% seen) next
+    seen <- c(seen, current)
+    lines <- readLines(file.path(src, current), warn = FALSE)
+    includes <- regmatches(lines,
+      regexec('^[[:space:]]*#[[:space:]]*include[[:space:]]*"([^"/]+)"', lines))
+    includes <- vapply(Filter(length, includes), `[[`, "", 2L)
+    pending <- c(pending, includes[file.exists(file.path(src, includes))])
+  }
+  seen
+}
 # One make line per item after the head, continued with a backslash.
 wrap <- function(head, items) {
   c(paste(head, "\\"), paste0("  ", items, c(rep(" \\", length(items) - 1L), "")))
@@ -40,7 +56,8 @@ block <- c(
   "# unity-build: begin (written by tools/unity.R)",
   wrap("OBJECTS =", objs),
   "all: $(SHLIB)",
-  unlist(lapply(seq_along(unity), function(i) wrap(paste0(objs[i], ":"), c(unity[i], members[[i]])))),
+  unlist(lapply(seq_along(unity), function(i) wrap(paste0(objs[i], ":"),
+    prerequisites(c(unity[i], members[[i]]))))),
   "# unity-build: end"
 )
 

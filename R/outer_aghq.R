@@ -29,21 +29,24 @@
     cfg <- list(max_level = control$quad_max_level %||% 5L,
         progress = isTRUE(control$progress),
         read_nodes = control$quad_read_nodes %||% 65536L,
+        read_max_nodes = control$quad_read_max_nodes %||% 524288L,
         read_df = 7,
         tol = control$quad_tol %||% .05,
-        evidence_tol = control$quad_evidence_tol %||% .005)
-    for (name in c("max_level", "read_nodes")) {
+        evidence_tol = control$quad_evidence_tol %||% .02)
+    for (name in c("max_level", "read_nodes", "read_max_nodes")) {
         value <- cfg[[name]]
         if (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
             value != floor(value) || value > .Machine$integer.max ||
-            value < if (name == "read_nodes") 128L else 3L) {
+            value < if (name == "max_level") 3L else 128L) {
             stop("`control$quad_", name, "` must be a finite integer >= ",
-                 if (name == "read_nodes") 128L else 3L, ".", call. = FALSE)
+                 if (name == "max_level") 3L else 128L, ".", call. = FALSE)
         }
     }
-    if (cfg$max_level > 5L || cfg$read_nodes %% 8 != 0L) {
+    if (cfg$max_level > 5L || cfg$read_nodes %% 8 != 0L || cfg$read_max_nodes %% 8 != 0L ||
+        cfg$read_nodes > cfg$read_max_nodes) {
         stop("Quadrature max_level must be at most five, ",
-             "and read_nodes must be divisible by eight.", call. = FALSE)
+             "read_nodes and read_max_nodes must be divisible by eight, ",
+             "and read_nodes must not exceed read_max_nodes.", call. = FALSE)
     }
     for (name in c("tol", "evidence_tol")) {
         value <- cfg[[name]]
@@ -87,7 +90,7 @@
     list(physical = physical, log_density = log_density, log_stretch = log_stretch)
 }
 
-.nl_aghq_transform <- function(res, prior, solve, read_df) {
+.nl_aghq_transform <- function(res, prior, solve, read_df, read_variance = 2) {
     blocks <- .nl_aghq_blocks(prior)
     if (is.null(blocks)) {
         stop("Quadrature requires local and regional HSGP blocks with four free axes.",
@@ -200,13 +203,13 @@
         read_center <<- as.numeric(crossprod(weights, values))
         delta <- sweep(values, 2L, read_center)
         covariance <- crossprod(delta, weights * delta)
-        read_L <<- t(chol(covariance * (read_df - 2) / read_df))
+        read_L <<- t(chol(covariance * read_variance * (read_df - 2) / read_df))
         list(center = read_center, L = read_L)
     }
     list(physical = physical, log_density = log_density,
          read = read, adapt_read = adapt_read, center = center, L = L,
          regional_log_stretch = region$log_stretch,
-         read_center = read_center, read_L = read_L,
+         read_center = read_center, read_L = read_L, read_variance = read_variance,
          local_radii = sides$radii,
          evaluations = evaluations)
 }

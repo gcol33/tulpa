@@ -269,9 +269,11 @@ test_that("a multiscale HSGP fit retains its shared posterior at the public door
     fit <- tulpa(formulas[[i]], data = d, family = "poisson",
       spatial = spatial_multiscale(~lon + lat, approx = "hsgp", m = 3),
       control = list(progress = FALSE, quad_max_level = 3L,
-        quad_read_nodes = 2048L, quad_tol = 5, quad_evidence_tol = 1))
+        quad_read_nodes = 2048L, quad_read_max_nodes = 2048L,
+        quad_tol = 5, quad_evidence_tol = 1))
     inner <- if (!is.null(fit$nested)) fit$nested else if (!is.null(fit$joint_fit)) fit$joint_fit else fit
     expect_identical(inner$integration, "aghq")
+    expect_identical(inner$outer_quadrature$read_max_nodes, 2048L)
     expect_true(all(inner$weights >= 0))
     expect_equal(tulpa:::.nl_outer_coupling_mass(inner$outer_posterior$partition, "column"),
                  unname(inner$weights), tolerance = 1e-12)

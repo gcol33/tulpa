@@ -19,6 +19,7 @@
 #include "hyperprior_density_export.cpp"
 #include "multinomial_logit_export.cpp"
 #include "outer_interpolate.cpp"
+#include "outer_sparse_compile.cpp"
 #include "sysmem.cpp"
 #include "tgmrf_nuts.cpp"
 #include "tgmrf_registry.cpp"

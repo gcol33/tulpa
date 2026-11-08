@@ -72,21 +72,58 @@
     list(tensor = tensor, state = function() list(points = points, cells = cells, native = native))
 }
 
+.nl_sparse_prediction <- function(grid, values, query, rows, groups, previous = NULL) {
+    n <- nrow(query)
+    selected <- if (is.null(rows)) seq_len(n) else rows
+    per_group <- n / groups
+    ids <- ((selected - 1L) %% per_group) * groups +
+        (selected - 1L) %/% per_group + 1L
+    if (is.null(previous)) previous <- list(dense = 0L, ids = integer(),
+        values = matrix(numeric(), 0L, ncol(values)))
+    lookup <- function(ids, state) {
+        at <- ids
+        sparse <- which(ids > state$dense)
+        at[sparse] <- state$dense + match(ids[sparse], state$ids)
+        at
+    }
+    at <- lookup(ids, previous)
+    missing <- unique(ids[is.na(at)])
+    fresh <- NULL
+    if (length(missing)) {
+        query_rows <- ((missing - 1L) %% groups) * per_group +
+            (missing - 1L) %/% groups + 1L
+        fresh <- cpp_outer_tensor_interpolate(grid$nodes,
+            values[grid$rows, , drop = FALSE], query[query_rows, , drop = FALSE])
+    }
+    if (is.null(rows) && previous$dense < n) {
+        stored <- matrix(0, n, ncol(values))
+        if (previous$dense) stored[seq_len(previous$dense), ] <-
+            previous$values[seq_len(previous$dense), , drop = FALSE]
+        inside <- which(previous$ids <= n)
+        if (length(inside)) stored[previous$ids[inside], ] <-
+            previous$values[previous$dense + inside, , drop = FALSE]
+        if (length(missing)) stored[missing, ] <- fresh
+        outside <- which(previous$ids > n)
+        stored <- rbind(stored, previous$values[previous$dense + outside, , drop = FALSE])
+        previous <- list(dense = n, ids = previous$ids[outside], values = stored)
+    } else if (length(missing)) {
+        previous$ids <- c(previous$ids, missing)
+        previous$values <- rbind(previous$values, fresh)
+    }
+    list(values = previous$values[lookup(ids, previous), , drop = FALSE], cache = previous)
+}
+
 .nl_sparse_interpolate <- function(combination, cache, values, query, predictions = NULL,
-                                   rows = NULL) {
+                                   rows = NULL, groups = 1L) {
     result <- matrix(0, if (is.null(rows)) nrow(query) else length(rows), ncol(values))
     for (term in combination) {
         key <- .nl_sparse_key(term$index)
-        if (!is.null(predictions) && exists(key, predictions, inherits = FALSE)) {
-            predicted <- predictions[[key]]
-        } else {
-            grid <- cache$tensor(term$index)
-            predicted <- cpp_outer_tensor_interpolate(
-                grid$nodes, values[grid$rows, , drop = FALSE], query)
-            if (!is.null(predictions)) predictions[[key]] <- predicted
-        }
-        if (!is.null(rows)) predicted <- predicted[rows, , drop = FALSE]
-        result <- result + term$coefficient * predicted
+        previous <- if (!is.null(predictions) && exists(key, predictions, inherits = FALSE))
+            predictions[[key]]
+        predicted <- .nl_sparse_prediction(cache$tensor(term$index), values, query,
+                                            rows, groups, previous)
+        if (!is.null(predictions)) predictions[[key]] <- predicted$cache
+        result <- result + term$coefficient * predicted$values
     }
     result
 }
@@ -221,6 +258,30 @@
          u = log(cells), correction = read$correction, groups = groups)
 }
 
+.nl_sparse_read_action <- function(n, maximum, grid, read, tolerance,
+                                    previous = NULL, refit = FALSE) {
+    remaining <- tolerance - grid
+    needed <- read > remaining
+    goal <- which.max((grid + read) / tolerance)
+    binding <- needed[goal] && grid[goal] < tolerance[goal]
+    attainable <- read[goal] * sqrt(n / maximum) <= remaining[goal]
+    falling <- is.null(previous) ||
+        (is.finite(read[goal]) &&
+         read[goal] <= previous$error[goal] * sqrt(previous$nodes / n))
+    action <- if (binding && !falling && refit) "refresh" else
+        if (binding && attainable && falling && n < maximum) "grow" else "refine"
+    list(action = action, goal = goal)
+}
+
+.nl_sparse_compile <- function(combination, cache, values, n, previous = NULL) {
+    terms <- lapply(combination, function(term) {
+        grid <- cache$tensor(term$index)
+        list(index = term$index, nodes = grid$nodes, rows = grid$rows, coefficient = term$coefficient)
+    })
+    cpp_outer_sparse_compile(terms, values, n,
+        if (is.null(previous)) NULL else previous$pointer)
+}
+
 .nl_aghq_integrate <- function(res, solve, prior, cfg) {
     transform <- .nl_aghq_transform(res, prior, solve, cfg$read_df)
     d <- ncol(res$theta_grid)
@@ -252,6 +313,14 @@
     history <- reads <- list()
     predictions <- new.env(hash = TRUE, parent = emptyenv())
     previous <- NULL
+    previous_read <- NULL
+    fitted_read_grid <- NULL
+    read_generation <- 0L
+    read_seed <- 761L
+    read_history <- list()
+    compiled <- NULL
+    compiled_key <- NULL
+    on.exit(if (!is.null(compiled)) cpp_outer_sparse_clear(compiled$pointer), add = TRUE)
     repeat {
         boundary <- Filter(function(index) !any(vapply(c(accepted, active), function(other)
             all(other >= index) && any(other > index), logical(1))), boundary)
@@ -265,8 +334,14 @@
         values <- matrix(ratio, ncol = 1L)
         if (!is.null(moments)) values <- cbind(values, moments$mu, log(moments$var))
         indices <- c(accepted, active)
+        grid_key <- paste(sort(vapply(indices, .nl_sparse_key, character(1))), collapse = ";")
         combination <- .nl_sparse_combination(indices)
-        interpolated <- .nl_sparse_interpolate(combination, cache, values, query, predictions)
+        key <- paste(grid_key, full_read, sep = "|")
+        if (!identical(key, compiled_key)) {
+            compiled <- .nl_sparse_compile(combination, cache, values, nrow(query), compiled)
+            compiled_key <- key
+        }
+        interpolated <- cpp_outer_sparse_evaluate(compiled$pointer, query)
         log_weight <- interpolated[, 1L] + read$correction - log(nrow(query))
         weights <- .nl_normalise_weights_safe(log_weight)
         integral <- .nl_sparse_integral(indices, cache, ratio)
@@ -302,7 +377,7 @@
         surplus <- vapply(seq_along(frontier), function(i) {
             index <- frontier[[i]]
             delta <- .nl_sparse_interpolate(.nl_sparse_combination(list(index)), cache,
-                values, query, predictions, rows = probe)
+                values, query, predictions, rows = probe, groups = 8L)
             lower_weights <- .nl_normalise_weights_safe(log(probe_weights) - delta[, 1L])
             differences <- vapply(hyper_cdf, function(cdf)
                 as.numeric(crossprod(lower_weights - probe_weights, cdf)), numeric(3L))
@@ -355,26 +430,42 @@
         quadrature_error <- if (is.finite(log_quadrature) && evidence_frontier < 1)
             -log1p(-evidence_frontier) else Inf
         normalizer_discrepancy <- if (is.finite(log_quadrature)) abs(log_z - log_quadrature) else Inf
-        evidence_error <- quadrature_error + normalizer_discrepancy
+        evidence_error <- quadrature_error + normalizer_discrepancy + read_error$log_evidence
+        grid_budget <- quantile_error + fixed$resolution + fixed$residual
         promote <- !full_read && (!length(active) || (length(history) >= 2L &&
-            quantile_error + fixed$resolution + fixed$residual <= cfg$tol &&
-            quadrature_error <= cfg$evidence_tol))
-        grow <- full_read && quadrature_error <= cfg$evidence_tol &&
-            quantile_error + fixed$resolution + fixed$residual <= cfg$tol / 2 &&
-            read_budget > cfg$tol / 2 &&
-            quantile_error + fixed$resolution + fixed$residual + read_budget > cfg$tol
-        if (promote || grow) {
-            if (promote) {
+            grid_budget <= cfg$tol))
+        allocation <- .nl_sparse_read_action(nrow(query), cfg$read_max_nodes,
+            c(grid_budget, quadrature_error + normalizer_discrepancy),
+            c(read_budget, read_error$log_evidence), c(cfg$tol, cfg$evidence_tol), previous_read,
+            refit = !identical(fitted_read_grid, grid_key))
+        grow <- full_read && identical(allocation$action, "grow")
+        refresh <- full_read && identical(allocation$action, "refresh")
+        read_history[[length(read_history) + 1L]] <- c(points = nrow(state$points),
+            read_nodes = nrow(query), ess = 1 / sum(weights^2), max_weight = max(weights),
+            quantile_grid = grid_budget, quantile_read = read_budget,
+            evidence_grid = quadrature_error, evidence_read = read_error$log_evidence,
+            normalizer_discrepancy = normalizer_discrepancy,
+            goal = allocation$goal,
+            promote = promote, refresh = refresh, grow = grow)
+        if (promote || refresh || grow) {
+            if (promote || refresh) {
                 parameters <- transform$adapt_read(cells, weights)
                 transform$read_center <- parameters$center
                 transform$read_L <- parameters$L
+                read_generation <- read_generation + 1L
+                read_seed <- 2761L + 8L * (read_generation - 1L)
+                if (refresh) fitted_read_grid <- grid_key
             }
-            count <- if (grow) 2L * nrow(query) else cfg$read_nodes
+            count <- if (grow) min(2 * nrow(query), cfg$read_max_nodes) else
+                if (refresh) nrow(query) else cfg$read_nodes
+            previous_read <- if (grow) list(nodes = nrow(query),
+                error = c(read_budget, read_error$log_evidence)) else NULL
             if (isTRUE(cfg$progress)) {
                 cat("READ", count, "error", read_budget, "ESS", 1 / sum(weights^2), "\n")
                 flush.console()
             }
-            all_read <- .nl_sparse_read_design(transform, count, d, cfg$read_df, seed = 2761L)
+            all_read <- .nl_sparse_read_design(transform, count, d, cfg$read_df,
+                seed = read_seed)
             query <- all_read$query
             cells <- all_read$cells
             log_q <- all_read$log_q
@@ -382,7 +473,7 @@
             read$correction <- all_read$correction
             groups <- all_read$groups
             full_read <- TRUE
-            predictions <- new.env(hash = TRUE, parent = emptyenv())
+            if (!grow) predictions <- new.env(hash = TRUE, parent = emptyenv())
             next
         }
         quantile_error <- quantile_error + read_budget +
@@ -404,6 +495,7 @@
             evidence_quadrature = quadrature_error, normalizer_discrepancy = normalizer_discrepancy,
             conditional_resolution = fixed$resolution, frontier = remainder,
             positive_residual = fixed$residual)
+        error$quantile_grid <- grid_budget
         converged <- is.finite(log_z) && quantile_error <= cfg$tol && evidence_error <= cfg$evidence_tol
         history[[length(history) + 1L]] <- c(order = max(vapply(indices, max, numeric(1))),
             points = nrow(state$points), evaluated = nrow(state$points) + transform$evaluations,
@@ -419,13 +511,18 @@
                                                 utils::tail(reads, 1L)[[1L]])
         if (isTRUE(cfg$progress)) {
             cat("SPARSE", length(history), nrow(state$points), quantile_error, evidence_error,
+                "grid", grid_budget, "read_error", read_budget, "quadrature", quadrature_error,
                 "density", probability_error, "conditional", sum(conditional_surplus),
                 "positive", fixed$residual, "read", nrow(query), format(Sys.time()), "\n")
             flush.console()
         }
         if (converged || !length(active)) break
         previous <- list(hyper = hyper, log_quadrature = log_quadrature, full_read = full_read)
-        active_surplus <- pmax(surplus, conditional_surplus)[seq_along(active)]
+        previous_read <- NULL
+        active_surplus <- if (allocation$goal == 2L)
+            abs(integral$contributions[match(vapply(active, .nl_sparse_key, character(1)),
+                vapply(indices, .nl_sparse_key, character(1)))]) / abs(integral$value) else
+            pmax(surplus, conditional_surplus)[seq_along(active)]
         work <- vapply(active, function(index) prod(vapply(seq_len(d), function(j) {
             size <- length(rules[[j]][[index[j]]]$x)
             size - if (index[j] > 1L) length(rules[[j]][[index[j] - 1L]]$x) else 0L
@@ -446,8 +543,11 @@
     native$outer_quadrature <- list(method = "aghq_log_spline", construction = "adaptive_smolyak",
         n = nrow(state$points), n_evaluated = nrow(state$points) + transform$evaluations,
         read_nodes = nrow(query), read_df = cfg$read_df, order = length(history),
+        read_max_nodes = cfg$read_max_nodes, read_variance = transform$read_variance,
+        compiled_groups = compiled$groups, compiled_coefficients = compiled$coefficients,
         error = error, tol = cfg$tol, evidence_tol = cfg$evidence_tol, converged = converged,
-        history = do.call(rbind, history), reads = reads, indices = indices, active = active,
+        history = do.call(rbind, history), reads = reads, read_history = do.call(rbind, read_history),
+        indices = indices, active = active,
         center = transform$center, L = transform$L, read_center = transform$read_center,
         read_L = transform$read_L, local_radii = transform$local_radii,
         regional_log_stretch = transform$regional_log_stretch,

@@ -433,6 +433,18 @@ cpp_outer_tensor_interpolate <- function(nodes, values, query, cubic = TRUE) {
     .Call(`_tulpa_cpp_outer_tensor_interpolate`, nodes, values, query, cubic)
 }
 
+cpp_outer_sparse_compile <- function(input, values, n_query, previous = NULL) {
+    .Call(`_tulpa_cpp_outer_sparse_compile`, input, values, n_query, previous)
+}
+
+cpp_outer_sparse_evaluate <- function(pointer, query) {
+    .Call(`_tulpa_cpp_outer_sparse_evaluate`, pointer, query)
+}
+
+cpp_outer_sparse_clear <- function(pointer) {
+    invisible(.Call(`_tulpa_cpp_outer_sparse_clear`, pointer))
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = NULL, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }

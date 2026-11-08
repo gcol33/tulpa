@@ -2125,6 +2125,42 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_outer_sparse_compile
+Rcpp::List cpp_outer_sparse_compile(Rcpp::List input, Rcpp::NumericMatrix values, int n_query, SEXP previous);
+RcppExport SEXP _tulpa_cpp_outer_sparse_compile(SEXP inputSEXP, SEXP valuesSEXP, SEXP n_querySEXP, SEXP previousSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type input(inputSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type values(valuesSEXP);
+    Rcpp::traits::input_parameter< int >::type n_query(n_querySEXP);
+    Rcpp::traits::input_parameter< SEXP >::type previous(previousSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_outer_sparse_compile(input, values, n_query, previous));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_outer_sparse_evaluate
+Rcpp::NumericMatrix cpp_outer_sparse_evaluate(SEXP pointer, Rcpp::NumericMatrix query);
+RcppExport SEXP _tulpa_cpp_outer_sparse_evaluate(SEXP pointerSEXP, SEXP querySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type pointer(pointerSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type query(querySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_outer_sparse_evaluate(pointer, query));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_outer_sparse_clear
+void cpp_outer_sparse_clear(SEXP pointer);
+RcppExport SEXP _tulpa_cpp_outer_sparse_clear(SEXP pointerSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type pointer(pointerSEXP);
+    cpp_outer_sparse_clear(pointer);
+    return R_NilValue;
+END_RCPP
+}
 // cpp_pg_binomial_gibbs
 Rcpp::List cpp_pg_binomial_gibbs(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector group, int n_groups, int n_iter, int n_warmup, int thin, Rcpp::Nullable<Rcpp::NumericVector> prior_beta_sd, double prior_sigma_scale, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP groupSEXP, SEXP n_groupsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_scaleSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
@@ -3486,6 +3522,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_outer_tensor_partition", (DL_FUNC) &_tulpa_cpp_outer_tensor_partition, 3},
     {"_tulpa_cpp_outer_nearest_partition", (DL_FUNC) &_tulpa_cpp_outer_nearest_partition, 3},
     {"_tulpa_cpp_outer_tensor_interpolate", (DL_FUNC) &_tulpa_cpp_outer_tensor_interpolate, 4},
+    {"_tulpa_cpp_outer_sparse_compile", (DL_FUNC) &_tulpa_cpp_outer_sparse_compile, 4},
+    {"_tulpa_cpp_outer_sparse_evaluate", (DL_FUNC) &_tulpa_cpp_outer_sparse_evaluate, 2},
+    {"_tulpa_cpp_outer_sparse_clear", (DL_FUNC) &_tulpa_cpp_outer_sparse_clear, 1},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 23},
