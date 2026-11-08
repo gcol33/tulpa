@@ -285,14 +285,45 @@ test_that("the field solves centre over each connected component", {
 })
 
 
-test_that("the constrained log-determinant drops one eigenvalue per constraint", {
+test_that("the constrained log-determinant is log|P'QP| on the constrained subspace", {
+  # P an orthonormal basis of {x : C x = 0}, the brute-force reference.
+  pdet <- function(Q, comps) {
+    Cm <- tulpa:::.latent_constraint_matrix(comps, nrow(Q))
+    P  <- qr.Q(qr(t(Cm)), complete = TRUE)[, -seq_len(nrow(Cm)), drop = FALSE]
+    as.numeric(determinant(crossprod(P, as.matrix(Q) %*% P))$modulus)
+  }
   A <- .la_chain(6L)
+  # Intrinsic: the constraint spans the null space, so this is the product of
+  # the nonzero eigenvalues.
   L <- tulpa_car_precision_Q(A)
   ev <- sort(eigen(as.matrix(L), symmetric = TRUE)$values, decreasing = TRUE)
-  expect_equal(tulpa:::.latent_logdet(L, 1L), sum(log(ev[1:5])))
-  P <- tulpa_car_precision_Q(A, rho = 0.5)
-  expect_equal(tulpa:::.latent_logdet(P, 0L),
-               as.numeric(determinant(as.matrix(P))$modulus))
+  expect_equal(tulpa:::.latent_logdet(L, list(1:6)), sum(log(ev[1:5])))
+  # Proper CAR on an irregular graph: 1 is not an eigenvector, and dropping the
+  # smallest eigenvalue overstates the determinant.
+  P5 <- tulpa_car_precision_Q(A, rho = 0.5)
+  ld <- tulpa:::.latent_logdet(P5, list(1:6))
+  expect_equal(ld, pdet(P5, list(1:6)), tolerance = 1e-10)
+  ev5 <- sort(eigen(as.matrix(P5), symmetric = TRUE)$values, decreasing = TRUE)
+  expect_lt(ld, sum(log(ev5[1:5])))
+  # Two components, two constraints; unconstrained is the full determinant.
+  A2 <- matrix(0, 7, 7); A2[1:3, 1:3] <- .la_chain(3L); A2[4:7, 4:7] <- .la_chain(4L)
+  Q2 <- tulpa_car_precision_Q(A2, rho = 0.7)
+  expect_equal(tulpa:::.latent_logdet(Q2, list(1:3, 4:7)), pdet(Q2, list(1:3, 4:7)),
+               tolerance = 1e-10)
+  expect_equal(tulpa:::.latent_logdet(P5),
+               as.numeric(determinant(as.matrix(P5))$modulus))
+})
+
+
+test_that("the constrained covariance is the conditioned Gaussian's", {
+  set.seed(4)
+  B <- matrix(stats::rnorm(25), 5); S <- crossprod(B) + diag(5)
+  Cm <- tulpa:::.latent_constraint_matrix(list(1:5), 5)
+  Sc <- tulpa:::.latent_constrained_cov(S, Cm)
+  expect_equal(as.numeric(Cm %*% Sc), rep(0, 5), tolerance = 1e-12)
+  # The same conditional through the subspace basis: P (P' S^-1 P)^-1 P'.
+  P <- qr.Q(qr(t(Cm)), complete = TRUE)[, -1L]
+  expect_equal(Sc, P %*% solve(crossprod(P, solve(S, P))) %*% t(P), tolerance = 1e-10)
 })
 
 

@@ -378,6 +378,16 @@
   left the community slope 0.035 high on average over 16 seeds
   (gcol33/tulpaObs#444).
 
+* `tulpa_latent_ascent()`: the field marginal the hyperparameters are profiled
+  on takes both determinants on the subspace the sum-to-zero constraints
+  leave, log|P'QP| for the prior and log|P'HP| for the Laplace normaliser (one
+  bordered-matrix LU, intrinsic and proper precisions alike), and the tau
+  update reads the constrained posterior covariance. Dropping the smallest
+  eigenvalue of a proper CAR precision overstated its determinant (by 0.56 at
+  rho = 0 to 1e-4 at rho = 0.99 on a 10 x 10 grid), and the full-space
+  normaliser tilted the car_proper rho and BYM2 (sigma, rho) profiles
+  (gcol33/tulpaObs#445).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;

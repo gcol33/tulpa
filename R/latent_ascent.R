@@ -463,6 +463,40 @@
   Cm
 }
 
+# The constraint matrix of K stacked fields of Nn nodes, each held at sum zero
+# over every node set in `components` (NULL: none).
+.latent_field_constraints <- function(components, K, Nn) {
+  if (!length(components)) return(NULL)
+  do.call(rbind, lapply(seq_len(K), function(k)
+    .latent_constraint_matrix(components, K * Nn, (k - 1L) * Nn)))
+}
+
+# log|P'AP|, with P an orthonormal basis of {x : Cm x = 0}: the log-determinant
+# of a precision (or Laplace curvature) on the subspace the constraints leave,
+# which is what a constrained Gaussian density carries (Rue and Held 2005,
+# eq. 2.30). The bordered matrix K = [A, Cm'; Cm, 0] has
+# |det K| = det(P'AP) det(Cm Cm') whenever P'AP is nonsingular, intrinsic A
+# included, so one sparse LU serves a proper and an intrinsic precision alike.
+# Unconstrained (NULL) it is log|A|.
+.latent_constrained_logdet <- function(A, Cm = NULL) {
+  if (is.null(Cm)) return(as.numeric(Matrix::determinant(A, logarithm = TRUE)$modulus))
+  k  <- nrow(Cm)
+  Cs <- Matrix::Matrix(Cm, sparse = TRUE)
+  Kb <- rbind(cbind(methods::as(A, "generalMatrix"), Matrix::t(Cs)),
+              cbind(Cs, Matrix::Matrix(0, k, k, sparse = TRUE)))
+  as.numeric(Matrix::determinant(methods::as(Kb, "generalMatrix"),
+                                 logarithm = TRUE)$modulus) -
+    as.numeric(determinant(tcrossprod(Cm), logarithm = TRUE)$modulus)
+}
+
+# The covariance of a Gaussian with covariance `Cov` conditioned on Cm x = 0:
+# Cov - Cov Cm' (Cm Cov Cm')^-1 Cm Cov. NULL constraints return `Cov`.
+.latent_constrained_cov <- function(Cov, Cm = NULL) {
+  if (is.null(Cm) || is.null(Cov)) return(Cov)
+  Z <- as.matrix(Cov %*% t(Cm))
+  Cov - Z %*% solve(Cm %*% Z, t(Z))
+}
+
 # Newton step for the ascent direction H^-1 g restricted to {s : Cm s = 0},
 # the exact step on the constrained subspace (conditioning by kriging, Rue and
 # Held 2005, sec. 2.3.3): s - H^-1 Cm' (Cm H^-1 Cm')^-1 Cm s, from one solve
@@ -529,9 +563,7 @@
         tau[k] * as.numeric(crossprod(Ff[, k], Q %*% Ff[, k])), 0))
     if (is.finite(v)) v else -Inf
   }
-  Cm <- if (length(components))
-    do.call(rbind, lapply(seq_len(K), function(k)
-      .latent_constraint_matrix(components, K * Nn, (k - 1L) * Nn))) else NULL
+  Cm <- .latent_field_constraints(components, K, Nn)
 
   # The data term M diag(w) M' has rank at most n_sites; a mesh with more nodes
   # than sites relies on tau Q for full rank, so a small tau can leave H
@@ -560,7 +592,8 @@
   cw  <- rowSums(if (is.null(oracle$cov_curv)) oracle$working(eta_full)$curv
                  else oracle$cov_curv(eta_full))
   Hc  <- build_H(cw)
-  Cov <- .latent_ridge_solve(Hc)
+  # The field's posterior covariance on the constrained subspace it lives on.
+  Cov <- .latent_constrained_cov(.latent_ridge_solve(Hc), Cm)
   tau_new <- numeric(K)
   df <- Nn - as.integer(rankdef)
   for (k in seq_len(K)) {
@@ -577,10 +610,12 @@
 # Laplace marginal of the field solve at its mode, the objective the field's
 # precision hyperparameters are profiled on: the family data log-likelihood plus
 # the GMRF prior (0.5 (df log tau + log|Q|) - 0.5 tau f'Q f) minus the Laplace
-# normaliser 0.5 log|H|. `logdetQ` is log|Q| per unit tau on the constrained
-# subspace (`.latent_logdet()`).
+# normaliser 0.5 log|H|. Both determinants are taken on the subspace the
+# per-component constraints leave (`.latent_constrained_logdet()`): `logdetQ`
+# is log|P'QP| per unit tau (`.latent_logdet()`), and the normaliser is
+# log|P'HP| over the stacked fields, since the integral runs over that subspace.
 .latent_field_marginal <- function(oracle, eta_base, Q, Fm, tau, W, logdetQ,
-                                   rankdef = 0L, M = NULL) {
+                                   rankdef = 0L, M = NULL, components = NULL) {
   Ns <- nrow(eta_base); K <- ncol(W); Nn <- nrow(Fm)
   if (is.null(M)) M <- Matrix::Diagonal(Ns)
   Mt <- Matrix::t(M)
@@ -601,20 +636,18 @@
     prior <- prior + 0.5 * (df * log(tau[k]) + logdetQ) -
              0.5 * tau[k] * as.numeric(t(Fm[, k]) %*% (Q %*% Fm[, k]))
   }
-  ll + prior - 0.5 * as.numeric(Matrix::determinant(H, logarithm = TRUE)$modulus)
+  ll + prior -
+    0.5 * .latent_constrained_logdet(H, .latent_field_constraints(components, K, Nn))
 }
 
-# log-determinant of a unit-scale precision on the subspace its `n_constr`
-# sum-to-zero constraints leave: the full sparse log|Q| when unconstrained, else
-# the sum of log of all but the n_constr smallest eigenvalues (the directions
-# the constraints remove), each floored at 1e-10.
-.latent_logdet <- function(Q, n_constr = 0L) {
-  if (n_constr == 0L) {
-    return(as.numeric(Matrix::determinant(Q, logarithm = TRUE)$modulus))
-  }
-  ev <- sort(eigen(as.matrix(Q), symmetric = TRUE, only.values = TRUE)$values,
-             decreasing = TRUE)
-  sum(log(pmax(ev[seq_len(length(ev) - n_constr)], 1e-10)))
+# log-determinant of a unit-scale precision on the subspace its per-component
+# sum-to-zero constraints leave, log|P'QP| (the full log|Q| when `components`
+# is NULL). Dropping the smallest eigenvalues instead is exact only when the
+# constraint vectors are eigenvectors of Q (an intrinsic field's null space, a
+# regular graph); for a proper CAR it overstates the determinant, by more the
+# smaller rho is.
+.latent_logdet <- function(Q, components = NULL) {
+  .latent_constrained_logdet(Q, .latent_constraint_matrix(components, nrow(Q)))
 }
 
 # BYM2 field update (one shared field). The combined field phi = a v + b u
@@ -672,7 +705,7 @@
   H   <- build_H(cw, a, b)
   m   <- oracle$data_ll(eta_full) -
          0.5 * as.numeric(t(v) %*% (Qic %*% v)) - 0.5 * sum(u * u) -
-         0.5 * as.numeric(Matrix::determinant(H, logarithm = TRUE)$modulus)
+         0.5 * .latent_constrained_logdet(H, Cm)
   list(v = v, u = u, m = m)
 }
 
@@ -1164,12 +1197,12 @@ tulpa_latent_ascent <- function(make_oracle, em_fit, offset_of,
     } else {
       best <- .latent_profile_hyper(axes, function(h) {
         Qh <- geometry$Q(h)
-        ld <- .latent_logdet(Qh, n_constr)
+        ld <- .latent_logdet(Qh, components)
         fr <- .latent_field_solve(oracle, base_f, Qh, Ffield, tau, geometry$W,
                                   M = geometry$M, components = components)
         mm <- .latent_field_marginal(oracle, base_f, Qh, fr$Fm, fr$tau,
                                      geometry$W, ld, rankdef = n_constr,
-                                     M = geometry$M)
+                                     M = geometry$M, components = components)
         list(m = mm, Fm = fr$Fm, tau = fr$tau)
       })
       if (!is.null(best)) {
