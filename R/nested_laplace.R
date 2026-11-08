@@ -333,11 +333,13 @@
 #'     on the same axes.
 #'   * `integration` (`"aghq"` for a local/regional HSGP field, `"qmc"` for
 #'     a local/regional NNGP field, `"grid"` otherwise) -- `"aghq"` uses
-#'     nested Genz-Keister quadrature on the local log variance and
-#'     lengthscale, and nested Patterson quadrature on the prior CDFs of the
-#'     regional standard deviation and inverse lengthscale.
-#'     A smooth logit shift centres each regional coordinate at its placement
-#'     posterior median and preserves both prior-CDF endpoints.
+#'     nested Genz-Keister quadrature in jointly standardized coordinates.
+#'     A smooth logit shift centres the regional prior-CDF coordinates at
+#'     their placement posterior medians. A normal quantile transform maps
+#'     their endpoints to infinity. A joint affine map uses the placement
+#'     posterior mean and covariance in these coordinates.
+#'     Observation-space HSGP sums use separable regional prior-CDF coordinates
+#'     and nested Patterson rules, preserving repeated spectral projections.
 #'     Additional HSGP and independent Gaussian blocks use mode-scaled log
 #'     coordinates. Every varying axis must freely extend. With `"aghq"`,
 #'     grids seed placement and integration covers the positive prior support.

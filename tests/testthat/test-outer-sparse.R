@@ -125,6 +125,28 @@ test_that("nearest partitions preserve positive masses in five dimensions", {
   expect_equal(as.numeric(Matrix::colSums(P))[1:5], mass[1:5], tolerance = 1e-14)
 })
 
+test_that("nearest partitions match exhaustive distances on sparse and degenerate grids", {
+  set.seed(1157)
+  for (d in c(2L, 4L, 5L)) {
+    points <- do.call(rbind, lapply(seq_len(d), function(j) {
+      x <- matrix(0, 9L, d)
+      x[, j] <- seq(-4, 4)
+      x
+    }))
+    points <- rbind(points, matrix(rnorm(80L * d), 80L, d))
+    points[, d] <- 0
+    query <- rbind(matrix(rnorm(30L * d), 30L, d), rep(12, d), rep(0, d))
+    mass <- seq_len(nrow(query)); mass <- mass / sum(mass)
+    partition <- tulpa:::cpp_outer_nearest_partition(points, query, mass)
+    got <- integer(nrow(query))
+    got[partition@i + 1L] <- rep(seq_len(nrow(points)), diff(partition@p))
+    expected <- vapply(seq_len(nrow(query)), function(i)
+      which.min(rowSums(sweep(points, 2L, query[i, ])^2)), integer(1))
+    expect_identical(got, expected)
+    expect_equal(as.numeric(Matrix::rowSums(partition)), mass, tolerance = 1e-14)
+  }
+})
+
 test_that("positive moment projection reports infeasible support with finite masses", {
   fit <- tulpa:::.nl_sparse_positive_weights(matrix(c(0, 1), ncol = 1L), 2, c(.5, .5))
   expect_true(all(is.finite(fit$weights) & fit$weights >= 0))
@@ -201,6 +223,19 @@ test_that("adaptive quadrature resolves a five-axis analytic posterior and mixtu
       grid_hessians = rep(list(matrix(1 / .3)), nrow(cells)))
   }
   transport <- tulpa:::.nl_aghq_transform(res, prior, solve, 7)
+  projected <- prior
+  projected[[1L]]$phi_basis <- matrix(0, 12L, 9L)
+  projected[[2L]]$phi_basis <- matrix(0, 12L, 4L)
+  separable <- tulpa:::.nl_aghq_transform(res, projected, solve, 7)
+  expect_identical(transport$normal_axes, rep(TRUE, 5L))
+  expect_identical(separable$normal_axes, c(FALSE, FALSE, TRUE, TRUE, TRUE))
+  proposal <- matrix(c(.2, .7, .1, -.3, .5), 1L)
+  joint_read <- transport$read(proposal)
+  separable_read <- separable$read(proposal)
+  expect_equal(transport$physical(joint_read$query), separable$physical(separable_read$query),
+    tolerance = 1e-12)
+  expect_equal(transport$log_density(joint_read$query) - joint_read$correction,
+    separable$log_density(separable_read$query) - separable_read$correction, tolerance = 1e-12)
   cloud <- points
   cloud[, 5] <- exp(1.2 + .4 * log(points[, 1]) - .3 * log(points[, 2]) + .5 * log(points[, 5]))
   adapted <- transport$adapt_read(cloud, weights)

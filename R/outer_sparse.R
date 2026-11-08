@@ -285,7 +285,7 @@
 .nl_aghq_integrate <- function(res, solve, prior, cfg) {
     transform <- .nl_aghq_transform(res, prior, solve, cfg$read_df)
     d <- ncol(res$theta_grid)
-    normal <- c(FALSE, FALSE, rep(TRUE, d - 2L))
+    normal <- transform$normal_axes
     rules <- lapply(normal, .nl_sparse_rules)
     maximum <- pmin(lengths(rules), cfg$max_level)
     cache <- .nl_sparse_cache(rules, transform$physical, solve)
@@ -551,6 +551,8 @@
         center = transform$center, L = transform$L, read_center = transform$read_center,
         read_L = transform$read_L, local_radii = transform$local_radii,
         regional_log_stretch = transform$regional_log_stretch,
+        coordinate_center = transform$coordinate_center, coordinate_L = transform$coordinate_L,
+        normal_axes = normal,
         error_method = "hierarchical_frontier_and_shifted_reads")
     measure <- log_z + log(native$weights) - native$log_marginal
     .nl_outer_finish(native, res, state$cells, measure, "aghq")

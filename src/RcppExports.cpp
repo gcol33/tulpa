@@ -2055,6 +2055,31 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_nl_axis_row_id
+Rcpp::IntegerVector cpp_nl_axis_row_id(Rcpp::NumericMatrix points, int axis);
+RcppExport SEXP _tulpa_cpp_nl_axis_row_id(SEXP pointsSEXP, SEXP axisSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type points(pointsSEXP);
+    Rcpp::traits::input_parameter< int >::type axis(axisSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nl_axis_row_id(points, axis));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_nl_group_logsumexp
+Rcpp::NumericVector cpp_nl_group_logsumexp(Rcpp::NumericVector values, Rcpp::IntegerVector groups, int n_groups);
+RcppExport SEXP _tulpa_cpp_nl_group_logsumexp(SEXP valuesSEXP, SEXP groupsSEXP, SEXP n_groupsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type values(valuesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type groups(groupsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_groups(n_groupsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nl_group_logsumexp(values, groups, n_groups));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_nl_mixture_quantiles
 Rcpp::NumericMatrix cpp_nl_mixture_quantiles(Rcpp::NumericMatrix mu, Rcpp::NumericMatrix sd, Rcpp::NumericVector mass, Rcpp::NumericVector probability, Rcpp::NumericVector center, Rcpp::NumericVector scale, int max_iter);
 RcppExport SEXP _tulpa_cpp_nl_mixture_quantiles(SEXP muSEXP, SEXP sdSEXP, SEXP massSEXP, SEXP probabilitySEXP, SEXP centerSEXP, SEXP scaleSEXP, SEXP max_iterSEXP) {
@@ -3517,6 +3542,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 31},
     {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 2},
     {"_tulpa_cpp_nl_lq_mixture_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_mixture_cdf, 3},
+    {"_tulpa_cpp_nl_axis_row_id", (DL_FUNC) &_tulpa_cpp_nl_axis_row_id, 2},
+    {"_tulpa_cpp_nl_group_logsumexp", (DL_FUNC) &_tulpa_cpp_nl_group_logsumexp, 3},
     {"_tulpa_cpp_nl_mixture_quantiles", (DL_FUNC) &_tulpa_cpp_nl_mixture_quantiles, 7},
     {"_tulpa_cpp_outer_read_design", (DL_FUNC) &_tulpa_cpp_outer_read_design, 3},
     {"_tulpa_cpp_outer_tensor_partition", (DL_FUNC) &_tulpa_cpp_outer_tensor_partition, 3},

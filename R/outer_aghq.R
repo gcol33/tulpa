@@ -57,7 +57,7 @@
     cfg
 }
 
-.nl_gp_regional_transport <- function(points, weights, prior) {
+.nl_gp_regional_transport <- function(points, weights, prior, normal = TRUE) {
     scale <- .hp_scale_anchor(prior)
     range <- .hp_range_anchor(prior)$anchor
     rate <- -log(scale[2L]) / scale[1L]
@@ -71,12 +71,13 @@
     log_cdf[on] <- .log1mexp(-anchor[on])
     log_stretch <- -anchor - log_cdf
     warp <- function(v) {
-        log_v <- log(v)
-        log_survival <- log1p(-v)
+        log_v <- if (normal) stats::pnorm(v, log.p = TRUE) else log(v)
+        log_survival <- if (normal) stats::pnorm(-v, log.p = TRUE) else log1p(-v)
         odds <- sweep(log_v - log_survival, 2L, log_stretch, "-")
         list(log_value = .nl_log_softplus(odds),
              log_denominator = .logspace_add(
-                 sweep(log_survival, 2L, log_stretch, "+"), log_v))
+                 sweep(log_survival, 2L, log_stretch, "+"), log_v),
+             log_survival = log_survival)
     }
     physical <- function(v) {
         w <- warp(v)
@@ -85,9 +86,60 @@
     }
     log_density <- function(v) {
         w <- warp(v)
-        rowSums(w$log_value + w$log_denominator + log1p(-v)) - log(2)
+        # The reference CDF Jacobian cancels its quadrature density.
+        rowSums(w$log_value + w$log_denominator + w$log_survival) - log(2)
     }
-    list(physical = physical, log_density = log_density, log_stretch = log_stretch)
+    inverse <- function(points) {
+        log_value <- cbind(log(rate) + log(points[, 1L]) / 2,
+                           log(range_rate) - log(points[, 2L]))
+        odds <- log_value
+        on <- log_value > log(.Machine$double.eps)
+        value <- exp(log_value[on])
+        odds[on] <- value + .log1mexp(-value)
+        odds <- sweep(odds, 2L, log_stretch, "+")
+        if (normal) -sign(odds) * stats::qnorm(
+            -abs(odds) - log1p(exp(-abs(odds))), log.p = TRUE) else stats::plogis(odds)
+    }
+    from_unit <- function(u) if (normal) stats::qnorm(u) else u
+    list(physical = physical, log_density = log_density, inverse = inverse,
+         from_unit = from_unit, log_stretch = log_stretch)
+}
+
+.nl_outer_reference_normal <- function(prior) {
+    basis <- which(vapply(prior, function(p)
+        !is.null(p$phi) || !is.null(p$phi_basis), logical(1)))
+    !length(.hsgp_sum_indices(prior[basis]))
+}
+
+.nl_outer_affine_transport <- function(base, points, weights) {
+    coordinates <- base$inverse(points)
+    weights <- weights / sum(weights)
+    center <- as.numeric(crossprod(weights, coordinates))
+    delta <- sweep(coordinates, 2L, center)
+    L <- t(chol(crossprod(delta, weights * delta)))
+    forward <- function(x) sweep(x %*% t(L), 2L, center, "+")
+    inverse <- function(x) t(forwardsolve(L, t(sweep(x, 2L, center))))
+    correction <- function(x, mapped) rowSums(stats::dnorm(x, log = TRUE) -
+        stats::dnorm(mapped, log = TRUE)) - sum(log(diag(L)))
+    physical <- base$physical
+    density <- base$log_density
+    read <- base$read
+    coordinates <- base$inverse
+    base$physical <- function(x) physical(forward(x))
+    base$inverse <- function(points) inverse(coordinates(points))
+    base$log_density <- function(x) {
+        mapped <- forward(x)
+        density(mapped) + correction(x, mapped)
+    }
+    base$read <- function(query) {
+        value <- read(query)
+        mapped <- value$query
+        query <- inverse(mapped)
+        list(query = query, correction = value$correction + correction(query, mapped))
+    }
+    base$coordinate_center <- center
+    base$coordinate_L <- L
+    base
 }
 
 .nl_aghq_transform <- function(res, prior, solve, read_df, read_variance = 2) {
@@ -112,6 +164,7 @@
     li <- columns[[1L]]
     ri <- columns[[2L]]
     extra <- setdiff(seq_len(ncol(res$theta_grid)), c(li, ri))
+    normal <- .nl_outer_reference_normal(prior)
     extra_center <- mode$mode_u[extra]
     extra_L <- if (length(extra)) t(chol(mode$cov_u[extra, extra, drop = FALSE]))
     center <- mode$mode_u[li]
@@ -127,9 +180,10 @@
     delta <- sweep(grid_u, 2L, read_center)
     read_L <- t(chol(crossprod(delta, grid_w * delta) + tcrossprod(initial_L)))
     region <- .nl_gp_regional_transport(res$theta_grid[, ri, drop = FALSE],
-                                      grid_w, prior[[regional]])
+                                      grid_w, prior[[regional]], normal)
     mode_rule <- .nl_gauss_legendre_unit(5L)
     mode_design <- as.matrix(expand.grid(mode_rule$x, mode_rule$x, 0, 0))
+    mode_design[, 1:2] <- region$from_unit(mode_design[, 1:2, drop = FALSE])
     regional_points <- region$physical(mode_design[, 1:2, drop = FALSE])
     regional_measure <- rowSums(log(as.matrix(expand.grid(mode_rule$w, mode_rule$w)))) -
         region$log_density(mode_design[, 1:2, drop = FALSE])
@@ -161,6 +215,7 @@
     L <- t(chol(mode$cov_u))
     sides <- .nl_outer_mode_transport(center, L, function(u) local_log_density(exp(u)))
     read <- function(query) {
+        query[, 1:2] <- region$from_unit(query[, 1:2, drop = FALSE])
         standard <- query[, gaussian_columns, drop = FALSE]
         shifted <- sweep(standard %*% t(read_L), 2L,
                          read_center - c(center, extra_center), "+")
@@ -206,10 +261,21 @@
         read_L <<- t(chol(covariance * read_variance * (read_df - 2) / read_df))
         list(center = read_center, L = read_L)
     }
-    list(physical = physical, log_density = log_density,
+    inverse <- function(points) {
+        coordinates <- matrix(0, nrow(points), ncol(points))
+        coordinates[, 1:2] <- region$inverse(points[, ri, drop = FALSE])
+        coordinates[, 3:4] <- sides$inverse(t(forwardsolve(L,
+            t(sweep(log(points[, li, drop = FALSE]), 2L, center)))))
+        if (length(extra)) coordinates[, 4L + seq_along(extra)] <- t(forwardsolve(extra_L,
+            t(sweep(log(points[, extra, drop = FALSE]), 2L, extra_center))))
+        coordinates
+    }
+    base <- list(physical = physical, log_density = log_density, inverse = inverse,
          read = read, adapt_read = adapt_read, center = center, L = L,
          regional_log_stretch = region$log_stretch,
          read_center = read_center, read_L = read_L, read_variance = read_variance,
          local_radii = sides$radii,
+         normal_axes = c(normal, normal, rep(TRUE, ncol(res$theta_grid) - 2L)),
          evaluations = evaluations)
+    if (normal) .nl_outer_affine_transport(base, res$theta_grid, grid_w) else base
 }

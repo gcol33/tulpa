@@ -20,7 +20,8 @@ NULL
 # tulpa symbol; register them as globals for the non-standard-evaluation sites above.
 utils::globalVariables(c(".data", "ratio", ".phl_w", "cpp_spde_orphan_mass",
                          "cpp_hsgp_sum_projection", "cpp_outer_tensor_interpolate",
-                         "cpp_outer_read_design", "cpp_outer_tensor_partition"))
+                         "cpp_outer_read_design", "cpp_outer_tensor_partition",
+                         "cpp_nl_group_logsumexp", "cpp_nl_axis_row_id"))
 
 # The package version, read from the one place that defines it. A literal here
 # (or in src/) is a second definition that nothing forces anyone to update at

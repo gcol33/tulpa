@@ -615,12 +615,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # single-axis grid is one row.
 .nl_axis_row_id <- function(tg, j) {
   if (is.null(dim(tg))) return(rep(1L, length(tg)))
-  others <- tg[, -j, drop = FALSE]
-  if (ncol(others) == 0L) return(rep(1L, nrow(tg)))
-  key <- do.call(paste, c(lapply(seq_len(ncol(others)),
-                                 function(k) sprintf("%.17g", others[, k])),
-                          sep = "|"))
-  match(key, unique(key))
+  if (ncol(tg) <= 1L) return(rep(1L, nrow(tg)))
+  cpp_nl_axis_row_id(as.matrix(tg), j)
 }
 
 # The edges of one partition over an axis's continuum levels `uv`
@@ -1337,6 +1333,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     tg <- matrix(as.numeric(tg), ncol = 1L,
                  dimnames = list(NULL, "value"))
   }
+  cell_read <- !identical(within, "chord") && within %in% .NL_SUPPORT[[support]]$within
   # Empty grid (no outer-grid axes -- e.g. an lf-only fit): nothing to
   # quantilize; return empty named vectors.
   if (ncol(tg) == 0L) {
@@ -1399,16 +1396,16 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     }
     dm <- if (length(domains) < j) NA_character_ else domains[[j]]
     at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
-    dcl  <- .nl_axis_declared_levels(tg, j, refining)
-    rid  <- .nl_axis_row_id(tg, j)[use]
+    dcl  <- if (cell_read) .nl_axis_declared_levels(tg, j, refining)
+    rid  <- if (cell_read && identical(within, "log_quadratic")) .nl_axis_row_id(tg, j)[use]
     lmd  <- log_density[use]
     rd <- .nl_summary_quantile_read(as.numeric(tg[use, j]), ws, probs, dm,
                                     support, within, at, dcl, rid, lmd)
     if (isTRUE(sd)) {
       rsd[j] <- .nl_read_sd(as.numeric(tg[use, j]), ws, dm, support, within,
                             at, dcl, rid, lmd)
-      lev <- as.numeric(tapply(ws, as.numeric(tg[use, j]), sum))
-      ess[j] <- .nl_axis_quad_ess(log(lev))
+      marginal <- .nl_axis_marginal_logdensity(as.numeric(tg[use, j]), log(ws))
+      ess[j] <- .nl_axis_quad_ess(marginal$log_marg)
     }
     qs <- rd$q
     lo[j]  <- qs[1L]
@@ -1634,15 +1631,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   v <- vals[keep]; l <- log_marg[keep]
   uv <- sort(unique(v))
   if (length(uv) == 0L) return(list(vals = uv, log_marg = numeric(0)))
-  groups <- split(l, factor(match(v, uv), levels = seq_along(uv)))
-  lm <- vapply(groups, function(li) {
-    if (length(li) == 0L) return(-Inf)
-    m <- max(li)
-    if (!is.finite(m)) return(-Inf)
-    m + log(sum(exp(li - m)))
-  }, numeric(1))
+  lm <- if (anyNA(v)) rep(-Inf, length(uv)) else
+    cpp_nl_group_logsumexp(l, match(v, uv), length(uv))
   names(lm) <- if (is.character(uv) && is.null(names(uv))) uv else names(uv)
-  if (anyNA(v)) lm[] <- -Inf
   list(vals = uv, log_marg = lm)
 }
 
@@ -1922,6 +1913,15 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     return(res)
   }
   col_names <- colnames(tg)
+  choices <- vector("list", ncol(tg))
+  choice <- function(j) {
+    if (is.null(choices[[j]])) {
+      marg <- .nl_axis_marginal_logdensity(tg[, j], lm_eff)
+      choices[[j]] <<- .nl_axis_sd_choice(marg$vals, marg$log_marg,
+        stencil_ok = stencil_ok, mass = measured, stencil_declined = "design_weighted")
+    }
+    choices[[j]]
+  }
   if (!is.null(col_names) && !is.null(res$theta_sd)) {
     src <- stats::setNames(rep(NA_character_, length(col_names)), col_names)
     ess <- stats::setNames(rep(NA_real_, length(col_names)), col_names)
@@ -1929,10 +1929,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     for (col in col_names) {
       if (!col %in% names(res$theta_sd)) next
       j <- match(col, col_names)
-      marg <- .nl_axis_marginal_logdensity(tg[, j], lm_eff)
-      ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
-                               stencil_ok = stencil_ok, mass = measured,
-                               stencil_declined = "design_weighted")
+      ch <- choice(j)
       if (is.finite(ch$sd)) res$theta_sd[[col]] <- ch$sd
       src[[col]] <- ch$source
       ess[[col]] <- ch$ess
@@ -1949,10 +1946,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
       if (is.null(axis_cols) || length(axis_cols) == 0L) next
       for (j in seq_along(axis_cols)) {
         col_ix <- axis_cols[j]
-        marg <- .nl_axis_marginal_logdensity(tg[, col_ix], lm_eff)
-        ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
-                                 stencil_ok = stencil_ok, mass = measured,
-                                 stencil_declined = "design_weighted")
+        ch <- choice(col_ix)
         if (is.finite(ch$sd)) res$block_moments[[b]]$sd[[j]] <- ch$sd
         res$block_moments[[b]]$sd_source[j] <- ch$source
       }

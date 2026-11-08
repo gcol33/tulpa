@@ -23,25 +23,56 @@ test_that("regional prior coordinates centre their medians with the declared Jac
                   range_rate / (-log1p(-cdf[, 2])))
   weights <- c(.1, .4, .3, .2)
   transport <- tulpa:::.nl_gp_regional_transport(points, weights, prior)
-  center <- transport$physical(matrix(.5, 1, 2))
+  center <- transport$physical(matrix(0, 1, 2))
   got <- as.numeric(center)
   expected <- vapply(seq_len(2), function(j)
     exp(tulpa:::.nl_wtd_quantile(log(points[, j]), weights, .5, outside = "clamp")), numeric(1))
   expect_equal(got, unname(expected), tolerance = 1e-12)
-  query <- rbind(c(.2, .3), c(.5, .5), c(.8, .7))
+  query <- rbind(c(-2, -1), c(0, 0), c(2, 1))
   h <- 1e-6
   derivative <- sapply(seq_len(2), function(j) {
     plus <- minus <- query
     plus[, j] <- plus[, j] + h; minus[, j] <- minus[, j] - h
     (log(transport$physical(plus)[, j]) - log(transport$physical(minus)[, j])) / (2 * h)
   })
-  expect_equal(transport$log_density(query), -rowSums(log(abs(derivative))), tolerance = 1e-8)
+  expect_equal(transport$log_density(query), rowSums(dnorm(query, log = TRUE)) -
+    rowSums(log(abs(derivative))), tolerance = 1e-8)
+  tail <- rbind(c(-9, 9), c(9, -9))
+  physical <- transport$physical(tail)
+  expect_true(all(is.finite(physical) & physical > 0))
+  expect_equal(transport$inverse(physical), tail, tolerance = 1e-10)
   extreme <- cbind(rep((50 / rate)^2, 3), rep(range_rate / 55, 3))
   transport <- tulpa:::.nl_gp_regional_transport(extreme, c(.2, .6, .2), prior)
-  center <- transport$physical(matrix(.5, 1, 2))
+  center <- transport$physical(matrix(0, 1, 2))
   expect_true(all(is.finite(center)))
   expect_equal(as.numeric(center), unname(extreme[2, ]), tolerance = 1e-12)
   expect_true(all(is.finite(transport$log_density(query))))
+})
+
+test_that("joint transport integrates a correlated Gaussian with its full Jacobian", {
+  rule <- tulpa:::gauss_hermite_prob(3L)
+  standard <- as.matrix(expand.grid(rep(list(rule$nodes), 4L)))
+  weights <- Reduce(`*`, as.data.frame(expand.grid(rep(list(rule$weights), 4L))))
+  center <- c(.2, -.4, .6, -.1)
+  L <- rbind(c(.5, 0, 0, 0), c(.4, .3, 0, 0),
+             c(-.2, .1, .7, 0), c(.3, -.2, .4, .6))
+  coordinates <- sweep(standard %*% t(L), 2L, center, "+")
+  base <- list(physical = exp, inverse = log,
+    log_density = function(x) rowSums(dnorm(x, log = TRUE)),
+    read = function(query) list(query = query, correction = rep(0, nrow(query))))
+  transport <- tulpa:::.nl_outer_affine_transport(base, exp(coordinates), weights)
+  expect_equal(transport$coordinate_center, center, tolerance = 1e-14)
+  expect_equal(transport$coordinate_L, L, tolerance = 1e-14)
+  query <- rbind(c(-2, .2, 1, -.3), c(.5, -.7, .9, 2))
+  expected <- sweep(query %*% t(L), 2L, center, "+")
+  expect_equal(log(transport$physical(query)), expected, tolerance = 1e-14)
+  expect_equal(transport$inverse(exp(expected)), query, tolerance = 1e-14)
+  expect_equal(transport$log_density(query), rowSums(dnorm(query, log = TRUE)) -
+    sum(log(diag(L))), tolerance = 1e-14)
+  read <- transport$read(query)
+  expect_equal(log(transport$physical(read$query)), query, tolerance = 1e-14)
+  expect_equal(read$correction, transport$log_density(read$query) -
+    rowSums(dnorm(query, log = TRUE)), tolerance = 1e-14)
 })
 
 test_that("log softplus retains finite tail coordinates", {
@@ -135,6 +166,30 @@ test_that("outer coupling preserves both masses with unvisited conditional cells
   expect_equal(tulpa:::.nl_outer_coupling_mass(coupled, "column"), c(.2, .4, .4), tolerance = 1e-12)
   expect_true(all(c(coupled$local@x, coupled$row, coupled$column) >= 0))
   expect_lte(coupled$residual, 1e-13)
+})
+
+test_that("nearest-cell coupling preserves the entropy equations when rows split", {
+  source <- c(.1, .2, .3, .4, 0)
+  target <- c(.2, .4, .4)
+  P <- Matrix::sparseMatrix(i = 1:4, j = c(1L, 1L, 2L, 2L),
+    x = source[1:4], dims = c(5L, 3L))
+  coupled <- tulpa:::.nl_outer_coupling(P, target)
+  mass <- as.numeric(Matrix::colSums(P))
+  retained <- as.numeric(Matrix::colSums(coupled$local))
+  global <- sum(coupled$row)
+  completion <- (sum(abs(mass - target)) / 2)^2
+  expect_equal(retained * completion * target * global,
+    (mass - retained) * (target - retained), tolerance = 1e-13)
+  expect_equal(tulpa:::.nl_outer_coupling_mass(coupled, "row"), source,
+    tolerance = 1e-13)
+  expect_equal(tulpa:::.nl_outer_coupling_mass(coupled, "column"), target,
+    tolerance = 1e-13)
+  compact <- tulpa:::.nl_outer_coupling(Matrix::sparseMatrix(
+    i = seq_along(mass), j = seq_along(mass), x = mass), target)
+  expect_equal(as.numeric(Matrix::colSums(compact$local)), retained,
+    tolerance = 1e-13)
+  expect_equal(compact$column * sum(compact$row), coupled$column * global,
+    tolerance = 1e-13)
 })
 
 test_that("a supplied design reports exact Gaussian evidence and fixed-effect mixtures", {

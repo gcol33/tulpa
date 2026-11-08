@@ -381,6 +381,17 @@
   direct tensor sum took 19 s. A seed-3 HSGP fit fell from 1,393 s (110,917 solves, 8.8 GB) to 644 s (58,885 solves,
   1.7 GB); at `quad_evidence_tol = 0.05` the read had doubled without bound past 17.8 GB and now stops at 262,144
   points. Answers moved by at most 0.015 posterior SD and 0.001 nats (#1157).
+- HSGP outer quadrature on coefficient-space fits integrates the regional pair in unbounded coordinates: the
+  prior-CDF coordinates are mapped through the normal quantile and the four axes are standardized jointly by the
+  placement posterior's mean and covariance, with both Jacobians in the measure. Where the posterior sat in the
+  prior's tail, the prior-CDF coordinate had compressed it against an endpoint, and the log ratio there was 178
+  times steeper than on a neighbouring fixture, so the quantile indicator refined interactions across all four
+  axes. Observation-space HSGP sums keep the separable prior-CDF coordinates, where the joint map would repeat
+  their spectral projections. Posterior summaries group and partition the read natively (the full moment summary
+  of a 262,144-point read fell from 28 s to 0.7 s, with identical results). The seed-3 fit fell from 644 s
+  (58,885 solves) to 246 s (27,621 solves), the seed-33 HSGP arm from 93 s to 63 s and the n = 250 fit from
+  781 s to 657 s; answers moved by at most 0.025 posterior SD and 0.002 nats, and every dense-reference error
+  estimate still covers the measured error (#1157).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component

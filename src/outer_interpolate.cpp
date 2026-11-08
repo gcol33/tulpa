@@ -6,6 +6,9 @@
 #include <limits>
 #include <cmath>
 #include <functional>
+#include <unordered_map>
+#include <cstdint>
+#include <cstring>
 #include "sobol.h"
 
 #include "outer_spline.h"
@@ -43,6 +46,71 @@ static inline Value evaluate(const Rcpp::NumericMatrix& mu,
 }
 
 } // namespace tulpa_outer_mixture
+
+// [[Rcpp::export]]
+Rcpp::IntegerVector cpp_nl_axis_row_id(Rcpp::NumericMatrix points, int axis) {
+    const int d = points.ncol();
+    if (axis < 1 || axis > d) Rcpp::stop("The conditional axis must name a matrix column.");
+    struct Hash {
+        std::size_t operator()(const std::vector<std::uint64_t>& key) const {
+            std::size_t value = 0;
+            for (auto bits : key) value ^= std::hash<std::uint64_t>{}(bits) +
+                static_cast<std::size_t>(0x9e3779b9) + (value << 6) + (value >> 2);
+            return value;
+        }
+    };
+    std::unordered_map<std::vector<std::uint64_t>, int, Hash> groups;
+    groups.reserve(points.nrow());
+    std::vector<std::uint64_t> key;
+    key.reserve(d - 1);
+    Rcpp::IntegerVector out(points.nrow());
+    for (int i = 0; i < points.nrow(); ++i) {
+        key.clear();
+        for (int j = 0; j < d; ++j) if (j != axis - 1) {
+            double value = points(i, j);
+            if (R_IsNA(value)) value = NA_REAL;
+            else if (std::isnan(value)) value = R_NaN;
+            std::uint64_t bits;
+            std::memcpy(&bits, &value, sizeof(bits));
+            key.push_back(bits);
+        }
+        const auto inserted = groups.emplace(key, static_cast<int>(groups.size()) + 1);
+        out[i] = inserted.first->second;
+    }
+    return out;
+}
+
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_nl_group_logsumexp(Rcpp::NumericVector values,
+    Rcpp::IntegerVector groups, int n_groups) {
+    if (values.size() != groups.size() || n_groups < 0)
+        Rcpp::stop("Log-sum-exp groups have inconsistent dimensions.");
+    const double negative_infinity = -std::numeric_limits<double>::infinity();
+    Rcpp::NumericVector maximum(n_groups, negative_infinity);
+    std::vector<bool> invalid(n_groups, false);
+    std::vector<long double> sum(n_groups, 0);
+    for (R_xlen_t i = 0; i < values.size(); ++i) {
+        const int label = groups[i];
+        if (label == NA_INTEGER || label < 1 || label > n_groups)
+            Rcpp::stop("Log-sum-exp group indices must lie within their declared range.");
+        const int group = label - 1;
+        const double value = values[i];
+        if (std::isnan(value) || value == std::numeric_limits<double>::infinity())
+            invalid[group] = true;
+        else maximum[group] = std::max(maximum[group], value);
+    }
+    for (R_xlen_t i = 0; i < values.size(); ++i) {
+        const int group = groups[i] - 1;
+        if (!invalid[group] && std::isfinite(maximum[group]))
+            sum[group] += std::exp(values[i] - maximum[group]);
+    }
+    for (int group = 0; group < n_groups; ++group) {
+        if (invalid[group] || !std::isfinite(maximum[group]))
+            maximum[group] = negative_infinity;
+        else maximum[group] += std::log(static_cast<double>(sum[group]));
+    }
+    return maximum;
+}
 
 // [[Rcpp::export]]
 Rcpp::NumericMatrix cpp_nl_mixture_quantiles(Rcpp::NumericMatrix mu,
@@ -174,24 +242,40 @@ Eigen::SparseMatrix<double> cpp_outer_nearest_partition(Rcpp::NumericMatrix poin
         Rcpp::stop("Outer partition points must be finite.");
     for (double value : query) if (!std::isfinite(value))
         Rcpp::stop("Outer partition queries must be finite.");
-    struct Node { int point, axis, left, right; };
+    struct Node { int point, left, right; };
     std::vector<Node> tree;
+    tree.reserve(n);
+    std::vector<double> lower(static_cast<std::size_t>(n) * d);
+    std::vector<double> upper(lower.size());
     std::vector<int> order(n);
     for (int i = 0; i < n; ++i) order[i] = i;
-    std::function<int(int, int, int)> build = [&](int lo, int hi, int depth) -> int {
+    std::function<int(int, int)> build = [&](int lo, int hi) -> int {
         if (lo >= hi) return -1;
-        const int axis = depth % d, middle = (lo + hi) / 2;
+        const int at = tree.size(), middle = (lo + hi) / 2;
+        tree.push_back({0, -1, -1});
+        int axis = 0;
+        double spread = -1;
+        for (int j = 0; j < d; ++j) {
+            const std::size_t offset = static_cast<std::size_t>(at) * d + j;
+            lower[offset] = upper[offset] = points(order[lo], j);
+            for (int k = lo + 1; k < hi; ++k) {
+                lower[offset] = std::min(lower[offset], points(order[k], j));
+                upper[offset] = std::max(upper[offset], points(order[k], j));
+            }
+            const double width = upper[offset] - lower[offset];
+            if (width > spread) { spread = width; axis = j; }
+        }
         std::nth_element(order.begin() + lo, order.begin() + middle, order.begin() + hi,
-            [&](int a, int b) { return points(a, axis) < points(b, axis); });
-        const int at = tree.size();
-        tree.push_back({order[middle], axis, -1, -1});
-        const int left = build(lo, middle, depth + 1);
-        const int right = build(middle + 1, hi, depth + 1);
+            [&](int a, int b) { return points(a, axis) < points(b, axis) ||
+                (points(a, axis) == points(b, axis) && a < b); });
+        tree[at].point = order[middle];
+        const int left = build(lo, middle);
+        const int right = build(middle + 1, hi);
         tree[at].left = left;
         tree[at].right = right;
         return at;
     };
-    build(0, n, 0);
+    build(0, n);
     std::vector<Eigen::Triplet<double>> entries;
     entries.reserve(query.nrow());
     for (int i = 0; i < query.nrow(); ++i) {
@@ -199,7 +283,18 @@ Eigen::SparseMatrix<double> cpp_outer_nearest_partition(Rcpp::NumericMatrix poin
             Rcpp::stop("Outer partition masses must be finite and nonnegative.");
         int best = 0;
         double distance = std::numeric_limits<double>::infinity();
-        std::function<void(int)> visit = [&](int at) {
+        auto box_distance = [&](int at) {
+            if (at < 0) return std::numeric_limits<double>::infinity();
+            double square = 0;
+            for (int j = 0; j < d; ++j) {
+                const std::size_t offset = static_cast<std::size_t>(at) * d + j;
+                const double delta = std::max({lower[offset] - query(i, j),
+                    query(i, j) - upper[offset], 0.0});
+                square += delta * delta;
+            }
+            return square;
+        };
+        auto visit = [&](auto&& self, int at) -> void {
             if (at < 0) return;
             const auto& node = tree[at];
             double square = 0;
@@ -207,12 +302,18 @@ Eigen::SparseMatrix<double> cpp_outer_nearest_partition(Rcpp::NumericMatrix poin
                 const double difference = query(i, j) - points(node.point, j);
                 square += difference * difference;
             }
-            if (square < distance) { distance = square; best = node.point; }
-            const double split = query(i, node.axis) - points(node.point, node.axis);
-            visit(split < 0 ? node.left : node.right);
-            if (split * split < distance) visit(split < 0 ? node.right : node.left);
+            if (square < distance || (square == distance && node.point < best)) {
+                distance = square; best = node.point;
+            }
+            int first = node.left, second = node.right;
+            double first_bound = box_distance(first), second_bound = box_distance(second);
+            if (first_bound > second_bound) {
+                std::swap(first, second); std::swap(first_bound, second_bound);
+            }
+            if (first >= 0 && first_bound <= distance) self(self, first);
+            if (second >= 0 && second_bound <= distance) self(self, second);
         };
-        visit(0);
+        visit(visit, 0);
         if (mass[i] > 0) entries.emplace_back(i, best, mass[i]);
     }
     Eigen::SparseMatrix<double> out(query.nrow(), n);

@@ -413,6 +413,14 @@ cpp_nl_lq_mixture_cdf <- function(pieces, mass, x) {
     .Call(`_tulpa_cpp_nl_lq_mixture_cdf`, pieces, mass, x)
 }
 
+cpp_nl_axis_row_id <- function(points, axis) {
+    .Call(`_tulpa_cpp_nl_axis_row_id`, points, axis)
+}
+
+cpp_nl_group_logsumexp <- function(values, groups, n_groups) {
+    .Call(`_tulpa_cpp_nl_group_logsumexp`, values, groups, n_groups)
+}
+
 cpp_nl_mixture_quantiles <- function(mu, sd, mass, probability, center, scale, max_iter = 80L) {
     .Call(`_tulpa_cpp_nl_mixture_quantiles`, mu, sd, mass, probability, center, scale, max_iter)
 }
