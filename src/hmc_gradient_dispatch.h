@@ -33,6 +33,10 @@
 // callers live in hmc_sampler_decls.h.
 
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
+    if (mode == GradientMode::NUMERICAL)
+        return &compute_gradient_generic_numerical;
+    if (field_coordinates && !field_coordinates->entries.empty())
+        return &compute_full_gradient_field_coordinates;
     (void)layout;  // no layout flag selects a gradient source
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
         Rcpp::stop("tulpa: ModelData has n_processes == 0. Downstream packages "
@@ -80,6 +84,10 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
 // the optional model-package prior -- so grad_full - grad_prior is exactly the
 // observation-likelihood gradient.
 GradientFn resolve_prior_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
+    if (mode == GradientMode::NUMERICAL)
+        return &compute_gradient_prior_numerical;
+    if (field_coordinates && !field_coordinates->entries.empty())
+        return &compute_prior_gradient_field_coordinates;
     (void)layout;
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
         Rcpp::stop("tulpa: ModelData has n_processes == 0 — the generic "

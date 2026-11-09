@@ -14,7 +14,8 @@
 #' @param proper If `TRUE`, use proper CAR (`type = "car_proper"`); else
 #'   ICAR (`type = "car"`).
 #' @param shared Optional shared-effect handle (see model docs).
-#' @param parameterization `"standard"` (default) or `"collapsed"` (deprecated).
+#' @param parameterization `"auto"` scales field amplitudes using prior and
+#'   observation information; `"standard"` samples effects directly.
 #' @param prior_sigma Optional PC prior on the field's standard deviation,
 #'   `c(U, alpha)` with \eqn{P(\sigma > U) = \alpha}, read by the
 #'   nested-Laplace and sampler paths, carried to the precision for CAR and
@@ -32,7 +33,7 @@
 #' @export
 spatial_car <- function(adjacency, level = c("group", "obs"),
                         group_var = NULL, proper = FALSE, shared = NULL,
-                        parameterization = c("standard", "collapsed"),
+                        parameterization = c("auto", "standard", "collapsed"),
                         prior_sigma = NULL) {
 
   level <- match.arg(level)
@@ -134,14 +135,15 @@ spatial_car_proper <- function(adjacency,
                                level = c("group", "obs"),
                                group_var = NULL,
                                shared = NULL,
-                               prior_sigma = NULL) {
+                               prior_sigma = NULL,
+                               parameterization = c("auto", "standard")) {
   spatial_car(
     adjacency = adjacency,
     level = match.arg(level),
     group_var = group_var,
     proper = TRUE,
     shared = shared,
-    parameterization = "standard",
+    parameterization = match.arg(parameterization),
     prior_sigma = prior_sigma
   )
 }
@@ -380,7 +382,7 @@ compute_car_rho_bounds <- function(adjacency) {
 spatial_bym2 <- function(adjacency, level = c("group", "obs"),
                          group_var = NULL, shared = NULL,
                          scale_factor = NULL,
-                         parameterization = c("standard", "collapsed"),
+                         parameterization = c("auto", "standard", "collapsed"),
                          prior_sigma = NULL) {
 
   level <- match.arg(level)

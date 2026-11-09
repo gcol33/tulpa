@@ -5,6 +5,7 @@
 // via tulpa::compute_log_post_generic_spec_double.
 
 #include "hmc_sampler.h"
+#include "hmc_field_coordinates.h"
 #include "log_post_impl.h"
 #include "tulpa/likelihood.h"
 
@@ -32,6 +33,12 @@ double compute_log_post(
     const double* /*precomputed_st_log_prior*/,
     const double* /*precomputed_tgp_log_prior*/
 ) {
+  if (field_coordinates && !field_coordinates->entries.empty()) {
+    std::vector<double> x;
+    const double jacobian = field_coordinates->forward(params, x);
+    FieldCoordinateScope raw(nullptr);
+    return compute_log_post(x, data, layout, skip_obs_loop) + jacobian;
+  }
   if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
     Rcpp::stop("tulpa: compute_log_post requires a generic LikelihoodSpec "
                "ModelData (n_processes > 0 and data.likelihood_spec set).");
@@ -53,6 +60,12 @@ double compute_log_lik_only(
     const ModelData& data,
     const ParamLayout& layout
 ) {
+  if (field_coordinates && !field_coordinates->entries.empty()) {
+    std::vector<double> x;
+    field_coordinates->forward(params, x);
+    FieldCoordinateScope raw(nullptr);
+    return compute_log_lik_only(x, data, layout);
+  }
   if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
     Rcpp::stop("tulpa: compute_log_lik_only requires a generic LikelihoodSpec "
                "ModelData (n_processes > 0 and data.likelihood_spec set).");

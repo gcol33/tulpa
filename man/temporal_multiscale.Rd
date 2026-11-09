@@ -11,10 +11,10 @@ temporal_multiscale(
   seasonal = NULL,
   short_term = c("ar1", "iid", "none"),
   shared = NULL,
-  parameterization = c("noncentered", "centered")
+  parameterization = c("auto", "noncentered", "centered")
 )
 
-\method{print}{tulpa_temporal_multiscale}(x, ...)
+print.tulpa_temporal_multiscale(x, ...)
 }
 \arguments{
 \item{time_var}{Single character string naming the time variable in the data.}
@@ -34,7 +34,8 @@ multi-process model. \code{NULL} (default) shares it; \code{FALSE} fits
 process-specific effects and emits a warning.}
 
 \item{parameterization}{How the exact sampler (\code{mode = "hmc"}) samples the
-components. \code{"noncentered"} (default) samples the trend walk's level, its
+components. \code{"auto"} scales field amplitudes using prior and observation
+information. \code{"noncentered"} samples the trend walk's level, its
 slope (RW2) and its innovations divided by the trend SD, the seasonal
 walk's level and its innovations divided by the seasonal SD, and the
 short-term component's innovations divided by its SD, and builds the

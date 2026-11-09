@@ -15,9 +15,88 @@
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
 #include "tulpa/nuts_api.h"
+#include "sampler_model_data.h"
+#include "hmc_field_coordinates.h"
+#include "sampler_field_store.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
+
+// [[Rcpp::export]]
+Rcpp::List cpp_test_field_coordinates(
+    Rcpp::NumericVector y, Rcpp::NumericMatrix X,
+    Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> temporal_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
+    double shift = 0.3, int n_iter = 0) {
+    tulpa::SamplerModelInputs in;
+    tulpa::build_sampler_model_inputs(in, y, Rcpp::IntegerVector(y.size(), 1), X,
+        "gaussian", 1.0, NA_REAL, 2.5, {}, 1.0, R_NilValue,
+        spatial_spec, temporal_spec, svc_spec, tvc_spec, R_NilValue);
+    auto& data = in.data;
+    const auto layout = tulpa_hmc::compute_param_layout(data);
+    const int p = layout.total_params;
+    std::vector<double> q(p, 0.0);
+    tulpa::init_bounded_support_params(q, data, layout);
+    for (int i = 0; i < p; ++i) q[i] += shift * std::sin(i + 1.0);
+    tulpa_hmc::GradientModeFitScope gradient_scope;
+    tulpa_hmc::g_gradient_mode = tulpa_hmc::GradientMode::AUTODIFF_ARENA;
+    const auto map = tulpa_hmc::make_field_coordinates(q, data, layout);
+    std::vector<double> x;
+    const double jacobian = map.forward(q, x);
+    const double raw_lp = tulpa_hmc::compute_log_post(x, data, layout);
+    std::vector<double> stored = x;
+    tulpa::store_field_draw(stored.data(), x, data, layout);
+    std::vector<double> raw_gradient, prior_gradient;
+    tulpa_hmc::compute_gradient(x, data, layout, raw_gradient);
+    std::vector<double> inverse = x;
+    map.inverse(inverse);
+    Rcpp::List blocks;
+    for (const auto& e : map.entries) {
+        blocks.push_back(Rcpp::List::create(
+            Rcpp::Named("begin") = e.begin, Rcpp::Named("end") = e.end,
+            Rcpp::Named("scale_index") = e.scale_index,
+            Rcpp::Named("scale_sign") = e.scale_sign,
+            Rcpp::Named("scaled_information") = e.scaled_information,
+            Rcpp::Named("fixed_information") = e.fixed_information,
+            Rcpp::Named("group_width") = e.width(),
+            Rcpp::Named("preserve_constant") = e.preserve_constant,
+            Rcpp::Named("preserve_linear") = e.preserve_linear));
+    }
+    double last_reported_lp = NA_REAL, last_native_lp = NA_REAL;
+    if (n_iter > 0) {
+        const auto result = tulpa_hmc::run_hmc_chain_cpp(q, data, layout,
+            n_iter, n_iter / 2, 0, 1, 18, false, 8,
+            tulpa::MassMatrixType::DIAG, .9, nullptr, {});
+        last_reported_lp = result.log_prob.back();
+        last_native_lp = tulpa_hmc::compute_log_post(result.final_position, data, layout);
+    }
+    tulpa_hmc::FieldCoordinateScope coordinate_scope(&map);
+    std::vector<double> gradient, numerical, full_prior, numerical_prior;
+    double lp = 0;
+    tulpa_hmc::compute_gradient(q, data, layout, gradient, &lp);
+    tulpa_hmc::compute_gradient_generic_numerical(q, data, layout, numerical, nullptr);
+    auto prior_fn = tulpa_hmc::resolve_prior_gradient_fn(
+        tulpa_hmc::g_gradient_mode, data, layout);
+    prior_fn(q, data, layout, full_prior, nullptr);
+    tulpa_hmc::compute_gradient_prior_numerical(q, data, layout, numerical_prior, nullptr);
+    const bool verified = tulpa_hmc::verify_gradient_runtime(q, data, layout, 1e-4);
+    return Rcpp::List::create(Rcpp::Named("q") = q, Rcpp::Named("x") = x,
+        Rcpp::Named("stored") = stored,
+        Rcpp::Named("last_reported_lp") = last_reported_lp,
+        Rcpp::Named("last_native_lp") = last_native_lp,
+        Rcpp::Named("inverse") = inverse, Rcpp::Named("jacobian") = jacobian,
+        Rcpp::Named("raw_lp") = raw_lp, Rcpp::Named("lp") = lp,
+        Rcpp::Named("gradient") = gradient, Rcpp::Named("numerical") = numerical,
+        Rcpp::Named("raw_gradient") = raw_gradient,
+        Rcpp::Named("prior_gradient") = full_prior,
+        Rcpp::Named("numerical_prior") = numerical_prior,
+        Rcpp::Named("verified") = verified, Rcpp::Named("blocks") = blocks,
+        Rcpp::Named("numerical_dispatch") =
+            tulpa_hmc::resolve_gradient_fn(tulpa_hmc::GradientMode::NUMERICAL,
+                data, layout) == &tulpa_hmc::compute_gradient_generic_numerical);
+}
 
 template<typename T>
 T unit_gaussian_likelihood(

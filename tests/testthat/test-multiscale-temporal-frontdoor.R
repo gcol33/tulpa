@@ -184,8 +184,10 @@ test_that("the non-centred short-term arm is its innovations scaled", {
                tolerance = 1e-12)
 })
 
-test_that("the trend parameterization is an argument, non-centred by default", {
-  expect_identical(temporal_multiscale("t")$parameterization, "noncentered")
+test_that("the trend parameterization selects automatic coordinates by default", {
+  expect_identical(temporal_multiscale("t")$parameterization, "auto")
+  expect_identical(temporal_multiscale("t", parameterization = "noncentered")$parameterization,
+                   "noncentered")
   expect_identical(
     temporal_multiscale("t", parameterization = "centered")$parameterization,
     "centered")

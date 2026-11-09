@@ -63,10 +63,9 @@
 #'   kernel stays isotropic. [spatial_range()] reports the range in the
 #'   original coordinate units either way.
 #' @param parameterization Latent parameterization for the exact-NUTS field.
-#'   One of `"noncentered"` (default; samples `z ~ N(0, I)` and reconstructs the
-#'   field as `w = f(z, sigma2, phi)`, avoiding the field/hyperparameter funnel),
-#'   `"centered"` (places the NNGP density on the field directly), or
-#'   `"collapsed"` (deprecated).
+#'   `"auto"` scales covariance-whitened coordinates using prior and observation
+#'   information. `"noncentered"` samples `z ~ N(0, I)` and reconstructs the
+#'   field as `w = f(z, sigma2, phi)`. `"centered"` samples field values.
 #'
 #' @return A `tulpa_gp` object (also of class `tulpa_spatial`).
 #'
@@ -146,7 +145,7 @@ spatial_gp <- function(coords,
                        sigma_prior_alpha = 0.01,
                        shared = NULL,
                        scale_coords = TRUE,
-                       parameterization = c("noncentered", "centered", "collapsed")) {
+                       parameterization = c("auto", "noncentered", "centered", "collapsed")) {
 
   approx <- match.arg(approx)
   parameterization <- match.arg(parameterization)

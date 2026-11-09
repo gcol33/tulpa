@@ -35,7 +35,7 @@
   std::mt19937 rng(seed + chain_id * 12345);
   std::uniform_real_distribution<double> unif(0.0, 1.0);
 
-  std::vector<double> q = q_init;
+  std::vector<double> q = sampling_init;
 
   // For NUTS: fuse initial log_post + gradient into single O(N) pass
   std::vector<double> current_grad(n_params);

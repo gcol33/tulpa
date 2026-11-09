@@ -25,7 +25,8 @@ utils::globalVariables(c(".data", "ratio", ".phl_w", "cpp_spde_orphan_mass",
                          "cpp_precision_density", "cpp_precision_math", "cpp_beta_precision_score",
                          "cpp_beta_density_terms", "cpp_spde_density_terms",
                          "cpp_precision_density_paths", "cpp_precision_ad_math",
-                         "cpp_beta_grouped_terms"))
+                         "cpp_beta_grouped_terms", "cpp_test_field_coordinates",
+                         "cpp_test_sampler_controls"))
 
 # The package version, read from the one place that defines it. A literal here
 # (or in src/) is a second definition that nothing forces anyone to update at

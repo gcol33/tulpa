@@ -633,6 +633,10 @@ cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = NULL, log_phi_prior_s
     .Call(`_tulpa_cpp_tulpa_fit_beta_nuts`, y_r, X_r, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose)
 }
 
+cpp_test_field_coordinates <- function(y, X, spatial_spec = NULL, temporal_spec = NULL, svc_spec = NULL, tvc_spec = NULL, shift = 0.3, n_iter = 0L) {
+    .Call(`_tulpa_cpp_test_field_coordinates`, y, X, spatial_spec, temporal_spec, svc_spec, tvc_spec, shift, n_iter)
+}
+
 cpp_test_sampler_controls <- function(y_r, X_r, L = 0L, metric = "diag", walnuts = FALSE, n_chains = 1L, seed = 18L, n_iter = 2000L, n_warmup = 750L) {
     .Call(`_tulpa_cpp_test_sampler_controls`, y_r, X_r, L, metric, walnuts, n_chains, seed, n_iter, n_warmup)
 }

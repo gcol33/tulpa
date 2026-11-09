@@ -10,7 +10,7 @@ spatial_bym2(
   group_var = NULL,
   shared = NULL,
   scale_factor = NULL,
-  parameterization = c("standard", "collapsed"),
+  parameterization = c("auto", "standard", "collapsed"),
   prior_sigma = NULL
 )
 }
@@ -33,7 +33,8 @@ to unit generalized variance separately and an isolated node (island)
 gets unit variance on its structured part, following Freni-Sterrantino
 et al. (2018). A supplied value is one scale for the whole graph.}
 
-\item{parameterization}{\code{"standard"} (default) or \code{"collapsed"} (deprecated).}
+\item{parameterization}{\code{"auto"} scales field amplitudes using prior and
+observation information; \code{"standard"} samples effects directly.}
 
 \item{prior_sigma}{Optional PC prior on the field's standard deviation,
 \code{c(U, alpha)} with \eqn{P(\sigma > U) = \alpha}, read by the

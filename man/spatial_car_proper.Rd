@@ -9,7 +9,8 @@ spatial_car_proper(
   level = c("group", "obs"),
   group_var = NULL,
   shared = NULL,
-  prior_sigma = NULL
+  prior_sigma = NULL,
+  parameterization = c("auto", "standard")
 )
 }
 \arguments{
@@ -29,6 +30,9 @@ when \code{level = "group"}.}
 nested-Laplace and sampler paths, carried to the precision for CAR and
 ICAR fields. \code{NULL} uses the engine's default anchor
 \eqn{P(\sigma > 3) = 0.01}.}
+
+\item{parameterization}{\code{"auto"} scales field amplitudes using prior and
+observation information; \code{"standard"} samples effects directly.}
 }
 \value{
 A \code{tulpa_spatial} object with \code{type = "car_proper"}.

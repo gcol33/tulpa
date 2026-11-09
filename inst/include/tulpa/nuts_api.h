@@ -69,12 +69,13 @@ struct NUTSResult {
     //   init = final_position, inv_metric_diag = inv_metric_out, n_warmup = 0.
     // inv_metric_out is the inverse-mass *diagonal* (the diagonal part even
     // when the run used a denser metric internally). final_position is the
-    // last draw in the sampling parameterization.
+    // last position in the ModelData parameterization. Automatic field
+    // transport is reconstructed from ModelData when the chain resumes.
     double* inv_metric_out;   // [n_params] adapted inverse-mass diagonal
     double* final_position;   // [n_params] last sampler position
 
-    int* n_leapfrog;
-    double* energy;
+    int* n_leapfrog;       // [n_sample] actual integrator step count
+    double* energy;       // [n_sample] starting Hamiltonian
 
     void free_buffers() {
         if (samples)        { delete[] samples;         samples = nullptr; }
@@ -90,6 +91,10 @@ struct NUTSResult {
 };
 
 // Function signature for the registered NUTS callable.
+//
+// `control` selects fixed-L HMC, NUTS or WALNUTS and the mass-matrix type.
+// nullptr uses NUTS with a diagonal metric. WALNUTS requires L == 0.
+// The same control applies to every chain in NUTSChainsFn.
 //
 // `inv_metric_diag` (ABI v11+): optional length-`n_params` vector of initial
 // inverse-mass diagonal entries. Pass nullptr to use the default structural

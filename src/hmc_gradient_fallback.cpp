@@ -97,7 +97,7 @@ void compute_gradient_generic_numerical(
     double* log_post_out
 ) {
     auto log_post_fn = [&](const std::vector<double>& p) -> double {
-        return tulpa::compute_log_post_generic_spec_double(p, data, layout);
+        return compute_log_post(p, data, layout);
     };
 
     if (log_post_out) *log_post_out = log_post_fn(params);
@@ -156,7 +156,7 @@ void compute_gradient_prior_numerical(
     double* log_post_out
 ) {
     auto log_prior_fn = [&](const std::vector<double>& p) -> double {
-        return tulpa::compute_log_post_generic_spec_double(
+        return compute_log_post(
             p, data, layout, /*skip_obs_loop=*/true);
     };
 
@@ -223,7 +223,7 @@ bool verify_gradient_runtime(
   std::vector<double> grad_richardson;
   {
     auto log_post_fn = [&](const std::vector<double>& p) -> double {
-      return tulpa::compute_log_post_generic_spec_double(p, data, layout);
+      return compute_log_post(p, data, layout);
     };
     richardson_difference_gradient(log_post_fn, params, grad_richardson);
   }

@@ -371,6 +371,7 @@ unity_hmc.o: \
   hmc_sampler.h \
   ess_sampler.h \
   log_post_impl.h \
+  hmc_field_coordinates.h \
   hmc_gradient_dispatch.h \
   laplace_profile.h \
   hmc_mass_st_gmrf.h \
@@ -864,6 +865,7 @@ unity_samplers.o: \
   density_probe.h \
   log_post_impl.h \
   linalg_fast.h \
+  hmc_field_coordinates.h \
   vi_types.h \
   vi_optimizer.h \
   vi_meanfield.h \

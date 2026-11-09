@@ -4,7 +4,13 @@
 \alias{temporal_rw1}
 \title{RW1 temporal structure (first-order random walk)}
 \usage{
-temporal_rw1(time_var, group_var = NULL, cyclic = FALSE, shared = NULL)
+temporal_rw1(
+  time_var,
+  group_var = NULL,
+  cyclic = FALSE,
+  shared = NULL,
+  parameterization = c("auto", "centered")
+)
 }
 \arguments{
 \item{time_var}{A formula (\code{~ time}) or single character string naming the
@@ -21,6 +27,9 @@ year). Default \code{FALSE}.}
 \item{shared}{Whether the temporal effect is shared across processes in a
 multi-process model. \code{NULL} (default) shares the effect; \code{FALSE} fits
 process-specific effects and emits a warning about unshared confounding.}
+
+\item{parameterization}{Sampler coordinates: \code{"auto"} uses field information
+to scale field amplitudes; \code{"centered"} samples effect coordinates.}
 }
 \value{
 A \code{tulpa_temporal} object.

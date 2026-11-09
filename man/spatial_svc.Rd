@@ -16,12 +16,12 @@ spatial_svc(
   approx = c("nngp", "hsgp"),
   m = NULL,
   c_boundary = NULL,
-  parameterization = c("noncentered", "centered"),
+  parameterization = c("auto", "noncentered", "centered"),
   sigma_prior_U = 1,
   sigma_prior_alpha = 0.01
 )
 
-\method{print}{tulpa_svc}(x, ...)
+print.tulpa_svc(x, ...)
 }
 \arguments{
 \item{coords}{A formula (\code{~ lon + lat}) or character vector of length 2
@@ -64,7 +64,8 @@ at the largest lengthscale of the varying coefficients.}
 
 \item{parameterization}{Latent parameterization for the exact-NUTS field
 (\code{approx = "nngp"} only; HSGP is already non-centered by construction).
-\code{"noncentered"} (default) samples \code{z_j ~ N(0, I)} per term and
+\code{"auto"} scales covariance-whitened coordinates using prior and observation
+information. \code{"noncentered"} samples \code{z_j ~ N(0, I)} per term and
 reconstructs each field as \code{w_j = f(z_j, sigma2_j, phi_j)}, removing the
 field/hyperparameter funnel that otherwise attenuates the field's
 amplitude when it is weakly identified. \code{"centered"} places the NNGP

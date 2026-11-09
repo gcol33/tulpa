@@ -18,7 +18,8 @@
 #'   multi-process model. `NULL` (default) shares it; `FALSE` fits
 #'   process-specific effects and emits a warning.
 #' @param parameterization How the exact sampler (`mode = "hmc"`) samples the
-#'   components. `"noncentered"` (default) samples the trend walk's level, its
+#'   components. `"auto"` scales field amplitudes using prior and observation
+#'   information. `"noncentered"` samples the trend walk's level, its
 #'   slope (RW2) and its innovations divided by the trend SD, the seasonal
 #'   walk's level and its innovations divided by the seasonal SD, and the
 #'   short-term component's innovations divided by its SD, and builds the
@@ -65,8 +66,7 @@ temporal_multiscale <- function(time_var,
                                 seasonal = NULL,
                                 short_term = c("ar1", "iid", "none"),
                                 shared = NULL,
-                                parameterization = c("noncentered",
-                                                     "centered")) {
+                                parameterization = c("auto", "noncentered", "centered")) {
 
   trend <- match.arg(trend)
   short_term <- match.arg(short_term)
@@ -340,7 +340,8 @@ validate_temporal_multiscale <- function(temporal, data) {
 #'   support is placed relative to the spread of the times, and
 #'   [temporal_corr()] reports the lengthscale in the original time units.
 #' @param parameterization Parameterization for GP effects:
-#'   `"noncentered"` (default) stores z ~ N(0,1) and scales by covariance
+#'   `"auto"` scales covariance-whitened coordinates using prior and observation
+#'   information. `"noncentered"` stores z ~ N(0,1) and scales by covariance
 #'   (better for weakly-informed effects);
 #'   `"centered"` stores effects directly (better for strongly-informed effects).
 #'
@@ -410,7 +411,7 @@ temporal_gp <- function(time_var,
                         group_var = NULL,
                         shared = NULL,
                         scale_coords = TRUE,
-                        parameterization = c("noncentered", "centered")) {
+                        parameterization = c("auto", "noncentered", "centered")) {
 
   cov <- match.arg(cov)
   parameterization <- match.arg(parameterization)

@@ -5,6 +5,7 @@
 // namespace tulpa_hmc; declarations are in hmc_sampler_decls.h.
 
 #include "hmc_sampler.h"
+#include "hmc_field_coordinates.h"
 #include "tulpa/likelihood.h"
 #include <Rcpp.h>
 

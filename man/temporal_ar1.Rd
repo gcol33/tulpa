@@ -4,7 +4,13 @@
 \alias{temporal_ar1}
 \title{AR1 temporal structure (first-order autoregressive)}
 \usage{
-temporal_ar1(time_var, group_var = NULL, shared = NULL, rho_prior = NULL)
+temporal_ar1(
+  time_var,
+  group_var = NULL,
+  shared = NULL,
+  rho_prior = NULL,
+  parameterization = c("auto", "centered")
+)
 }
 \arguments{
 \item{time_var}{A formula (\code{~ time}) or single character string naming the
@@ -23,6 +29,9 @@ Uniform(-1, 1) prior. Supply a \code{prior_beta(alpha, beta)} to place a
 Beta(alpha, beta) prior on \code{u = (rho + 1)/2} for a more informative prior
 (e.g. \code{prior_beta(5, 2)} favours positive autocorrelation). Honoured on
 both the exact-sampler and nested-Laplace paths.}
+
+\item{parameterization}{Sampler coordinates: \code{"auto"} uses field information
+to scale field amplitudes; \code{"centered"} samples effect coordinates.}
 }
 \value{
 A \code{tulpa_temporal} object

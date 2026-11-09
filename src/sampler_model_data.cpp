@@ -215,6 +215,12 @@ void build_sampler_model_inputs(
     if (spatial_spec.isNotNull()) {
         Rcpp::List sp = Rcpp::as<Rcpp::List>(spatial_spec);
         std::string stype = Rcpp::as<std::string>(sp["type"]);
+        const std::string coordinate = sp.containsElementNamed("parameterization")
+            ? Rcpp::as<std::string>(sp["parameterization"]) : "centered";
+        in.data.auto_spatial_coordinates = coordinate == "auto" &&
+            (stype == "icar" || stype == "car_proper");
+        in.data.auto_gp_coordinates = coordinate == "auto" &&
+            (stype == "gp" || stype == "nngp");
         if (stype == "icar" || stype == "bym2" || stype == "car_proper") {
             read_pc_anchors(sp, "sigma_prior_U", "sigma_prior_alpha",
                             in.data.spatial_sigma_prior_U,
@@ -239,45 +245,12 @@ void build_sampler_model_inputs(
                 in.data.spatial_type = SpatialType::ICAR;
             } else {
                 in.data.spatial_type = SpatialType::BYM2;
-                in.data.bym2_scale_factor =
-                    sp.containsElementNamed("scale_factor")
-                        ? Rcpp::as<double>(sp["scale_factor"]) : 1.0;
-                // Per-component scaling of a disconnected graph (#902): one
-                // multiplier per node, constant within each component, which
-                // is what keeps diag(node_prec) Q_aug symmetric. Checked here,
-                // at the spec boundary, because the prior that reads it runs
-                // inside gradient loops where a throw is std::terminate.
-                if (sp.containsElementNamed("node_prec") &&
-                    !Rf_isNull(sp["node_prec"])) {
-                    Rcpp::NumericVector np =
-                        Rcpp::as<Rcpp::NumericVector>(sp["node_prec"]);
-                    if (np.size() != n_units) {
-                        Rcpp::stop("spatial(type = \"bym2\"): node_prec has "
-                                   "%d entries for %d spatial units.",
-                                   (int)np.size(), n_units);
-                    }
-                    for (int s = 0; s < n_units; s++) {
-                        if (!std::isfinite(np[s]) || np[s] <= 0.0) {
-                            Rcpp::stop("spatial(type = \"bym2\"): node_prec "
-                                       "must be finite and positive "
-                                       "(entry %d is %g).", s + 1, np[s]);
-                        }
-                    }
-                    const GraphPartition& part = in.data.spatial_partition;
-                    for (int c = 0; c < part.n_components(); c++) {
-                        const int* idx = part.nodes(c);
-                        const int m = part.size(c);
-                        auto node = [&](int k) { return idx ? idx[k] : k; };
-                        for (int k = 1; k < m; k++) {
-                            if (np[node(k)] != np[node(0)]) {
-                                Rcpp::stop("spatial(type = \"bym2\"): node_prec "
-                                           "must be constant within each "
-                                           "connected component.");
-                            }
-                        }
-                    }
-                    in.data.bym2_node_prec.assign(np.begin(), np.end());
-                }
+                const double scale = sp.containsElementNamed("scale_factor")
+                    ? Rcpp::as<double>(sp["scale_factor"]) : 1.0;
+                std::vector<double> precision;
+                if (sp.containsElementNamed("node_prec") && !Rf_isNull(sp["node_prec"]))
+                    precision = Rcpp::as<std::vector<double>>(sp["node_prec"]);
+                in.data.set_bym2_scaling(scale, std::move(precision));
             }
         } else if (stype == "gp" || stype == "nngp") {
             // Continuous single-scale NNGP field. compute_param_layout keys the
@@ -592,6 +565,9 @@ void build_sampler_model_inputs(
         const bool centered =
             tp.containsElementNamed("parameterization") &&
             Rcpp::as<std::string>(tp["parameterization"]) == "centered";
+        in.data.auto_multiscale_coordinates =
+            tp.containsElementNamed("parameterization") &&
+            Rcpp::as<std::string>(tp["parameterization"]) == "auto";
         if (!centered && ms.trend_type != TemporalType::NONE) {
             set_multiscale_trend_noncentered(in.data);
         }
@@ -633,6 +609,10 @@ void build_sampler_model_inputs(
     else if (temporal_spec.isNotNull()) {
         Rcpp::List tp = Rcpp::as<Rcpp::List>(temporal_spec);
         std::string ttype = Rcpp::as<std::string>(tp["type"]);
+        const std::string coordinate = tp.containsElementNamed("parameterization")
+            ? Rcpp::as<std::string>(tp["parameterization"]) : "centered";
+        in.data.auto_temporal_coordinates = coordinate == "auto" && ttype != "gp";
+        in.data.auto_temporal_gp_coordinates = coordinate == "auto" && ttype == "gp";
         Rcpp::IntegerVector tidx = Rcpp::as<Rcpp::IntegerVector>(tp["time_idx"]);
         in.data.temporal_time_idx.assign(tidx.begin(), tidx.end());
         in.data.n_times = Rcpp::as<int>(tp["n_times"]);
@@ -709,6 +689,8 @@ void build_sampler_model_inputs(
     //     as the NNGP arm.
     if (svc_spec.isNotNull()) {
         Rcpp::List sv = Rcpp::as<Rcpp::List>(svc_spec);
+        in.data.auto_svc_coordinates = sv.containsElementNamed("parameterization") &&
+            Rcpp::as<std::string>(sv["parameterization"]) == "auto";
         auto& s = in.data.svc_data;
         Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sv["coords"]);
         static const char* const SVC_WHO = "svc() under a sampler mode";

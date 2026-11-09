@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstdint>
 #include <utility>
+#include <cmath>
+#include <stdexcept>
 #include "tulpa/types.h"
 #include "tulpa/graph_components.h"
 #include "tulpa/gp_data.h"
@@ -203,7 +205,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 54;
+constexpr int TULPA_ABI_VERSION = 55;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -389,6 +391,28 @@ struct ModelData {
     // multiplier gives its structured part unit variance. EMPTY on a connected
     // graph, where every multiplier is 1 and the unweighted path runs.
     std::vector<double> bym2_node_prec;
+
+    void set_bym2_scaling(double scale, std::vector<double> precision) {
+        if (!(scale > 0.0) || !std::isfinite(scale))
+            throw std::invalid_argument("BYM2 scale must be finite and positive");
+        if (!precision.empty()) {
+            if (precision.size() != static_cast<size_t>(n_spatial_units))
+                throw std::invalid_argument("BYM2 node_prec length must equal n_spatial_units");
+            for (double value : precision)
+                if (!(value > 0.0) || !std::isfinite(value))
+                    throw std::invalid_argument("BYM2 node_prec must be finite and positive");
+            for (int c = 0; c < spatial_partition.n_components(); ++c) {
+                const int count = spatial_partition.size(c);
+                const int* nodes = spatial_partition.nodes(c);
+                const int first = nodes ? nodes[0] : 0;
+                for (int j = 1; j < count; ++j)
+                    if (precision[nodes ? nodes[j] : j] != precision[first])
+                        throw std::invalid_argument("BYM2 node_prec must be constant within each connected component");
+            }
+        }
+        bym2_scale_factor = scale;
+        bym2_node_prec = std::move(precision);
+    }
 
     // Proper CAR rho bounds (eigenvalue-derived, default to (0, 1))
     // Only used when spatial_type == CAR_PROPER.
@@ -666,6 +690,12 @@ struct ModelData {
     // COMPUTATION
     // ================================================================
     int n_threads = 1;
+    bool auto_spatial_coordinates = false;
+    bool auto_temporal_coordinates = false;
+    bool auto_gp_coordinates = false;
+    bool auto_multiscale_coordinates = false;
+    bool auto_temporal_gp_coordinates = false;
+    bool auto_svc_coordinates = false;
 };
 
 // Does RE term t carry the implicit group intercept (coef 0, z = 1)? Default

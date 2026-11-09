@@ -41,7 +41,8 @@
 #'   `sigma_prior_alpha` must lie in `(0, 1)`.
 #' @param parameterization Latent parameterization for the exact-NUTS field
 #'   (`approx = "nngp"` only; HSGP is already non-centered by construction).
-#'   `"noncentered"` (default) samples `z_j ~ N(0, I)` per term and
+#'   `"auto"` scales covariance-whitened coordinates using prior and observation
+#'   information. `"noncentered"` samples `z_j ~ N(0, I)` per term and
 #'   reconstructs each field as `w_j = f(z_j, sigma2_j, phi_j)`, removing the
 #'   field/hyperparameter funnel that otherwise attenuates the field's
 #'   amplitude when it is weakly identified. `"centered"` places the NNGP
@@ -69,7 +70,7 @@ spatial_svc <- function(coords,
                         approx = c("nngp", "hsgp"),
                         m = NULL,
                         c_boundary = NULL,
-                        parameterization = c("noncentered", "centered"),
+                        parameterization = c("auto", "noncentered", "centered"),
                         sigma_prior_U = 1,
                         sigma_prior_alpha = 0.01) {
 

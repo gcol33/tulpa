@@ -3,10 +3,12 @@
     // level-free block centred; q itself stays the sampled coordinates.
     if (!is_warmup) {
       double* row = result.sample_row(sample_idx);
-      std::memcpy(row, q.data(), n_params * sizeof(double));
-      tulpa::store_field_draw(row, q, data, layout);
+      std::vector<double> field_position;
+      const double coordinate_jacobian = coordinates.forward(q, field_position);
+      std::memcpy(row, field_position.data(), n_params * sizeof(double));
+      tulpa::store_field_draw(row, field_position, data, layout);
 
-      result.log_prob[sample_idx] = log_prob_current;
+      result.log_prob[sample_idx] = log_prob_current - coordinate_jacobian;
       result.accept_prob[sample_idx] = alpha;
       result.n_leapfrog[sample_idx] = iter_n_leapfrog;
       result.divergent[sample_idx] = divergent ? 1 : 0;

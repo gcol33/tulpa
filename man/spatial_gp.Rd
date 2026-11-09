@@ -18,12 +18,12 @@ spatial_gp(
   sigma_prior_alpha = 0.01,
   shared = NULL,
   scale_coords = TRUE,
-  parameterization = c("noncentered", "centered", "collapsed")
+  parameterization = c("auto", "noncentered", "centered", "collapsed")
 )
 
-\method{print}{tulpa_gp}(x, ...)
+print.tulpa_gp(x, ...)
 
-\method{print}{tulpa_hsgp}(x, ...)
+print.tulpa_hsgp(x, ...)
 }
 \arguments{
 \item{coords}{A formula (\code{~ lon + lat}) or character vector naming the
@@ -75,10 +75,9 @@ kernel stays isotropic. \code{\link[=spatial_range]{spatial_range()}} reports th
 original coordinate units either way.}
 
 \item{parameterization}{Latent parameterization for the exact-NUTS field.
-One of \code{"noncentered"} (default; samples \code{z ~ N(0, I)} and reconstructs the
-field as \code{w = f(z, sigma2, phi)}, avoiding the field/hyperparameter funnel),
-\code{"centered"} (places the NNGP density on the field directly), or
-\code{"collapsed"} (deprecated).}
+\code{"auto"} scales covariance-whitened coordinates using prior and observation
+information. \code{"noncentered"} samples \code{z ~ N(0, I)} and reconstructs the
+field as \code{w = f(z, sigma2, phi)}. \code{"centered"} samples field values.}
 
 \item{x}{A \code{tulpa_gp} or \code{tulpa_hsgp} specification.}
 

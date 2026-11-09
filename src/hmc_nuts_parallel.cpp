@@ -22,6 +22,7 @@
 #include <tulpa/nested_progress.h>
 
 #include "hmc_sampler.h"
+#include "hmc_field_coordinates.h"
 #include "hmc_chain_checkpoint.h"
 #include "omp_threads.h"
 
@@ -246,7 +247,13 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   // single-threaded here, so the R API and the mode mutation are safe, and the
   // decision then applies to every chain. The per-chain gate inside
   // run_hmc_chain_cpp sees the flag this sets and re-checks nothing.
-  ensure_gradient_verified(q_init_per_chain[0], data, layout);
+  {
+    const auto coordinates = make_field_coordinates(q_init_per_chain[0], data, layout);
+    std::vector<double> initial = q_init_per_chain[0];
+    coordinates.inverse(initial);
+    FieldCoordinateScope coordinate_scope(&coordinates);
+    ensure_gradient_verified(initial, data, layout);
+  }
 
   std::vector<HMCResultCpp> cpp_results(n_chains);
 

@@ -13,10 +13,10 @@ temporal_gp(
   group_var = NULL,
   shared = NULL,
   scale_coords = TRUE,
-  parameterization = c("noncentered", "centered")
+  parameterization = c("auto", "noncentered", "centered")
 )
 
-\method{print}{tulpa_temporal_gp}(x, ...)
+print.tulpa_temporal_gp(x, ...)
 }
 \arguments{
 \item{time_var}{Name of the time variable in data. Can be a formula
@@ -52,7 +52,8 @@ support is placed relative to the spread of the times, and
 \code{\link[=temporal_corr]{temporal_corr()}} reports the lengthscale in the original time units.}
 
 \item{parameterization}{Parameterization for GP effects:
-\code{"noncentered"} (default) stores z ~ N(0,1) and scales by covariance
+\code{"auto"} scales covariance-whitened coordinates using prior and observation
+information. \code{"noncentered"} stores z ~ N(0,1) and scales by covariance
 (better for weakly-informed effects);
 \code{"centered"} stores effects directly (better for strongly-informed effects).}
 

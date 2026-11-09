@@ -25,6 +25,7 @@
 
 #include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"
+#include "hmc_field_coordinates.h"
 #include "hmc_walnuts.h"
 #include "laplace_profile.h"  // TULPA_PROFILE_PHASE (nuts_warmup / nuts_sampling)
 #include "sampler_field_store.h"  // store_field_draw
@@ -62,7 +63,11 @@ HMCResultCpp run_hmc_chain_cpp(
   // what confines a fallback to this fit; nested inside a caller's own scope it
   // inherits the already-verified state and re-checks nothing.
   GradientModeFitScope grad_mode_scope;
-  ensure_gradient_verified(q_init, data, layout);
+  const auto coordinates = make_field_coordinates(q_init, data, layout);
+  std::vector<double> sampling_init = q_init;
+  coordinates.inverse(sampling_init);
+  FieldCoordinateScope coordinate_scope(&coordinates);
+  ensure_gradient_verified(sampling_init, data, layout);
 
 #include "hmc_nuts_chain_setup.h"
 
@@ -118,7 +123,7 @@ HMCResultCpp run_hmc_chain_cpp(
   // state in the sampling parameterization (z for NC GP, not the stored w);
   // resuming from it is what continues the trajectory.
   result.inv_metric_diag = mass.inv_mass_diag;
-  result.final_position = q;
+  coordinates.forward(q, result.final_position);
 
   result.st_gmrf_applied = st_gmrf_applied;
   result.st_gmrf_margin_applied = st_gmrf_margin_applied;

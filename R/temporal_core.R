@@ -17,6 +17,10 @@
 #'   multi-process model. `NULL` (default) shares the effect; `FALSE` fits
 #'   process-specific effects and emits a warning about unshared confounding.
 #'
+#' @param parameterization Sampler coordinates: `"auto"` uses field information
+#'   to scale field amplitudes; `"centered"` samples effect coordinates.
+#' @param parameterization Sampler coordinates: `"auto"` uses field information
+#'   to scale field amplitudes; `"centered"` samples effect coordinates.
 #' @return A `tulpa_temporal` object.
 #'
 #' @details
@@ -36,8 +40,9 @@
 #'
 #' @export
 temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
-                         shared = NULL) {
+                         shared = NULL, parameterization = c("auto", "centered")) {
 
+  parameterization <- match.arg(parameterization)
   time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
   if (is.null(time_var)) {
     stop("`time_var` must be a formula (~ time) or single character string",
@@ -50,6 +55,7 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
  structure(
    list(
      type = "rw1",
+     parameterization = parameterization,
      time_var = time_var,
      group_var = group_var,
      cyclic = cyclic,
@@ -112,8 +118,9 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #'
 #' @export
 temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
-                         shared = NULL) {
+                         shared = NULL, parameterization = c("auto", "centered")) {
 
+  parameterization <- match.arg(parameterization)
   time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
   if (is.null(time_var)) {
     stop("`time_var` must be a formula (~ time) or single character string",
@@ -126,6 +133,7 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
  structure(
    list(
      type = "rw2",
+     parameterization = parameterization,
      time_var = time_var,
      group_var = group_var,
      cyclic = cyclic,
@@ -196,8 +204,9 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #'
 #' @export
 temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
-                         rho_prior = NULL) {
+                         rho_prior = NULL, parameterization = c("auto", "centered")) {
 
+  parameterization <- match.arg(parameterization)
   time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
   if (is.null(time_var)) {
     stop("`time_var` must be a formula (~ time) or single character string",
@@ -214,6 +223,7 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
   structure(
    list(
      type = "ar1",
+     parameterization = parameterization,
      time_var = time_var,
      group_var = group_var,
      cyclic = FALSE,  # AR1 is not cyclic

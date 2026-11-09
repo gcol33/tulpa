@@ -10,7 +10,7 @@ spatial_car(
   group_var = NULL,
   proper = FALSE,
   shared = NULL,
-  parameterization = c("standard", "collapsed"),
+  parameterization = c("auto", "standard", "collapsed"),
   prior_sigma = NULL
 )
 }
@@ -29,7 +29,8 @@ ICAR (\code{type = "car"}).}
 
 \item{shared}{Optional shared-effect handle (see model docs).}
 
-\item{parameterization}{\code{"standard"} (default) or \code{"collapsed"} (deprecated).}
+\item{parameterization}{\code{"auto"} scales field amplitudes using prior and
+observation information; \code{"standard"} samples effects directly.}
 
 \item{prior_sigma}{Optional PC prior on the field's standard deviation,
 \code{c(U, alpha)} with \eqn{P(\sigma > U) = \alpha}, read by the

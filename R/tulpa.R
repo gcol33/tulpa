@@ -395,12 +395,9 @@
     phi_prior_alpha  = lp[2L],
     sigma2_prior_U     = as.numeric(spatial$sigma2_prior_U %||% 1),
     sigma2_prior_alpha = as.numeric(spatial$sigma2_prior_alpha %||% 0.01),
-    # Non-centered (z ~ N(0, I), field reconstructed as w = f(z, sigma2, phi))
-    # is the default: the centered parameterization funnels the field amplitude
-    # against (sigma2, phi) under NUTS. "collapsed" is deprecated and falls back
-    # to centered here.
+    parameterization = spatial$parameterization,
     gp_parameterization =
-      if (identical(spatial$parameterization, "noncentered")) 1L else 0L
+      if (spatial$parameterization %in% c("auto", "noncentered")) 1L else 0L
   )
 }
 
@@ -537,7 +534,8 @@
     n_neighbors     = sp$n_neighbors,
     adj_eigenvalues = as.numeric(eig),
     rho_lower       = as.numeric(rb["lower"]),
-    rho_upper       = as.numeric(rb["upper"])
+    rho_upper       = as.numeric(rb["upper"]),
+    parameterization = spatial$parameterization
   ), .areal_sampler_anchors(spatial))
 }
 
@@ -617,6 +615,7 @@
     # Independent standard normal coordinates reconstruct each term's field as
     # w_j = f(z_j, sigma2_j, phi_j). This removes field-variance coupling from
     # the prior, which helps variance mixing under weakly informative data.
+    parameterization = spatial$parameterization,
     svc_parameterization =
       if (identical(spatial$parameterization, "centered")) 0L else 1L
   ), anchors)
@@ -1641,6 +1640,7 @@
       }
       spatial_spec_arg <- c(list(
         type            = sp$type,
+        parameterization = spatial$parameterization,
         spatial_idx     = sp$spatial_idx,
         n_spatial_units = sp$n_spatial_units,
         adj_row_ptr     = sp$adj_row_ptr,
@@ -1738,6 +1738,7 @@
         n_groups  = n_groups,
         group_idx = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
         cyclic    = isTRUE(temporal$cyclic),
+        parameterization = temporal$parameterization,
         # The PC prior on the field SD the nested-Laplace route puts on the
         # same field's precision axis.
         sigma_prior_U     = .nl_scale_anchor()[1L],

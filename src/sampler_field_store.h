@@ -90,6 +90,13 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
                                  tv.n_groups * tv.n_tvc, tv.n_times);
     }
 
+    if (layout.has_temporal &&
+        (data.temporal_type == tulpa_temporal::TemporalType::RW1 ||
+         data.temporal_type == tulpa_temporal::TemporalType::RW2)) {
+        (void)tulpa::s2z_centre_component(row, layout.temporal_start,
+            layout.temporal_end - layout.temporal_start);
+    }
+
     // Non-centered temporal GP: the field the likelihood saw is f = sigma L z,
     // and compute_temporal_prior() is the one place that transform lives (it
     // overwrites its field argument with f), so the stored field is taken from

@@ -117,7 +117,7 @@ test_that("eta at a non-centred temporal GP NUTS fit's stored draws is the store
   skip_if_not_slow()
   d <- nc_temporal_fixture()
   fit <- tulpa(y ~ x, data = d, family = "gaussian", phi = 0.09, mode = "hmc",
-               control = nc_ctl, temporal = temporal_gp("t"))
+               control = nc_ctl, temporal = temporal_gp("t", parameterization = "noncentered"))
   expect_identical(fit$model_inputs$temporal_spec$parameterization, "noncentered")
   fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
     t(fit$model_inputs$X[, c("(Intercept)", "x"), drop = FALSE])
@@ -133,7 +133,7 @@ test_that("eta at a non-centred multiscale trend's stored draws is the stored wa
   fit <- tulpa(y ~ x, data = d, family = "gaussian", phi = 0.09, mode = "hmc",
                control = nc_ctl,
                temporal = temporal_multiscale("t", trend = "rw2",
-                                              short_term = "none"))
+                                              short_term = "none", parameterization = "noncentered"))
   expect_identical(fit$model_inputs$temporal_spec$parameterization,
                    "noncentered")
   fixed <- fit$draws[, c("(Intercept)", "x"), drop = FALSE] %*%
@@ -185,7 +185,7 @@ for (backend in names(nc_backend_controls)) {
 
       fit <- tulpa(y ~ x, data = nc_temporal_fixture(), family = "gaussian",
                    phi = 0.09, mode = b, control = ctl,
-                   temporal = temporal_gp("t"))
+                   temporal = temporal_gp("t", parameterization = "noncentered"))
       expect_identical(fit$model_inputs$temporal_spec$parameterization,
                        "noncentered")
       dt <- nc_temporal_fixture()
