@@ -70,12 +70,20 @@ Rcpp::List cpp_test_field_coordinates(
             Rcpp::Named("preserve_linear") = e.preserve_linear));
     }
     double last_reported_lp = NA_REAL, last_native_lp = NA_REAL;
+    Rcpp::LogicalVector auto_dense_equal = Rcpp::LogicalVector::create(NA_LOGICAL);
     if (n_iter > 0) {
-        const auto result = tulpa_hmc::run_hmc_chain_cpp(q, data, layout,
-            n_iter, n_iter / 2, 0, 1, 18, false, 8,
-            tulpa::MassMatrixType::DIAG, .9, nullptr, {});
+        auto sample = [&](tulpa::MassMatrixType metric) {
+            return tulpa_hmc::run_hmc_chain_cpp(q, data, layout,
+                n_iter, n_iter / 2, 0, 1, 18, false, 8, metric, .9, nullptr, {});
+        };
+        const auto result = sample(tulpa::MassMatrixType::AUTO);
         last_reported_lp = result.log_prob.back();
         last_native_lp = tulpa_hmc::compute_log_post(result.final_position, data, layout);
+        if (layout.is_bym2) {
+            const auto dense = sample(tulpa::MassMatrixType::DENSE);
+            auto_dense_equal[0] = result.samples_flat == dense.samples_flat &&
+                result.n_leapfrog == dense.n_leapfrog && result.energy == dense.energy;
+        }
     }
     tulpa_hmc::FieldCoordinateScope coordinate_scope(&map);
     std::vector<double> gradient, numerical, full_prior, numerical_prior;
@@ -91,6 +99,7 @@ Rcpp::List cpp_test_field_coordinates(
         Rcpp::Named("stored") = stored,
         Rcpp::Named("last_reported_lp") = last_reported_lp,
         Rcpp::Named("last_native_lp") = last_native_lp,
+        Rcpp::Named("auto_dense_equal") = auto_dense_equal,
         Rcpp::Named("inverse") = inverse, Rcpp::Named("jacobian") = jacobian,
         Rcpp::Named("raw_lp") = raw_lp, Rcpp::Named("lp") = lp,
         Rcpp::Named("spatial_log_normalizer") =

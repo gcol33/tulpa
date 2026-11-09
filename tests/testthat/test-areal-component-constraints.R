@@ -41,7 +41,8 @@ test_that("areal constraints and island priors match dense Gaussian references",
       quadratic <- quadratic + sum(theta^2)
     }
     base <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = spec, point = zero)
-    r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = spec, point = point)
+    r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = spec, point = point,
+      n_iter = if (type == "bym2") 400L else 0L)
     expected <- sum(dnorm(y, effect[group], log = TRUE) - dnorm(y, log = TRUE)) -
       .5 * quadratic
     expect_equal(r$lp - base$lp, expected, tolerance = 1e-10)
@@ -50,5 +51,6 @@ test_that("areal constraints and island priors match dense Gaussian references",
         .5 * S * log(2 * pi) * if (type == "bym2") 2 else 1, tolerance = 1e-10)
     expect_true(r$verified)
     expect_lt(max(abs(r$gradient - r$numerical) / pmax(1, abs(r$gradient))), 1e-4)
+    if (type == "bym2") expect_true(r$auto_dense_equal)
   }
 })

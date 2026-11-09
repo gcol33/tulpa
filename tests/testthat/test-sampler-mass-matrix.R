@@ -82,12 +82,9 @@ test_that("a backend with no mass matrix refuses a non-default metric", {
   }
 })
 
-# A model whose layout carries a correlated hyperparameter pair is what the
-# block detector was written for: BYM2 lays log_sigma_bym2 immediately before
-# logit_rho_bym2, so AUTO gives that pair its own 2x2 block instead of two
-# diagonal entries. The assertion is on the fit, not on the metric name the
-# kernel logged: the metric is an internal choice, and what has to hold is that
-# every one of them samples the same posterior.
+# BYM2 couples its structured and unstructured coefficients through the total
+# scale and mixing fraction. Each metric controls trajectory geometry and
+# targets the same posterior.
 test_that("the metrics agree on a BYM2 posterior", {
   skip_if_not_slow()
   set.seed(9)

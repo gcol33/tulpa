@@ -183,7 +183,8 @@ MassMatrixConfig select_and_init_mass_matrix(
     block_specs = detect_mass_blocks(data, layout,
                                      /*include_field_hyper_pairs=*/false);
 
-    bool is_icar = (data.spatial_type == SpatialType::ICAR);
+    const bool dense_areal = (data.spatial_type == SpatialType::ICAR || layout.is_bym2) &&
+                            n_params <= DENSE_MAX_PARAMS;
     // An HSGP field carrying a temporal, TVC or multiscale-temporal term has
     // cross-correlations running between the basis coefficients and the
     // temporal effects, which no small block spans; a full DENSE metric with
@@ -196,7 +197,7 @@ MassMatrixConfig select_and_init_mass_matrix(
     // would need to be expressed through a LikelihoodSpec hint.
     bool needs_full_dense = layout.has_latent ||  // N×K latent factors
                             hsgp_temporal ||      // HSGP+temporal cross-correlations
-                            (is_icar && n_params <= DENSE_MAX_PARAMS);
+                            dense_areal;
 
     // HSGP without a temporal term: the correlations that matter run between
     // the lengthscale and the m^2 basis coefficients, which a small block
