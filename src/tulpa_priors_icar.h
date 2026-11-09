@@ -62,18 +62,20 @@ T icar_quad_form(const T* phi, const ModelData& data, const T* rho,
 // it scales phi'Q phi by. The constant direction of each component then carries
 // the field's own precision, and `icar_center_field` removes it on the way into
 // eta. Shared by the BYM2 and ICAR branches so the two cannot drift apart.
-// `w` weights each component's term by its (constant) node weight, the
-// augmentation's share of diag(w) Q_aug.
+// Component-centered fields give removed levels unit precision; an island
+// keeps its proper precision. Global centering scales the full augmentation
+// by each component's node weight.
 template<typename T>
-T icar_sum_to_zero_augment(const T* phi, const GraphPartition& partition,
+T icar_sum_to_zero_augment(const T* phi, const ModelData& data,
                            const double* w = nullptr)
 {
     T aug = T(0.0);
-    tulpa::for_each_icar_component(0, partition,
+    tulpa::for_each_icar_component(0, data.spatial_partition,
         [&](int start, const int* idx, int csize) {
             const T s = tulpa::s2z_component_sum(phi, start, idx, csize);
             const int first = idx ? idx[0] : start;
-            aug = w ? aug + T(w[first]) * (tulpa::s2z_aug_coef(T(1.0), csize) * s * s)
+            const bool weighted = w && (!data.spatial_component_centering || csize == 1);
+            aug = weighted ? aug + T(w[first]) * (tulpa::s2z_aug_coef(T(1.0), csize) * s * s)
                     : aug + tulpa::s2z_aug_coef(T(1.0), csize) * s * s;
         });
     return aug;
@@ -85,21 +87,27 @@ T icar_sum_to_zero_augment(const T* phi, const GraphPartition& partition,
 // old soft pin carried, so leaving it in eta would free the level rather than
 // fix it.
 //
-// The WHOLE field is centred, not each component, even though the augmentation
-// pins one direction per component. The two counts differ on purpose. Adding a
-// constant to every node shifts every eta_i equally and is absorbed by the
-// intercept, so it is unidentified and has to go. Adding a constant to ONE
-// component shifts eta only for that component's observations, which a single
-// intercept cannot absorb -- the data identifies it, and centring it away would
-// delete a real level difference between components. The augmentation still
-// covers all L directions so the prior is proper; the data covers the L - 1 the
-// centring leaves alone. The Laplace path centres the same single direction.
+// Global centering removes one overall level and retains differences between
+// components. Component centering removes the level of each nontrivial
+// component; isolated units retain their proper field values.
 template<typename T>
-void icar_center_field(const T* phi, int n_spatial_units, std::vector<T>& out)
+void icar_center_field(const T* phi, const ModelData& data, std::vector<T>& out)
 {
-    out.assign(n_spatial_units, T(0.0));
-    const T m = tulpa::s2z_component_mean(phi, 0, n_spatial_units);
-    for (int i = 0; i < n_spatial_units; i++) out[i] = phi[i] - m;
+    out.assign(phi, phi + data.n_spatial_units);
+    if (data.spatial_component_centering) {
+        tulpa::for_each_icar_component(0, data.spatial_partition,
+            [&](int start, const int* idx, int csize) {
+                if (csize <= 1) return;
+                const T m = tulpa::s2z_component_sum(phi, start, idx, csize) / T(csize);
+                for (int j = 0; j < csize; ++j) {
+                    const int i = idx ? idx[j] : start + j;
+                    out[i] = phi[i] - m;
+                }
+            });
+    } else {
+        const T m = tulpa::s2z_component_mean(phi, 0, data.n_spatial_units);
+        for (int i = 0; i < data.n_spatial_units; i++) out[i] = phi[i] - m;
+    }
 }
 
 template<typename T>
@@ -135,9 +143,9 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 
             // ICAR prior on phi_spatial
             // A disconnected graph is scaled per component (#902): the prior
-            // is diag(node_prec) Q_aug, node_prec constant within a component.
-            // Its log-determinant adds 0.5 * sum_i log node_prec_i, a constant
-            // in every sampled parameter, so it is left out like log|Q_aug|.
+            // weights the intrinsic precision, with node_prec constant within
+            // a component. Its log-determinant is constant in every sampled
+            // parameter and is supplied by the field normalizer.
             const double* w = data.bym2_node_prec.empty()
                 ? nullptr : data.bym2_node_prec.data();
             T quad_form = icar_quad_form<T>(phi_spatial_out, data, nullptr, w);
@@ -146,7 +154,7 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             // enters at coefficient 1 and there is no log-tau normalizer to
             // move -- 0.5 * J * log(1) and 0.5 * (J - L) * log(1) are both 0.
             log_post = log_post - T(0.5) * (quad_form + icar_sum_to_zero_augment(
-                phi_spatial_out, data.spatial_partition, w));
+                phi_spatial_out, data, w));
 
             // N(0, I) prior on theta
             for (int s = 0; s < data.n_spatial_units; s++) {
@@ -193,23 +201,16 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 
             // ICAR prior on phi_spatial
             T quad_form = icar_quad_form<T>(phi_spatial_out, data, nullptr);
-            // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c: each component's constant
-            // direction carries tau rather than a separate pin precision, and
-            // the field is centred per component on its way into eta, so the
-            // direction leaves the likelihood entirely.
-            //
-            // ICAR's null space is exactly the L component constants, and every
-            // one of them is pinned, so Q_aug is FULL RANK: (J - L) + L = J. The
-            // normalizer takes J log tau, not (J - L) log tau -- keeping the
-            // deficient rank alongside the augmentation would bias tau. The
-            // freed constants integrate to -0.5 L log tau, cancelling the
-            // +0.5 L log tau the full rank adds, so this agrees with the
-            // hard-constrained density on the sum-to-zero subspace.
+            // Q_aug = Q + sum_c 1_c 1_c'/J_c has rank J: its J-L contrasts
+            // and L component constants all carry precision tau. Its Gaussian
+            // normalizer therefore uses J log(tau). Component-centered levels
+            // integrate out; global centering retains component differences
+            // under this proper prior.
             int J = data.n_spatial_units;
             int L = data.spatial_partition.n_components();
             if (L < 1) L = 1;
             T quad_aug = quad_form + icar_sum_to_zero_augment(
-                phi_spatial_out, data.spatial_partition);
+                phi_spatial_out, data);
             log_post = log_post
                      + T(0.5 * tulpa::s2z_aug_rank(J - L, L)) * log_tau
                      - T(0.5) * tau_spatial_out * quad_aug;
@@ -223,9 +224,10 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 // together are a normalized density on the block's parameters.
 //   ICAR       : of phi ~ N(0, (tau Q_aug)^-1),
 //                the 0.5 log|Q_aug| - 0.5 J log(2 pi) its 0.5 J log tau omits.
-//   BYM2       : of phi ~ N(0,
-//                (diag(w) Q_aug)^-1) the 0.5 (sum_i log w_i + log|Q_aug|) -
-//                0.5 J log(2 pi), and of theta ~ N(0, I) the -0.5 J log(2 pi).
+//   BYM2       : of phi's weighted augmented precision H, the
+//                0.5 log|H| - 0.5 J log(2 pi), and of theta ~ N(0, I) the
+//                -0.5 J log(2 pi). Removed component levels have unit precision
+//                under component centering and precision w_c under global centering.
 //   proper CAR : the 0.5 log|D| - 0.5 J
 //                log(2 pi) of log|tau (D - rho W)| = J log tau + log|D| +
 //                sum_k log(1 - rho mu_k) that the density omits.
@@ -245,6 +247,13 @@ inline double spatial_icar_bym2_prior_log_normalizer(const ModelData& data,
     if (layout.is_bym2) {
         double sum_log_w = 0.0;
         for (double w : data.bym2_node_prec) sum_log_w += std::log(w);
+        if (data.spatial_component_centering && !data.bym2_node_prec.empty()) {
+            for (int c = 0; c < data.spatial_partition.n_components(); ++c) {
+                if (data.spatial_partition.size(c) <= 1) continue;
+                const int* nodes = data.spatial_partition.nodes(c);
+                sum_log_w -= std::log(data.bym2_node_prec[nodes ? nodes[0] : 0]);
+            }
+        }
         return 0.5 * (sum_log_w + log_pdet) + 2.0 * J * unit_normal;
     }
     return 0.5 * log_pdet + J * unit_normal;

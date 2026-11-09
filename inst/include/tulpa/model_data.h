@@ -205,7 +205,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 55;
+constexpr int TULPA_ABI_VERSION = 56;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -384,9 +384,10 @@ struct ModelData {
     // BYM2 per-component scaling (Freni-Sterrantino, Ventrucci & Rue 2018;
     // gcol33/tulpa#902). The structured field enters eta through the one
     // reference scale `bym2_scale_factor`, and each component's remaining
-    // factor rides on phi's prior as a precision multiplier: the prior is
-    // diag(bym2_node_prec) Q_aug, the same construction the Laplace,
-    // nested-Laplace and Gibbs kernels take from R's `node_prec`. Constant
+    // factor rides on phi's prior as a precision multiplier. Global centering
+    // uses diag(bym2_node_prec) Q_aug, as the Laplace, nested-Laplace and Gibbs
+    // kernels do. Component centering gives removed levels unit precision.
+    // Constant
     // within a component, so the product stays symmetric; an isolated node's
     // multiplier gives its structured part unit variance. EMPTY on a connected
     // graph, where every multiplier is 1 and the unweighted path runs.
@@ -696,6 +697,7 @@ struct ModelData {
     bool auto_multiscale_coordinates = false;
     bool auto_temporal_gp_coordinates = false;
     bool auto_svc_coordinates = false;
+    bool spatial_component_centering = false;
 };
 
 // Does RE term t carry the implicit group intercept (coef 0, z = 1)? Default

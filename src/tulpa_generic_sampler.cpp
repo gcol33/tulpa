@@ -29,7 +29,8 @@ Rcpp::List cpp_test_field_coordinates(
     Rcpp::Nullable<Rcpp::List> temporal_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
-    double shift = 0.3, int n_iter = 0) {
+    double shift = 0.3, int n_iter = 0,
+    Rcpp::Nullable<Rcpp::NumericVector> point = R_NilValue) {
     tulpa::SamplerModelInputs in;
     tulpa::build_sampler_model_inputs(in, y, Rcpp::IntegerVector(y.size(), 1), X,
         "gaussian", 1.0, NA_REAL, 2.5, {}, 1.0, R_NilValue,
@@ -40,6 +41,10 @@ Rcpp::List cpp_test_field_coordinates(
     std::vector<double> q(p, 0.0);
     tulpa::init_bounded_support_params(q, data, layout);
     for (int i = 0; i < p; ++i) q[i] += shift * std::sin(i + 1.0);
+    if (point.isNotNull()) {
+        q = Rcpp::as<std::vector<double>>(point);
+        if (static_cast<int>(q.size()) != p) Rcpp::stop("point length must match the parameter layout");
+    }
     tulpa_hmc::GradientModeFitScope gradient_scope;
     tulpa_hmc::g_gradient_mode = tulpa_hmc::GradientMode::AUTODIFF_ARENA;
     const auto map = tulpa_hmc::make_field_coordinates(q, data, layout);
@@ -88,6 +93,8 @@ Rcpp::List cpp_test_field_coordinates(
         Rcpp::Named("last_native_lp") = last_native_lp,
         Rcpp::Named("inverse") = inverse, Rcpp::Named("jacobian") = jacobian,
         Rcpp::Named("raw_lp") = raw_lp, Rcpp::Named("lp") = lp,
+        Rcpp::Named("spatial_log_normalizer") =
+            tulpa::priors::spatial_icar_bym2_prior_log_normalizer(data, layout),
         Rcpp::Named("gradient") = gradient, Rcpp::Named("numerical") = numerical,
         Rcpp::Named("raw_gradient") = raw_gradient,
         Rcpp::Named("prior_gradient") = full_prior,

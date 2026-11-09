@@ -215,6 +215,8 @@ void build_sampler_model_inputs(
     if (spatial_spec.isNotNull()) {
         Rcpp::List sp = Rcpp::as<Rcpp::List>(spatial_spec);
         std::string stype = Rcpp::as<std::string>(sp["type"]);
+        in.data.spatial_component_centering = sp.containsElementNamed("component_centering") &&
+            Rcpp::as<bool>(sp["component_centering"]);
         const std::string coordinate = sp.containsElementNamed("parameterization")
             ? Rcpp::as<std::string>(sp["parameterization"]) : "centered";
         in.data.auto_spatial_coordinates = coordinate == "auto" &&
