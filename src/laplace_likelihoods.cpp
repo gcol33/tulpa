@@ -35,49 +35,6 @@ double log_lik_binomial(int y, int n, double eta) {
   return log_lik_binomial_kernel(y, n, eta) + log_lik_binomial_const(y, n);
 }
 
-double log_rising_factorial(int y, double size) {
-  return tulpa::math::lgamma_ratio_count(y, size);
-}
-
-double polygamma_rising_difference(int k, int y, double size) {
-  if (y <= 0) return 0.0;
-  double factorial = 1.0;
-  for (int i = 2; i <= k; ++i) factorial *= i;
-  const double sign = (k % 2 == 0) ? 1.0 : -1.0;
-  double acc = 0.0;
-  if (y <= 32) {
-    for (int j = 0; j < y; ++j) acc += sign * factorial / std::pow(size + j, k + 1);
-    return acc;
-  }
-  while (size < 10.0 && y > 0) {
-    acc += sign * factorial / std::pow(size, k + 1);
-    size += 1.0;
-    --y;
-  }
-  const double L = std::log1p((double) y / size);
-  auto power_difference = [&](double q) {
-    return std::pow(size, -q) * std::expm1(-q * L);
-  };
-  // psi(x) ~ log x - 1/(2x) - sum_n B_2n / (2n x^2n).
-  if (k == 0) {
-    acc += L;
-  } else {
-    double km1_factorial = 1.0;
-    for (int i = 2; i <= k - 1; ++i) km1_factorial *= i;
-    acc += ((k % 2 == 1) ? 1.0 : -1.0) * km1_factorial * power_difference(k);
-  }
-  static const double coef[] = {
-      -0.5, -1.0 / 12.0, 1.0 / 120.0, -1.0 / 252.0, 1.0 / 240.0,
-      -1.0 / 132.0, 691.0 / 32760.0, -1.0 / 12.0};
-  static const int power[] = {1, 2, 4, 6, 8, 10, 12, 14};
-  for (int t = 0; t < 8; ++t) {
-    double rising = 1.0;
-    for (int i = 0; i < k; ++i) rising *= power[t] + i;
-    acc += coef[t] * sign * rising * power_difference(power[t] + k);
-  }
-  return acc;
-}
-
 double log_lik_negbin(int y, double eta, double phi) {
   return tulpa::math::log_lik_negbin_log(
       y, tulpa::math::clamp_exp_arg(eta), std::log(phi));

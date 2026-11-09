@@ -408,6 +408,10 @@
   2e-8 nats at precision 1e8, 2e-3 at 1e12 and 0.35 (gamma) to 7.7 (beta) at 1e15 on the R, compiled-Laplace,
   autodiff, beta-sampler and SPDE-sampler paths; they now agree with a 100-digit reference to 3e-15. Grouped beta
   arms carry the raw responses (`beta_y`) the construction needs (#1160).
+- The count helpers behind those densities (`lgamma_ratio_count`, the polygamma rising difference and the count
+  distribution assembly) are exported in `inst/include/tulpa/count_math.h`, beside `precision_math.h`, so a
+  `LinkingTo: tulpa` package computes negative binomial and beta-binomial densities from the same code instead of
+  a copy (#1161).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component

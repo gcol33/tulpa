@@ -8,6 +8,7 @@
 #include "linalg_fast.h"   // tulpa::math::clamp_exp_arg
 #include "tulpa/family_density.h"  // log_lik_gaussian
 #include <cmath>
+#include "tulpa/count_math.h"
 
 namespace tulpa {
 
@@ -63,17 +64,10 @@ inline double neg_hess_log_lik_binomial(int y, int n, double eta) {
   return n * p * (1.0 - p);
 }
 
-// log Gamma(y + size) - log Gamma(size) for a count y >= 0, formed without the
-// cancellation of the two lgammas at a large size (tulpa::math::lgamma_ratio_count).
-// Every negative binomial normalizer in the package reads it.
-double log_rising_factorial(int y, double size);
-// psi^(k)(size + y) - psi^(k)(size) for k in 0..3 and a count y >= 0: the sum
-// of (-1)^k k! / (size + j)^(k+1) over j < y, which is formed directly for
-// y <= 32. Past that the argument is shifted to at least 10 by the same
-// recurrence and the asymptotic series of psi^(k) is differenced term by term,
-// each power difference as size^-q expm1(-q log1p(y / size)), so no step
-// subtracts two nearly equal numbers at a large size.
-double polygamma_rising_difference(int k, int y, double size);
+inline double log_rising_factorial(int y, double size) {
+  return math::lgamma_ratio_count(y, size);
+}
+using math::polygamma_rising_difference;
 inline double digamma_rising_difference(int y, double size) {
   return polygamma_rising_difference(0, y, size);
 }

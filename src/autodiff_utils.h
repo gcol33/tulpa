@@ -15,6 +15,7 @@
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/ad_scalar_math.h"
 #include "tulpa/precision_math.h"
+#include "tulpa/count_math.h"
 
 namespace tulpa {
 namespace math {
@@ -387,33 +388,16 @@ inline T log_lik_gamma(double y, const T& shape, const T& mu) {
     return gamma_log_density(y, mu, shape, std::log(y));
 }
 
-// log Gamma(y + phi) - log Gamma(phi) for a count y >= 0 and size phi > 0.
-// As a difference of two lgammas it loses about eps * phi log(phi) to
-// cancellation: 1e-12 at phi = 1e3, past 1 at phi = 1e15. From phi = 1e3 it is
-// formed from Stirling's series instead,
-//   phi log1p(y / phi) - y + y log(phi + y) - log1p(y / phi) / 2
-//     + S(phi + y) - S(phi),   S(x) = 1/(12x) - 1/(360x^3) + 1/(1260x^5),
-// whose terms are each O(y log phi) and whose truncation error is below
-// 1/(1680 phi^7). Both branches differentiate, so the score in phi is exact
-// too (the digamma difference cancels the same way).
-template<typename T>
-inline T lgamma_ratio_count(int y, const T& phi) {
-    if (y == 0) return T(0.0);
-    if (phi < T(1e3)) return lgamma_fn(T(y) + phi) - lgamma_fn(phi);
-    const T yy = T(y);
-    const T l1 = log1p_fn(yy / phi);
-    auto stirling = [](const T& x) {
-        const T x2 = x * x;
-        return T(1.0 / 12.0) / x - T(1.0 / 360.0) / (x * x2)
-             + T(1.0 / 1260.0) / (x * x2 * x2);
-    };
-    return phi * l1 - yy + yy * (safe_log(phi) + l1) - T(0.5) * l1
-         + stirling(phi + yy) - stirling(phi);
-}
+struct CountMath {
+    template<class T> static double value(const T& x) { return get_value(x); }
+    template<class T> static T log(const T& x) { return safe_log(x); }
+    template<class T> static T log1p(const T& x) { return log1p_fn(x); }
+    template<class T> static T lgamma(const T& x) { return lgamma_fn(x); }
+};
 
 // Negative binomial (type 2) with log mean eta and log size log_phi:
 // var = mu + mu^2 / phi. With s = log1p(mu / phi) = softplus(eta - log_phi),
-//   log p = lgamma_ratio_count(y, phi) - lgamma(y + 1)
+//   log p = lgamma_ratio_count<T, CountMath>(y, phi) - lgamma(y + 1)
 //           + y (eta - log_phi - s) - phi s,
 // every term finite and free of cancellation as phi -> Inf, where it reaches
 // the Poisson density (phi s -> mu). The naive phi log(phi / (mu + phi))
@@ -424,7 +408,7 @@ template<typename T>
 inline T log_lik_negbin_log(int y, const T& eta, const T& log_phi) {
     const T phi = safe_exp(log_phi);
     const T s = softplus(eta - log_phi);
-    return lgamma_ratio_count(y, phi) - lgamma_fn(T(y + 1.0))
+    return lgamma_ratio_count<T, CountMath>(y, phi) - lgamma_fn(T(y + 1.0))
          + T(y) * (eta - log_phi - s) - phi * s;
 }
 
@@ -612,8 +596,8 @@ inline T log_lik_beta_binomial(int y, int n, const T& mu, const T& phi) {
     // each bracket a rising factorial formed without cancellation, so the
     // density reaches the binomial one as phi grows.
 
-    T ll = lgamma_ratio_count(y, alpha) + lgamma_ratio_count(n - y, beta)
-         - lgamma_ratio_count(n, phi);
+    T ll = lgamma_ratio_count<T, CountMath>(y, alpha) + lgamma_ratio_count<T, CountMath>(n - y, beta)
+         - lgamma_ratio_count<T, CountMath>(n, phi);
     ll = ll + portable_lchoose(n, y);  // constant w.r.t. parameters
 
     return ll;

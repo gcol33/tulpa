@@ -103,10 +103,33 @@ template<class T> inline T relative_deviance(double y, const T& mu, double log_y
     return relative_deviance_delta(T(y) - mu, mu, log_y);
 }
 
+template<class T> inline T gamma_log_normalizer(const T& phi) {
+    using std::log;
+    return T(.5)*(log(phi) - T(log_two_pi)) - stirling_remainder(phi);
+}
+
+inline double gamma_phi_constant(double phi) {
+    return .5/phi - stirling_remainder_derivative(phi, 1);
+}
+
+struct GammaPrecision {
+    double phi=1, normalizer=0, score_constant=0;
+    GammaPrecision() = default;
+    explicit GammaPrecision(double precision, bool density = true)
+        : phi(precision), normalizer(density ? gamma_log_normalizer(precision) : 0),
+          score_constant(gamma_phi_constant(precision)) {}
+    double log_density(double y, double mu, double log_y) const {
+        return normalizer - phi*relative_deviance(y, mu, log_y) - log_y;
+    }
+    double derivative(double y, double mu, double log_y) const {
+        return score_constant - relative_deviance(y, mu, log_y);
+    }
+};
+
 template<class T> inline T gamma_log_density(double y, const T& mu, const T& phi,
                                             double log_y) {
     using std::log;
-    return T(.5)*(log(phi) - T(log_two_pi)) - stirling_remainder(phi)
+    return gamma_log_normalizer(phi)
          - phi*relative_deviance(y, mu, log_y) - T(log_y);
 }
 
@@ -151,7 +174,7 @@ inline double beta_score_phi_derivative(double y, double mu, double phi) {
 }
 
 inline double gamma_phi_derivative(double y, double mu, double phi, int order) {
-    if (order == 1) return .5/phi - stirling_remainder_derivative(phi, 1)
+    if (order == 1) return gamma_phi_constant(phi)
         - relative_deviance(y, mu, std::log(y));
     return (-.5/phi)/phi - stirling_remainder_derivative(phi, 2);
 }
