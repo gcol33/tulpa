@@ -406,13 +406,13 @@ inline double obs_curvature_delta_deta_for_family(
         mu = clamp_mu_unit(mu);
         const double a = mu * phi, b = (1.0 - mu) * phi;
         const double dmu = mu * (1.0 - mu), n = (double)n_trials;
-        const double s = phi * (tulpa::math::portable_digamma(y + a) - tulpa::math::portable_digamma(a)
-                                - tulpa::math::portable_digamma(n - y + b) + tulpa::math::portable_digamma(b)) * dmu;
-        const double T = tulpa::math::portable_trigamma(a) + tulpa::math::portable_trigamma(b)
-                         - tulpa::math::portable_trigamma(y + a) - tulpa::math::portable_trigamma(n - y + b);
-        const double dT_dmu = phi * (tulpa::math::portable_tetragamma(a) - tulpa::math::portable_tetragamma(b)
-                                     - tulpa::math::portable_tetragamma(y + a)
-                                     + tulpa::math::portable_tetragamma(n - y + b));
+        const int yc = (int)y, ny = n_trials - (int)y;
+        const double s = phi * (polygamma_rising_difference(0, yc, a)
+                                - polygamma_rising_difference(0, ny, b)) * dmu;
+        const double T = -polygamma_rising_difference(1, yc, a)
+                         - polygamma_rising_difference(1, ny, b);
+        const double dT_dmu = phi * (polygamma_rising_difference(2, ny, b)
+                                     - polygamma_rising_difference(2, yc, a));
         const double w_obs = phi * phi * T * dmu * dmu - (1.0 - 2.0 * mu) * s;
         const double dw_obs = phi * phi * dmu * dmu
                                 * (dT_dmu * dmu + 2.0 * T * (1.0 - 2.0 * mu))

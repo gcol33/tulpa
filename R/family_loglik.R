@@ -471,14 +471,15 @@
     loglik = function(eta, y, n_trials, phi) {
       n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       mu <- .mean_beta(eta); a <- mu * phi; b <- (1 - mu) * phi
-      lchoose(n, y) + lgamma(y + a) + lgamma(n - y + b) - lgamma(n + a + b) -
-        lgamma(a) - lgamma(b) + lgamma(a + b)
+      lchoose(n, y) + .log_rising_factorial(y, a) +
+        .log_rising_factorial(n - y, b) - .log_rising_factorial(n, a + b)
     },
     score = function(eta, y, n_trials, phi) {
       n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       mu <- .mean_beta(eta); a <- mu * phi; b <- (1 - mu) * phi
       dmu <- mu * (1 - mu)
-      phi * (digamma(y + a) - digamma(a) - digamma(n - y + b) + digamma(b)) * dmu
+      phi * (.polygamma_rising_difference(0, y, a) -
+               .polygamma_rising_difference(0, n - y, b)) * dmu
     },
     weight = function(eta, n_trials, phi) {
       n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))

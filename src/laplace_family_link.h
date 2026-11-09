@@ -857,8 +857,8 @@ inline GradHess grad_hess_for_family_core(
         double a = mu * phi, b = (1.0 - mu) * phi;
         double dmu = mu * (1.0 - mu);
         double n = (double)n_trials;
-        double grad = phi * (tulpa::math::portable_digamma(y + a) - tulpa::math::portable_digamma(a)
-                             - tulpa::math::portable_digamma(n - y + b) + tulpa::math::portable_digamma(b)) * dmu;
+        double grad = phi * (polygamma_rising_difference(0, (int)y, a)
+                             - polygamma_rising_difference(0, n_trials - (int)y, b)) * dmu;
         double D = 1.0 + (n - 1.0) / (phi + 1.0);
         return {grad, n * mu * (1.0 - mu) / D};
     }
@@ -966,8 +966,8 @@ inline double log_lik_for_family_core(
         double a = mu * phi, b = (1.0 - mu) * phi;
         double n = (double)n_trials, yi = (double)(int)y;
         return tulpa::math::portable_lchoose(n, yi)
-             + tulpa::math::portable_lgamma(yi + a) + tulpa::math::portable_lgamma(n - yi + b) - tulpa::math::portable_lgamma(n + a + b)
-             - tulpa::math::portable_lgamma(a) - tulpa::math::portable_lgamma(b) + tulpa::math::portable_lgamma(a + b);
+             + log_rising_factorial((int)y, a) + log_rising_factorial(n_trials - (int)y, b)
+             - log_rising_factorial(n_trials, a + b);
     }
     if (kind == FamilyKind::STUDENT_T) {
         const double nu = student_t_df(phi2);
@@ -1204,10 +1204,10 @@ inline GradHess obs_grad_hess_for_family(
         mu = clamp_mu_unit(mu);
         const double a = mu * phi, b = (1.0 - mu) * phi;
         const double dmu = mu * (1.0 - mu), n = (double)n_trials;
-        const double grad = phi * (tulpa::math::portable_digamma(y + a) - tulpa::math::portable_digamma(a)
-                                   - tulpa::math::portable_digamma(n - y + b) + tulpa::math::portable_digamma(b)) * dmu;
-        const double tg = tulpa::math::portable_trigamma(a) + tulpa::math::portable_trigamma(b)
-                          - tulpa::math::portable_trigamma(y + a) - tulpa::math::portable_trigamma(n - y + b);
+        const double grad = phi * (polygamma_rising_difference(0, (int)y, a)
+                                   - polygamma_rising_difference(0, n_trials - (int)y, b)) * dmu;
+        const double tg = -polygamma_rising_difference(1, (int)y, a)
+                          - polygamma_rising_difference(1, n_trials - (int)y, b);
         return {grad, phi * phi * tg * dmu * dmu - (1.0 - 2.0 * mu) * grad};
     }
     if (family == "t") {

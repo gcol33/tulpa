@@ -376,17 +376,18 @@
     dloglik = function(eta, y, n_trials, phi, phi2 = NULL) {
       n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       mu <- .mean_beta(eta); a <- mu * phi; b <- (1 - mu) * phi
-      mu * (digamma(y + a) - digamma(a)) +
-        (1 - mu) * (digamma(n - y + b) - digamma(b)) +
-        digamma(phi) - digamma(n + phi)
+      mu * .polygamma_rising_difference(0, y, a) +
+        (1 - mu) * .polygamma_rising_difference(0, n - y, b) -
+        .polygamma_rising_difference(0, n, phi)
     },
     dscore = function(eta, y, n_trials, phi, phi2 = NULL) {
       n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       mu <- .mean_beta(eta); a <- mu * phi; b <- (1 - mu) * phi
       dmu <- mu * (1 - mu)
-      dmu * ((digamma(y + a) - digamma(a) - digamma(n - y + b) + digamma(b)) +
-               phi * (mu * (trigamma(y + a) - trigamma(a)) -
-                        (1 - mu) * (trigamma(n - y + b) - trigamma(b))))
+      dmu * ((.polygamma_rising_difference(0, y, a) -
+                .polygamma_rising_difference(0, n - y, b)) +
+               phi * (mu * .polygamma_rising_difference(1, y, a) -
+                        (1 - mu) * .polygamma_rising_difference(1, n - y, b)))
     },
     dweight = function(eta, y, n_trials, phi, phi2 = NULL) {
       n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))

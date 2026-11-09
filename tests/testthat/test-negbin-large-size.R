@@ -100,3 +100,46 @@ test_that("the type 2 size score and the CRT mean are exact at a large size", {
                  tolerance = 1e-10, info = paste(r, yy))
   }
 })
+
+test_that("the beta-binomial density, score and curvature reach the binomial limit", {
+  y <- c(0, 3, 10)
+  n <- 10
+  mu <- 0.3
+  eta <- stats::qlogis(mu)
+  rising_log <- function(v, size) sum(log(size + seq_len(v) - 1))
+  for (phi in c(50, 1e8, 1e12, 1e17)) {
+    a <- mu * phi
+    b <- (1 - mu) * phi
+    ref <- vapply(y, function(v) lchoose(n, v) + rising_log(v, a) +
+      rising_log(n - v, b) - rising_log(n, a + b), numeric(1))
+    score <- vapply(y, function(v) phi * mu * (1 - mu) *
+      (rising_sum(0, v, a) - rising_sum(0, n - v, b)), numeric(1))
+    tg <- vapply(y, function(v) -rising_sum(1, v, a) - rising_sum(1, n - v, b),
+                 numeric(1))
+    obs <- phi^2 * tg * (mu * (1 - mu))^2 - (1 - 2 * mu) * score
+    expect_equal(tulpa:::.FAMILY_OPS$beta_binomial$loglik(eta, y, n, phi), ref,
+                 tolerance = 1e-10, info = format(phi))
+    # At y = n mu the O(1) terms of the score cancel exactly, so it is compared
+    # on its own O(1) scale.
+    expect_lt(max(abs(tulpa:::.FAMILY_OPS$beta_binomial$score(eta, y, n, phi) -
+                        score)), 1e-10, label = format(phi))
+    for (i in seq_along(y)) {
+      expect_equal(unname(tulpa:::cpp_family_terms(y[i], n, eta, "beta_binomial",
+                                                   phi)[1L]),
+                   ref[i], tolerance = 1e-10, info = paste(phi, y[i]))
+      terms <- tulpa:::cpp_family_obs_terms(y[i], n, eta, "beta_binomial", phi)
+      expect_lt(abs(unname(terms[1L]) - score[i]), 1e-10,
+                label = paste(phi, y[i]))
+      expect_equal(unname(terms[2L]), obs[i], tolerance = 1e-8,
+                   info = paste(phi, y[i]))
+    }
+  }
+  expect_equal(tulpa:::.FAMILY_OPS$beta_binomial$loglik(eta, y, n, 1e17),
+               stats::dbinom(y, n, mu, log = TRUE), tolerance = 1e-12)
+  for (v in y) {
+    expect_equal(unname(tulpa:::cpp_family_ad_terms(v, n, eta, "beta_binomial",
+                                                    1e17)[1L]),
+                 stats::dbinom(v, n, mu, log = TRUE), tolerance = 1e-12,
+                 info = paste("autodiff", v))
+  }
+})

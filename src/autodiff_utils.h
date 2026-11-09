@@ -568,7 +568,7 @@ inline T log_lik_hurdle_negbin(int y, const T& mu, const T& phi, const T& logit_
         return log_1m_theta;
     } else {
         // P(Y=y|Y>0) * theta = theta * NB(y|mu,phi) / (1 - (phi/(phi+mu))^phi)
-        T log_p0 = phi * safe_log(phi / (phi + mu));
+        T log_p0 = T(0.0) - phi * log1p_fn(mu / phi);
         T log_trunc = log_lik_negbin(y, mu, phi) - log1m_exp_fn(T(0.0) - log_p0);
         return log_theta + log_trunc;
     }
@@ -587,12 +587,13 @@ inline T log_lik_beta_binomial(int y, int n, const T& mu, const T& phi) {
     T beta = (T(1.0) - mu) * phi;
 
     // log P(y|n,alpha,beta) = log(B(y+alpha, n-y+beta)) - log(B(alpha, beta)) + log(C(n,y))
-    // = lgamma(y+alpha) + lgamma(n-y+beta) - lgamma(n+alpha+beta)
-    //   - lgamma(alpha) - lgamma(beta) + lgamma(alpha+beta)
-    //   + lgamma(n+1) - lgamma(y+1) - lgamma(n-y+1)
+    // = [lgamma(y+alpha) - lgamma(alpha)] + [lgamma(n-y+beta) - lgamma(beta)]
+    //   - [lgamma(n+phi) - lgamma(phi)] + log(C(n,y)),
+    // each bracket a rising factorial formed without cancellation, so the
+    // density reaches the binomial one as phi grows.
 
-    T ll = lgamma_fn(T(y) + alpha) + lgamma_fn(T(n - y) + beta) - lgamma_fn(T(n) + alpha + beta);
-    ll = ll - lgamma_fn(alpha) - lgamma_fn(beta) + lgamma_fn(alpha + beta);
+    T ll = lgamma_ratio_count(y, alpha) + lgamma_ratio_count(n - y, beta)
+         - lgamma_ratio_count(n, phi);
     ll = ll + portable_lchoose(n, y);  // constant w.r.t. parameters
 
     return ll;

@@ -399,6 +399,9 @@
   -2 for a limit of 1 at dispersion 1e-15, and the expected CRT table count 0 for a limit of 8 at size 1e16; these
   are the paths the empirical-Bayes dispersion search and the Polya-Gamma negative binomial sampler walk when the
   size drifts upward on Poisson-like data (#1158).
+- The beta-binomial density, score, observed curvature and its derivative read the same helpers, on the R,
+  compiled-Laplace and autodiff paths. At y = 3, n = 10, mu = 0.3 the density had read -1.3203 at precision 1e12,
+  -4 to -8 at 1e15 and +512 at 1e17 against the binomial limit -1.3212 (#1159).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component
