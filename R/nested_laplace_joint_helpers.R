@@ -197,16 +197,17 @@
         stop("Arm ", k, ": length(n_trials) (", length(a$n_trials),
              ") must equal length(y) (", N, ").", call. = FALSE)
     }
-    # Optional grouped beta sufficient statistics: when
-    # present, n_trials is the per-row group count and (slog_y, slog_1my) the
-    # within-group sum of log(y) / log(1-y); the built-in beta spec reads them.
-    if (!is.null(a$slog_y)) {
-        a$slog_y   <- as.numeric(a$slog_y)
-        a$slog_1my <- as.numeric(a$slog_1my)
-        if (length(a$slog_y) != N || length(a$slog_1my) != N) {
-            stop("Arm ", k, ": length(slog_y)/length(slog_1my) must equal ",
-                 "length(y) (", N, ").", call. = FALSE)
-        }
+    # Each grouped beta row retains its responses for the relative deviance.
+    if (!is.null(a$slog_y) || !is.null(a$slog_1my))
+        stop("Arm ", k, ": grouped beta requires the raw responses in beta_y.", call. = FALSE)
+    if (!is.null(a$beta_y)) {
+        a$beta_y <- lapply(a$beta_y, as.numeric)
+        if (length(a$beta_y) != N || any(lengths(a$beta_y) != a$n_trials) ||
+            any(lengths(a$beta_y) == 0L))
+            stop("Arm ", k, ": beta_y group sizes must equal n_trials.", call. = FALSE)
+        if (any(!is.finite(unlist(a$beta_y))) ||
+            any(unlist(a$beta_y) <= 0 | unlist(a$beta_y) >= 1))
+            stop("Arm ", k, ": beta_y responses must be in (0, 1).", call. = FALSE)
     }
     # Optional interval-censored Gaussian bounds (family == "interval_gaussian"):
     # row i records the latent value fell in (lower[i], upper[i]] on the predictor

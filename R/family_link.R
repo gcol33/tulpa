@@ -253,7 +253,7 @@ link_names <- function() names(.LINKS)
   gamma = list(
     # phi is the shape; variance mu^2 / phi.
     loglik_mu   = function(y, mu, phi, n) {
-      phi * log(phi) - lgamma(phi) + (phi - 1) * log(y) - phi * log(mu) - phi * y / mu
+      .precision_density(y, mu, phi)
     },
     grad_mu     = function(y, mu, phi, n) phi * (y - mu) / mu^2,
     working_var = function(mu, phi, n) mu^2 / phi,
@@ -283,11 +283,10 @@ link_names <- function() names(.LINKS)
     # composed `obs_weight` forms from `grad_mu` and its mu-derivative
     # `dgrad_mu`; the expected weight is what the score term is weighed against.
     loglik_mu   = function(y, mu, phi, n) {
-      a <- mu * phi; b <- (1 - mu) * phi
-      lgamma(phi) - lgamma(a) - lgamma(b) + (a - 1) * log(y) + (b - 1) * log1p(-y)
+      .precision_density(y, mu, phi, beta = TRUE)
     },
     grad_mu     = function(y, mu, phi, n) {
-      phi * (log(y) - log1p(-y) - digamma(mu * phi) + digamma((1 - mu) * phi))
+      .beta_precision_score(y, mu, phi)
     },
     dgrad_mu    = function(y, mu, phi, n) {
       -phi^2 * (trigamma(mu * phi) + trigamma((1 - mu) * phi))

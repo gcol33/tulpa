@@ -109,6 +109,51 @@ double log_lik_poisson(int y, double eta) {
 
 } // namespace tulpa
 
+// Elementwise gamma or beta density and precision derivatives.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_precision_density(const Rcpp::NumericVector& y,
+    const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi,
+    bool beta, int order = 0) {
+  const R_xlen_t n = y.size();
+  if (mu.size() != n || phi.size() != n || order < 0 || order > 2)
+    Rcpp::stop("Equal input lengths and derivative order 0, 1 or 2 are required.");
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; ++i) {
+    if (ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i])) out[i] = NA_REAL;
+    else if (order == 0) out[i] = beta ? tulpa::log_lik_beta(y[i], mu[i], phi[i])
+                                     : tulpa::log_lik_gamma(y[i], mu[i], phi[i]);
+    else out[i] = beta ? tulpa::math::beta_phi_derivative(y[i], mu[i], phi[i], order)
+                       : tulpa::math::gamma_phi_derivative(y[i], mu[i], phi[i], order);
+  }
+  return out;
+}
+
+// Beta mean score or its precision derivative on the logit scale.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_beta_precision_score(const Rcpp::NumericVector& y,
+    const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi, bool derivative) {
+  if (mu.size() != y.size() || phi.size() != y.size()) Rcpp::stop("Equal input lengths are required.");
+  Rcpp::NumericVector out(y.size());
+  for (R_xlen_t i = 0; i < y.size(); ++i)
+    out[i] = ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i]) ? NA_REAL : derivative
+      ? tulpa::math::beta_score_phi_derivative(y[i], mu[i], phi[i])
+      : tulpa::math::beta_mu_score(y[i], mu[i], phi[i]);
+  return out;
+}
+
+// Stirling remainder derivatives or d - log(1+d).
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_precision_math(const Rcpp::NumericVector& x,
+                                       bool remainder, int order = 0) {
+  if (order < 0 || order > 4) Rcpp::stop("Derivative order must be in 0..4.");
+  Rcpp::NumericVector out(x.size());
+  for (R_xlen_t i = 0; i < x.size(); ++i)
+    out[i] = ISNAN(x[i]) ? NA_REAL : remainder
+      ? tulpa::math::stirling_remainder_derivative(x[i], order)
+      : tulpa::math::log1pmx(x[i]);
+  return out;
+}
+
 // Elementwise log Gamma(y + size) - log Gamma(size) over equal-length count
 // and size vectors (NA where either is NA).
 // [[Rcpp::export]]

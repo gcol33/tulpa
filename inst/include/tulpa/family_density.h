@@ -14,6 +14,7 @@
 #include <cmath>
 #include <string>
 #include "tulpa/portable_math.h"
+#include "tulpa/precision_math.h"
 
 namespace tulpa {
 
@@ -70,11 +71,11 @@ inline double log_lik_lognormal(double y, double mu, double phi) {
 
 // Beta(mu phi, (1 - mu) phi) at y; mu is taken as already clamped.
 inline double log_lik_beta(double y, double mu, double phi) {
-    double a = mu * phi;
-    double b = (1.0 - mu) * phi;
-    return tulpa::math::portable_lgamma(phi) - tulpa::math::portable_lgamma(a)
-           - tulpa::math::portable_lgamma(b)
-           + (a - 1.0) * std::log(y) + (b - 1.0) * std::log(1.0 - y);
+    return math::beta_log_density(y, mu, 1-mu, phi, std::log(y), std::log1p(-y));
+}
+
+inline double log_lik_gamma(double y, double mu, double phi) {
+    return math::gamma_log_density(y, mu, phi, std::log(y));
 }
 
 // Beta density on the logit linear predictor, with the clamp the fit applies.

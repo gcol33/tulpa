@@ -126,10 +126,7 @@ inline T builtin_family_base_ll_ad(
     }
     case AdFamily::GAMMA: {
         // Log link: y ~ Gamma(shape = phi, mean = mu = exp(eta)).
-        // ll = phi log phi - lgamma(phi) + (phi-1) log y - phi*eta - phi*y*exp(-eta).
-        const double c = phi * std::log(phi) - std::lgamma(phi)
-                       + (phi - 1.0) * std::log(std::max(yv, 1e-300));
-        return (T(c) - T(phi) * eta[0] - T(phi * yv) * safe_exp(-eta[0]));
+        return tulpa::math::log_lik_gamma(std::max(yv, 1e-300), T(phi), safe_exp(eta[0]));
     }
     case AdFamily::INVERSE_GAUSSIAN: {
         // Log link: y ~ IG with mean mu = exp(eta) and variance phi*mu^3.
@@ -154,7 +151,7 @@ inline T builtin_family_base_ll_ad(
         // finite refusal in the value.
         const double ly  = std::log(std::max(yv, 1e-300));
         const double l1y = std::log(std::max(1.0 - yv, 1e-300));
-        return log_lik_beta_logit(eta[0], T(phi), ly, l1y);
+        return log_lik_beta_logit(eta[0], T(phi), yv, ly, l1y);
     }
     case AdFamily::UNRESOLVED:
     default:
@@ -191,6 +188,12 @@ inline T builtin_family_ll_ad(
     const double w = r->weights ? r->weights[i] : 1.0;
 
     if (data.zi_type == ZIType::NONE) {
+        if (!r->beta_y.empty() && r->family == "beta") {
+            T ll(0);
+            for (const auto& y : r->beta_y[i])
+                ll = ll + builtin_family_base_ll_ad<T>(y.y, 1, r, eta[0]);
+            return T(w)*ll;
+        }
         return T(w) * builtin_family_base_ll_ad<T>(yv, nt, r, eta[0]);
     }
     // A zero-truncated base is the hurdle case, where the y = 0 branch is

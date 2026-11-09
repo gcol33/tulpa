@@ -284,6 +284,45 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_precision_ad_math
+Rcpp::NumericVector cpp_precision_ad_math(double x, bool remainder);
+RcppExport SEXP _tulpa_cpp_precision_ad_math(SEXP xSEXP, SEXP remainderSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type x(xSEXP);
+    Rcpp::traits::input_parameter< bool >::type remainder(remainderSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_precision_ad_math(x, remainder));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_beta_grouped_terms
+Rcpp::NumericVector cpp_beta_grouped_terms(Rcpp::NumericVector ys, double eta, double phi);
+RcppExport SEXP _tulpa_cpp_beta_grouped_terms(SEXP ysSEXP, SEXP etaSEXP, SEXP phiSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type ys(ysSEXP);
+    Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_beta_grouped_terms(ys, eta, phi));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_precision_density_paths
+Rcpp::NumericVector cpp_precision_density_paths(double y, double eta, std::string family, double phi);
+RcppExport SEXP _tulpa_cpp_precision_density_paths(SEXP ySEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type y(ySEXP);
+    Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_precision_density_paths(y, eta, family, phi));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_terms
 Rcpp::NumericVector cpp_family_terms(double y, int n_trials, double eta, std::string family, double phi, double phi2);
 RcppExport SEXP _tulpa_cpp_family_terms(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
@@ -1170,6 +1209,48 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type weights_nullable(weights_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type node_prec_nullable(node_prec_nullableSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_bym2(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads, offset_nullable, force_sparse, compute_skew, skew_idx, weights_nullable, node_prec_nullable));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_precision_density
+Rcpp::NumericVector cpp_precision_density(const Rcpp::NumericVector& y, const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi, bool beta, int order);
+RcppExport SEXP _tulpa_cpp_precision_density(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP, SEXP betaSEXP, SEXP orderSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< bool >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< int >::type order(orderSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_precision_density(y, mu, phi, beta, order));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_beta_precision_score
+Rcpp::NumericVector cpp_beta_precision_score(const Rcpp::NumericVector& y, const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi, bool derivative);
+RcppExport SEXP _tulpa_cpp_beta_precision_score(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP, SEXP derivativeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< bool >::type derivative(derivativeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_beta_precision_score(y, mu, phi, derivative));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_precision_math
+Rcpp::NumericVector cpp_precision_math(const Rcpp::NumericVector& x, bool remainder, int order);
+RcppExport SEXP _tulpa_cpp_precision_math(SEXP xSEXP, SEXP remainderSEXP, SEXP orderSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type x(xSEXP);
+    Rcpp::traits::input_parameter< bool >::type remainder(remainderSEXP);
+    Rcpp::traits::input_parameter< int >::type order(orderSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_precision_math(x, remainder, order));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2994,6 +3075,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_beta_density_terms
+Rcpp::NumericVector cpp_beta_density_terms(double y, double eta, double log_phi);
+RcppExport SEXP _tulpa_cpp_beta_density_terms(SEXP ySEXP, SEXP etaSEXP, SEXP log_phiSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type y(ySEXP);
+    Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< double >::type log_phi(log_phiSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_beta_density_terms(y, eta, log_phi));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_beta_nuts
 Rcpp::List cpp_tulpa_fit_beta_nuts(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_beta_nuts(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP) {
@@ -3373,6 +3467,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_spde_density_terms
+Rcpp::NumericVector cpp_spde_density_terms(double y, double eta, double log_phi, std::string family);
+RcppExport SEXP _tulpa_cpp_spde_density_terms(SEXP ySEXP, SEXP etaSEXP, SEXP log_phiSEXP, SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type y(ySEXP);
+    Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< double >::type log_phi(log_phiSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_spde_density_terms(y, eta, log_phi, family));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_spde_nuts
 Rcpp::List cpp_tulpa_fit_spde_nuts(Rcpp::NumericVector y_r, Rcpp::IntegerVector n_trials_r, Rcpp::NumericMatrix X_r, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, int alpha, double nu, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, bool joint_hypers, double prior_range_0, double prior_range_alpha, double prior_sigma_0, double prior_sigma_alpha, double log_kappa_init, double log_tau_init, Rcpp::Nullable<Rcpp::NumericVector> Q_precomp_x, Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_i, Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_p, bool noncenter, std::string mass_matrix);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_spde_nuts(SEXP y_rSEXP, SEXP n_trials_rSEXP, SEXP X_rSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP kappaSEXP, SEXP tau_spdeSEXP, SEXP familySEXP, SEXP alphaSEXP, SEXP nuSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP, SEXP joint_hypersSEXP, SEXP prior_range_0SEXP, SEXP prior_range_alphaSEXP, SEXP prior_sigma_0SEXP, SEXP prior_sigma_alphaSEXP, SEXP log_kappa_initSEXP, SEXP log_tau_initSEXP, SEXP Q_precomp_xSEXP, SEXP Q_precomp_iSEXP, SEXP Q_precomp_pSEXP, SEXP noncenterSEXP, SEXP mass_matrixSEXP) {
@@ -3496,6 +3604,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},
+    {"_tulpa_cpp_precision_ad_math", (DL_FUNC) &_tulpa_cpp_precision_ad_math, 2},
+    {"_tulpa_cpp_beta_grouped_terms", (DL_FUNC) &_tulpa_cpp_beta_grouped_terms, 3},
+    {"_tulpa_cpp_precision_density_paths", (DL_FUNC) &_tulpa_cpp_precision_density_paths, 4},
     {"_tulpa_cpp_family_terms", (DL_FUNC) &_tulpa_cpp_family_terms, 6},
     {"_tulpa_cpp_family_obs_terms", (DL_FUNC) &_tulpa_cpp_family_obs_terms, 6},
     {"_tulpa_cpp_family_obs_weight", (DL_FUNC) &_tulpa_cpp_family_obs_weight, 6},
@@ -3551,6 +3662,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 25},
     {"_tulpa_cpp_laplace_fit_spatial", (DL_FUNC) &_tulpa_cpp_laplace_fit_spatial, 23},
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 25},
+    {"_tulpa_cpp_precision_density", (DL_FUNC) &_tulpa_cpp_precision_density, 5},
+    {"_tulpa_cpp_beta_precision_score", (DL_FUNC) &_tulpa_cpp_beta_precision_score, 4},
+    {"_tulpa_cpp_precision_math", (DL_FUNC) &_tulpa_cpp_precision_math, 3},
     {"_tulpa_cpp_log_rising_factorial", (DL_FUNC) &_tulpa_cpp_log_rising_factorial, 2},
     {"_tulpa_cpp_polygamma_rising_difference", (DL_FUNC) &_tulpa_cpp_polygamma_rising_difference, 3},
     {"_tulpa_cpp_negbin2_log_density", (DL_FUNC) &_tulpa_cpp_negbin2_log_density, 3},
@@ -3627,6 +3741,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tgmrf_registry_size", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_size, 0},
     {"_tulpa_cpp_tgmrf_eval", (DL_FUNC) &_tulpa_cpp_tgmrf_eval, 2},
     {"_tulpa_cpp_tgmrf_eval_mu", (DL_FUNC) &_tulpa_cpp_tgmrf_eval_mu, 2},
+    {"_tulpa_cpp_beta_density_terms", (DL_FUNC) &_tulpa_cpp_beta_density_terms, 3},
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 11},
     {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 13},
@@ -3643,6 +3758,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_spde_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_prior_probe, 9},
     {"_tulpa_cpp_spde_nc_apply_probe", (DL_FUNC) &_tulpa_cpp_spde_nc_apply_probe, 7},
     {"_tulpa_cpp_spde_hyper_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_hyper_prior_probe, 8},
+    {"_tulpa_cpp_spde_density_terms", (DL_FUNC) &_tulpa_cpp_spde_density_terms, 4},
     {"_tulpa_cpp_tulpa_fit_spde_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_spde_nuts, 40},
     {"_tulpa_cpp_varying_coef_draws", (DL_FUNC) &_tulpa_cpp_varying_coef_draws, 19},
     {"_tulpa_cpp_temporal_field_rows", (DL_FUNC) &_tulpa_cpp_temporal_field_rows, 13},

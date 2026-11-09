@@ -31,6 +31,55 @@
 #include "glmm_oracle.h"
 #include "laplace_likelihoods.h"
 #include "builtin_family_ll_ad.h"
+#include "density_probe.h"
+
+// Unary primitive value and derivative on each autodiff scalar.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_precision_ad_math(double x, bool remainder) {
+    return density_callback_terms(x, 0, [&](auto v, auto) {
+        return remainder ? tulpa::math::stirling_remainder(v) : tulpa::math::log1pmx(v);
+    });
+}
+
+// Grouped response callbacks on the built-in likelihood spec.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_beta_grouped_terms(Rcpp::NumericVector ys, double eta, double phi) {
+    tulpa::BuiltinFamilyResponse r;
+    double y = ys.size() ? ys[0] : .5;
+    int n = ys.size();
+    r.y = &y; r.n_trials = &n; r.N = 1; r.family = "beta"; r.phi = phi;
+    r.beta_y.resize(1);
+    for (double v : ys) r.beta_y[0].emplace_back(v);
+    r.prepare();
+    tulpa::ModelData data;
+    tulpa::ParamLayout layout;
+    std::vector<double> params;
+    double grad, hess;
+    tulpa::builtin_family_eta_weights(0, &eta, 0, 0, params, data, layout, &r, &grad, &hess);
+    const double ll = tulpa::builtin_family_ll_double(0, &eta, 0, 0, params, data, layout, &r);
+    fwd::Dual e(eta,1);
+    const auto ad = tulpa::builtin_family_ll_ad(0, &e, fwd::Dual(0), fwd::Dual(0),
+        std::vector<fwd::Dual>(), data, layout, &r);
+    return Rcpp::NumericVector::create(ll, grad, hess, ad.val, ad.grad);
+}
+
+// Public density and resolved dispatch at the same predictor.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_precision_density_paths(double y, double eta,
+                                                std::string family, double phi) {
+    const auto fam = tulpa::resolve_family(family);
+    const double mu = family == "beta" ? tulpa::inv_logit_link(eta) : std::exp(eta);
+    auto out = Rcpp::NumericVector::create(
+        Rcpp::_["resolved"] = tulpa::log_lik_for_family(y, 1, eta, fam, phi,
+            NA_REAL, tulpa::log_lik_const_for_kind(y, 1, fam.kind)),
+        Rcpp::_["header"] = tulpa::log_lik_mu(y, mu, phi, family, 1),
+        Rcpp::_["grouped"] = family == "beta"
+            ? tulpa::log_lik_beta_grouped({tulpa::BetaObservation(y)}, eta, phi)
+            : tulpa::math::log_lik_gamma(y, phi, mu));
+    out.attr("mu") = mu;
+    out.attr("positive_logit_mu") = tulpa::math::inv_logit_pos(eta);
+    return out;
+}
 
 // Every vectorized probe below reads y, n_trials and (where it takes one)
 // logit_zi to the length of eta, and Rcpp's operator[] does not bounds-check,

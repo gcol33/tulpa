@@ -68,12 +68,8 @@ struct BuiltinFamilyResponse {
     AdFamily ad_kind = AdFamily::UNRESOLVED;
     double phi = 1.0;                // dispersion / precision / size
     const double* weights = nullptr; // [N] per-obs likelihood weights, or null (=> 1)
-    // Grouped beta sufficient statistics. When non-null and
-    // family == "beta", row i is an exact collapse of n_trials[i] exchangeable
-    // beta observations sharing this row's linear predictor; slog_y[i] = sum
-    // log(y), slog_1my[i] = sum log(1-y). Null => ungrouped per-obs path.
-    const double* slog_y = nullptr;
-    const double* slog_1my = nullptr;
+    // Grouped beta responses sharing each row's linear predictor.
+    std::vector<std::vector<BetaObservation>> beta_y;
     // Interval-censored Gaussian bounds (interval_gaussian family). When non-null
     // and family == "interval_gaussian", row i records that the latent value fell
     // in (lower[i], upper[i]] on the linear-predictor scale; -Inf / +Inf are the
@@ -210,8 +206,8 @@ inline double builtin_family_ll_double(
                                      builtin_trunc_upper(r, i), eta[0], r->phi)
         : (r->lower && r->family == "interval_gaussian")
         ? log_lik_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
-        : (r->slog_y && r->family == "beta")
-        ? log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
+        : (!r->beta_y.empty() && r->family == "beta")
+        ? log_lik_beta_grouped(r->beta_y[i], eta[0], r->phi)
         : r->prepared
         ? log_lik_for_family(r->y[i], nt, eta[0], r->fam, r->phi, r->phi2,
                              r->ll_const[(size_t)i])
@@ -250,8 +246,8 @@ inline void builtin_family_eta_weights(
                                        r->phi)
         : (r->lower && r->family == "interval_gaussian")
         ? grad_hess_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
-        : (r->slog_y && r->family == "beta")
-        ? grad_hess_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
+        : (!r->beta_y.empty() && r->family == "beta")
+        ? grad_hess_beta_grouped(r->beta_y[i], eta[0], r->phi)
         : r->prepared
         ? grad_hess_for_family(r->y[i], nt, eta[0], r->fam, r->phi, r->phi2)
         : grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi, r->phi2);
@@ -330,7 +326,7 @@ inline double builtin_family_ll_eta_weights(
         r->prepared && data.zi_type == ZIType::NONE &&
         !builtin_is_truncated(r) &&
         !(r->lower && r->family == "interval_gaussian") &&
-        !(r->slog_y && r->family == "beta");
+        !(!r->beta_y.empty() && r->family == "beta");
     if (!plain) {
         builtin_family_eta_weights(i, eta, logit_zi, logit_oi, params, data,
                                    layout, model_data, grad_eta, neg_hess_eta);

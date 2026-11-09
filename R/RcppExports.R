@@ -77,6 +77,18 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
+cpp_precision_ad_math <- function(x, remainder) {
+    .Call(`_tulpa_cpp_precision_ad_math`, x, remainder)
+}
+
+cpp_beta_grouped_terms <- function(ys, eta, phi) {
+    .Call(`_tulpa_cpp_beta_grouped_terms`, ys, eta, phi)
+}
+
+cpp_precision_density_paths <- function(y, eta, family, phi) {
+    .Call(`_tulpa_cpp_precision_density_paths`, y, eta, family, phi)
+}
+
 cpp_family_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_terms`, y, n_trials, eta, family, phi, phi2)
 }
@@ -295,6 +307,18 @@ cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spat
 
 cpp_laplace_fit_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, force_sparse = 0L, compute_skew = FALSE, skew_idx = NULL, weights_nullable = NULL, node_prec_nullable = NULL) {
     .Call(`_tulpa_cpp_laplace_fit_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads, offset_nullable, force_sparse, compute_skew, skew_idx, weights_nullable, node_prec_nullable)
+}
+
+cpp_precision_density <- function(y, mu, phi, beta, order = 0L) {
+    .Call(`_tulpa_cpp_precision_density`, y, mu, phi, beta, order)
+}
+
+cpp_beta_precision_score <- function(y, mu, phi, derivative) {
+    .Call(`_tulpa_cpp_beta_precision_score`, y, mu, phi, derivative)
+}
+
+cpp_precision_math <- function(x, remainder, order = 0L) {
+    .Call(`_tulpa_cpp_precision_math`, x, remainder, order)
 }
 
 cpp_log_rising_factorial <- function(y, size) {
@@ -601,6 +625,10 @@ cpp_tgmrf_eval_mu <- function(id, theta) {
     .Call(`_tulpa_cpp_tgmrf_eval_mu`, id, theta)
 }
 
+cpp_beta_density_terms <- function(y, eta, log_phi) {
+    .Call(`_tulpa_cpp_beta_density_terms`, y, eta, log_phi)
+}
+
 cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = NULL, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE) {
     .Call(`_tulpa_cpp_tulpa_fit_beta_nuts`, y_r, X_r, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose)
 }
@@ -663,6 +691,10 @@ cpp_spde_nc_apply_probe <- function(z, log_kappa, log_tau, C0_diag, G1_x, G1_i, 
 
 cpp_spde_hyper_prior_probe <- function(log_kappa, log_tau, nu = 1.0, prior_range_0 = -1.0, prior_range_alpha = -1.0, prior_sigma_0 = -1.0, prior_sigma_alpha = -1.0, n_mesh = 4L) {
     .Call(`_tulpa_cpp_spde_hyper_prior_probe`, log_kappa, log_tau, nu, prior_range_0, prior_range_alpha, prior_sigma_0, prior_sigma_alpha, n_mesh)
+}
+
+cpp_spde_density_terms <- function(y, eta, log_phi, family) {
+    .Call(`_tulpa_cpp_spde_density_terms`, y, eta, log_phi, family)
 }
 
 cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha = 2L, nu = -1.0, sigma_beta = NULL, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, rational_poles_nullable = NULL, rational_weights_nullable = NULL, joint_hypers = FALSE, prior_range_0 = -1.0, prior_range_alpha = -1.0, prior_sigma_0 = -1.0, prior_sigma_alpha = -1.0, log_kappa_init = 0.0, log_tau_init = 0.0, Q_precomp_x = NULL, Q_precomp_i = NULL, Q_precomp_p = NULL, noncenter = TRUE, mass_matrix = "diag") {

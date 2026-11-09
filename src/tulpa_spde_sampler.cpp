@@ -34,6 +34,7 @@
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
 #include "autodiff_utils.h"
+#include "density_probe.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -119,12 +120,8 @@ T spde_glm_likelihood(
         }
         case SpdeFamily::GAMMA: {
             T log_phi = params[layout.extra_offset];
-            T phi     = exp(log_phi);
-            T neg_eta = T(0.0) - eta_i;
-            return phi * log_phi - lgamma(phi)
-                 + (phi - T(1.0)) * T(sd->log_y[i])
-                 - phi * eta_i
-                 - phi * T(sd->y[i]) * exp(neg_eta);
+            return tulpa::math::gamma_log_density(sd->y[i], exp(eta_i), exp(log_phi),
+                                                  sd->log_y[i]);
         }
         case SpdeFamily::NEGBIN: {
             return tulpa::math::log_lik_negbin_log(
@@ -134,7 +131,7 @@ T spde_glm_likelihood(
         case SpdeFamily::BETA: {
             T log_phi = params[layout.extra_offset];
             return tulpa::math::log_lik_beta_logit(eta_i, exp(log_phi),
-                                                   sd->log_y[i], sd->log_1my[i]);
+                                                   sd->y[i], sd->log_y[i], sd->log_1my[i]);
         }
     }
     return T(0.0);
@@ -170,6 +167,24 @@ static tulpa::arena::Var spde_glm_log_phi_prior_arena(
 }
 
 }  // anonymous namespace
+
+// Density callback with an active predictor or log precision.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_spde_density_terms(double y, double eta, double log_phi,
+                                          std::string family) {
+    SpdeGlmData sd;
+    sd.family = family == "gamma" ? SpdeFamily::GAMMA : SpdeFamily::BETA;
+    sd.y = {y}; sd.log_y = {std::log(y)}; sd.log_1my = {std::log1p(-y)};
+    ModelData data;
+    ParamLayout layout;
+    layout.extra_offset = 0;
+    return density_callback_terms(eta, log_phi, [&](auto e, auto p) {
+        using T = decltype(e);
+        std::vector<T> params = {p};
+        return spde_glm_likelihood(0, &e, T(0), T(0), params,
+                                   data, layout, &sd);
+    });
+}
 
 namespace tulpa_hmc {
     HMCResultCpp run_hmc_chain_cpp(

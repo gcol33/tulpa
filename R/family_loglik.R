@@ -101,6 +101,19 @@
   .recycled_kernel(function(y, size) cpp_polygamma_rising_difference(k, y, size),
                    y, size)
 
+.precision_density <- function(y, mu, phi, beta = FALSE, order = 0L)
+  .recycled_kernel(function(y, mu, phi) cpp_precision_density(y, mu, phi, beta, order),
+                   y, mu, phi)
+
+.stirling_remainder <- function(x, order = 0L)
+  .recycled_kernel(function(x) cpp_precision_math(x, TRUE, order), x)
+
+.log1pmx <- function(x) .recycled_kernel(function(x) cpp_precision_math(x, FALSE), x)
+
+.beta_precision_score <- function(y, mu, phi, derivative = FALSE)
+  .recycled_kernel(function(y, mu, phi) cpp_beta_precision_score(y, mu, phi, derivative),
+                   y, mu, phi)
+
 # --- family operations registry ----------------------------------------------
 # Fields per family:
 #   mean(eta, phi)                inverse link, clamped; phi reaches entries
@@ -375,17 +388,12 @@
     mean = .mean_beta,
     loglik = function(eta, y, n_trials, phi) {
       mu <- .mean_beta(eta)
-      a <- mu * phi
-      b <- (1 - mu) * phi
-      lgamma(phi) - lgamma(a) - lgamma(b) +
-        (a - 1) * log(y) + (b - 1) * log1p(-y)
+      .precision_density(y, mu, phi, beta = TRUE)
     },
     score = function(eta, y, n_trials, phi) {
       mu <- .mean_beta(eta)
-      a <- mu * phi
-      b <- (1 - mu) * phi
       dmu <- mu * (1 - mu)
-      phi * (log(y) - log1p(-y) - digamma(a) + digamma(b)) * dmu
+      .beta_precision_score(y, mu, phi) * dmu
     },
     # The expected (Fisher) weight phi^2 (psi'(a) + psi'(b)) dmu^2.
     weight = function(eta, n_trials, phi) {
@@ -401,11 +409,9 @@
     # R has to carry.
     obs_weight = function(eta, y, n_trials, phi) {
       mu <- .mean_beta(eta)
-      a <- mu * phi
-      b <- (1 - mu) * phi
       dmu <- mu * (1 - mu)
-      g_mu <- phi * (log(y) - log1p(-y) - digamma(a) + digamma(b))
-      phi * phi * (trigamma(a) + trigamma(b)) * dmu * dmu -
+      g_mu <- .beta_precision_score(y, mu, phi)
+      phi * phi * (trigamma(mu * phi) + trigamma((1-mu) * phi)) * dmu * dmu -
         (1 - 2 * mu) * dmu * g_mu
     },
     sample = function(eta, n_trials, phi) {
@@ -425,8 +431,7 @@
     mean = .mean_log,
     loglik = function(eta, y, n_trials, phi) {
       mu <- .mean_log(eta)
-      phi * log(phi) - lgamma(phi) + (phi - 1) * log(y) -
-        phi * log(mu) - phi * y / mu
+      .precision_density(y, mu, phi)
     },
     score = function(eta, y, n_trials, phi) {
       mu <- .mean_log(eta)

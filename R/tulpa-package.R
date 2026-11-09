@@ -21,7 +21,11 @@ NULL
 utils::globalVariables(c(".data", "ratio", ".phl_w", "cpp_spde_orphan_mass",
                          "cpp_hsgp_sum_projection", "cpp_outer_tensor_interpolate",
                          "cpp_outer_read_design", "cpp_outer_tensor_partition",
-                         "cpp_nl_group_logsumexp", "cpp_nl_axis_row_id"))
+                         "cpp_nl_group_logsumexp", "cpp_nl_axis_row_id",
+                         "cpp_precision_density", "cpp_precision_math", "cpp_beta_precision_score",
+                         "cpp_beta_density_terms", "cpp_spde_density_terms",
+                         "cpp_precision_density_paths", "cpp_precision_ad_math",
+                         "cpp_beta_grouped_terms"))
 
 # The package version, read from the one place that defines it. A literal here
 # (or in src/) is a second definition that nothing forces anyone to update at

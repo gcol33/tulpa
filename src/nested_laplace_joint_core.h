@@ -148,16 +148,25 @@ inline int parse_joint_arms(
         arms_out[k].family   = Rcpp::as<std::string>(a["family"]);
         arms_out[k].phi      = Rcpp::as<double>(a["phi"]);
         arms_out[k].N        = (int)arms_out[k].y.size();
-        // Optional grouped beta sufficient statistics. When
-        // supplied they must match this arm's N and carry n_trials as the group
-        // count; the built-in beta spec then reads (n_trials, slog_y, slog_1my).
-        if (a.containsElementNamed("slog_y") && !Rf_isNull(a["slog_y"])) {
-            arms_out[k].slog_y   = Rcpp::as<Rcpp::NumericVector>(a["slog_y"]);
-            arms_out[k].slog_1my = Rcpp::as<Rcpp::NumericVector>(a["slog_1my"]);
-            if ((int)arms_out[k].slog_y.size()   != arms_out[k].N ||
-                (int)arms_out[k].slog_1my.size() != arms_out[k].N) {
-                Rcpp::stop("Arm %d: length(slog_y)/length(slog_1my) must equal "
-                           "length(y) (%d).", k + 1, arms_out[k].N);
+        // Raw grouped responses preserve the relative residuals.
+        if (a.containsElementNamed("slog_y") || a.containsElementNamed("slog_1my"))
+            Rcpp::stop("Arm %d: grouped beta requires raw responses in beta_y.", k+1);
+        if (a.containsElementNamed("beta_y") && !Rf_isNull(a["beta_y"])) {
+            const auto groups = Rcpp::as<std::vector<std::vector<double>>>(a["beta_y"]);
+            if ((int)groups.size() != arms_out[k].N)
+                Rcpp::stop("Arm %d: length(beta_y) must equal length(y).", k+1);
+            for (int i = 0; i < arms_out[k].N; ++i) {
+                const auto& ys = groups[i];
+                if ((int)ys.size() != arms_out[k].n_trials[i] || ys.empty())
+                    Rcpp::stop("Arm %d: beta_y group sizes must equal n_trials.", k+1);
+                std::vector<BetaObservation> cache;
+                cache.reserve(ys.size());
+                for (double y : ys) {
+                    if (!(y > 0 && y < 1))
+                        Rcpp::stop("Arm %d: beta_y responses must be in (0, 1).", k+1);
+                    cache.emplace_back(y);
+                }
+                arms_out[k].beta_y.push_back(std::move(cache));
             }
         }
         // Optional interval-censored Gaussian bounds (ordinal cover). When

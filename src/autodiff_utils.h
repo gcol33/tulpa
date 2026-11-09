@@ -14,9 +14,37 @@
 #include "tulpa/autodiff_fwd.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/ad_scalar_math.h"
+#include "tulpa/precision_math.h"
 
 namespace tulpa {
 namespace math {
+
+template<> struct PrecisionUnary<fwd::Dual> {
+    static fwd::Dual apply(const fwd::Dual& x, double value, double derivative) {
+        return fwd::Dual(value, x.grad == 0 ? 0 : derivative*x.grad);
+    }
+};
+
+template<> struct PrecisionUnary<arena::Var> {
+    static arena::Var apply(const arena::Var& x, double value, double derivative) {
+        arena::Var out;
+        out.arena_ = x.arena_;
+        out.idx_ = x.arena_->add_unary(value, x.idx_, derivative);
+        return out;
+    }
+};
+
+template<> struct PrecisionUnary<ad::Var> {
+    static ad::Var apply(const ad::Var& x, double value, double derivative) {
+        ad::Var out(x.tape, value);
+        const size_t input = x.idx, result = out.idx;
+        x.tape->nodes[result].backward = [input, result, derivative](ad::Tape* tape) {
+            const double adj = tape->nodes[result].adjoint;
+            if (adj != 0) tape->nodes[input].adjoint += adj*derivative;
+        };
+        return out;
+    }
+};
 
 // The tape type is src-only, so its trait specialisation and its overloads
 // of the functions in tulpa/ad_scalar_math.h live here.
@@ -343,28 +371,20 @@ inline T log_lik_poisson(int y, const T& mu) {
     return y * safe_log(mu) - mu - lgamma_fn(T(y + 1.0));
 }
 
-// Beta density under the logit link, given the precision phi and the response's
-// two logs. The single source of truth for every beta arm in the package: the
-// generic family kernel, the beta sampler and the SPDE sampler all read it, so
-// the shapes are held strictly positive by inv_logit_pos in exactly one place.
-// log_y and log_1my arrive precomputed because every caller floors and caches
-// them once per fit rather than per gradient evaluation.
+// Beta density with the response and its cached logarithms. Both logistic
+// tails stay positive even where subtraction from one rounds to zero.
 template<typename T>
 inline T log_lik_beta_logit(const T& eta, const T& phi,
-                            double log_y, double log_1my) {
-    const T a = inv_logit_pos(eta) * phi;
-    const T b = inv_logit_pos(T(0.0) - eta) * phi;
-    return lgamma_fn(phi) - lgamma_fn(a) - lgamma_fn(b)
-         + (a - T(1.0)) * T(log_y)
-         + (b - T(1.0)) * T(log_1my);
+                            double y, double log_y, double log_1my) {
+    const T mu = inv_logit(eta);
+    const T q = get_value(mu) < 1 ? T(1)-mu : inv_logit_pos(T(0)-eta);
+    const T p = get_value(mu) > 0 ? mu : inv_logit_pos(eta);
+    return beta_log_density(y, p, q, phi, log_y, log_1my);
 }
 
 template<typename T>
 inline T log_lik_gamma(double y, const T& shape, const T& mu) {
-    // Gamma(y | shape, rate) where rate = shape/mu (mean parameterization)
-    // = shape*log(rate) + (shape-1)*log(y) - rate*y - lgamma(shape)
-    T rate = shape / mu;
-    return shape * safe_log(rate) + (shape - 1.0) * std::log(y) - rate * y - lgamma_fn(shape);
+    return gamma_log_density(y, mu, shape, std::log(y));
 }
 
 // log Gamma(y + phi) - log Gamma(phi) for a count y >= 0 and size phi > 0.

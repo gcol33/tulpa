@@ -457,9 +457,7 @@ inline double grad_mu(double y, double mu, double phi, const std::string& family
     if (family == "beta") {
         // d log f / d mu = phi * (y* - mu*) with y* = logit(y),
         // mu* = digamma(mu*phi) - digamma((1-mu)*phi).
-        double y_star  = std::log(y) - std::log(1.0 - y);
-        double mu_star = tulpa::math::portable_digamma(mu * phi) - tulpa::math::portable_digamma((1.0 - mu) * phi);
-        return phi * (y_star - mu_star);
+        return math::beta_mu_score(y, mu, phi);
     }
     unknown_family_stop("grad_mu", family);
 }
@@ -637,8 +635,7 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
         return log_lik_negbin((int)y, std::log(safe_mu), phi);
     }
     if (family == "gamma") {
-        return phi * std::log(phi) - tulpa::math::portable_lgamma(phi) + (phi - 1.0) * std::log(y)
-               - phi * std::log(mu) - phi * y / mu;
+        return log_lik_gamma(y, mu, phi);
     }
     if (family == "inverse_gaussian") {
         double r = y - mu;
@@ -1253,34 +1250,31 @@ inline GradHess obs_grad_hess_for_family(
 }
 
 // Grouped beta sufficient statistics. A set of n exchangeable Beta(mu*phi,
-// (1-mu)*phi) observations sharing the SAME linear predictor (hence the same mu)
-// enters the likelihood only through (n, sum log y, sum log(1-y)) -- the beta
-// log-density is linear in log(y) and log(1-y). Collapsing them to one row
-// carrying those sufficient statistics leaves the log-likelihood, gradient and
-// observed Hessian pointwise unchanged: the row's score is the sum of the n
-// scores, and the mu-curvature of the beta score carries no y, so the row's
-// is n times one observation's. With n = 1, slog_y = log(y), slog_1my =
-// log(1-y) these reduce exactly to the per-observation beta branch of
-// log_lik_mu / grad_hess_for_family (same mu clamps), so the ungrouped path is
-// byte-identical.
-inline double log_lik_beta_grouped(double slog_y, double slog_1my, int n,
+// (1-mu)*phi) observations sharing one linear predictor. Raw responses retain
+// the small residuals used by the Stirling deviance at a large precision.
+struct BetaObservation {
+    double y, log_y, log_1my;
+    explicit BetaObservation(double value)
+        : y(value), log_y(std::log(value)), log_1my(std::log1p(-value)) {}
+};
+
+inline double log_lik_beta_grouped(const std::vector<BetaObservation>& responses,
                                    double eta, double phi) {
-    double mu = linkinv(eta, "logit");
-    mu = clamp_mu_unit(mu);
-    double a = mu * phi;
-    double b = (1.0 - mu) * phi;
-    return (a - 1.0) * slog_y + (b - 1.0) * slog_1my
-           + (double)n * (tulpa::math::portable_lgamma(phi) - tulpa::math::portable_lgamma(a) - tulpa::math::portable_lgamma(b));
+    const double mu = clamp_mu_unit(linkinv(eta, "logit"));
+    double ll = responses.size() * math::beta_log_normalizer(mu, 1-mu, phi);
+    for (const auto& y : responses)
+        ll += math::beta_log_response(y.y, mu, 1-mu, phi, y.log_y, y.log_1my);
+    return ll;
 }
 
-inline GradHess grad_hess_beta_grouped(double slog_y, double slog_1my, int n,
+inline GradHess grad_hess_beta_grouped(const std::vector<BetaObservation>& responses,
                                        double eta, double phi) {
     double mu  = linkinv(eta, "logit");
     double dmu = mu_eta(eta, "logit");
     mu = clamp_mu_unit(mu);
-    double mu_star = tulpa::math::portable_digamma(mu * phi) - tulpa::math::portable_digamma((1.0 - mu) * phi);
-    double g_mu = phi * ((slog_y - slog_1my) - (double)n * mu_star);
-    const double gp = (double)n * dgrad_mu_dmu(0.0, mu, phi, "beta", 1);
+    double g_mu = 0;
+    for (const auto& y : responses) g_mu += math::beta_mu_score(y.y, mu, phi);
+    const double gp = (double)responses.size() * dgrad_mu_dmu(0.0, mu, phi, "beta", 1);
     return { g_mu * dmu, obs_neg_hess_mu_route(g_mu, gp, dmu, mu_eta2(eta, "logit")) };
 }
 

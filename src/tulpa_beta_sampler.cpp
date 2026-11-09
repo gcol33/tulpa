@@ -20,6 +20,7 @@
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
 #include "autodiff_utils.h"
+#include "density_probe.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -47,9 +48,8 @@ struct BetaData {
 //           + (a - 1) log(y) + (b - 1) log(1 - y),
 //   a = mu * phi,  b = (1 - mu) * phi.
 //
-// The lgamma overloads on arena::Var / fwd::Dual carry the digamma chain
-// rule, so reverse / forward AD recover the score in beta and log_phi
-// without bespoke handcoding.
+// The Stirling remainder and relative deviance carry their unary chain rules
+// through the predictor and log precision.
 // ============================================================================
 template<typename T>
 T beta_likelihood(
@@ -69,7 +69,23 @@ T beta_likelihood(
 
     T log_phi = params[layout.extra_offset];
     return tulpa::math::log_lik_beta_logit(eta[0], exp(log_phi),
-                                           bd->log_y[i], bd->log_1my[i]);
+                                           bd->y[i], bd->log_y[i], bd->log_1my[i]);
+}
+
+// Density callback with an active predictor or log precision.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_beta_density_terms(double y, double eta, double log_phi) {
+    BetaData bd;
+    bd.y = {y}; bd.log_y = {std::log(y)}; bd.log_1my = {std::log1p(-y)};
+    ModelData data;
+    ParamLayout layout;
+    layout.extra_offset = 0;
+    return density_callback_terms(eta, log_phi, [&](auto e, auto p) {
+        using T = decltype(e);
+        std::vector<T> params = {p};
+        return beta_likelihood(0, &e, T(0), T(0), params,
+                               data, layout, &bd);
+    });
 }
 
 // ============================================================================

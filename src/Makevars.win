@@ -81,6 +81,7 @@ unity_core.o: \
   laplace_family_zi_phi.h \
   glmm_oracle.h \
   builtin_family_ll_ad.h \
+  density_probe.h \
   fastmath.h \
   gpu_backend.h \
   pc_prior.h \
@@ -860,6 +861,7 @@ unity_samplers.o: \
   fixed_effect_prior.h \
   hmc_sampler.h \
   autodiff_utils.h \
+  density_probe.h \
   log_post_impl.h \
   linalg_fast.h \
   vi_types.h \
@@ -968,6 +970,7 @@ unity_spatial.o: \
   tulpa_priors_spde.h \
   fixed_effect_prior.h \
   spde_matern_map.h \
+  density_probe.h \
   hmc_gp_cg.h \
   pc_prior.h \
   hmc_gp_lbfgs.h \

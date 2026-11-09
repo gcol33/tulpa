@@ -63,12 +63,8 @@ struct JointArm {
     std::string         family;    // built-in family (ignored when spec != null)
     double              phi;        // built-in dispersion (ignored when spec)
     int                 N;
-    // Grouped beta sufficient statistics. Optional; when
-    // present (and family == "beta") row i collapses n_trials[i] exchangeable
-    // beta obs sharing this row's linear predictor, with slog_y[i] = sum log(y)
-    // and slog_1my[i] = sum log(1-y). Empty => ungrouped per-obs path.
-    Rcpp::NumericVector slog_y;
-    Rcpp::NumericVector slog_1my;
+    // Grouped beta responses sharing each row's linear predictor.
+    std::vector<std::vector<BetaObservation>> beta_y;
     // Interval-censored Gaussian bounds (tulpaObs ordinal cover). Optional;
     // when present (and family == "interval_gaussian") row i records the latent
     // value fell in (lower[i], upper[i]] on the predictor scale, with +/-Inf the
@@ -218,8 +214,7 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             r.family   = a.family;
             r.phi      = a.phi;
             r.weights  = (a.weights.size() > 0) ? REAL(a.weights) : nullptr;
-            r.slog_y   = (a.slog_y.size()   > 0) ? REAL(a.slog_y)   : nullptr;
-            r.slog_1my = (a.slog_1my.size() > 0) ? REAL(a.slog_1my) : nullptr;
+            r.beta_y = a.beta_y;
             r.lower    = (a.lower.size()    > 0) ? REAL(a.lower)    : nullptr;
             r.upper    = (a.upper.size()    > 0) ? REAL(a.upper)    : nullptr;
             r.trunc_lower = (a.trunc_lower.size() > 0) ? REAL(a.trunc_lower) : nullptr;

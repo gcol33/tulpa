@@ -402,6 +402,12 @@
 - The beta-binomial density, score, observed curvature and its derivative read the same helpers, on the R,
   compiled-Laplace and autodiff paths. At y = 3, n = 10, mu = 0.3 the density had read -1.3203 at precision 1e12,
   -4 to -8 at 1e15 and +512 at 1e17 against the binomial limit -1.3212 (#1159).
+- Gamma and beta densities, their precision derivatives and the beta score's precision derivative are built from
+  one Stirling remainder and one relative deviance `d - log1p(d)`, so the terms of size `phi log(phi)` cancel
+  algebraically instead of in floating point. At a response half an SD from the mean the densities had been off by
+  2e-8 nats at precision 1e8, 2e-3 at 1e12 and 0.35 (gamma) to 7.7 (beta) at 1e15 on the R, compiled-Laplace,
+  autodiff, beta-sampler and SPDE-sampler paths; they now agree with a 100-digit reference to 3e-15. Grouped beta
+  arms carry the raw responses (`beta_y`) the construction needs (#1160).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component

@@ -158,11 +158,7 @@
 # weight's.
 .beta_dscore_dphi <- function(eta, y, phi) {
   mu <- .mean_beta(eta)
-  a <- mu * phi
-  b <- (1 - mu) * phi
-  dmu <- mu * (1 - mu)
-  dmu * ((log(y) - log1p(-y) - digamma(a) + digamma(b)) +
-           phi * (-trigamma(a) * mu + trigamma(b) * (1 - mu)))
+  .beta_precision_score(y, mu, phi, derivative = TRUE)
 }
 
 #' @noRd
@@ -287,7 +283,7 @@
   gamma = list(
     dloglik = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_log(eta)
-      log(phi) + 1 - digamma(phi) + log(y) - log(mu) - y / mu
+      .precision_density(y, mu, phi, order = 1L)
     },
     dscore = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_log(eta)
@@ -332,10 +328,7 @@
   beta = list(
     dloglik = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_beta(eta)
-      a <- mu * phi
-      b <- (1 - mu) * phi
-      digamma(phi) - mu * digamma(a) - (1 - mu) * digamma(b) +
-        mu * log(y) + (1 - mu) * log1p(-y)
+      .precision_density(y, mu, phi, beta = TRUE, order = 1L)
     },
     dscore = function(eta, y, n_trials, phi, phi2 = NULL) {
       .beta_dscore_dphi(eta, y, phi)
@@ -568,7 +561,7 @@
   # curvatures are exactly zero and only the log-density's trigamma survives.
   gamma = list(
     dloglik2 = function(eta, y, n_trials, phi, phi2 = NULL) {
-      rep(1 / phi - trigamma(phi), length(eta))
+      rep_len(.precision_density(1, 1, phi, order = 2L), length(eta))
     },
     dscore2      = function(eta, y, n_trials, phi, phi2 = NULL) rep(0, length(eta)),
     dweight2     = function(eta, y, n_trials, phi, phi2 = NULL) rep(0, length(eta)),
