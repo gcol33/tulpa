@@ -103,6 +103,15 @@ test_that("field transports match dense Jacobians and the engine gradient check"
       expect_equal(r$gradient, reference$gradient, tolerance = 1e-9)
       expect_equal(r$lp, r$raw_lp + r$jacobian, tolerance = 1e-11)
       expect_equal(r$inverse, r$q, tolerance = 1e-11)
+      if (is.null(case$tvc_spec)) {
+        nullable <- lapply(case, function(spec) {
+          spec["parameterization"] <- list(NULL)
+          spec
+        })
+        native <- do.call(tulpa:::cpp_test_field_coordinates,
+          c(list(y = y, X = X, point = r$x), nullable))
+        expect_equal(native$raw_lp, r$raw_lp, tolerance = 1e-10)
+      }
       expect_lt(max(abs(r$gradient - r$numerical) / pmax(1, abs(r$gradient))), 1e-4)
       expect_lt(max(abs(r$prior_gradient - r$numerical_prior) /
         pmax(1, abs(r$prior_gradient))), 1e-4)

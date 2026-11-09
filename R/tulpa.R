@@ -357,6 +357,8 @@
 }
 
 
+.sampler_parameterization <- function(spec) spec$parameterization %||% "auto"
+
 # Pack a validated tulpa_gp (nngp) spec into the ModelData sampler's GP
 # spatial_spec (mode = "exact" continuous-field NUTS). The sampler's GP prior
 # requires a PC RANGE anchor, which spatial_gp() does not expose, so a
@@ -395,9 +397,9 @@
     phi_prior_alpha  = lp[2L],
     sigma2_prior_U     = as.numeric(spatial$sigma2_prior_U %||% 1),
     sigma2_prior_alpha = as.numeric(spatial$sigma2_prior_alpha %||% 0.01),
-    parameterization = spatial$parameterization,
+    parameterization = .sampler_parameterization(spatial),
     gp_parameterization =
-      if (spatial$parameterization %in% c("auto", "noncentered")) 1L else 0L
+      if (.sampler_parameterization(spatial) %in% c("auto", "noncentered")) 1L else 0L
   )
 }
 
@@ -535,7 +537,7 @@
     adj_eigenvalues = as.numeric(eig),
     rho_lower       = as.numeric(rb["lower"]),
     rho_upper       = as.numeric(rb["upper"]),
-    parameterization = spatial$parameterization
+    parameterization = .sampler_parameterization(spatial)
   ), .areal_sampler_anchors(spatial))
 }
 
@@ -615,7 +617,7 @@
     # Independent standard normal coordinates reconstruct each term's field as
     # w_j = f(z_j, sigma2_j, phi_j). This removes field-variance coupling from
     # the prior, which helps variance mixing under weakly informative data.
-    parameterization = spatial$parameterization,
+    parameterization = .sampler_parameterization(spatial),
     svc_parameterization =
       if (identical(spatial$parameterization, "centered")) 0L else 1L
   ), anchors)
@@ -1640,7 +1642,7 @@
       }
       spatial_spec_arg <- c(list(
         type            = sp$type,
-        parameterization = spatial$parameterization,
+        parameterization = .sampler_parameterization(spatial),
         spatial_idx     = sp$spatial_idx,
         n_spatial_units = sp$n_spatial_units,
         adj_row_ptr     = sp$adj_row_ptr,
@@ -1718,7 +1720,7 @@
         # The period in the kernel's own time units (validate_temporal_gp);
         # equal to the declared one when scale_coords = FALSE.
         period           = temporal$period_scaled %||% temporal$period,
-        parameterization = temporal$parameterization %||% "noncentered",
+        parameterization = .sampler_parameterization(temporal),
         # The lengthscale support in the same kernel units (validate_temporal_gp).
         phi_prior_lower  = temporal$phi_prior_lower %||% .GP_PHI_PRIOR_BOUNDS[["lower"]],
         phi_prior_upper  = temporal$phi_prior_upper %||% .GP_PHI_PRIOR_BOUNDS[["upper"]]
@@ -1738,7 +1740,7 @@
         n_groups  = n_groups,
         group_idx = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
         cyclic    = isTRUE(temporal$cyclic),
-        parameterization = temporal$parameterization,
+        parameterization = .sampler_parameterization(temporal),
         # The PC prior on the field SD the nested-Laplace route puts on the
         # same field's precision axis.
         sigma_prior_U     = .nl_scale_anchor()[1L],

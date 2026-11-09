@@ -8,6 +8,13 @@
 
 namespace tulpa {
 
+static std::string sampler_parameterization(const Rcpp::List& spec,
+                                           const char* default_value) {
+    if (!spec.containsElementNamed("parameterization") ||
+        Rf_isNull(spec["parameterization"])) return default_value;
+    return Rcpp::as<std::string>(spec["parameterization"]);
+}
+
 // The spectral basis a non-centred intrinsic walk is built in
 // (rw_walk_noncentered): the columns v_j / sqrt(lambda_j) over the positive
 // eigenpairs of the structure matrix R = D'D of an order-k walk over n points,
@@ -217,8 +224,7 @@ void build_sampler_model_inputs(
         std::string stype = Rcpp::as<std::string>(sp["type"]);
         in.data.spatial_component_centering = sp.containsElementNamed("component_centering") &&
             Rcpp::as<bool>(sp["component_centering"]);
-        const std::string coordinate = sp.containsElementNamed("parameterization")
-            ? Rcpp::as<std::string>(sp["parameterization"]) : "centered";
+        const std::string coordinate = sampler_parameterization(sp, "centered");
         in.data.auto_spatial_coordinates = coordinate == "auto" &&
             (stype == "icar" || stype == "car_proper");
         in.data.auto_gp_coordinates = coordinate == "auto" &&
@@ -564,12 +570,9 @@ void build_sampler_model_inputs(
 
         // One parameterization for the trend, the seasonal and the
         // short-term arm.
-        const bool centered =
-            tp.containsElementNamed("parameterization") &&
-            Rcpp::as<std::string>(tp["parameterization"]) == "centered";
-        in.data.auto_multiscale_coordinates =
-            tp.containsElementNamed("parameterization") &&
-            Rcpp::as<std::string>(tp["parameterization"]) == "auto";
+        const std::string coordinate = sampler_parameterization(tp, "noncentered");
+        const bool centered = coordinate == "centered";
+        in.data.auto_multiscale_coordinates = coordinate == "auto";
         if (!centered && ms.trend_type != TemporalType::NONE) {
             set_multiscale_trend_noncentered(in.data);
         }
@@ -611,8 +614,8 @@ void build_sampler_model_inputs(
     else if (temporal_spec.isNotNull()) {
         Rcpp::List tp = Rcpp::as<Rcpp::List>(temporal_spec);
         std::string ttype = Rcpp::as<std::string>(tp["type"]);
-        const std::string coordinate = tp.containsElementNamed("parameterization")
-            ? Rcpp::as<std::string>(tp["parameterization"]) : "centered";
+        const std::string coordinate = sampler_parameterization(
+            tp, ttype == "gp" ? "noncentered" : "centered");
         in.data.auto_temporal_coordinates = coordinate == "auto" && ttype != "gp";
         in.data.auto_temporal_gp_coordinates = coordinate == "auto" && ttype == "gp";
         Rcpp::IntegerVector tidx = Rcpp::as<Rcpp::IntegerVector>(tp["time_idx"]);
@@ -665,8 +668,7 @@ void build_sampler_model_inputs(
             gp.period   = gk.period;
             gp.shared = true;
             in.data.temporal_gp_parameterization =
-                (tp.containsElementNamed("parameterization") &&
-                 Rcpp::as<std::string>(tp["parameterization"]) == "centered")
+                (coordinate == "centered")
                 ? 0 : 1;
             read_pc_anchors(tp, "sigma2_prior_U", "sigma2_prior_alpha",
                             in.data.temporal_gp_sigma2_prior_U,
@@ -691,8 +693,7 @@ void build_sampler_model_inputs(
     //     as the NNGP arm.
     if (svc_spec.isNotNull()) {
         Rcpp::List sv = Rcpp::as<Rcpp::List>(svc_spec);
-        in.data.auto_svc_coordinates = sv.containsElementNamed("parameterization") &&
-            Rcpp::as<std::string>(sv["parameterization"]) == "auto";
+        in.data.auto_svc_coordinates = sampler_parameterization(sv, "noncentered") == "auto";
         auto& s = in.data.svc_data;
         Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sv["coords"]);
         static const char* const SVC_WHO = "svc() under a sampler mode";
