@@ -47,12 +47,12 @@ unity_core.o: \
   sparse_cholesky.h \
   cornish_fisher.h \
   crt_rng.h \
+  laplace_likelihoods.h \
   laplace_family_link.h \
   laplace_family_curvature.h \
   laplace_family_zi_curvature.h \
   laplace_family_zi_phi.h \
   glmm_oracle.h \
-  laplace_likelihoods.h \
   builtin_family_ll_ad.h \
   fastmath.h \
   gpu_backend.h \
@@ -278,6 +278,7 @@ unity_glmm.o: \
   hsgp_spectral.h \
   hmc_svc_autodiff.h \
   intrinsic_log_pdet.h \
+  laplace_likelihoods.h \
   hmc_mass_lowrank.h \
   hard_constraints.h \
   laplace_cholesky.h \
@@ -285,7 +286,6 @@ unity_glmm.o: \
   sparse_cholesky.h \
   laplace_family_link.h \
   builtin_family_zi.h \
-  laplace_likelihoods.h \
   laplace_types.h \
   laplace_newton.h \
   subspace_debias.h \
@@ -298,12 +298,12 @@ unity_glmm.o: \
   tulpa_priors_latent.h \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
+  fastmath.h \
   st_null_space.h \
   inv_block_extract.h \
   laplace_newton_loop.h \
   linear_constraint_rows.h \
   sobol_direction_numbers.h \
-  fastmath.h \
   laplace_cholesky_dispatch.h \
   laplace_family_curvature.h \
   inner_laplace_is.h \
@@ -805,9 +805,9 @@ unity_pg.o: \
   laplace_types.h \
   intrinsic_log_pdet.h \
   autodiff_utils.h \
+  laplace_likelihoods.h \
   laplace_core.h \
   autodiff.h \
-  laplace_likelihoods.h \
   fastmath.h
 unity_samplers.o: \
   unity_samplers.cpp \

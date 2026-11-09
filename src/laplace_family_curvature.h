@@ -359,13 +359,10 @@ inline double obs_curvature_delta_deta_for_family(
         // derivative, so the two halves of the difference cannot drift apart.
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double r  = mu / phi;
-        const double s  = r * (tulpa::math::portable_digamma(y + r)
-                               - tulpa::math::portable_digamma(r)
+        const double s  = r * (polygamma_rising_difference(0, (int)y, r)
                                - std::log1p(phi));
-        const double T1 = tulpa::math::portable_trigamma(r)
-                          - tulpa::math::portable_trigamma(y + r);
-        const double T2 = tulpa::math::portable_tetragamma(r)
-                          - tulpa::math::portable_tetragamma(y + r);
+        const double T1 = -polygamma_rising_difference(1, (int)y, r);
+        const double T2 = -polygamma_rising_difference(2, (int)y, r);
         return -s + 3.0 * r * r * T1 + r * r * r * T2
              - curvature_deta_for_family(y, n_trials, eta, family, phi, phi2);
     }
@@ -461,15 +458,11 @@ inline double obs_curvature_delta_deta2_for_family(
         //   d2W_obs/deta2 = -s + 7 r^2 T1 + 6 r^3 T2 + r^4 T3.
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double r  = mu / phi;
-        const double s  = r * (tulpa::math::portable_digamma(y + r)
-                               - tulpa::math::portable_digamma(r)
+        const double s  = r * (polygamma_rising_difference(0, (int)y, r)
                                - std::log1p(phi));
-        const double T1 = tulpa::math::portable_trigamma(r)
-                          - tulpa::math::portable_trigamma(y + r);
-        const double T2 = tulpa::math::portable_tetragamma(r)
-                          - tulpa::math::portable_tetragamma(y + r);
-        const double T3 = tulpa::math::portable_pentagamma(r)
-                          - tulpa::math::portable_pentagamma(y + r);
+        const double T1 = -polygamma_rising_difference(1, (int)y, r);
+        const double T2 = -polygamma_rising_difference(2, (int)y, r);
+        const double T3 = -polygamma_rising_difference(3, (int)y, r);
         const double r2 = r * r;
         return -s + 7.0 * r2 * T1 + 6.0 * r2 * r * T2 + r2 * r2 * T3
              - curvature_deta2_for_family(y, n_trials, eta, family, phi, phi2);

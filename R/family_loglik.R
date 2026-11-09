@@ -66,6 +66,41 @@
   ifelse(u <= mu / (mu + x), x, mu^2 / x)
 }
 
+# Recycle the arguments to a common length as arithmetic does, hand them to a
+# compiled elementwise kernel, and give the result the dim / dimnames (or
+# names) arithmetic would.
+.recycled_kernel <- function(kernel, ...) {
+  args <- list(...)
+  n <- if (any(lengths(args) == 0L)) 0L else max(lengths(args))
+  out <- do.call(kernel, lapply(args, function(a)
+    rep_len(as.numeric(a), n)))
+  shaped <- Filter(function(a) length(a) == n && !is.null(dim(a)), args)
+  if (length(shaped)) {
+    dim(out) <- dim(shaped[[1L]])
+    dimnames(out) <- dimnames(shaped[[1L]])
+  } else {
+    named <- Filter(function(a) length(a) == n && !is.null(names(a)), args)
+    if (length(named)) names(out) <- names(named[[1L]])
+  }
+  out
+}
+
+# log Gamma(y + size) - log Gamma(size) for counts y, free of the cancellation
+# of the two lgammas at a large size.
+.log_rising_factorial <- function(y, size)
+  .recycled_kernel(cpp_log_rising_factorial, y, size)
+
+# Negative binomial (type 2) log density at mean mu and size phi, exact as phi
+# grows (it reaches the Poisson density).
+.negbin2_loglik <- function(y, mu, phi)
+  .recycled_kernel(cpp_negbin2_log_density, y, mu, phi)
+
+# psi^(k)(y + size) - psi^(k)(size), k in 0..3, for counts y, free of the
+# cancellation of the two polygammas at a large size.
+.polygamma_rising_difference <- function(k, y, size)
+  .recycled_kernel(function(y, size) cpp_polygamma_rising_difference(k, y, size),
+                   y, size)
+
 # --- family operations registry ----------------------------------------------
 # Fields per family:
 #   mean(eta, phi)                inverse link, clamped; phi reaches entries
@@ -131,12 +166,7 @@
 
   neg_binomial_2 = list(
     mean = .mean_log,
-    loglik = function(eta, y, n_trials, phi) {
-      mu <- .mean_log(eta)
-      lgamma(y + phi) - lgamma(phi) - lgamma(y + 1) +
-        phi * (log(phi) - log(phi + mu)) +
-        y * (log(mu) - log(mu + phi))
-    },
+    loglik = function(eta, y, n_trials, phi) .negbin2_loglik(y, .mean_log(eta), phi),
     score = function(eta, y, n_trials, phi) {
       mu <- .mean_log(eta)
       phi * (y - mu) / (mu + phi)
@@ -170,12 +200,12 @@
     mean = .mean_log,
     loglik = function(eta, y, n_trials, phi) {
       r <- .mean_log(eta) / phi
-      lgamma(y + r) - lgamma(r) - lgamma(y + 1) -
+      .log_rising_factorial(y, r) - lgamma(y + 1) -
         (y + r) * log1p(phi) + y * log(phi)
     },
     score = function(eta, y, n_trials, phi) {
       r <- .mean_log(eta) / phi
-      r * (digamma(y + r) - digamma(r) - log1p(phi))
+      r * (.polygamma_rising_difference(0, y, r) - log1p(phi))
     },
     # Quasi-likelihood IRLS weight (dmu/deta)^2 / V(mu) = mu / (1 + phi), the
     # form glmmTMB uses. Unlike neg_binomial_2 -- where the moment weight
@@ -198,8 +228,8 @@
     # on average.
     obs_weight = function(eta, y, n_trials, phi) {
       r <- .mean_log(eta) / phi
-      s <- r * (digamma(y + r) - digamma(r) - log1p(phi))
-      -s + r^2 * (trigamma(r) - trigamma(y + r))
+      s <- r * (.polygamma_rising_difference(0, y, r) - log1p(phi))
+      -s - r^2 * .polygamma_rising_difference(1, y, r)
     },
     sample = function(eta, n_trials, phi) {
       mu <- .mean_log(eta)
@@ -252,10 +282,7 @@
     loglik = function(eta, y, n_trials, phi) {
       mu <- .mean_log(eta)
       .zero_truncate(
-        lgamma(y + phi) - lgamma(phi) - lgamma(y + 1) +
-          phi * (log(phi) - log(phi + mu)) +
-          y * (log(mu) - log(mu + phi)) -
-          .log1mexp(-phi * log1p(mu / phi)),
+        .negbin2_loglik(y, mu, phi) - .log1mexp(-phi * log1p(mu / phi)),
         y)
     },
     score = function(eta, y, n_trials, phi) {
@@ -291,7 +318,7 @@
     },
     sample = function(eta, n_trials, phi) {
       mu <- .mean_log(eta)
-      p0 <- exp(phi * (log(phi) - log(phi + mu)))
+      p0 <- exp(-phi * log1p(mu / phi))
       .rtrunc_count(stats::qnbinom, p0, size = phi, mu = mu)
     },
     variance = function(eta, n_trials, phi) {

@@ -135,7 +135,7 @@ double negbin_loglik_eta(
         ? eta_i + std::log1p(std::exp(-eta_i))
         : std::log1p(std::exp(eta_i));
 
-    ll += R::lgammafn(y[i] + r) - R::lgammafn(y[i] + 1) - R::lgammafn(r);
+    ll += log_rising_factorial(y[i], r) - R::lgammafn(y[i] + 1);
     ll += y[i] * eta_i - (y[i] + r) * log1p_exp_eta;
   }
 

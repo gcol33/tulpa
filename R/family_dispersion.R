@@ -172,8 +172,8 @@
   neg_binomial_2 = list(
     dloglik = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_log(eta)
-      digamma(y + phi) - digamma(phi) + log(phi) - log(phi + mu) +
-        1 - (phi + y) / (phi + mu)
+      .polygamma_rising_difference(0, y, phi) - log1p(mu / phi) +
+        (mu - y) / (phi + mu)
     },
     dscore = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_log(eta)
@@ -213,13 +213,13 @@
   neg_binomial_1 = list(
     dloglik = function(eta, y, n_trials, phi, phi2 = NULL) {
       r <- .mean_log(eta) / phi
-      s <- r * (digamma(y + r) - digamma(r) - log1p(phi))
+      s <- r * (.polygamma_rising_difference(0, y, r) - log1p(phi))
       -s / phi - (y + r) / (1 + phi) + y / phi
     },
     dscore = function(eta, y, n_trials, phi, phi2 = NULL) {
       r  <- .mean_log(eta) / phi
-      s  <- r * (digamma(y + r) - digamma(r) - log1p(phi))
-      T1 <- trigamma(r) - trigamma(y + r)
+      s  <- r * (.polygamma_rising_difference(0, y, r) - log1p(phi))
+      T1 <- -.polygamma_rising_difference(1, y, r)
       -s / phi + r * r * T1 / phi - r / (1 + phi)
     },
     dweight = function(eta, y, n_trials, phi, phi2 = NULL) {
@@ -255,7 +255,7 @@
       q  <- exp(-a)
       p  <- -expm1(-a)
       a_phi <- log1p(mu / phi) - mu / S
-      digamma(y + phi) - digamma(phi) + log(phi) - log(S) + 1 - (phi + y) / S -
+      .polygamma_rising_difference(0, y, phi) - log1p(mu / phi) + (mu - y) / S -
         q * a_phi / p
     },
     dscore = function(eta, y, n_trials, phi, phi2 = NULL) {
@@ -479,7 +479,7 @@
   neg_binomial_2 = list(
     dloglik2 = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_log(eta)
-      trigamma(y + phi) - trigamma(phi) + 1 / phi - 1 / (phi + mu) +
+      .polygamma_rising_difference(1, y, phi) + mu / (phi * (phi + mu)) +
         (y - mu) / (phi + mu)^2
     },
     dscore2 = function(eta, y, n_trials, phi, phi2 = NULL) {
@@ -507,7 +507,7 @@
     dloglik2 = function(eta, y, n_trials, phi, phi2 = NULL) {
       mu <- .mean_log(eta); s <- .tnb2_shape(mu, phi)
       q <- s$q; p <- s$p; a_p <- s$a_p
-      trigamma(y + phi) - trigamma(phi) + 1 / phi - 1 / s$S + (y - mu) / s$S^2 +
+      .polygamma_rising_difference(1, y, phi) + mu / (phi * s$S) + (y - mu) / s$S^2 +
         q * a_p^2 / p - q * s$a_pp / p + q^2 * a_p^2 / p^2
     },
     dscore2 = function(eta, y, n_trials, phi, phi2 = NULL) {

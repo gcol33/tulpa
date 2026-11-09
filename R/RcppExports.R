@@ -297,6 +297,18 @@ cpp_laplace_fit_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial
     .Call(`_tulpa_cpp_laplace_fit_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads, offset_nullable, force_sparse, compute_skew, skew_idx, weights_nullable, node_prec_nullable)
 }
 
+cpp_log_rising_factorial <- function(y, size) {
+    .Call(`_tulpa_cpp_log_rising_factorial`, y, size)
+}
+
+cpp_polygamma_rising_difference <- function(k, y, size) {
+    .Call(`_tulpa_cpp_polygamma_rising_difference`, k, y, size)
+}
+
+cpp_negbin2_log_density <- function(y, mu, phi) {
+    .Call(`_tulpa_cpp_negbin2_log_density`, y, mu, phi)
+}
+
 cpp_line_search_probe <- function(slope, c) {
     .Call(`_tulpa_cpp_line_search_probe`, slope, c)
 }
@@ -664,3 +676,4 @@ cpp_varying_coef_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sig
 cpp_temporal_field_rows <- function(field, n_times, structure, tau, rho, sigma2, phi, time_values, cov_type, nu, period, query, draw) {
     .Call(`_tulpa_cpp_temporal_field_rows`, field, n_times, structure, tau, rho, sigma2, phi, time_values, cov_type, nu, period, query, draw)
 }
+

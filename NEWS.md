@@ -392,6 +392,13 @@
   (58,885 solves) to 246 s (27,621 solves), the seed-33 HSGP arm from 93 s to 63 s and the n = 250 fit from
   781 s to 657 s; answers moved by at most 0.025 posterior SD and 0.002 nats, and every dense-reference error
   estimate still covers the measured error (#1157).
+- Every negative binomial density, score and curvature outside the autodiff path forms `log Gamma(y + size) -
+  log Gamma(size)` and the polygamma differences from one helper that does not cancel at a large size: an exact sum
+  for small counts and a term-by-term differenced asymptotic series otherwise. The R family densities and the GLMM
+  oracle had returned -117.1 for a Poisson-limit density of -1.71 at size 1e17 (y = 3, mu = 2), the type 1 score
+  -2 for a limit of 1 at dispersion 1e-15, and the expected CRT table count 0 for a limit of 8 at size 1e16; these
+  are the paths the empirical-Bayes dispersion search and the Polya-Gamma negative binomial sampler walk when the
+  size drifts upward on Poisson-like data (#1158).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component

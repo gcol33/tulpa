@@ -1173,6 +1173,44 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_log_rising_factorial
+Rcpp::NumericVector cpp_log_rising_factorial(const Rcpp::NumericVector& y, const Rcpp::NumericVector& size);
+RcppExport SEXP _tulpa_cpp_log_rising_factorial(SEXP ySEXP, SEXP sizeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type size(sizeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_log_rising_factorial(y, size));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_polygamma_rising_difference
+Rcpp::NumericVector cpp_polygamma_rising_difference(int k, const Rcpp::NumericVector& y, const Rcpp::NumericVector& size);
+RcppExport SEXP _tulpa_cpp_polygamma_rising_difference(SEXP kSEXP, SEXP ySEXP, SEXP sizeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type k(kSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type size(sizeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_polygamma_rising_difference(k, y, size));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_negbin2_log_density
+Rcpp::NumericVector cpp_negbin2_log_density(const Rcpp::NumericVector& y, const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi);
+RcppExport SEXP _tulpa_cpp_negbin2_log_density(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type phi(phiSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_negbin2_log_density(y, mu, phi));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_line_search_probe
 Rcpp::List cpp_line_search_probe(double slope, double c);
 RcppExport SEXP _tulpa_cpp_line_search_probe(SEXP slopeSEXP, SEXP cSEXP) {
@@ -3513,6 +3551,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 25},
     {"_tulpa_cpp_laplace_fit_spatial", (DL_FUNC) &_tulpa_cpp_laplace_fit_spatial, 23},
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 25},
+    {"_tulpa_cpp_log_rising_factorial", (DL_FUNC) &_tulpa_cpp_log_rising_factorial, 2},
+    {"_tulpa_cpp_polygamma_rising_difference", (DL_FUNC) &_tulpa_cpp_polygamma_rising_difference, 3},
+    {"_tulpa_cpp_negbin2_log_density", (DL_FUNC) &_tulpa_cpp_negbin2_log_density, 3},
     {"_tulpa_cpp_line_search_probe", (DL_FUNC) &_tulpa_cpp_line_search_probe, 2},
     {"_tulpa_cpp_newton_converged_probe", (DL_FUNC) &_tulpa_cpp_newton_converged_probe, 4},
     {"_tulpa_cpp_newton_trust_probe", (DL_FUNC) &_tulpa_cpp_newton_trust_probe, 1},

@@ -241,10 +241,7 @@ link_names <- function() names(.LINKS)
   ),
 
   neg_binomial_2 = list(
-    loglik_mu   = function(y, mu, phi, n) {
-      lgamma(y + phi) - lgamma(phi) - lgamma(y + 1) +
-        phi * (log(phi) - log(phi + mu)) + y * (log(mu) - log(mu + phi))
-    },
+    loglik_mu   = function(y, mu, phi, n) .negbin2_loglik(y, mu, phi),
     grad_mu     = function(y, mu, phi, n) y / mu - (y + phi) / (mu + phi),
     working_var = function(mu, phi, n) mu + mu^2 / phi,
     resp_var    = function(mu, phi, n) mu + mu^2 / phi,

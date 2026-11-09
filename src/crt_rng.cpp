@@ -3,6 +3,7 @@
 // Reference: Zhou et al. (2012) "Lognormal and Gamma Mixed Negative Binomial Regression" ICML
 
 #include "crt_rng.h"
+#include "laplace_likelihoods.h"   // polygamma_rising_difference
 #include <Rcpp.h>
 #include <cmath>
 
@@ -71,8 +72,7 @@ IntegerVector sample_crt_vec2(IntegerVector y, NumericVector r) {
 double crt_mean(int y, double r) {
   if (y <= 0 || r <= 0.0) return 0.0;
 
-  // Use R's digamma function
-  return r * (R::digamma(y + r) - R::digamma(r));
+  return r * polygamma_rising_difference(0, y, r);
 }
 
 // Sum of CRT draws (sufficient statistic for dispersion update)

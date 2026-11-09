@@ -634,9 +634,7 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
     }
     if (family == "neg_binomial_2") {
         double safe_mu = std::max(mu, kMuFloor);
-        return tulpa::math::portable_lgamma((int)y + phi) - tulpa::math::portable_lgamma(phi) - tulpa::math::portable_lgamma((int)y + 1.0)
-               + phi * std::log(phi / (safe_mu + phi))
-               + (int)y * std::log(safe_mu / (safe_mu + phi));
+        return log_lik_negbin((int)y, std::log(safe_mu), phi);
     }
     if (family == "gamma") {
         return phi * std::log(phi) - tulpa::math::portable_lgamma(phi) + (phi - 1.0) * std::log(y)
@@ -834,8 +832,7 @@ inline GradHess grad_hess_for_family_core(
         // available exactly, through obs_grad_hess_for_family below.
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double r  = mu / phi;
-        const double grad = r * (tulpa::math::portable_digamma(y + r)
-                                 - tulpa::math::portable_digamma(r)
+        const double grad = r * (polygamma_rising_difference(0, (int)y, r)
                                  - std::log1p(phi));
         return {grad, mu / (1.0 + phi)};
     }
@@ -948,7 +945,7 @@ inline double log_lik_for_family_core(
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double r  = mu / phi;
         const double yi = (double)(int)y;
-        return tulpa::math::portable_lgamma(yi + r) - tulpa::math::portable_lgamma(r) - tulpa::math::portable_lgamma(yi + 1.0)
+        return log_rising_factorial((int)y, r) - tulpa::math::portable_lgamma(yi + 1.0)
              - (yi + r) * std::log1p(phi) + yi * std::log(phi);
     }
     if (kind == FamilyKind::TRUNCATED_POISSON ||
@@ -1182,11 +1179,9 @@ inline GradHess obs_grad_hess_for_family(
         // even in expectation -- see the note under its grad_hess branch.
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double r  = mu / phi;
-        const double s  = r * (tulpa::math::portable_digamma(y + r)
-                               - tulpa::math::portable_digamma(r)
+        const double s  = r * (polygamma_rising_difference(0, (int)y, r)
                                - std::log1p(phi));
-        return {s, -s + r * r * (tulpa::math::portable_trigamma(r)
-                                 - tulpa::math::portable_trigamma(y + r))};
+        return {s, -s - r * r * polygamma_rising_difference(1, (int)y, r)};
     }
     if (family == "truncated_neg_binomial_2") {
         // The truncated density is the NB2 density minus log P(Y > 0), so the

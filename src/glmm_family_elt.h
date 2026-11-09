@@ -9,6 +9,7 @@
 #define TULPA_GLMM_FAMILY_ELT_H
 
 #include <Rcpp.h>
+#include "laplace_likelihoods.h"   // log_rising_factorial
 #include <cmath>
 #include <string>
 #include <stdexcept>
@@ -51,8 +52,7 @@ inline double glmm_log_const(GLMMFamily fam, double y, double n_trials,
     case GLMMFamily::Gaussian:
         return -0.5 * std::log(2.0 * M_PI) - 0.5 * std::log(phi_var);
     case GLMMFamily::NegBin:
-        return R::lgammafn(y + phi_var) - R::lgammafn(phi_var)
-               - R::lgammafn(y + 1.0);
+        return log_rising_factorial((int) y, phi_var) - R::lgammafn(y + 1.0);
     }
     return 0.0;   // unreachable
 }
@@ -78,10 +78,17 @@ inline GLMMElt glmm_elt_eta(GLMMFamily fam, double eta, double y,
         return { -0.5 * r * r / phi_var, r / phi_var, -1.0 / phi_var };
     }
     case GLMMFamily::NegBin: {
+        // With s = log1p(mu / r) = softplus(eta - log r),
+        //   r log(r / (r + mu)) + y log(mu / (r + mu)) = y (eta - log r - s) - r s,
+        // whose terms stay exact as r grows (r s -> mu, the Poisson limit).
         const double rsz = phi_var;                 // size
         const double mu  = std::exp(eta);
         const double rm  = rsz + mu;
-        const double l   = rsz * std::log(rsz / rm) + y * std::log(mu / rm);
+        const double log_r = std::log(rsz);
+        const double x   = eta - log_r;
+        const double s   = (x > 0.0) ? x + std::log1p(std::exp(-x))
+                                     : std::log1p(std::exp(x));
+        const double l   = y * (x - s) - rsz * s;
         const double d1  = y - (rsz + y) * mu / rm;
         const double d2  = -(rsz + y) * rsz * mu / (rm * rm);
         return { l, d1, d2 };
