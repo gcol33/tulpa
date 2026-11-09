@@ -1,6 +1,6 @@
 // pg_negbin.h
 // Pólya-Gamma Gibbs sampler for Negative Binomial models
-// Uses PG augmentation for the logit component and CRT for dispersion
+// Uses PG augmentation for log-odds and Metropolis-Hastings for dispersion
 // Reference: Zhou et al. (2012) "Lognormal and Gamma Mixed Negative Binomial Regression"
 
 #ifndef TULPA_PG_NEGBIN_H
@@ -12,7 +12,7 @@
 namespace tulpa {
 
 // ---------------------------------------------------------------------
-// Negative Binomial Model with PG+CRT Augmentation
+// Negative Binomial Model with PG Augmentation
 // ---------------------------------------------------------------------
 //
 // Model (NB2 parameterization):
@@ -20,24 +20,25 @@ namespace tulpa {
 //   E[Y_i] = mu_i = r * p_i / (1 - p_i)
 //   Var[Y_i] = mu_i + mu_i^2 / r
 //
-//   logit(p_i) = eta_i = X_i * beta + Z_i * b
+//   log(mu_i) = eta_i = X_i * beta + Z_i * b
+//   logit(p_i) = eta_i - log(r)
+//   beta_j ~ N(0, prior_beta_sd^2)
 //   b_g ~ N(0, sigma_re^2)
 //
 // Augmentation scheme:
-//   1. omega_i ~ PG(y_i + r, eta_i)  -- Pólya-Gamma for logit
-//   2. L_i ~ CRT(y_i, r)             -- Chinese Restaurant Table for dispersion
+//   omega_i ~ PG(y_i + r, eta_i - log(r))
 //
 // After augmentation, the model becomes:
 //   kappa_i = (y_i - r) / 2
-//   kappa_i / omega_i | omega_i ~ N(eta_i, 1/omega_i)
+//   kappa_i / omega_i | omega_i ~ N(eta_i - log(r), 1/omega_i)
 //
-// This enables conjugate Gibbs updates for beta, b, and r.
+// This enables conjugate Gibbs updates for beta and b; r uses the marginal
+// NB2 likelihood in Metropolis-Hastings updates on log(r).
 //
 // ---------------------------------------------------------------------
 
 // Log-likelihood of the NB at linear predictor eta (Zhou's logit
-// parameterization, mu = r exp(eta)); the density the Gibbs kernels
-// evaluate. Defined in pg_negbin.cpp.
+// parameterization, mu = r exp(eta)). Defined in pg_negbin.cpp.
 double negbin_loglik_eta(const Rcpp::IntegerVector& y,
                          const Rcpp::NumericVector& eta, double r);
 
@@ -65,7 +66,7 @@ struct PGNegBinGibbsResult {
 // Main Gibbs sampler for single negative binomial process
 // ---------------------------------------------------------------------
 
-// PG+CRT Gibbs sampler for single NB response
+// PG Gibbs sampler for single NB response
 // @param y Integer vector of counts
 // @param X Design matrix for fixed effects
 // @param group Integer vector of group indices (1-based)
@@ -135,12 +136,11 @@ Rcpp::List pg_negbin_gibbs_spatial(
 // kernels update_beta / update_re (declared in pg_shared.h).
 
 // Update dispersion r with a Metropolis-Hastings step on log(r).
-// Prior: r ~ Gamma(shape, rate). The likelihood uses the NB-as-logistic
-// (Zhou) parameterization mu = r * exp(eta), so the second argument is the
-// linear predictor eta, NOT a probability.
+// Prior: r ~ Gamma(shape, rate). The predictor eta is the NB2 log-mean,
+// held fixed while r changes.
 double update_r_negbin(
     const Rcpp::IntegerVector& y,
-    const Rcpp::NumericVector& eta,  // linear predictor (mu = r * exp(eta))
+    const Rcpp::NumericVector& eta,  // NB2 log-mean (mu = exp(eta))
     double r_current,
     double prior_shape,
     double prior_rate

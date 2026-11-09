@@ -69,21 +69,17 @@ SigmaReState update_sigma_re_negbin_hc(
 }
 
 
-// The PG-NB augmentation samples beta / eta on the Zhou (2012) log-odds scale,
-// where the mean is mu = r * exp(eta). tulpa's neg_binomial_2 family is the NB2
-// mean scale mu = exp(eta_nb2) (R/family_loglik.R, .mean_log), shared by the
-// Laplace / NUTS backends. The two parameterizations differ only by a log(r)
-// shift in the intercept: eta_nb2 = eta + log(r), so beta_nb2[0] = beta[0] +
-// log(r) (slopes and random effects are identical). Report the user-facing
-// draws on the NB2 mean scale so tulpa_gibbs() agrees with the other backends;
-// the internal sampler stays on the Zhou scale, where the PG augmentation and
-// the joint (r, beta0) update are derived. The transform is applied per draw
-// (a derived quantity summarised after sampling), so the posterior is exact.
-static inline void store_beta_nb2(Rcpp::NumericMatrix& beta_draws, int row,
-                                  const Rcpp::NumericVector& beta, double r) {
-  const int p = beta.size();
-  beta_draws(row, 0) = beta[0] + std::log(r);   // intercept on the NB2 mean scale
-  for (int j = 1; j < p; j++) beta_draws(row, j) = beta[j];
+// Coefficients and latent effects use the NB2 log-mean scale. PG augmentation
+// reads log-odds eta_nb2 - log(r), so the Gaussian coefficient conditional has
+// offset latent - log(r) and the declared N(0, sd^2) prior on every coefficient.
+static NumericVector update_beta_negbin(
+    const NumericVector& kappa, const NumericVector& omega,
+    const NumericMatrix& X, const NumericVector& latent,
+    double prior_sd, double r) {
+  NumericVector offset(latent.size());
+  const double log_r = std::log(r);
+  for (int i = 0; i < latent.size(); i++) offset[i] = latent[i] - log_r;
+  return update_beta(kappa, omega, X, offset, prior_sd);
 }
 
 // The dispersion's support: both r updates reject a proposal outside it, so the
@@ -100,51 +96,34 @@ static double negbin_log_prior_r(double r, double shape, double rate) {
   return pg_log_gamma(r, shape, rate) - std::log(mass);
 }
 
-// The NB log-likelihood through the shared GLMM family density. The kernel's
-// eta is on the Zhou log-odds scale, mu = r exp(eta), so the NB2 log-mean the
-// family density reads is eta + log(r).
+// The NB2 log-likelihood at the log-mean eta through the shared family density.
 static double negbin_log_lik_family(const IntegerVector& y,
                                     const NumericVector& eta, double r) {
-  const double log_r = std::log(r);
   double ll = 0.0;
   for (int i = 0; i < y.size(); i++) {
-    ll += glmm_elt(GLMMFamily::NegBin, eta[i] + log_r, y[i], 0.0, r).l;
+    ll += glmm_elt(GLMMFamily::NegBin, eta[i], y[i], 0.0, r).l;
   }
   return ll;
 }
 
-// Log-likelihood of the NB given eta (linear predictor) and r.
-//
-// In Zhou's logit parameterization mu = r exp(eta), so the failure probability
-// r / (r + mu) is 1 / (1 + exp(eta)) with r cancelling, and
-//   r log(prob) + y log(1 - prob) = y eta - (y + r) log(1 + exp(eta)).
-// The right-hand side is exact at every eta -- the log(1 + exp(eta)) branches
-// on the sign of eta the way log_lik_binomial_kernel does -- so the density
-// needs neither an eta clamp nor a floor on prob to stay finite.
+// The log-odds reading of the shared NB2 density, mu = r exp(eta).
 double negbin_loglik_eta(
     const IntegerVector& y,
     const NumericVector& eta,
     double r
 ) {
-  int n = y.size();
+  const double log_r = std::log(r);
   double ll = 0.0;
-
-  for (int i = 0; i < n; i++) {
-    const double eta_i = eta[i];
-    const double log1p_exp_eta = (eta_i > 0.0)
-        ? eta_i + std::log1p(std::exp(-eta_i))
-        : std::log1p(std::exp(eta_i));
-
-    ll += log_rising_factorial(y[i], r) - R::lgammafn(y[i] + 1);
-    ll += y[i] * eta_i - (y[i] + r) * log1p_exp_eta;
+  for (int i = 0; i < y.size(); i++) {
+    ll += glmm_elt(GLMMFamily::NegBin, eta[i] + log_r, y[i], 0.0, r).l;
   }
 
   return ll;
 }
 
-// Joint MH update for (r, beta_0) to break confounding
-// Key insight: mu = r * exp(eta), so when r changes, adjust beta_0 to keep mu stable
-// This "ancillary" proposal explores the posterior ridge efficiently
+// Joint MH update in (log r, beta_0_nb2). A symmetric perturbation of the NB2
+// intercept accompanies log r; on the log-odds scale this is the compensating
+// move beta_0_logit += -delta_log_r + perturbation.
 struct JointRBeta0Result {
   double r;
   double beta0;
@@ -164,20 +143,14 @@ JointRBeta0Result update_r_beta0_joint(
   int n = y.size();
   double beta0_current = beta_current[0];
 
-  // Proposal: log(r) changes, beta_0 adjusts to maintain approximate mean
+  // Symmetric proposal on the log-dispersion and NB2 intercept coordinates.
   double log_r_current = std::log(r_current);
   double proposal_sd_r = 0.2;
 
   double log_r_prop = R::rnorm(log_r_current, proposal_sd_r);
   double r_prop = std::exp(log_r_prop);
 
-  // Compensating adjustment to beta_0: keep mu ≈ r * exp(beta_0 + ...)
-  // If r increases by factor k, decrease beta_0 by log(k)
-  double delta_log_r = log_r_prop - log_r_current;
-  double beta0_prop = beta0_current - delta_log_r;  // Compensating move
-
-  // Add small perturbation to explore
-  beta0_prop += R::rnorm(0.0, 0.05);
+  double beta0_prop = beta0_current + R::rnorm(0.0, 0.05);
 
   JointRBeta0Result result;
   result.r = r_current;
@@ -205,8 +178,8 @@ JointRBeta0Result update_r_beta0_joint(
   }
 
   // Log likelihood
-  double ll_current = negbin_loglik_eta(y, eta_current, r_current);
-  double ll_prop = negbin_loglik_eta(y, eta_prop, r_prop);
+  double ll_current = negbin_log_lik_family(y, eta_current, r_current);
+  double ll_prop = negbin_log_lik_family(y, eta_prop, r_prop);
 
   // Log prior for r: Gamma(shape, rate)
   double log_prior_r_current = (prior_r_shape - 1.0) * log_r_current - prior_r_rate * r_current;
@@ -216,7 +189,8 @@ JointRBeta0Result update_r_beta0_joint(
   double log_prior_b0_current = -0.5 * beta0_current * beta0_current / (prior_beta_sd * prior_beta_sd);
   double log_prior_b0_prop = -0.5 * beta0_prop * beta0_prop / (prior_beta_sd * prior_beta_sd);
 
-  // Jacobian for log(r) transform
+  // |d(r, beta_0_nb2) / d(log r, beta_0_nb2)| = r. The intercept's
+  // log-odds translation has unit determinant and adds no further factor.
   double log_jac_current = log_r_current;
   double log_jac_prop = log_r_prop;
 
@@ -254,8 +228,8 @@ double update_r_negbin(
   double log_prior_current = (prior_shape - 1.0) * log_r_current - prior_rate * r_current;
   double log_prior_prop = (prior_shape - 1.0) * log_r_prop - prior_rate * r_prop;
 
-  double log_lik_current = negbin_loglik_eta(y, eta, r_current);
-  double log_lik_prop = negbin_loglik_eta(y, eta, r_prop);
+  double log_lik_current = negbin_log_lik_family(y, eta, r_current);
+  double log_lik_prop = negbin_log_lik_family(y, eta, r_prop);
 
   double log_alpha = (log_prior_prop + log_lik_prop + log_r_prop)
                    - (log_prior_current + log_lik_current + log_r_current);
@@ -290,11 +264,10 @@ static std::pair<double, double> nb_mom_init(const IntegerVector& y) {
     r_init = std::max(0.5, std::min(r_init, 100.0));  // Constrain
   }
 
-  // In logit parameterization: mu = r * exp(eta)
-  // So eta = log(mu/r), and with intercept-only: beta_0 = log(mu/r)
+  // NB2 intercept: log(mu).
   double beta0_init = 0.0;
   if (mu_hat > 0 && r_init > 0) {
-    beta0_init = std::log(mu_hat / r_init);
+    beta0_init = std::log(mu_hat);
     beta0_init = std::max(-10.0, std::min(beta0_init, 10.0));
   }
 
@@ -410,11 +383,11 @@ List pg_negbin_gibbs(
     // small r, where the conditional weight of every zero is off by up to
     // a factor 2. rpg_real handles the fractional part exactly.
     for (int i = 0; i < N; i++) {
-      omega[i] = rpg_real(y[i] + r, eta[i]);
+      omega[i] = rpg_real(y[i] + r, eta[i] - std::log(r));
     }
 
     // 4. Update beta | omega, re, y
-    NumericVector beta_new = update_beta(kappa, omega, X, re_contrib, prior_beta_sd);
+    NumericVector beta_new = update_beta_negbin(kappa, omega, X, re_contrib, prior_beta_sd, r);
 
     // Keep the previous value if the solve returned a non-finite draw. The
     // guard is finiteness only: discarding a finite draw on a magnitude bound
@@ -441,7 +414,9 @@ List pg_negbin_gibbs(
 
     // 6. Update random effects
     if (n_groups > 0) {
-      NumericVector re_new = update_re(kappa, omega, X_beta, group, n_groups, sigma_re);
+      NumericVector offset_re(N);
+      for (int i = 0; i < N; i++) offset_re[i] = X_beta[i] - std::log(r);
+      NumericVector re_new = update_re(kappa, omega, offset_re, group, n_groups, sigma_re);
 
       bool re_valid = true;
       for (int g = 0; g < n_groups; g++) {
@@ -482,7 +457,6 @@ List pg_negbin_gibbs(
     }
 
     // 7. Update (r, beta_0) jointly to break confounding
-    // This is the key fix for the identification issue
     NumericVector re_contrib_for_joint(N);
     for (int i = 0; i < N; i++) {
       re_contrib_for_joint[i] = (n_groups > 0) ? re[group[i] - 1] : 0.0;
@@ -514,9 +488,9 @@ List pg_negbin_gibbs(
     }
     r = update_r_negbin(y, eta, r, prior_r_shape, prior_r_rate);
 
-    // Save draws (reported on the NB2 mean scale; see store_beta_nb2).
+    // Save the NB2 coefficients and log-mean predictor.
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      store_beta_nb2(beta_draws, save_idx, beta, r);
+      beta_draws(save_idx, _) = beta;
       for (int g = 0; g < n_groups; g++) {
         re_draws(save_idx, g) = re[g];
       }
@@ -532,9 +506,8 @@ List pg_negbin_gibbs(
                : 0.0);
 
       if (store_eta) {
-        const double log_r = std::log(r);
         for (int i = 0; i < N; i++) {
-          eta_draws(save_idx, i) = eta[i] + log_r;  // NB2 log-mean
+          eta_draws(save_idx, i) = eta[i];
         }
       }
       save_idx++;
@@ -665,7 +638,7 @@ List pg_negbin_gibbs_spatial(
 
     // 2. Sample omega ~ PG(y + r, eta) at the exact (real) shape.
     for (int i = 0; i < N; i++) {
-      omega[i] = rpg_real(y[i] + r, eta[i]);
+      omega[i] = rpg_real(y[i] + r, eta[i] - std::log(r));
     }
 
     // 3. Update beta
@@ -673,7 +646,7 @@ List pg_negbin_gibbs_spatial(
     for (int i = 0; i < N; i++) {
       offset[i] = re_contrib[i] + spatial_contrib[i];
     }
-    beta = update_beta(kappa, omega, X, offset, prior_beta_sd);
+    beta = update_beta_negbin(kappa, omega, X, offset, prior_beta_sd, r);
 
     // Recompute X_beta
     tulpa_parallel_for(team, N, [&](int i) {
@@ -687,7 +660,7 @@ List pg_negbin_gibbs_spatial(
     if (n_re_groups > 0) {
       NumericVector offset_re(N);
       for (int i = 0; i < N; i++) {
-        offset_re[i] = X_beta[i] + spatial_contrib[i];
+        offset_re[i] = X_beta[i] + spatial_contrib[i] - std::log(r);
       }
 
       double prior_prec = 1.0 / (sigma_re * sigma_re + 1e-10);
@@ -722,7 +695,7 @@ List pg_negbin_gibbs_spatial(
     // 5. Update spatial effects (ICAR)
     NumericVector offset_spatial(N);
     for (int i = 0; i < N; i++) {
-      offset_spatial[i] = X_beta[i] + re_contrib[i];
+      offset_spatial[i] = X_beta[i] + re_contrib[i] - std::log(r);
     }
 
     // Sample the ICAR field, centred along its improper direction with the
@@ -754,9 +727,9 @@ List pg_negbin_gibbs_spatial(
     }
     r = update_r_negbin(y, eta, r, prior_r_shape, prior_r_rate);
 
-    // Save draws (reported on the NB2 mean scale; see store_beta_nb2).
+    // Save the NB2 coefficients and log-mean predictor.
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      store_beta_nb2(beta_draws, save_idx, beta, r);
+      beta_draws(save_idx, _) = beta;
       for (int g = 0; g < n_re_groups; g++) {
         re_draws(save_idx, g) = re[g];
       }
@@ -778,9 +751,8 @@ List pg_negbin_gibbs_spatial(
           negbin_log_prior_r(r, prior_r_shape, prior_r_rate);
 
       if (store_eta) {
-        const double log_r = std::log(r);
         for (int i = 0; i < N; i++) {
-          eta_draws(save_idx, i) = eta[i] + log_r;  // NB2 log-mean
+          eta_draws(save_idx, i) = eta[i];
         }
       }
       save_idx++;

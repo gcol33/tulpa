@@ -84,8 +84,10 @@ inline PGBinomialFn get_pg_binomial_fn() {
 }
 
 // ----------------------------------------------------------------------------
-// pg_negbin_gibbs: PG+CRT Gibbs for NB GLMM with iid RE.
+// pg_negbin_gibbs: PG Gibbs for NB GLMM with iid RE.
 // Adds three more priors and an init for the dispersion r.
+// beta and eta use the NB2 log-mean scale, mu = exp(eta). prior_beta_sd
+// defines N(0, sd^2) on those coefficients, including the intercept.
 // ----------------------------------------------------------------------------
 typedef void (*PGNegbinFn)(
     const int* y,
@@ -118,6 +120,7 @@ inline PGNegbinFn get_pg_negbin_fn() {
 
 // ----------------------------------------------------------------------------
 // pg_negbin_spatial_gibbs: NB GLMM with iid RE + ICAR spatial.
+// Coefficient priors and returned beta / eta have the same NB2 convention.
 //   spatial_group       [N_obs] : 1-based spatial-unit index
 //   adj_row_ptr [n_spatial_units + 1], adj_col_idx [...] : CSR adjacency
 //   n_neighbors [n_spatial_units]

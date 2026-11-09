@@ -412,6 +412,11 @@
   distribution assembly) are exported in `inst/include/tulpa/count_math.h`, beside `precision_math.h`, so a
   `LinkingTo: tulpa` package computes negative binomial and beta-binomial densities from the same code instead of
   a copy (#1161).
+- The Polya-Gamma negative binomial samplers put the coefficient prior on the NB2 coefficients the fit reports.
+  They had applied it on the internal log-odds coordinate, which on the reported scale centres the intercept prior
+  at log(r): with `prior_beta_sd = 0.1` the intercept's posterior median read 0.619 against a dense-quadrature
+  value of -0.0006, and now reads -0.0003. The Gaussian, dispersion and joint (log r, intercept) updates and both
+  `pg_api.h` hooks carry the change (#1163).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component

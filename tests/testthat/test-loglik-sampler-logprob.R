@@ -421,12 +421,11 @@ test_that("PG negative-binomial ICAR route records its joint density", {
   k <- nrow(res$beta)
   r <- res$r[k]
   beta_nb2 <- res$beta[k, ]
-  beta_zhou <- beta_nb2 - c(log(r), 0)
   re <- res$re[k, ]; phi <- res$spatial[k, ]; tau <- res$tau[k]
   eta_nb2 <- as.numeric(d$X %*% beta_nb2) + re[d$grp] + phi[d$unit]
   quad <- drop(crossprod(phi, ref_icar_Q(d$W) %*% phi))
   ref <- sum(dnbinom(yc, size = r, mu = exp(eta_nb2), log = TRUE)) +
-    sum(dnorm(beta_zhou, 0, 3, log = TRUE)) +
+    sum(dnorm(beta_nb2, 0, 3, log = TRUE)) +
     sum(dnorm(re, 0, res$sigma_re[k], log = TRUE)) +
     ref_log_hc(res$sigma_re[k], 2) +
     ref_log_gmrf(quad, d$J - 1L, tau) + ref_log_pc_tau(tau, 1.5, 0.2) +
@@ -449,7 +448,7 @@ test_that("PG negative-binomial route records its joint density, with and withou
   beta_nb2 <- res0$beta[k, ]
   ref <- sum(dnbinom(yc, size = r, mu = exp(as.numeric(d$X %*% beta_nb2)),
                      log = TRUE)) +
-    sum(dnorm(beta_nb2 - c(log(r), 0), 0, 3, log = TRUE)) +
+    sum(dnorm(beta_nb2, 0, 3, log = TRUE)) +
     nb_r_log_prior(r, 1.2, 0.3)
   expect_lt(abs(res0$log_prob[k] - ref), 1e-8)
 
@@ -466,7 +465,7 @@ test_that("PG negative-binomial route records its joint density, with and withou
   ref <- sum(dnbinom(yc, size = r,
                      mu = exp(as.numeric(d$X %*% beta_nb2) + re[d$grp]),
                      log = TRUE)) +
-    sum(dnorm(beta_nb2 - c(log(r), 0), 0, 3, log = TRUE)) +
+    sum(dnorm(beta_nb2, 0, 3, log = TRUE)) +
     sum(dnorm(re, 0, s_re, log = TRUE)) + ref_log_hc(s_re, 2) +
     nb_r_log_prior(r, 1.2, 0.3)
   expect_lt(abs(res1$log_prob[k] - ref), 1e-8)
