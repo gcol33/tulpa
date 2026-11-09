@@ -417,6 +417,11 @@
   at log(r): with `prior_beta_sd = 0.1` the intercept's posterior median read 0.619 against a dense-quadrature
   value of -0.0006, and now reads -0.0003. The Gaussian, dispersion and joint (log r, intercept) updates and both
   `pg_api.h` hooks carry the change (#1163).
+- `ad_scalar_math.h`, `autodiff_fwd.h` and `portable_math.h` export the scalar dispatch, unary lifts and the forward
+  boundary guards (exp clamp, sqrt and pow at zero, expm1, logit clamp, empty log-sum-exp) a `LinkingTo` package
+  needs to use the engine's autodiff types instead of a copy; `vi_math.h` exports the VI optimizer, convergence
+  checker, Gaussian path-derivative gradient, Woodbury precision and factor alignment; the transformed half-Cauchy
+  value and gradient are shared (gcol33/tulpaRatio#175, #186, #190).
 
 * `tulpa_latent_ascent()`: block-coordinate ascent for a grouped model with a
   shared GMRF field (any precision supplied as a builder, with per-component
