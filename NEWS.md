@@ -2,6 +2,13 @@
 
 ## Models and inference
 
+* `spatial_svc(sigma_prior_U =, sigma_prior_alpha =)`: each spatially varying
+  coefficient field's marginal SD, NNGP and HSGP alike, carries the shared PC
+  prior `P(sigma > U) = alpha` (default `U = 1`, `alpha = 0.01`), validated at
+  the front door, in place of a fixed Half-Cauchy that no argument reached.
+  The anchors travel in `ModelData` (ABI 53), so consumer packages must be
+  rebuilt (#1162).
+
 * `tulpa_re_em()`: grouped random effects by Laplace-EM on the per-group
   oracle `tulpa_re_aghq()` takes (native, `make_site` or `make_group`), the
   `n_quad = 1` sibling of the exact-marginal fit. Closed-form covariance

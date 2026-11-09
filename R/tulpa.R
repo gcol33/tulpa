@@ -614,12 +614,9 @@
     cov_type        = gp_cov_type(spatial),
     phi_prior_U     = lp[1L] / .SPATIAL_RANGE_FACTOR,
     phi_prior_alpha = lp[2L],
-    # Non-centered by default, matching .gp_sampler_spec()'s
-    # gp_parameterization: each term's field is reconstructed as
-    # w_j = f(z_j, sigma2_j, phi_j), which removes the funnel that attenuates a
-    # weakly identified field's amplitude (sd ratio 0.98 against 0.33 centered,
-    # on the one-trial binomial fixture, at a tenth of the cost). Only usable
-    # once the soft sum-to-zero pin stopped fighting the reparameterization.
+    # Independent standard normal coordinates reconstruct each term's field as
+    # w_j = f(z_j, sigma2_j, phi_j). This removes field-variance coupling from
+    # the prior, which helps variance mixing under weakly informative data.
     svc_parameterization =
       if (identical(spatial$parameterization, "centered")) 0L else 1L
   ), anchors)
