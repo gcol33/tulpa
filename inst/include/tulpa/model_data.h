@@ -205,7 +205,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 56;
+constexpr int TULPA_ABI_VERSION = 57;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -549,7 +549,6 @@ struct ModelData {
     int n_temporal_groups = 1;
     int n_temporal_params = 0;
     bool temporal_cyclic = false;
-    bool temporal_shared = true;            // shared across processes
     // PC prior on an RW1 / RW2 / AR1 field's SD sigma = 1 / sqrt(tau), carried
     // to the sampled log-precision: P(sigma > U) = alpha. The default is the
     // anchor the nested-Laplace route puts on the same field's precision axis
