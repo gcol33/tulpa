@@ -30,6 +30,9 @@
       // Leapfrog integration
       std::vector<double> q_prop = q;
       std::vector<double> p_prop = p;
+      // Independent trajectory step sizes avoid periodic orbits at fixed L.
+      const double step = is_warmup ? epsilon :
+          epsilon * (1.0 + 0.2 * (2.0 * unif(rng) - 1.0));
 
       // Determine effective L for this iteration
       int L_eff = L;
@@ -46,16 +49,16 @@
 
         for (int l = 0; l < L_eff; l++) {
           for (int i = 0; i < n_params; i++) {
-            p_prop[i] += 0.5 * epsilon * grad[i];
+            p_prop[i] += 0.5 * step * grad[i];
           }
           std::vector<double> Hp(n_params);
           lbfgs_state.multiply_H(p_prop, Hp);
           for (int i = 0; i < n_params; i++) {
-            q_prop[i] += epsilon * Hp[i];
+            q_prop[i] += step * Hp[i];
           }
           compute_gradient(q_prop, data, layout, grad, &log_prob_step);
           for (int i = 0; i < n_params; i++) {
-            p_prop[i] += 0.5 * epsilon * grad[i];
+            p_prop[i] += 0.5 * step * grad[i];
           }
           if (leapfrog_state_nonfinite(log_prob_step, q_prop.data(),
                                        p_prop.data(), n_params)) {
@@ -71,7 +74,7 @@
       } else {
         // Standard leapfrog under the sampler's own metric.
         for (int l = 0; l < L_eff; l++) {
-          LeapfrogResult lf = leapfrog_step(q_prop, p_prop, epsilon, data,
+          LeapfrogResult lf = leapfrog_step(q_prop, p_prop, step, data,
                                             layout, nullptr, &mass);
           q_prop = lf.q;
           p_prop = lf.p;
