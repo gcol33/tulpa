@@ -14,7 +14,7 @@
 local({
   ns <- asNamespace("tulpa")
   exported <- getNamespaceExports("tulpa")
-  candidates <- ls(envir = ns)
+  candidates <- ls(envir = ns, all.names = TRUE)
   internals <- setdiff(candidates, exported)
   for (nm in internals) {
     obj <- get(nm, envir = ns, inherits = FALSE)

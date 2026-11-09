@@ -203,7 +203,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 52;
+constexpr int TULPA_ABI_VERSION = 53;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -494,10 +494,9 @@ struct ModelData {
     HSGPData svc_hsgp_data;
     int svc_hsgp_m_per_dim = 6;
     double svc_hsgp_boundary_factor = 1.5;
-    // Half-Cauchy scale on each SVC term's marginal SD. Read on both the NNGP
-    // and the HSGP basis: the basis fixes how the field is represented, not
-    // what its marginal variance means.
-    double svc_sigma2_prior_scale = 1.0;
+    // PC prior on each SVC term's marginal SD, P(sigma > U) = alpha.
+    double svc_sigma_prior_U = 1.0;
+    double svc_sigma_prior_alpha = 0.01;
     // PC prior on each term's range, P(range < U) = alpha; see
     // gp_phi_prior_U. On the HSGP path the range is the squared-exponential
     // lengthscale, sampled in the same layout slot.

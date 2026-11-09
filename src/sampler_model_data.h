@@ -415,7 +415,8 @@ inline void init_noncentered_scales(std::vector<double>& q,
     }
     if (layout.has_svc && (data.svc_parameterization == 1 || data.svc_is_hsgp)) {
         set_span(layout.log_sigma2_svc_start, layout.log_sigma2_svc_end,
-                 half_cauchy_median_log_sd(data.svc_sigma2_prior_scale), 2.0);
+                 pc_median_log_sd(data.svc_sigma_prior_U,
+                                  data.svc_sigma_prior_alpha), 2.0);
     }
     if (layout.is_temporal_gp && data.temporal_gp_parameterization == 1) {
         set(layout.log_sigma2_temporal_gp_idx,

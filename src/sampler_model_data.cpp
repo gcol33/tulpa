@@ -800,8 +800,10 @@ void build_sampler_model_inputs(
                             in.data.svc_phi_prior_U, in.data.svc_phi_prior_alpha,
                             "spatial_svc() range");
         }
-        if (sv.containsElementNamed("sigma2_prior_scale"))
-            in.data.svc_sigma2_prior_scale = Rcpp::as<double>(sv["sigma2_prior_scale"]);
+        read_pc_anchors(sv, "sigma_prior_U", "sigma_prior_alpha",
+                        in.data.svc_sigma_prior_U,
+                        in.data.svc_sigma_prior_alpha,
+                        "spatial_svc() SD");
         // svc_parameterization defaults to 1 (non-centered), matching the
         // spatial_svc() front door: each NNGP term's field is reconstructed as
         // w_j = f(z_j, sigma2_j, phi_j) and the stored draws are transformed

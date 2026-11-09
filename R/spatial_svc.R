@@ -33,6 +33,12 @@
 #' @param c_boundary Boundary-extension factor for the HSGP domain
 #'   (`approx = "hsgp"`), `>= 1`. `NULL` (default) chooses it from the data,
 #'   at the largest lengthscale of the varying coefficients.
+#' @param sigma_prior_U,sigma_prior_alpha Penalized-complexity prior on each
+#'   coefficient field's marginal standard deviation, calibrated so that
+#'   `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
+#'   `P(sigma > 1) = 0.01`, as for HSGP fields and [temporal_tvc()].
+#'   Applies to both approximations. `sigma_prior_U` must be positive and
+#'   `sigma_prior_alpha` must lie in `(0, 1)`.
 #' @param parameterization Latent parameterization for the exact-NUTS field
 #'   (`approx = "nngp"` only; HSGP is already non-centered by construction).
 #'   `"noncentered"` (default) samples `z_j ~ N(0, I)` per term and
@@ -63,10 +69,14 @@ spatial_svc <- function(coords,
                         approx = c("nngp", "hsgp"),
                         m = NULL,
                         c_boundary = NULL,
-                        parameterization = c("noncentered", "centered")) {
+                        parameterization = c("noncentered", "centered"),
+                        sigma_prior_U = 1,
+                        sigma_prior_alpha = 0.01) {
 
   approx <- match.arg(approx)
   parameterization <- match.arg(parameterization)
+  .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
+                    "sigma_prior_U", "sigma_prior_alpha", "spatial_svc()")
   kernel <- NULL
   if (approx == "hsgp") {
     kernel <- .hsgp_kernel(cov, nu, "svc(approx = \"hsgp\")")
@@ -123,6 +133,8 @@ spatial_svc <- function(coords,
       m = m,
       c_boundary = c_boundary,
       parameterization = parameterization,
+      sigma_prior_U = as.numeric(sigma_prior_U),
+      sigma_prior_alpha = as.numeric(sigma_prior_alpha),
       # Filled in during validation
       n_obs = NULL,
       n_loc = NULL,

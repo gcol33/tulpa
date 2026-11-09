@@ -16,7 +16,9 @@ spatial_svc(
   approx = c("nngp", "hsgp"),
   m = NULL,
   c_boundary = NULL,
-  parameterization = c("noncentered", "centered")
+  parameterization = c("noncentered", "centered"),
+  sigma_prior_U = 1,
+  sigma_prior_alpha = 0.01
 )
 
 \method{print}{tulpa_svc}(x, ...)
@@ -69,6 +71,13 @@ amplitude when it is weakly identified. \code{"centered"} places the NNGP
 density on each term's field directly; it is marginally cheaper on a
 well-identified response, but on a weakly identified one it recovers only
 about a third of the field's spread.}
+
+\item{sigma_prior_U, sigma_prior_alpha}{Penalized-complexity prior on each
+coefficient field's marginal standard deviation, calibrated so that
+\code{P(sigma > sigma_prior_U) = sigma_prior_alpha}. Defaults to
+\code{P(sigma > 1) = 0.01}, as for HSGP fields and \code{\link[=temporal_tvc]{temporal_tvc()}}.
+Applies to both approximations. \code{sigma_prior_U} must be positive and
+\code{sigma_prior_alpha} must lie in \verb{(0, 1)}.}
 
 \item{x}{A \code{tulpa_svc} specification.}
 

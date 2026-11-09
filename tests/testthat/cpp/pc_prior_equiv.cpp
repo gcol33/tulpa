@@ -20,17 +20,12 @@
 #include "autodiff_utils.h"
 #include "hmc_sampler.h"
 
-// The half-Cauchy scale prior on the coordinate the SVC block samples it on.
-// Exported for the same reason as the range density: the NNGP SVC path is
-// reachable only from a consumer package's fit, so the density is asserted
-// through the shared helper the sampler itself calls.
 // [[Rcpp::export]]
-Rcpp::NumericVector cpp_test_log_prior_log_sigma2_half_cauchy(
-    Rcpp::NumericVector log_sigma2, double scale) {
+Rcpp::NumericVector cpp_test_log_prior_log_sigma2_pc(
+    Rcpp::NumericVector log_sigma2, double U, double alpha) {
   Rcpp::NumericVector out(log_sigma2.size());
   for (R_xlen_t i = 0; i < log_sigma2.size(); i++) {
-    out[i] = tulpa::log_prior_log_sigma2_half_cauchy<double>(log_sigma2[i],
-                                                             scale);
+    out[i] = tulpa::log_prior_log_sigma2_pc<double>(log_sigma2[i], U, alpha);
   }
   return out;
 }

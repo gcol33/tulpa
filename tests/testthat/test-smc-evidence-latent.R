@@ -319,7 +319,7 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
     sp <- tulpa:::.svc_sampler_spec(v, X)
     check(list(svc_spec = sp), function(r) {
       ls2 <- r[["log_sigma2_svc[1]"]]
-      lp <- log(2 / pi) - log1p(exp(ls2)) - log(2) + ls2 / 2 +
+      lp <- lp_pc_log_sigma2(ls2, sp$sigma_prior_U, sp$sigma_prior_alpha) +
         sum(dnorm(r[grep("^svc_w", names(r))], log = TRUE))
       lp + lp_pc_log_range(r[["log_phi_svc[1]"]], sp$phi_prior_U,
                            sp$phi_prior_alpha)

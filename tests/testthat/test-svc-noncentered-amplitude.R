@@ -92,13 +92,15 @@ sim_svc_bernoulli <- function(n = 150L, sigma2 = 1.0, phi = 0.30,
 # second chain.
 .svc_amp_fits <- new.env(parent = emptyenv())
 
-fit_svc_amp <- function(d, parameterization) {
+fit_svc_amp <- function(d, parameterization = "noncentered",
+                        n_iter = .SVC_AMP_ITER, n_warmup = .SVC_AMP_WARMUP) {
+  # The unit-amplitude fixture uses a prior with median SD one.
   tulpa(y ~ x, data = d, family = "binomial",
         spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 10L,
-                              parameterization = parameterization),
+                              parameterization = parameterization,
+                              sigma_prior_U = 1, sigma_prior_alpha = 0.5),
         mode = "exact",
-        control = list(n_iter = .SVC_AMP_ITER, n_warmup = .SVC_AMP_WARMUP,
-                       seed = 7L))
+        control = list(n_iter = n_iter, n_warmup = n_warmup, seed = 7L))
 }
 
 svc_amp_fit <- function(parameterization) {
@@ -167,10 +169,7 @@ test_that("non-centered SVC NUTS mixes in the field's variance", {
   # so the level is asserted there. The centered test's ordering stays on the
   # shared fits, since it compares the two parameterizations at one budget.
   d <- sim_svc_bernoulli(n = 150L, seed = 1L)
-  fit <- tulpa(y ~ x, data = d, family = "binomial",
-               spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 10L),
-               mode = "exact",
-               control = list(n_iter = 2500L, n_warmup = 1500L, seed = 7L))
+  fit <- fit_svc_amp(d, n_iter = 2500L, n_warmup = 1500L)
   expect_equal(length(fit$divergent) / length(unique(fit$chain_id)), 1000L)
   expect_lt(svc_sigma2_rhat(fit), 1.05)
 })
@@ -213,4 +212,42 @@ test_that("centered SVC NUTS also recovers a weakly identified field's amplitude
   expect_gt(rhat_c, rhat_nc,
             label = sprintf("centered sigma2 Rhat %.3f (non-centered %.3f)",
                             rhat_c, rhat_nc))
+})
+
+svc_sd_recovery_data <- function(approx) {
+  d <- sim_svc_bernoulli(sigma2 = 0.25, seed = 1L)
+  if (approx == "hsgp") {
+    cm <- as.matrix(d[, c("lon", "lat")])
+    dom <- cpp_hsgp_domain_2d(cm, 1.5)
+    basis <- cpp_hsgp_basis_2d_domain(cm, 8L, dom)
+    set.seed(55)
+    d$w_true <- as.numeric(basis$phi_basis %*%
+      (cpp_hsgp_sqrt_spectral(basis$lambda_eig, 0.25, 0.3,
+        tulpa:::.hsgp_kernel_code("matern32")) * rnorm(64L)))
+  }
+  set.seed(54)
+  d$y <- 0.2 + (0.8 + d$w_true) * d$x + rnorm(nrow(d), sd = 0.15)
+  d
+}
+
+test_that("SVC marginal SD intervals cover a simulated amplitude on both bases", {
+  skip_if_not_slow()
+  for (approx in c("nngp", "hsgp")) {
+    d <- svc_sd_recovery_data(approx)
+    fit <- tulpa(y ~ x, d, family = "gaussian", phi = 0.15^2,
+      spatial = spatial_svc(~lon+lat, terms = ~x-1, approx = approx,
+        nn = 10L, m = 8L, c_boundary = 1.5, scale_coords = FALSE),
+      mode = "exact", control = list(n_iter = 1500L, n_warmup = 750L,
+                                     n_chains = 2L, seed = 7L))
+    sigma <- exp(0.5 * fit$draws[, "log_sigma2_svc[1]"])
+    ci <- quantile(sigma, c(.025, .975))
+    expect_lt(ci[1], 0.5, label = approx)
+    expect_gt(ci[2], 0.5, label = approx)
+    expect_lte(mean(fit$divergent), 0.05, label = approx)
+    expect_lt(svc_sigma2_rhat(fit), 1.05, label = approx)
+    pred <- posterior_predict(fit, ndraws = 12L, seed = 18L)
+    expect_equal(dim(pred), c(12L, nrow(d)))
+    expect_equal(as.matrix(simulate(fit, nsim = 12L, seed = 18L)),
+      t(pred), ignore_attr = TRUE)
+  }
 })

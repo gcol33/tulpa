@@ -64,6 +64,13 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
         int n_svc = data.svc_data.n_svc;
         int n_obs = data.svc_data.n_obs;
 
+        // Each term's marginal SD carries the same PC prior on either basis.
+        for (int j = 0; j < n_svc; j++) {
+            log_post = log_post + log_prior_log_sigma2_pc(
+                params[layout.log_sigma2_svc_start + j],
+                data.svc_sigma_prior_U, data.svc_sigma_prior_alpha);
+        }
+
         if (data.svc_is_hsgp) {
             // HSGP-based SVC: basis function approximation
             int m_total = data.svc_hsgp_data.m_total;
@@ -73,15 +80,6 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
             for (int j = 0; j < n_svc; j++) {
                 T log_sigma2 = params[layout.log_sigma2_svc_start + j];
                 T sigma2_j = safe_exp(log_sigma2);
-
-                // Half-Cauchy(0, scale) on the marginal SD, carried to the
-                // sampled log-variance coordinate by the shared helper. sigma2
-                // is term j's marginal spatial variance on either basis -- the
-                // basis choice fixes how the field is REPRESENTED, not what its
-                // variance means -- so both branches read the one prior and the
-                // one user-set scale.
-                log_post = log_post + log_prior_log_sigma2_half_cauchy(
-                    log_sigma2, data.svc_sigma2_prior_scale);
 
                 T log_ls = params[layout.log_phi_svc_start + j];
                 T ls_j = safe_exp(log_ls);
@@ -117,11 +115,6 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
             for (int j = 0; j < n_svc; j++) {
                 T log_sigma2 = params[layout.log_sigma2_svc_start + j];
                 svc_sigma2[j] = safe_exp(log_sigma2);
-
-                // Half-Cauchy(0, scale) on the marginal SD, carried to the
-                // sampled log-variance coordinate by the shared helper.
-                log_post = log_post + log_prior_log_sigma2_half_cauchy(
-                    log_sigma2, data.svc_sigma2_prior_scale);
             }
 
             // Extract phi (spatial range) parameters. Sampled unconstrained on
@@ -194,17 +187,15 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
     return log_post;
 }
 
-// The constant compute_svc_prior leaves out: per term, the half-Cauchy
-// normalizer of the marginal SD, and -0.5 log(2 pi) for each N(0, 1) the term
-// carries -- the basis coefficients of an HSGP term, the z of a non-centered
-// NNGP term. The PC range prior and the centered NNGP density are normalized.
+// The constant compute_svc_prior leaves out: -0.5 log(2 pi) for each N(0, 1)
+// basis coefficient or non-centered NNGP coordinate. The PC scale and range
+// priors and the centered NNGP density are normalized.
 inline double svc_prior_log_normalizer(const ModelData& data,
                                        const ParamLayout& layout) {
     if (!layout.has_svc || data.svc_data.n_svc <= 0) return 0.0;
     const int n_svc = data.svc_data.n_svc;
     const double unit_normal = log_prior_normal_log_normalizer(1.0);
-    double c = n_svc * math::log_prior_half_cauchy_log_normalizer(
-        data.svc_sigma2_prior_scale);
+    double c = 0.0;
     if (data.svc_is_hsgp) {
         c += n_svc * data.svc_hsgp_data.m_total * unit_normal;
     } else if (data.svc_parameterization == 1) {

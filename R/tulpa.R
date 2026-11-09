@@ -569,9 +569,11 @@
   }
   cm <- as.matrix(spatial$coords_matrix)
   Xs <- as.matrix(X)[, idx, drop = FALSE]           # [n_obs x n_svc]
+  anchors <- list(sigma_prior_U = spatial$sigma_prior_U,
+                  sigma_prior_alpha = spatial$sigma_prior_alpha)
 
   if (identical(tolower(spatial$approx %||% "nngp"), "hsgp")) {
-    return(list(
+    return(c(list(
       approx      = "hsgp",
       coords      = .coords_2col(cm, "svc(approx = 'hsgp') under a sampler mode"),
       n_svc       = length(idx),
@@ -582,7 +584,7 @@
       kernel      = .hsgp_kernel_code(.hsgp_spec_kernel(spatial)),
       phi_prior_U     = .hsgp_range_prior(cm)[1L] / .SPATIAL_RANGE_FACTOR,
       phi_prior_alpha = .hsgp_range_prior(cm)[2L]
-    ))
+    ), anchors))
   }
 
   ni <- spatial$neighbor_info
@@ -596,7 +598,7 @@
   n_obs <- nrow(cm)
   nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
   lp <- .nl_default_range_prior(cm)
-  list(
+  c(list(
     approx          = "nngp",
     coords          = .coords_2col(cm, "svc() under a sampler mode"),
     n_svc           = length(idx),
@@ -620,7 +622,7 @@
     # once the soft sum-to-zero pin stopped fighting the reparameterization.
     svc_parameterization =
       if (identical(spatial$parameterization, "centered")) 0L else 1L
-  )
+  ), anchors)
 }
 
 
