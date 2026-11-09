@@ -44,6 +44,28 @@ inline double clamp_prob(double p) {
     return p;
 }
 
+// Polygamma of order n >= 1, shifted to the asymptotic expansion at x >= 12.
+inline double portable_polygamma(int n, double x) {
+    if (x <= 0.0) return std::numeric_limits<double>::quiet_NaN();
+    double n_fact = 1.0;
+    for (int k = 2; k <= n; k++) n_fact *= k;
+    const double sign = (n % 2 == 1) ? 1.0 : -1.0;
+    double result = 0.0;
+    while (x < 12.0) {
+        result += sign * n_fact / std::pow(x, n + 1);
+        x += 1.0;
+    }
+    static const double bernoulli[5] = {1.0/6.0, -1.0/30.0, 1.0/42.0, -1.0/30.0, 5.0/66.0};
+    double series = (n_fact / n) / std::pow(x,n) + 0.5*n_fact / std::pow(x,n+1);
+    double fact_num = n_fact/n, fact_den = 1.0;
+    for (int k = 1; k <= 5; k++) {
+        fact_num *= static_cast<double>(2*k+n-2)*(2*k+n-1);
+        fact_den *= static_cast<double>(2*k-1)*(2*k);
+        series += bernoulli[k-1]*fact_num/(fact_den*std::pow(x,2*k+n));
+    }
+    return result + sign*series;
+}
+
 // Portable digamma using asymptotic expansion + recurrence
 // For x > 0 only (sufficient for all our use cases).
 // Unrolled recurrence (branchless for x >= 1) eliminates while-loop overhead.

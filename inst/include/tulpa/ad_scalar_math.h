@@ -14,6 +14,7 @@
 #include "portable_math.h"
 #include "autodiff_fwd.h"
 #include "autodiff_arena.h"
+#include "precision_math.h"
 
 namespace tulpa {
 namespace math {
@@ -190,6 +191,107 @@ template<typename T>
 inline T safe_tanh(const T& x) {
     return T(2.0) * inv_logit(T(2.0) * x) - T(1.0);
 }
+
+template<typename T>
+inline typename std::enable_if<!is_autodiff<T>::value, T>::type
+lgamma_fn(T x) {
+    return std::lgamma(x);  // thread-safe, no R stack checking
+}
+
+template<typename T>
+inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
+lgamma_fn(const T& x) {
+    // d(lgamma(x)) = digamma(x)
+    return fwd::Dual(std::lgamma(x.val), portable_digamma(x.val) * x.grad);
+}
+
+template<typename T>
+inline typename std::enable_if<is_arena_var<T>::value, T>::type
+lgamma_fn(const T& x) {
+    return arena::lgamma(x);
+}
+
+template<typename T>
+inline typename std::enable_if<!is_autodiff<T>::value, T>::type
+digamma_fn(T x) {
+    return portable_digamma(x);  // thread-safe, no R stack checking
+}
+
+template<typename T>
+inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
+digamma_fn(const T& x) {
+    // d(digamma(x)) = trigamma(x)
+    return fwd::Dual(portable_digamma(x.val), portable_trigamma(x.val) * x.grad);
+}
+
+template<typename T>
+inline typename std::enable_if<is_arena_var<T>::value, T>::type
+digamma_fn(const T& x) {
+    return arena::digamma(x);
+}
+
+template<typename T>
+inline typename std::enable_if<!is_autodiff<T>::value, T>::type
+log1p_fn(T x) {
+    return std::log1p(x);
+}
+
+template<typename T>
+inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
+log1p_fn(const T& x) {
+    return fwd::log1p(x);
+}
+
+template<typename T>
+inline typename std::enable_if<is_arena_var<T>::value, T>::type
+log1p_fn(const T& x) {
+    return arena::log1p(x);
+}
+
+template<typename T>
+inline typename std::enable_if<!is_autodiff<T>::value, double>::type
+get_value(const T& x) {
+    return x;
+}
+
+template<typename T>
+inline typename std::enable_if<is_fwd_dual<T>::value, double>::type
+get_value(const T& x) {
+    return x.val;
+}
+
+template<typename T>
+inline typename std::enable_if<is_arena_var<T>::value, double>::type
+get_value(const T& x) {
+    return x.val();
+}
+
+template<typename T>
+inline typename std::enable_if<!is_autodiff<T>::value, T>::type
+lift_unary(const T&, double value, double) { return value; }
+
+inline fwd::Dual lift_unary(const fwd::Dual& x, double value, double derivative) {
+    return fwd::Dual(value, x.grad == 0.0 ? 0.0 : derivative * x.grad);
+}
+
+inline arena::Var lift_unary(const arena::Var& x, double value, double derivative) {
+    arena::Var out;
+    out.arena_ = x.arena_;
+    out.idx_ = x.arena_->add_unary(value, x.idx_, derivative);
+    return out;
+}
+
+template<> struct PrecisionUnary<fwd::Dual> {
+    static fwd::Dual apply(const fwd::Dual& x, double value, double derivative) {
+        return lift_unary(x,value,derivative);
+    }
+};
+
+template<> struct PrecisionUnary<arena::Var> {
+    static arena::Var apply(const arena::Var& x, double value, double derivative) {
+        return lift_unary(x,value,derivative);
+    }
+};
 
 // Half-Cauchy prior on sigma (log scale): -log(1 + (sigma/scale)^2) + log(sigma)
 template<typename T>

@@ -224,22 +224,23 @@ inline bool operator!=(double a, const Dual& b) { return a != b.val; }
 // ============================================================================
 
 inline Dual exp(const Dual& x) {
-    double e = std::exp(x.val);
+    double e = std::exp(tulpa::math::clamp_exp_arg(x.val));
     return Dual(e, e * x.grad);
 }
 
 inline Dual log(const Dual& x) {
-    return Dual(std::log(x.val), x.grad / x.val);
+    return Dual(std::log(x.val), x.grad / std::max(x.val, 1e-15));
 }
 
 inline Dual safe_log(const Dual& x) {
     if (x.val <= 0.0) {
         return Dual(-1e10, 0.0);
     }
-    return Dual(std::log(x.val), x.grad / x.val);
+    return Dual(std::log(x.val), x.grad / std::max(x.val, 1e-15));
 }
 
 inline Dual sqrt(const Dual& x) {
+    if (x.val <= 0.0) return Dual(0.0, 0.0);
     double s = std::sqrt(x.val);
     return Dual(s, 0.5 * x.grad / s);
 }
@@ -248,6 +249,7 @@ inline Dual pow(const Dual& x, double n) {
     // d(x^n) = n * x^(n-1) * dx
     double p = std::pow(x.val, n);
     double dp = n * std::pow(x.val, n - 1);
+    if (!std::isfinite(dp)) dp = 0.0;
     return Dual(p, dp * x.grad);
 }
 
@@ -309,8 +311,9 @@ inline Dual inv_logit(const Dual& x) {
 inline Dual logit(const Dual& x) {
     // logit(x) = log(x / (1-x))
     // d(logit) = 1/(x*(1-x))
-    double l = std::log(x.val / (1.0 - x.val));
-    double dl = 1.0 / (x.val * (1.0 - x.val));
+    const double p = tulpa::math::clamp_prob(x.val);
+    double l = std::log(p / (1.0 - p));
+    double dl = 1.0 / (p * (1.0 - p));
     return Dual(l, dl * x.grad);
 }
 

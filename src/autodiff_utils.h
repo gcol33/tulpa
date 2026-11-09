@@ -20,21 +20,6 @@
 namespace tulpa {
 namespace math {
 
-template<> struct PrecisionUnary<fwd::Dual> {
-    static fwd::Dual apply(const fwd::Dual& x, double value, double derivative) {
-        return fwd::Dual(value, x.grad == 0 ? 0 : derivative*x.grad);
-    }
-};
-
-template<> struct PrecisionUnary<arena::Var> {
-    static arena::Var apply(const arena::Var& x, double value, double derivative) {
-        arena::Var out;
-        out.arena_ = x.arena_;
-        out.idx_ = x.arena_->add_unary(value, x.idx_, derivative);
-        return out;
-    }
-};
-
 template<> struct PrecisionUnary<ad::Var> {
     static ad::Var apply(const ad::Var& x, double value, double derivative) {
         ad::Var out(x.tape, value);
@@ -93,11 +78,7 @@ safe_max(const T& a, const T& b) {
 }
 
 // lgamma (log of gamma function) - double version
-template<typename T>
-inline typename std::enable_if<!is_autodiff<T>::value, T>::type
-lgamma_fn(T x) {
-    return std::lgamma(x);  // thread-safe, no R stack checking
-}
+
 
 // lgamma - ad::Var (tape) version
 template<typename T>
@@ -107,43 +88,21 @@ lgamma_fn(const T& x) {
 }
 
 // lgamma - fwd::Dual version
-template<typename T>
-inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
-lgamma_fn(const T& x) {
-    // d(lgamma(x)) = digamma(x)
-    return fwd::Dual(std::lgamma(x.val), portable_digamma(x.val) * x.grad);
-}
+
 
 // lgamma - arena::Var version
-template<typename T>
-inline typename std::enable_if<is_arena_var<T>::value, T>::type
-lgamma_fn(const T& x) {
-    return arena::lgamma(x);
-}
+
 
 // digamma (derivative of lgamma) - double version
-template<typename T>
-inline typename std::enable_if<!is_autodiff<T>::value, T>::type
-digamma_fn(T x) {
-    return portable_digamma(x);  // thread-safe, no R stack checking
-}
+
 
 // digamma - fwd::Dual version
-template<typename T>
-inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
-digamma_fn(const T& x) {
-    // d(digamma(x)) = trigamma(x)
-    return fwd::Dual(portable_digamma(x.val), portable_trigamma(x.val) * x.grad);
-}
+
 
 // For ad::Var, digamma is handled internally by lgamma's backward pass
 
 // digamma - arena::Var version
-template<typename T>
-inline typename std::enable_if<is_arena_var<T>::value, T>::type
-digamma_fn(const T& x) {
-    return arena::digamma(x);
-}
+
 
 // inv_logit - ad::Var (tape) version
 template<typename T>
@@ -188,11 +147,7 @@ inline double log_prior_uniform_log_normalizer(double lower, double upper) {
 }
 
 // log1p - double version
-template<typename T>
-inline typename std::enable_if<!is_autodiff<T>::value, T>::type
-log1p_fn(T x) {
-    return std::log1p(x);
-}
+
 
 // log1p - ad::Var (tape) version
 template<typename T>
@@ -202,18 +157,10 @@ log1p_fn(const T& x) {
 }
 
 // log1p - fwd::Dual version
-template<typename T>
-inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
-log1p_fn(const T& x) {
-    return fwd::log1p(x);
-}
+
 
 // log1p - arena::Var version
-template<typename T>
-inline typename std::enable_if<is_arena_var<T>::value, T>::type
-log1p_fn(const T& x) {
-    return arena::log1p(x);
-}
+
 
 // expm1 - double version
 template<typename T>
@@ -287,11 +234,7 @@ inline T inv_logit_pos(const T& x) {
 // ============================================================================
 
 // double version
-template<typename T>
-inline typename std::enable_if<!is_autodiff<T>::value, double>::type
-get_value(const T& x) {
-    return x;
-}
+
 
 // ad::Var (tape) version
 template<typename T>
@@ -301,18 +244,10 @@ get_value(const T& x) {
 }
 
 // fwd::Dual version
-template<typename T>
-inline typename std::enable_if<is_fwd_dual<T>::value, double>::type
-get_value(const T& x) {
-    return x.val;
-}
+
 
 // arena::Var version
-template<typename T>
-inline typename std::enable_if<is_arena_var<T>::value, double>::type
-get_value(const T& x) {
-    return x.val();
-}
+
 
 // log(exp(a) + exp(b)), shifted by the larger argument so neither exponent
 // overflows. Both arguments -inf -- two mixture components that both underflow
