@@ -3109,6 +3109,25 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_sampler_controls
+Rcpp::List cpp_test_sampler_controls(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int L, std::string metric, bool walnuts, int n_chains, int seed, int n_iter, int n_warmup);
+RcppExport SEXP _tulpa_cpp_test_sampler_controls(SEXP y_rSEXP, SEXP X_rSEXP, SEXP LSEXP, SEXP metricSEXP, SEXP walnutsSEXP, SEXP n_chainsSEXP, SEXP seedSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_r(y_rSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_r(X_rSEXP);
+    Rcpp::traits::input_parameter< int >::type L(LSEXP);
+    Rcpp::traits::input_parameter< std::string >::type metric(metricSEXP);
+    Rcpp::traits::input_parameter< bool >::type walnuts(walnutsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_chains(n_chainsSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_sampler_controls(y_r, X_r, L, metric, walnuts, n_chains, seed, n_iter, n_warmup));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_generic
 Rcpp::List cpp_tulpa_fit_generic(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_generic(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP) {
@@ -3743,6 +3762,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tgmrf_eval_mu", (DL_FUNC) &_tulpa_cpp_tgmrf_eval_mu, 2},
     {"_tulpa_cpp_beta_density_terms", (DL_FUNC) &_tulpa_cpp_beta_density_terms, 3},
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
+    {"_tulpa_cpp_test_sampler_controls", (DL_FUNC) &_tulpa_cpp_test_sampler_controls, 9},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 11},
     {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 13},
     {"_tulpa_cpp_test_c_abi_resume_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_resume_roundtrip, 9},

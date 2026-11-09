@@ -36,6 +36,8 @@ static void fill_nuts_result_from_cpp(
     if (hmc.accept_prob.size() < need) ns = std::min<int>(ns, static_cast<int>(hmc.accept_prob.size()));
     if (hmc.divergent.size() < need)   ns = std::min<int>(ns, static_cast<int>(hmc.divergent.size()));
     if (hmc.treedepth.size() < need)   ns = std::min<int>(ns, static_cast<int>(hmc.treedepth.size()));
+    if (hmc.n_leapfrog.size() < need)  ns = std::min<int>(ns, static_cast<int>(hmc.n_leapfrog.size()));
+    if (hmc.energy.size() < need)      ns = std::min<int>(ns, static_cast<int>(hmc.energy.size()));
     if (hmc.n_params_stored < n_params) {
         ns = 0;
     } else if (hmc.n_params_stored > 0) {
@@ -51,6 +53,8 @@ static void fill_nuts_result_from_cpp(
     out->accept_prob = new double[ns];
     out->divergent = new int[ns];
     out->treedepth = new int[ns];
+    out->n_leapfrog = new int[ns];
+    out->energy = new double[ns];
 
     for (int s = 0; s < ns; s++) {
         const double* row = hmc.sample_row(s);
@@ -61,6 +65,8 @@ static void fill_nuts_result_from_cpp(
         out->accept_prob[s] = hmc.accept_prob[s];
         out->divergent[s] = hmc.divergent[s] ? 1 : 0;
         out->treedepth[s] = hmc.treedepth[s];
+        out->n_leapfrog[s] = hmc.n_leapfrog[s];
+        out->energy[s] = hmc.energy[s];
     }
 
     // Warm-start / resume outputs. run_hmc_chain_cpp always
@@ -74,6 +80,14 @@ static void fill_nuts_result_from_cpp(
         out->final_position[j] =
             (j < (int)hmc.final_position.size()) ? hmc.final_position[j] : 0.0;
     }
+}
+
+static tulpa::SamplerControl sampler_control(const tulpa::SamplerControl* control) {
+    const auto settings = control ? *control : tulpa::SamplerControl{};
+    if (settings.L < 0) Rcpp::stop("L must be nonnegative");
+    if (settings.L > 0 && settings.walnuts)
+        Rcpp::stop("WALNUTS requires L = 0");
+    return settings;
 }
 
 // ============================================================================
@@ -92,10 +106,12 @@ static void tulpa_run_nuts_generic_impl(
     double adapt_delta,
     unsigned int seed,
     int verbose,
+    const tulpa::SamplerControl* control,
     const double* inv_metric_diag,
     tulpa::NUTSResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
+    const auto settings = sampler_control(control);
     // Convert init to std::vector
     std::vector<double> q_init(init, init + n_params);
 
@@ -109,14 +125,14 @@ static void tulpa_run_nuts_generic_impl(
     tulpa_hmc::HMCResultCpp hmc = tulpa_hmc::run_hmc_chain_cpp(
         q_init, *data, *layout,
         n_iter, n_warmup,
-        0,                // L=0 → NUTS
+        settings.L,
         1,                // chain_id
         seed,
         verbose != 0,
         max_treedepth,
-        tulpa::MassMatrixType::DIAG,
+        settings.metric,
         adapt_delta,
-        nullptr,          // walnuts off
+        settings.walnuts ? &settings.walnuts_config : nullptr,
         inv_metric_init
     );
 
@@ -143,10 +159,12 @@ static void tulpa_run_nuts_chains_impl(
     double adapt_delta,
     unsigned int seed,
     int verbose,
+    const tulpa::SamplerControl* control,
     const double* inv_metric_diag,
     tulpa::NUTSResult* results_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
+    const auto settings = sampler_control(control);
     // Per-chain init (chain-major rows).
     std::vector<std::vector<double>> q_init_per_chain(n_chains);
     for (int c = 0; c < n_chains; c++) {
@@ -167,10 +185,10 @@ static void tulpa_run_nuts_chains_impl(
     std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
         q_init_per_chain, inv_metric_per_chain, *data,
         n_iter, n_warmup,
-        0,                // L=0 → NUTS
+        settings.L,
         n_chains, seed, verbose != 0, max_treedepth,
-        tulpa::MassMatrixType::DIAG, adapt_delta,
-        nullptr,          // walnuts off
+        settings.metric, adapt_delta,
+        settings.walnuts ? &settings.walnuts_config : nullptr,
         "",               // checkpoint_path
         layout            // honour the caller's layout
     );

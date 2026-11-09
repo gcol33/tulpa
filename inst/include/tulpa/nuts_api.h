@@ -16,8 +16,16 @@
 #include <R_ext/Rdynload.h>
 #include "model_data.h"
 #include "param_layout.h"
+#include "walnuts_config.h"
 
 namespace tulpa {
+
+struct SamplerControl {
+    int L = 0;
+    MassMatrixType metric = MassMatrixType::DIAG;
+    bool walnuts = false;
+    WalnutsConfig walnuts_config;
+};
 
 // ============================================================================
 // ABI version check — call from model packages at init/first use.
@@ -65,6 +73,9 @@ struct NUTSResult {
     double* inv_metric_out;   // [n_params] adapted inverse-mass diagonal
     double* final_position;   // [n_params] last sampler position
 
+    int* n_leapfrog;
+    double* energy;
+
     void free_buffers() {
         if (samples)        { delete[] samples;         samples = nullptr; }
         if (log_prob)       { delete[] log_prob;        log_prob = nullptr; }
@@ -73,6 +84,8 @@ struct NUTSResult {
         if (treedepth)      { delete[] treedepth;       treedepth = nullptr; }
         if (inv_metric_out) { delete[] inv_metric_out;  inv_metric_out = nullptr; }
         if (final_position) { delete[] final_position;  final_position = nullptr; }
+        if (n_leapfrog)     { delete[] n_leapfrog;      n_leapfrog = nullptr; }
+        if (energy)         { delete[] energy;          energy = nullptr; }
     }
 };
 
@@ -96,6 +109,7 @@ typedef void (*NUTSFn)(
     double adapt_delta,
     unsigned int seed,
     int verbose,
+    const SamplerControl* control,
     const double* inv_metric_diag,
     NUTSResult* result_out
 );
@@ -150,6 +164,7 @@ typedef void (*NUTSChainsFn)(
     double adapt_delta,
     unsigned int seed,
     int verbose,
+    const SamplerControl* control,
     const double* inv_metric_diag,
     NUTSResult* results_out
 );

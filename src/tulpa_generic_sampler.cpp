@@ -19,6 +19,97 @@
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
 
+template<typename T>
+T unit_gaussian_likelihood(
+    int i, const T* eta, const T&, const T&, const std::vector<T>&,
+    const ModelData&, const ParamLayout&, const void* response) {
+    const auto* y = static_cast<const std::vector<double>*>(response);
+    const T residual = T((*y)[i]) - eta[0];
+    return T(-0.5) * residual * residual;
+}
+
+// [[Rcpp::export]]
+Rcpp::List cpp_test_sampler_controls(
+    Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r,
+    int L = 0, std::string metric = "diag", bool walnuts = false,
+    int n_chains = 1, int seed = 18, int n_iter = 2000, int n_warmup = 750) {
+    std::vector<double> y(y_r.begin(), y_r.end());
+    tulpa::LikelihoodSpec spec;
+    spec.n_processes = 1;
+    spec.ll_double = unit_gaussian_likelihood<double>;
+    spec.ll_arena = unit_gaussian_likelihood<tulpa::arena::Var>;
+    ModelData data;
+    data.N = y.size();
+    data.n_processes = 1;
+    data.sigma_beta = 2.5;
+    data.processes.resize(1);
+    auto& process = data.processes[0];
+    process.p = X_r.ncol();
+    for (int i = 0; i < X_r.nrow(); ++i)
+        for (int j = 0; j < X_r.ncol(); ++j)
+            process.X_flat.push_back(X_r(i, j));
+    data.sharing.init(1);
+    data.likelihood_spec = &spec;
+    data.model_response_data = &y;
+    const auto layout = tulpa_hmc::compute_param_layout(data);
+    const int p = layout.total_params;
+    tulpa::SamplerControl control;
+    control.L = L;
+    control.walnuts = walnuts;
+    if (metric == "diag") control.metric = tulpa::MassMatrixType::DIAG;
+    else if (metric == "dense") control.metric = tulpa::MassMatrixType::DENSE;
+    else if (metric == "block_diag") control.metric = tulpa::MassMatrixType::BLOCK_DIAG;
+    else if (metric == "auto") control.metric = tulpa::MassMatrixType::AUTO;
+    else Rcpp::stop("Unknown metric");
+    if (n_chains < 1) Rcpp::stop("n_chains must be positive");
+    std::vector<double> init(static_cast<size_t>(n_chains) * p, 0.0);
+    std::vector<tulpa::NUTSResult> results(n_chains);
+    if (n_chains == 1) {
+        tulpa::get_nuts_fn()(&data, &layout, init.data(), p, n_iter, n_warmup,
+            8, 0.85, seed, 0, &control, nullptr, results.data());
+    } else {
+        tulpa::get_nuts_chains_fn()(&data, &layout, init.data(), p, n_chains,
+            n_iter, n_warmup, 8, 0.85, seed, 0, &control, nullptr, results.data());
+    }
+    std::vector<tulpa_hmc::HMCResultCpp> direct;
+    const auto* wc = walnuts ? &control.walnuts_config : nullptr;
+    if (n_chains == 1) {
+        direct.push_back(tulpa_hmc::run_hmc_chain_cpp(std::vector<double>(p, 0.0),
+            data, layout, n_iter, n_warmup, L, 1, seed, false, 8,
+            control.metric, 0.85, wc, {}));
+    } else {
+        direct = tulpa_hmc::run_hmc_parallel_chains_cpp(
+            std::vector<std::vector<double>>(n_chains, std::vector<double>(p, 0.0)),
+            {}, data, n_iter, n_warmup, L, n_chains, seed, false, 8,
+            control.metric, 0.85, wc, "", &layout);
+    }
+    bool identical = true;
+    Rcpp::List draws(n_chains), steps(n_chains), energy(n_chains);
+    Rcpp::CharacterVector samplers(n_chains);
+    for (int c = 0; c < n_chains; ++c) {
+        auto& r = results[c];
+        Rcpp::NumericMatrix m(r.n_sample, p);
+        for (int i = 0; i < r.n_sample; ++i) {
+            for (int j = 0; j < p; ++j) {
+                m(i, j) = r.samples[static_cast<size_t>(i) * p + j];
+                identical &= m(i, j) == direct[c].sample_row(i)[j];
+            }
+            identical &= r.n_leapfrog[i] == direct[c].n_leapfrog[i];
+            identical &= r.energy[i] == direct[c].energy[i];
+        }
+        draws[c] = m;
+        steps[c] = Rcpp::IntegerVector(r.n_leapfrog, r.n_leapfrog + r.n_sample);
+        energy[c] = Rcpp::NumericVector(r.energy, r.energy + r.n_sample);
+        samplers[c] = r.sampler;
+        r.free_buffers();
+    }
+    return Rcpp::List::create(Rcpp::Named("draws") = draws,
+        Rcpp::Named("identical") = identical, Rcpp::Named("n_leapfrog") = steps,
+        Rcpp::Named("energy") = energy, Rcpp::Named("sampler") = samplers,
+        Rcpp::Named("gradient_verified") = tulpa_hmc::verify_gradient_runtime(
+            std::vector<double>(p, 0.2), data, layout, 1e-4));
+}
+
 // ============================================================================
 // Gaussian response data (model-specific, opaque to tulpa engine)
 // ============================================================================
@@ -419,6 +510,7 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
         n_iter, n_warmup, max_treedepth, adapt_delta,
         static_cast<unsigned int>(seed),
         /*verbose=*/0,
+        nullptr,
         inv_metric_ptr,
         &result
     );
@@ -538,6 +630,7 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
         n_iter, n_warmup, max_treedepth, adapt_delta,
         static_cast<unsigned int>(seed),
         /*verbose=*/0,
+        nullptr,
         inv_metric_ptr,
         results.data()
     );
