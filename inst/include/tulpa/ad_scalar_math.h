@@ -295,10 +295,19 @@ template<> struct PrecisionUnary<arena::Var> {
 
 // Half-Cauchy prior on sigma (log scale): -log(1 + (sigma/scale)^2) + log(sigma)
 template<typename T>
-inline T log_prior_half_cauchy(const T& log_sigma, double scale) {
-    T sigma = safe_exp(log_sigma);
+inline T log_prior_half_cauchy(const T& log_sigma, double scale, const T& sigma) {
     T ratio = sigma / scale;
     return -safe_log(T(1.0) + ratio * ratio) + log_sigma;
+}
+
+template<typename T>
+inline T log_prior_half_cauchy(const T& log_sigma, double scale) {
+    return log_prior_half_cauchy(log_sigma, scale, safe_exp(log_sigma));
+}
+
+inline double log_prior_half_cauchy_gradient(double sigma, double scale) {
+    const double r = sigma / scale, r2 = r*r;
+    return -2.0*r2/(1.0+r2) + 1.0;
 }
 
 // log(2 / (pi scale)), the constant log_prior_half_cauchy leaves out: the
