@@ -38,7 +38,6 @@ typedef int (*GetABIVersionFn)();
 inline void check_abi_version() {
     static bool checked = false;
     if (checked) return;
-    checked = true;
 
     auto fn = (GetABIVersionFn)R_GetCCallable("tulpa", "tulpa_get_abi_version");
     int runtime_version = fn();
@@ -49,6 +48,7 @@ inline void check_abi_version() {
             TULPA_ABI_VERSION, runtime_version
         );
     }
+    checked = true;
 }
 
 // Result struct — flat C-compatible layout, no std::vector
