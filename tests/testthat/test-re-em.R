@@ -192,3 +192,33 @@ test_that("tulpa_re_cov_update projects, symmetrizes and floors", {
   expect_equal(tulpa_re_cov_update(diag(c(2, 3))), diag(c(2, 3)))
   expect_error(tulpa_re_cov_update(matrix(1, 2, 3)), "square")
 })
+
+test_that("the latent rule carries a group whose log-likelihood is not concave at the start to its mode", {
+  # Each group's log-likelihood is a weighted Cauchy log-density in x = theta + b,
+  # concave only within one unit of its mode. Group 11's mode sits 3.5 units
+  # from the start, where its curvature has the wrong sign: the plain Newton
+  # direction for that group descends its own log-likelihood, and the joint
+  # line search, which scores the sum over groups, accepts it.
+  w <- 200
+  m <- c(seq(-0.3, 0.3, length.out = 10L), 3.5)
+  ng <- length(m)
+  make_group <- function(theta) {
+    joint <- function(g, b) {
+      r <- theta[1L] + b[1L] - m[g]
+      h <- matrix(w * 2 * (1 - r^2) / (1 + r^2)^2, 1L, 1L)
+      gr <- -w * 2 * r / (1 + r^2)
+      list(logL = -w * log1p(r^2), grad = gr, negH = h,
+           theta_grad = gr, theta_info = h, cross = h)
+    }
+    list(grad_hess = function(g, b) joint(g, b)[c("logL", "grad", "negH")],
+         node_ll = function(g, Bn) apply(Bn, 1L, function(b) joint(g, b)$logL),
+         joint = joint)
+  }
+  re_terms <- list(list(n_groups = ng, n_coefs = 1L, correlated = TRUE))
+  fit <- tulpa_re_em(0, re_terms, list(matrix(0.09)), make_group = make_group,
+                     theta_update = "latent")
+  x <- fit$theta[1L] + fit$blup[[1L]][, 1L]
+  expect_false(isTRUE(fit$stuck))
+  expect_lt(abs(x[ng] - m[ng]), 0.1)
+  expect_lt(max(abs(x[-ng] - m[-ng])), 0.1)
+})

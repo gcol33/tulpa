@@ -465,6 +465,19 @@
   normaliser tilted the car_proper rho and BYM2 (sigma, rho) profiles
   (gcol33/tulpaObs#445).
 
+* `tulpa_re_em(theta_update = "latent")`: a group whose joint block of the
+  negative Hessian is indefinite at the current point (its log-likelihood is
+  not concave there) has that block replaced by its absolute-eigenvalue
+  modification before the joint Newton solve (Nocedal and Wright 2006,
+  sec. 3.4), so the step ascends that group's own penalized log-likelihood.
+  The joint line search scores the sum over groups, so it accepted a step that
+  carried one group downhill when the others gained more, and from there that
+  group's Newton direction stayed a descent direction and it never moved
+  again. In a community distance fit one species of 20 ended 1068 log-likelihood
+  units below its own single-species optimum, with the half-normal scale at
+  sigma = 920 against a truncation of 100. Where every block is positive
+  semi-definite the step is unchanged (gcol33/tulpaObs#453).
+
 ## Package
 
 * C++ test fixtures live in `tests/testthat/cpp` and compile per test file;

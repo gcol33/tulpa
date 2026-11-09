@@ -378,6 +378,40 @@ struct LatentMode {
     bool stuck = false, ok = true;
 };
 
+// One group's contribution to the joint negative Hessian of F,
+//   G_g = [Htt_g, Htb_g; Htb_g', Hbb_g + P],
+// made positive semi-definite where it is not (Nocedal & Wright 2006,
+// sec. 3.4, eigenvalue modification by absolute value). A group whose
+// log-likelihood is not concave at the current point (a half-normal distance
+// marginal far out along its lambda-sigma ridge) otherwise yields a Newton
+// direction that DESCENDS its own log-likelihood; the joint line search can
+// still accept it, since it scores the sum over groups, and the group is
+// carried away from its mode and held there. A block that is already PSD is
+// returned untouched, so a concave problem takes exactly the plain Newton step.
+// Returns true when the block was modified.
+bool em_group_psd(Eigen::MatrixXd& Htt, Eigen::MatrixXd& Htb, Eigen::MatrixXd& HbbP) {
+    const int nth = (int)Htt.rows(), d = (int)HbbP.rows();
+    const int n = nth + d;
+    if (n == 0) return false;
+    Eigen::MatrixXd G(n, n);
+    G.topLeftCorner(nth, nth) = Htt;
+    G.topRightCorner(nth, d) = Htb;
+    G.bottomLeftCorner(d, nth) = Htb.transpose();
+    G.bottomRightCorner(d, d) = HbbP;
+    G = 0.5 * (G + G.transpose());
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(G);
+    if (es.info() != Eigen::Success) return false;
+    const Eigen::VectorXd ev = es.eigenvalues();
+    const double scale = ev.cwiseAbs().maxCoeff();
+    if (!(ev.minCoeff() < -1e-10 * std::max(scale, 1.0))) return false;
+    const Eigen::MatrixXd& V = es.eigenvectors();
+    G = V * ev.cwiseAbs().asDiagonal() * V.transpose();
+    Htt = G.topLeftCorner(nth, nth);
+    Htb = G.topRightCorner(nth, d);
+    HbbP = G.bottomRightCorner(d, d);
+    return true;
+}
+
 // Damped joint Newton on F(theta, b) at fixed precision P.
 LatentMode em_latent_mode(REGroupOracle& orc, Eigen::VectorXd theta,
                           std::vector<Eigen::VectorXd> b, const Eigen::MatrixXd& P,
@@ -394,14 +428,16 @@ LatentMode em_latent_mode(REGroupOracle& orc, Eigen::VectorXd theta,
         Eigen::MatrixXd A = prec.asDiagonal();
         Eigen::VectorXd gf = -prec.cwiseProduct(theta);
         for (int g = 0; g < ng; ++g) {
-            const Eigen::MatrixXd Cg_inv = J[g].Hbb + P;
+            Eigen::MatrixXd Htt = J[g].Htt, Htb = J[g].Htb;
+            Eigen::MatrixXd Cg_inv = J[g].Hbb + P;
+            em_group_psd(Htt, Htb, Cg_inv);
             Eigen::FullPivLU<Eigen::MatrixXd> lu(Cg_inv);
             out.C[g] = lu.isInvertible() ? Eigen::MatrixXd(lu.inverse())
                        : Eigen::MatrixXd(Eigen::CompleteOrthogonalDecomposition<
                              Eigen::MatrixXd>(Cg_inv).pseudoInverse());
-            out.X[g] = J[g].Htb;
+            out.X[g] = Htb;
             gbp[g] = J[g].gb - P * b[g];
-            A += J[g].Htt;
+            A += Htt;
             gf += J[g].gt;
         }
         Eigen::MatrixXd S = A;
