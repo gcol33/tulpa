@@ -209,7 +209,9 @@ Native make probes enabled bigobj for `-O0` and `-O2 -O0`, and omitted it for
 `BIGOBJ_FLAG` is recursive, so the test expands when a compile rule runs,
 after `Makeconf` and user Makevars have been read. `R CMD SHLIB` sets
 `CXXFLAGS` to `$(CXX17FLAGS)`, the flags used by the C++17 compile rule.
-Inspect the emitted compile commands for "checking compilation flags used".
+The flag is conditional because unconditionally it drew a win-builder NOTE at
+tulpa 0.4.0: "checking compilation flags used" reads the compile COMMANDS, not
+the Makevars text, so inspect the emitted compile commands, not the Makevars.
 
 **`src/` is a unity build** (gcol33/tulpa#966). Each `src/unity_<group>.cpp`
 includes the sources of one subsystem, `OBJECTS` in both Makevars names only
