@@ -75,10 +75,10 @@ Rcpp::List cpp_test_field_coordinates(
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
     double shift = 0.3, int n_iter = 0,
     Rcpp::Nullable<Rcpp::NumericVector> point = R_NilValue,
+    bool native_point = true, bool gaussian = false,
+    Rcpp::Nullable<Rcpp::NumericVector> working_eta = R_NilValue,
     Rcpp::Nullable<Rcpp::List> latent_spec = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> st_spec = R_NilValue,
-
-    bool native_point = true, bool gaussian = false) {
+    Rcpp::Nullable<Rcpp::List> st_spec = R_NilValue) {
     tulpa::SamplerModelInputs in;
     tulpa::build_sampler_model_inputs(in, y, Rcpp::IntegerVector(y.size(), 1), X,
         "gaussian", 1.0, NA_REAL, 2.5, {}, 1.0, R_NilValue,
@@ -139,6 +139,7 @@ Rcpp::List cpp_test_field_coordinates(
         }
     }
     if (data.st_margin_centering) tulpa::setup_st_spatial_partition(data.spatiotemporal_data);
+    if (working_eta.isNotNull()) in.spec.working_eta = Rcpp::as<std::vector<double>>(working_eta);
     const auto layout = tulpa_hmc::compute_param_layout(data);
     const int p = layout.total_params;
     std::vector<double> q(p, 0.0);

@@ -241,6 +241,9 @@ struct LikelihoodSpec {
     LlEtaWeightsFn ll_eta_weights_fn = nullptr;
     // Arena derivatives of the eta-space score and curvature for marginal fields.
     EtaWeightsArenaFn eta_weights_arena_fn = nullptr;
+    // Optional fixed eta values for likelihood-based field coordinates.
+    // An empty vector uses the predictors at zero parameter values.
+    std::vector<double> working_eta;
 };
 
 } // namespace tulpa

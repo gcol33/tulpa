@@ -231,66 +231,104 @@ struct Bym2Rotation {
     }
 };
 
-struct GaussianConditional {
-    const ModelData* data;
-    ParamLayout layout;
-    int n, d, begin;
-    PriorRoot areal;
+struct SpatialWorkingLikelihood {
+    int n;
     std::vector<int> beta;
     std::vector<double> information, score, cross;
 
-    GaussianConditional(const ModelData& model, const ParamLayout& positions)
-        : data(&model), layout(positions), n(layout.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
-          d(layout.is_bym2 ? 2 * n : n), begin(layout.is_gp ? layout.gp_w_start : layout.spatial_start),
+    SpatialWorkingLikelihood(const ModelData& model, const ParamLayout& layout)
+        : n(layout.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
           information(n * n, 0.0), score(n, 0.0) {
-        if (!layout.is_gp) areal = areal_root(model, layout.is_bym2);
         for (int k = 0; k < model.n_processes; ++k)
             for (int j = 0; j < layout.process_beta_count[k]; ++j)
                 beta.push_back(layout.process_beta_start[k] + j);
         cross.assign(n * beta.size(), 0.0);
-        Eigen::MatrixXd G = Eigen::MatrixXd::Zero(model.N, n);
-        for (int i = 0; i < model.N; ++i)
-            G(i, layout.is_gp ? model.gp_data.obs_to_loc[i] : model.spatial_group[i] - 1) = 1;
-        for (int j = 0; j < n; ++j) {
-            std::vector<double> column(G.col(j).data(), G.col(j).data() + model.N);
-            model.spatial_restriction.apply(column);
-            for (int i = 0; i < model.N; ++i) G(i, j) = column[i];
-        }
+        const int rank = model.spatial_restriction.rank;
+        Eigen::MatrixXd U = Eigen::MatrixXd::Zero(n, rank), V = U;
+        Eigen::MatrixXd QWQ = Eigen::MatrixXd::Zero(rank, rank);
+        Eigen::VectorXd Qr = Eigen::VectorXd::Zero(rank);
+        Eigen::MatrixXd QB = Eigen::MatrixXd::Zero(rank, beta.size());
         const auto& spec = *static_cast<const tulpa::LikelihoodSpec*>(model.likelihood_spec);
+        if (!spec.working_eta.empty()) {
+            if (spec.working_eta.size() != static_cast<size_t>(model.n_processes))
+                Rcpp::stop("The likelihood working point must have one eta per process");
+            for (double value : spec.working_eta)
+                if (!std::isfinite(value)) Rcpp::stop("The likelihood working point must be finite");
+        }
         std::vector<double> reference(layout.total_params, 0.0);
         tulpa::GenericLogPostState<double> state;
         tulpa::initialize_generic_state(reference, model, layout, state);
         tulpa::precompute_generic_fixed_eta(model, state);
         for (int i = 0; i < model.N; ++i) {
-            double base[tulpa::MAX_PROCESSES], zi, oi;
+            double base[tulpa::MAX_PROCESSES], anchor[tulpa::MAX_PROCESSES], zi, oi;
             tulpa::generic_eta_at(i, model, layout, state, base);
+            double anchor_scale = 1;
+            for (int k = 0; k < model.n_processes; ++k) {
+                anchor[k] = spec.working_eta.empty() ? base[k] : spec.working_eta[k];
+                anchor_scale = std::max(anchor_scale, 1 + std::abs(anchor[k]));
+            }
             tulpa::generic_zi_oi_logits(i, model, layout, state, zi, oi);
             const auto evaluate = [&](double a, int process, double b) {
                 double eta[tulpa::MAX_PROCESSES];
                 for (int k = 0; k < model.n_processes; ++k)
-                    eta[k] = base[k] + (model.sharing.spatial[k] ? a : 0.0) + (k == process ? b : 0.0);
+                    eta[k] = anchor[k] + (model.sharing.spatial[k] ? a : 0.0) + (k == process ? b : 0.0);
                 return spec.ll_double(i, eta, zi, oi, reference, model, layout, model.model_response_data);
             };
             const double value = evaluate(0, -1, 0);
-            const double h = std::pow(std::numeric_limits<double>::epsilon(), .25) * std::sqrt(1 + std::abs(value));
+            const double h = std::pow(std::numeric_limits<double>::epsilon(), .25) *
+                (spec.working_eta.empty() ? std::sqrt(1 + std::abs(value)) : anchor_scale);
             const double upper = evaluate(h, -1, 0), lower = evaluate(-h, -1, 0);
-            const double r = (upper - lower) / (2 * h);
+            double r = (upper - lower) / (2 * h);
             const double w = std::max(0.0, -(upper - 2 * value + lower) / (h * h));
             int column = 0;
             std::vector<double> row_cross(beta.size(), 0.0);
             for (int k = 0; k < model.n_processes; ++k) {
                 const double coupling = -(evaluate(h, k, h) - evaluate(h, k, -h) -
                     evaluate(-h, k, h) + evaluate(-h, k, -h)) / (4 * h * h);
+                if (!spec.working_eta.empty()) r += coupling * (anchor[k] - base[k]);
+                if (!std::isfinite(coupling)) Rcpp::stop("Gaussian field coordinates require finite reference likelihood curvature");
                 for (int j = 0; j < layout.process_beta_count[k]; ++j)
                     row_cross[column++] = coupling * model.processes[k].X_flat[i * layout.process_beta_count[k] + j];
             }
             if (!std::isfinite(r) || !std::isfinite(w)) Rcpp::stop("Gaussian field coordinates require finite reference likelihood curvature");
-            for (int a = 0; a < n; ++a) {
-                score[a] += G(i, a) * r;
-                for (int b = 0; b < n; ++b) information[a * n + b] += G(i, a) * w * G(i, b);
-                for (size_t b = 0; b < beta.size(); ++b) cross[a * beta.size() + b] += G(i, a) * row_cross[b];
+            const int unit = layout.is_gp ? model.gp_data.obs_to_loc[i] : model.spatial_group[i] - 1;
+            score[unit] += r;
+            information[unit * n + unit] += w;
+            for (size_t b = 0; b < beta.size(); ++b) cross[unit * beta.size() + b] += row_cross[b];
+            for (int a = 0; a < rank; ++a) {
+                const double q = model.spatial_restriction.basis[i * rank + a];
+                U(unit, a) += q; V(unit, a) += w * q; Qr[a] += q * r;
+                for (int b = 0; b < rank; ++b)
+                    QWQ(a, b) += q * w * model.spatial_restriction.basis[i * rank + b];
+                for (size_t b = 0; b < beta.size(); ++b) QB(a, b) += q * row_cross[b];
             }
         }
+        if (rank > 0) {
+            using RowMatrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+            Eigen::Map<RowMatrix> precision(information.data(), n, n);
+            Eigen::Map<RowMatrix> coupling(cross.data(), n, beta.size());
+            Eigen::Map<Eigen::VectorXd> rhs(score.data(), n);
+            precision.noalias() += U * QWQ * U.transpose();
+            precision.noalias() -= V * U.transpose();
+            precision.noalias() -= U * V.transpose();
+            rhs.noalias() -= U * Qr;
+            coupling.noalias() -= U * QB;
+        }
+    }
+};
+
+struct GaussianConditional {
+    const ModelData* data;
+    ParamLayout layout;
+    int n, d, begin;
+    PriorRoot areal;
+    SpatialWorkingLikelihood working;
+
+    GaussianConditional(const ModelData& model, const ParamLayout& positions)
+        : data(&model), layout(positions), n(layout.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
+          d(layout.is_bym2 ? 2 * n : n), begin(layout.is_gp ? layout.gp_w_start : layout.spatial_start),
+          working(model, positions) {
+        if (!layout.is_gp) areal = areal_root(model, layout.is_bym2);
     }
 
     template<class T> struct Geometry {
@@ -309,10 +347,11 @@ struct GaussianConditional {
         const auto& F = basis.field;
         std::vector<T> weighted(n * d, T(0)), H(d * d, T(0)), rhs(d, T(0)), b(n);
         for (int i = 0; i < n; ++i) {
-            b[i] = T(score[i]);
-            for (size_t j = 0; j < beta.size(); ++j) b[i] = b[i] - T(cross[i * beta.size() + j]) * q[beta[j]];
+            b[i] = T(working.score[i]);
+            for (size_t j = 0; j < working.beta.size(); ++j)
+                b[i] = b[i] - T(working.cross[i * working.beta.size() + j]) * q[working.beta[j]];
             for (int j = 0; j < d; ++j) for (int k = 0; k < n; ++k)
-                weighted[i * d + j] = weighted[i * d + j] + T(information[i * n + k]) * F[k * d + j];
+                weighted[i * d + j] = weighted[i * d + j] + T(working.information[i * n + k]) * F[k * d + j];
         }
         for (int i = 0; i < d; ++i) {
             for (int k = 0; k < n; ++k) rhs[i] = rhs[i] + F[k * d + i] * b[k];
@@ -719,19 +758,13 @@ tulpa::FieldCoordinateOperator prepare_bym2_coordinate(const ModelData& data, co
         out->phi_inverse.push_back(inverse(i, j));
         out->theta_factor.push_back(svd.matrixU()(i, j));
     }
-    std::vector<double> origin(layout.total_params, 0.0), plus = origin, minus = origin, native;
-    const double likelihood = compute_log_lik_only(origin, data, layout);
-    const double h = std::pow(std::numeric_limits<double>::epsilon(), .25) * std::sqrt(1 + std::abs(likelihood));
+    const SpatialWorkingLikelihood working(data, layout);
     for (int j = 0; j < n; ++j) {
-        plus[out->spatial_start + j] = h;
-        minus[out->spatial_start + j] = -h;
-        native = plus; out->forward(plus, native);
-        const double upper = compute_log_lik_only(native, data, layout);
-        native = minus; out->forward(minus, native);
-        const double lower = compute_log_lik_only(native, data, layout);
-        const double curvature = -(upper - 2 * likelihood + lower) / (h * h);
-        out->information[j] = std::isfinite(curvature) && curvature > 0 ? curvature : 0.0;
-        plus[out->spatial_start + j] = minus[out->spatial_start + j] = 0.0;
+        double curvature = 0;
+        for (int a = 0; a < n; ++a) for (int b = 0; b < n; ++b)
+            curvature += svd.matrixU()(a, j) * working.information[a * n + b] * svd.matrixU()(b, j);
+        const double singular = out->singular_values[j];
+        out->information[j] = std::max(0.0, .5 * (1 + singular * singular) * curvature);
     }
     return coordinate_operator(out);
 }
