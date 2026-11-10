@@ -74,20 +74,12 @@
   // Caller-supplied inv-mass diagonal (e.g. from a Laplace approximation).
   // Overrides any structural warm-start above. Subsequent mass adaptation
   // still runs and refines this starting point.
-  // A wrong-length init is silently ignored here; this fragment runs inside
-  // the parallel-chain region, where REprintf (R API) is not thread-safe.
-  // The verbose branch below reports the applied metric on serial runs.
-  bool caller_inv_metric = (!inv_metric_init.empty()
-                            && (int)inv_metric_init.size() == n_params);
-  if (verbose && !inv_metric_init.empty() && !caller_inv_metric) {
-    REprintf("  [WARMSTART] inv_metric_init length %d != n_params %d, ignoring\n",
-             (int)inv_metric_init.size(), n_params);
-  }
+  validate_inv_metric_init(inv_metric_init, n_params);
+  bool caller_inv_metric = !inv_metric_init.empty();
   if (caller_inv_metric) {
     std::vector<double> inv_m = inv_metric_init;
     std::vector<double> sqrt_m(n_params, 1.0);
     for (int i = 0; i < n_params; i++) {
-      inv_m[i] = clamp_inv_mass(inv_m[i]);
       sqrt_m[i] = 1.0 / std::sqrt(inv_m[i]);
     }
     mass.set_diagonal(inv_m, sqrt_m);
@@ -98,7 +90,9 @@
   }
 
   // Initialize the step size and its adaptation under the active metric.
-  double epsilon = find_reasonable_epsilon_dense(q, data, layout, rng, mass);
+  validate_epsilon_init(epsilon_init);
+  double epsilon = epsilon_init > 0.0 ? epsilon_init :
+      find_reasonable_epsilon_dense(q, data, layout, rng, mass);
   DualAveraging da(epsilon, target_accept);
 
   WelfordStats mass_stats(n_params);              // Always track diagonal
@@ -120,7 +114,7 @@
 
   // L-BFGS mass matrix adaptation (warmup-only)
   // Uses L-BFGS to learn curvature during warmup, then switches to standard HMC
-  bool use_lbfgs = data.has_multiscale_gp &&
+  bool use_lbfgs = n_warmup > 0 && data.has_multiscale_gp &&
                    data.multiscale_gp_data.sampler == tulpa_gp::MSGPSampler::LBFGS;
   tulpa_gp::LBFGSState lbfgs_state;
   std::vector<double> q_prev, grad_prev;
@@ -176,8 +170,7 @@
   std::vector<int> mass_window_ends;
   {
     int adapt_end = n_warmup - term_buffer;
-    if (adapt_end <= init_buffer) {
-    } else {
+    if (adapt_end > init_buffer) {
       int next_end = init_buffer + init_window;
       int win_size = init_window;
       while (next_end < adapt_end) {

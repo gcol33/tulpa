@@ -3148,8 +3148,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_fit_generic
-Rcpp::List cpp_tulpa_fit_generic(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init);
-RcppExport SEXP _tulpa_cpp_tulpa_fit_generic(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP) {
+Rcpp::List cpp_tulpa_fit_generic(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init, double epsilon_init);
+RcppExport SEXP _tulpa_cpp_tulpa_fit_generic(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP, SEXP epsilon_initSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3164,13 +3164,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type init(initSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type inv_metric_init(inv_metric_initSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_fit_generic(y_r, X_r, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init));
+    Rcpp::traits::input_parameter< double >::type epsilon_init(epsilon_initSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_fit_generic(y_r, X_r, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init, epsilon_init));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_tulpa_fit_generic_chains
-Rcpp::List cpp_tulpa_fit_generic_chains(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_chains, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericMatrix> init, Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init, std::string checkpoint_path);
-RcppExport SEXP _tulpa_cpp_tulpa_fit_generic_chains(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_chainsSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP, SEXP checkpoint_pathSEXP) {
+Rcpp::List cpp_tulpa_fit_generic_chains(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_chains, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericMatrix> init, Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init, Rcpp::Nullable<Rcpp::NumericVector> epsilon_init, std::string checkpoint_path);
+RcppExport SEXP _tulpa_cpp_tulpa_fit_generic_chains(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_chainsSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP, SEXP epsilon_initSEXP, SEXP checkpoint_pathSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3186,14 +3187,15 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type init(initSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type inv_metric_init(inv_metric_initSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type epsilon_init(epsilon_initSEXP);
     Rcpp::traits::input_parameter< std::string >::type checkpoint_path(checkpoint_pathSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_fit_generic_chains(y_r, X_r, n_chains, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init, checkpoint_path));
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_fit_generic_chains(y_r, X_r, n_chains, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init, epsilon_init, checkpoint_path));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_test_c_abi_resume_roundtrip
-Rcpp::List cpp_test_c_abi_resume_roundtrip(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init);
-RcppExport SEXP _tulpa_cpp_test_c_abi_resume_roundtrip(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP) {
+Rcpp::List cpp_test_c_abi_resume_roundtrip(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init, double epsilon_init);
+RcppExport SEXP _tulpa_cpp_test_c_abi_resume_roundtrip(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP, SEXP epsilon_initSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3206,13 +3208,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type init(initSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type inv_metric_init(inv_metric_initSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_c_abi_resume_roundtrip(y_r, X_r, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init));
+    Rcpp::traits::input_parameter< double >::type epsilon_init(epsilon_initSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_c_abi_resume_roundtrip(y_r, X_r, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init, epsilon_init));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_test_c_abi_chains_roundtrip
-Rcpp::List cpp_test_c_abi_chains_roundtrip(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_chains, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, Rcpp::Nullable<Rcpp::NumericMatrix> init, Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init);
-RcppExport SEXP _tulpa_cpp_test_c_abi_chains_roundtrip(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_chainsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP) {
+Rcpp::List cpp_test_c_abi_chains_roundtrip(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_chains, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, Rcpp::Nullable<Rcpp::NumericMatrix> init, Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init, Rcpp::Nullable<Rcpp::NumericVector> epsilon_init);
+RcppExport SEXP _tulpa_cpp_test_c_abi_chains_roundtrip(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_chainsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP, SEXP epsilon_initSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3226,7 +3229,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type init(initSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type inv_metric_init(inv_metric_initSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_c_abi_chains_roundtrip(y_r, X_r, n_chains, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type epsilon_init(epsilon_initSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_c_abi_chains_roundtrip(y_r, X_r, n_chains, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init, epsilon_init));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3378,8 +3382,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_sample_glmm
-Rcpp::List cpp_tulpa_sample_glmm(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, std::string backend, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int seed, bool verbose, int n_chains, int max_treedepth, double adapt_delta, double epsilon, int L, int batch_size, double alpha, int mclmc_adjusted, int n_particles, int smc_min_moves, int smc_max_moves, double ess_threshold, int vi_variant, int vi_mc_samples, int vi_max_iter, int vi_n_draws, double vi_max_grad_norm, double vi_tol_grad, double vi_tol_rel_elbo, int vi_patience, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec, Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable, std::string mass_matrix, bool ess_adapt_during_warmup, int ess_adapt_interval, int ess_joint_sigma_re, double ess_joint_proposal_sd, std::string checkpoint_path, double smc_bridge_end);
-RcppExport SEXP _tulpa_cpp_tulpa_sample_glmm(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP backendSEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP n_chainsSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP epsilonSEXP, SEXP LSEXP, SEXP batch_sizeSEXP, SEXP alphaSEXP, SEXP mclmc_adjustedSEXP, SEXP n_particlesSEXP, SEXP smc_min_movesSEXP, SEXP smc_max_movesSEXP, SEXP ess_thresholdSEXP, SEXP vi_variantSEXP, SEXP vi_mc_samplesSEXP, SEXP vi_max_iterSEXP, SEXP vi_n_drawsSEXP, SEXP vi_max_grad_normSEXP, SEXP vi_tol_gradSEXP, SEXP vi_tol_rel_elboSEXP, SEXP vi_patienceSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP phi2SEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP, SEXP init_nullableSEXP, SEXP inv_metric_diag_nullableSEXP, SEXP mass_matrixSEXP, SEXP ess_adapt_during_warmupSEXP, SEXP ess_adapt_intervalSEXP, SEXP ess_joint_sigma_reSEXP, SEXP ess_joint_proposal_sdSEXP, SEXP checkpoint_pathSEXP, SEXP smc_bridge_endSEXP) {
+Rcpp::List cpp_tulpa_sample_glmm(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, std::string backend, double phi, Rcpp::Nullable<Rcpp::NumericVector> sigma_beta, int n_iter, int n_warmup, int seed, bool verbose, int n_chains, int max_treedepth, double adapt_delta, double epsilon, int L, int batch_size, double alpha, int mclmc_adjusted, int n_particles, int smc_min_moves, int smc_max_moves, double ess_threshold, int vi_variant, int vi_mc_samples, int vi_max_iter, int vi_n_draws, double vi_max_grad_norm, double vi_tol_grad, double vi_tol_rel_elbo, int vi_patience, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, double phi2, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec, Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable, Rcpp::Nullable<Rcpp::NumericVector> epsilon_init, std::string mass_matrix, bool ess_adapt_during_warmup, int ess_adapt_interval, int ess_joint_sigma_re, double ess_joint_proposal_sd, std::string checkpoint_path, double smc_bridge_end);
+RcppExport SEXP _tulpa_cpp_tulpa_sample_glmm(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP backendSEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP n_chainsSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP epsilonSEXP, SEXP LSEXP, SEXP batch_sizeSEXP, SEXP alphaSEXP, SEXP mclmc_adjustedSEXP, SEXP n_particlesSEXP, SEXP smc_min_movesSEXP, SEXP smc_max_movesSEXP, SEXP ess_thresholdSEXP, SEXP vi_variantSEXP, SEXP vi_mc_samplesSEXP, SEXP vi_max_iterSEXP, SEXP vi_n_drawsSEXP, SEXP vi_max_grad_normSEXP, SEXP vi_tol_gradSEXP, SEXP vi_tol_rel_elboSEXP, SEXP vi_patienceSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP phi2SEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP, SEXP init_nullableSEXP, SEXP inv_metric_diag_nullableSEXP, SEXP epsilon_initSEXP, SEXP mass_matrixSEXP, SEXP ess_adapt_during_warmupSEXP, SEXP ess_adapt_intervalSEXP, SEXP ess_joint_sigma_reSEXP, SEXP ess_joint_proposal_sdSEXP, SEXP checkpoint_pathSEXP, SEXP smc_bridge_endSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3426,6 +3430,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type zi_spec(zi_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type init_nullable(init_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type inv_metric_diag_nullable(inv_metric_diag_nullableSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type epsilon_init(epsilon_initSEXP);
     Rcpp::traits::input_parameter< std::string >::type mass_matrix(mass_matrixSEXP);
     Rcpp::traits::input_parameter< bool >::type ess_adapt_during_warmup(ess_adapt_during_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type ess_adapt_interval(ess_adapt_intervalSEXP);
@@ -3433,7 +3438,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type ess_joint_proposal_sd(ess_joint_proposal_sdSEXP);
     Rcpp::traits::input_parameter< std::string >::type checkpoint_path(checkpoint_pathSEXP);
     Rcpp::traits::input_parameter< double >::type smc_bridge_end(smc_bridge_endSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_sample_glmm(y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, smc_min_moves, smc_max_moves, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm, vi_tol_grad, vi_tol_rel_elbo, vi_patience, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2, svc_spec, tvc_spec, zi_spec, init_nullable, inv_metric_diag_nullable, mass_matrix, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_sigma_re, ess_joint_proposal_sd, checkpoint_path, smc_bridge_end));
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_sample_glmm(y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, smc_min_moves, smc_max_moves, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm, vi_tol_grad, vi_tol_rel_elbo, vi_patience, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2, svc_spec, tvc_spec, zi_spec, init_nullable, inv_metric_diag_nullable, epsilon_init, mass_matrix, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_sigma_re, ess_joint_proposal_sd, checkpoint_path, smc_bridge_end));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3783,17 +3788,17 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
     {"_tulpa_cpp_test_field_coordinates", (DL_FUNC) &_tulpa_cpp_test_field_coordinates, 9},
     {"_tulpa_cpp_test_sampler_controls", (DL_FUNC) &_tulpa_cpp_test_sampler_controls, 9},
-    {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 11},
-    {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 13},
-    {"_tulpa_cpp_test_c_abi_resume_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_resume_roundtrip, 9},
-    {"_tulpa_cpp_test_c_abi_chains_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_chains_roundtrip, 10},
+    {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 12},
+    {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 14},
+    {"_tulpa_cpp_test_c_abi_resume_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_resume_roundtrip, 10},
+    {"_tulpa_cpp_test_c_abi_chains_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_chains_roundtrip, 11},
     {"_tulpa_cpp_tulpa_glmm_eta_draws", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_eta_draws, 16},
     {"_tulpa_cpp_tulpa_glmm_log_prob_draws", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_log_prob_draws, 16},
     {"_tulpa_cpp_sampler_field_draws", (DL_FUNC) &_tulpa_cpp_sampler_field_draws, 16},
     {"_tulpa_cpp_test_sampler_log_post_paths", (DL_FUNC) &_tulpa_cpp_test_sampler_log_post_paths, 11},
     {"_tulpa_cpp_tulpa_glmm_layout", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_layout, 16},
     {"_tulpa_cpp_vi_elbo_grad", (DL_FUNC) &_tulpa_cpp_vi_elbo_grad, 12},
-    {"_tulpa_cpp_tulpa_sample_glmm", (DL_FUNC) &_tulpa_cpp_tulpa_sample_glmm, 50},
+    {"_tulpa_cpp_tulpa_sample_glmm", (DL_FUNC) &_tulpa_cpp_tulpa_sample_glmm, 51},
     {"_tulpa_cpp_spde_layout_probe", (DL_FUNC) &_tulpa_cpp_spde_layout_probe, 4},
     {"_tulpa_cpp_spde_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_prior_probe, 9},
     {"_tulpa_cpp_spde_nc_apply_probe", (DL_FUNC) &_tulpa_cpp_spde_nc_apply_probe, 7},

@@ -21,6 +21,7 @@
 
 #include <Rcpp.h>
 #include "fixed_effect_prior.h"
+#include "sampler_resume.h"
 #include <string>
 #include <vector>
 #include <cmath>
@@ -301,6 +302,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> epsilon_init = R_NilValue,
     std::string mass_matrix = "diag",
     bool ess_adapt_during_warmup = true,
     int ess_adapt_interval = 50,
@@ -357,7 +359,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
                    backend.c_str());
     }
     if (!is_nuts && (init_nullable.isNotNull() ||
-                     inv_metric_diag_nullable.isNotNull())) {
+                     inv_metric_diag_nullable.isNotNull() || epsilon_init.isNotNull())) {
         Rcpp::stop("a warm start is only carried by the NUTS/HMC kernel; "
                    "backend '%s' takes neither an initial position nor an "
                    "inverse-mass diagonal.", backend.c_str());
@@ -376,7 +378,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
     if (is_nuts) {
         if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
         std::vector<std::vector<double>> q_init(n_chains, init);
-        std::vector<std::vector<double>> inv_metric;   // empty -> structural default
+        const auto inv_metric = tulpa::read_inv_metric_init(inv_metric_diag_nullable, n_chains, D);
+        const auto steps = tulpa::read_epsilon_init(epsilon_init, n_chains);
 
         // Caller-supplied initial positions, one row per chain. A matrix rather
         // than a vector so the chains can be dispersed around the warm-start
@@ -404,27 +407,10 @@ Rcpp::List cpp_tulpa_sample_glmm(
             }
         }
 
-        // Caller-supplied inverse-mass diagonal, shared across chains: it is a
-        // property of the posterior's scaling, not of a chain. Warmup adaptation
-        // still runs and refines it from here.
-        if (inv_metric_diag_nullable.isNotNull()) {
-            Rcpp::NumericVector iv(inv_metric_diag_nullable);
-            if (iv.size() != D) {
-                Rcpp::stop("inv_metric_diag has length %d but the model lays "
-                           "out %d parameters.", (int)iv.size(), D);
-            }
-            for (int j = 0; j < D; j++) {
-                if (!R_finite(iv[j]) || iv[j] <= 0.0) {
-                    Rcpp::stop("inv_metric_diag[%d] must be finite and positive "
-                               "(it is a variance).", j + 1);
-                }
-            }
-            inv_metric.assign(n_chains, std::vector<double>(iv.begin(), iv.end()));
-        }
         std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
             q_init, inv_metric, in.data, n_iter, n_warmup, /*L=*/0, n_chains,
             (unsigned int)seed, verbose, max_treedepth,
-            metric, adapt_delta, /*walnuts=*/nullptr, checkpoint_path);
+            metric, adapt_delta, /*walnuts=*/nullptr, checkpoint_path, nullptr, steps);
         tulpa_hmc::StackedChains st = tulpa_hmc::stack_hmc_chains(chains, n_chains, D);
         if (st.n_total > 0) Rcpp::colnames(st.draws) = cn;
         out = Rcpp::List::create(
@@ -443,6 +429,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
             // checkpointed but read by nothing until gcol33/tulpa#703.
             Rcpp::Named("n_max_treedepth") = st.n_max_treedepth,
             Rcpp::Named("epsilon") = st.epsilon,
+            Rcpp::Named("inv_metric") = st.inv_metric,
+            Rcpp::Named("final_position") = st.final_position,
             Rcpp::Named("sampler") = "nuts");
         return out;
     }

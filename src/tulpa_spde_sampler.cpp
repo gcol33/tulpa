@@ -186,16 +186,7 @@ Rcpp::NumericVector cpp_spde_density_terms(double y, double eta, double log_phi,
     });
 }
 
-namespace tulpa_hmc {
-    HMCResultCpp run_hmc_chain_cpp(
-        const std::vector<double>& q_init,
-        const ModelData& data,
-        const ParamLayout& layout,
-        int n_iter, int n_warmup, int L, int chain_id,
-        unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, const tulpa::WalnutsConfig* walnuts,
-        const std::vector<double>& inv_metric_init);
-}
+
 
 // =====================================================================
 // Rcpp entry point.

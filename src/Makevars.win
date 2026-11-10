@@ -239,6 +239,7 @@ unity_glmm.o: \
   sampler_log_prob.h \
   hmc_gp.h \
   nngp_nc_term_apply.h \
+  sampler_resume.h \
   hmc_chain_stack.h \
   ess_sampler.h \
   sghmc_sampler.h \
@@ -867,6 +868,7 @@ unity_samplers.o: \
   linalg_fast.h \
   hmc_field_coordinates.h \
   sampler_field_store.h \
+  sampler_resume.h \
   vi_types.h \
   vi_optimizer.h \
   vi_meanfield.h \

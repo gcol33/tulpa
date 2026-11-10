@@ -101,21 +101,31 @@ test_that("warm-started continuation samples the same posterior (tulpa#29)", {
     seed = 9L, verbose = FALSE
   )
 
-  # Continue from the reported state + adapted geometry, zero warmup.
-  cont <- tulpa:::cpp_tulpa_fit_generic(
-    y_r = y, X_r = X,
-    n_iter = 1200L, n_warmup = 0L,
-    max_treedepth = 7L, adapt_delta = 0.85,
-    seed = 109L, verbose = FALSE,
-    init = ref$final_position,
-    inv_metric_init = ref$inv_metric
-  )
-
-  expect_true(all(is.finite(cont$draws)))
-  # Same posterior: warm-started continuation means match the reference within
-  # Monte Carlo error (beta posterior sd ~0.05 here).
-  expect_equal(cont$means[["beta[1]"]], ref$means[["beta[1]"]], tolerance = 0.1)
-  expect_equal(cont$means[["beta[2]"]], ref$means[["beta[2]"]], tolerance = 0.1)
+  mcse <- function(fit) {
+    out <- tulpa::diagnostics(
+      list(draws = fit$draws, chain_id = rep(1L, nrow(fit$draws)), n_chains = 1L),
+      measures = "mcse_mean")
+    out$mcse_mean[match(colnames(fit$draws), out$parameter)]
+  }
+  ref_mcse <- mcse(ref)
+  for (seed in 109:113) {
+    cont <- tulpa:::cpp_tulpa_fit_generic(
+      y_r = y, X_r = X, n_iter = 1200L, n_warmup = 0L,
+      max_treedepth = 7L, adapt_delta = 0.85,
+      seed = seed, verbose = FALSE,
+      init = ref$final_position, inv_metric_init = ref$inv_metric,
+      epsilon_init = ref$epsilon)
+    expect_true(all(is.finite(cont$draws)))
+    expect_identical(cont$epsilon, ref$epsilon)
+    expect_identical(cont$inv_metric, ref$inv_metric)
+    expect_equal(sum(cont$divergent), 0)
+    expect_gt(mean(cont$accept_prob), 0.75)
+    error <- abs(cont$means - ref$means)
+    bound <- 5 * sqrt(mcse(cont)^2 + ref_mcse^2)
+    expect_true(all(is.finite(bound)) && all(error < bound),
+                info = paste("seed", seed, "error", paste(signif(error, 3), collapse = ","),
+                             "bound", paste(signif(bound, 3), collapse = ",")))
+  }
 })
 
 # ---------------------------------------------------------------------------
@@ -283,7 +293,7 @@ test_that("per-chain warm-start resumes a multi-chain fit (tulpa#30 + #29)", {
     max_treedepth = 7L, adapt_delta = 0.85,
     seed = 126L, verbose = FALSE,
     init = ref$final_position,
-    inv_metric_init = ref$inv_metric
+    inv_metric_init = ref$inv_metric, epsilon_init = ref$epsilon
   )
 
   expect_true(all(is.finite(cont$draws)))
@@ -361,7 +371,7 @@ test_that("C ABI resume continues a chain from inv_metric_out + final_position (
     max_treedepth = 7L, adapt_delta = 0.85,
     seed = 130L,
     init = ref$final_position,
-    inv_metric_init = ref$inv_metric_out
+    inv_metric_init = ref$inv_metric_out, epsilon_init = ref$epsilon
   )
 
   expect_true(all(is.finite(cont$draws)))
@@ -480,7 +490,7 @@ test_that("C ABI multi-chain resume continues every chain from its own state (tu
     max_treedepth = 7L, adapt_delta = 0.85,
     seed = 133L,
     init = ref$final_position,
-    inv_metric_init = ref$inv_metric_out
+    inv_metric_init = ref$inv_metric_out, epsilon_init = ref$epsilon
   )
 
   expect_true(all(is.finite(cont$draws)))

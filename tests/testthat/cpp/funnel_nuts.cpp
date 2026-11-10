@@ -110,19 +110,6 @@ static void build_funnel_model(
     layout = tulpa_hmc::compute_param_layout(data);
 }
 
-// Forward declaration (definition in hmc_sampler.cpp; default args in
-// hmc_sampler_funcs.h). Same declaration the generic sampler uses.
-namespace tulpa_hmc {
-    HMCResultCpp run_hmc_chain_cpp(
-        const std::vector<double>& q_init,
-        const ModelData& data,
-        const ParamLayout& layout,
-        int n_iter, int n_warmup, int L, int chain_id,
-        unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, const tulpa::WalnutsConfig* walnuts,
-        const std::vector<double>& inv_metric_init);
-}
-
 // [[Rcpp::export]]
 Rcpp::List cpp_test_funnel_nuts(
     int K = 9,

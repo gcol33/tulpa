@@ -52,7 +52,8 @@ struct HMCResultCpp {
   // a completed run. `inv_metric_diag` is the adapted inverse-mass diagonal at
   // end of warmup; `final_position` is the last raw sampler state (sampling
   // parameterization, e.g. z for an NC GP, not the stored w transform). Feeding
-  // them back as inv_metric_init + q_init with n_warmup=0 continues the chain.
+  // them back as inv_metric_init + q_init, together with epsilon_init = epsilon
+  // and the same tree depth and fixed integrator, continues a diagonal kernel.
   std::vector<double> inv_metric_diag;
   std::vector<double> final_position;
 

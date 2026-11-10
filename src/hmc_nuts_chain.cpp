@@ -56,7 +56,8 @@ HMCResultCpp run_hmc_chain_cpp(
     MassMatrixType metric_type,
     double adapt_delta,
     const tulpa::WalnutsConfig* walnuts,
-    const std::vector<double>& inv_metric_init
+    const std::vector<double>& inv_metric_init,
+    double epsilon_init
 ) {
   // Every NUTS entry in the package reaches the sampler through this function,
   // so the gradient gate lives here rather than in the callers. The scope is
@@ -159,14 +160,15 @@ HMCResult run_hmc_chain(
     MassMatrixType metric_type,
     double adapt_delta,
     const tulpa::WalnutsConfig* walnuts,
-    const std::vector<double>& inv_metric_init
+    const std::vector<double>& inv_metric_init,
+    double epsilon_init
 ) {
   // The gradient gate and the fit scope live in run_hmc_chain_cpp, which this
   // wrapper and every other entry share.
 
   // Run C++ version - pass verbose through for debugging
   HMCResultCpp cpp_result = run_hmc_chain_cpp(
-    q_init, data, layout, n_iter, n_warmup, L, chain_id, seed, verbose, max_treedepth, metric_type, adapt_delta, walnuts, inv_metric_init
+    q_init, data, layout, n_iter, n_warmup, L, chain_id, seed, verbose, max_treedepth, metric_type, adapt_delta, walnuts, inv_metric_init, epsilon_init
   );
 
   // Convert to R result

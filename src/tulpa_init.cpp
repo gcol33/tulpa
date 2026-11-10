@@ -108,6 +108,7 @@ static void tulpa_run_nuts_generic_impl(
     int verbose,
     const tulpa::SamplerControl* control,
     const double* inv_metric_diag,
+    double epsilon_init,
     tulpa::NUTSResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
@@ -133,7 +134,7 @@ static void tulpa_run_nuts_generic_impl(
         settings.metric,
         adapt_delta,
         settings.walnuts ? &settings.walnuts_config : nullptr,
-        inv_metric_init
+        inv_metric_init, epsilon_init
     );
 
     fill_nuts_result_from_cpp(result_out, hmc, n_params);
@@ -161,6 +162,7 @@ static void tulpa_run_nuts_chains_impl(
     int verbose,
     const tulpa::SamplerControl* control,
     const double* inv_metric_diag,
+    const double* epsilon_init,
     tulpa::NUTSResult* results_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
@@ -190,7 +192,9 @@ static void tulpa_run_nuts_chains_impl(
         settings.metric, adapt_delta,
         settings.walnuts ? &settings.walnuts_config : nullptr,
         "",               // checkpoint_path
-        layout            // honour the caller's layout
+        layout,           // honour the caller's layout
+        epsilon_init ? std::vector<double>(epsilon_init, epsilon_init + n_chains)
+                     : std::vector<double>()
     );
 
     if (static_cast<int>(chains.size()) != n_chains) {

@@ -7,6 +7,7 @@
 #define TULPA_HMC_SAMPLER_FUNCS_H
 
 #include <random>
+#include <stdexcept>
 #include <vector>
 
 #include "hmc_sampler_chain_state.h"  // HMCResultCpp, HMCResult
@@ -16,6 +17,20 @@
 #include <tulpa/walnuts_config.h>       // tulpa::WalnutsConfig
 
 namespace tulpa_hmc {
+
+inline void validate_epsilon_init(double epsilon_init) {
+  if (!std::isfinite(epsilon_init) || epsilon_init < 0.0)
+    throw std::invalid_argument("epsilon_init must be finite and nonnegative (0 selects the step-size heuristic)");
+}
+
+inline void validate_inv_metric_init(const std::vector<double>& metric, int n_params) {
+  if (metric.empty()) return;
+  if (static_cast<int>(metric.size()) != n_params)
+    throw std::invalid_argument("inv_metric_init length must equal n_params");
+  for (double value : metric)
+    if (!std::isfinite(value) || value <= 0.0)
+      throw std::invalid_argument("inv_metric_init entries must be finite and positive");
+}
 
 // =====================================================================
 // Sampler functions
@@ -94,6 +109,8 @@ double compute_adaptive_nu_max(
 //          this configuration in place of NUTS.
 // inv_metric_init: optional caller-supplied initial diagonal inv-mass
 //                  (length n_params). Empty -> default structural warm-start.
+// epsilon_init: initial step size; zero selects the heuristic. With no warmup,
+//               a positive supplied step is held fixed.
 HMCResultCpp run_hmc_chain_cpp(
     const std::vector<double>& q_init,
     const ModelData& data,
@@ -108,7 +125,8 @@ HMCResultCpp run_hmc_chain_cpp(
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
     const tulpa::WalnutsConfig* walnuts = nullptr,
-    const std::vector<double>& inv_metric_init = std::vector<double>()
+    const std::vector<double>& inv_metric_init = std::vector<double>(),
+    double epsilon_init = 0.0
 );
 
 // Run single HMC chain (R wrapper)
@@ -126,7 +144,8 @@ HMCResult run_hmc_chain(
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
     const tulpa::WalnutsConfig* walnuts = nullptr,
-    const std::vector<double>& inv_metric_init = std::vector<double>()
+    const std::vector<double>& inv_metric_init = std::vector<double>(),
+    double epsilon_init = 0.0
 );
 
 // Pure-C++ across-chain core (no Rcpp types -> callable from the C ABI).
@@ -137,7 +156,7 @@ HMCResult run_hmc_chain(
 // inv_metric_per_chain: empty (all default) or length n_chains (entry c may
 // itself be empty). Together these let one call do a fresh fit (broadcast
 // init) or a warm-started resume (per-chain final_position + inv_metric,
-// n_warmup = 0).
+// epsilon_init = the previous epsilon, n_warmup = 0).
 std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     const std::vector<std::vector<double>>& q_init_broadcast,
     const std::vector<std::vector<double>>& inv_metric_per_chain,
@@ -158,7 +177,8 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     // a FullGradFn with a hand-built ParamLayout (total_params set, no processes)
     // gets the correct parameter count -- the single-chain runner already honours
     // the passed layout; this brings the multi-chain runner in line.
-    const ParamLayout* layout_override = nullptr
+    const ParamLayout* layout_override = nullptr,
+    const std::vector<double>& epsilon_init = std::vector<double>()
 );
 
 // Compute full Hessian via finite differences of the H-mode gradient.

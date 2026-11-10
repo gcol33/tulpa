@@ -66,7 +66,11 @@ struct NUTSResult {
     // Warm-start / resume outputs (ABI v23+). Both length
     // n_params; caller must free. Together with `epsilon` they capture the
     // adapted geometry and last sampler state, so a continued chain is
-    //   init = final_position, inv_metric_diag = inv_metric_out, n_warmup = 0.
+    //   init = final_position, inv_metric_diag = inv_metric_out,
+    //   epsilon_init = epsilon, n_warmup = 0, with the same max_treedepth,
+    //   fixed integrator and sampler control.
+    // This preserves a diagonal-metric kernel. A dense or structured metric's
+    // diagonal alone does not reproduce its transition kernel.
     // inv_metric_out is the inverse-mass *diagonal* (the diagonal part even
     // when the run used a denser metric internally). final_position is the
     // last position in the ModelData parameterization. Automatic field
@@ -103,6 +107,9 @@ struct NUTSResult {
 // rather than discovers the metric — e.g. for HMC warm-started from a
 // Laplace approximation, pass diag(Sigma_marg) for latent slots and
 // diag(H_theta_inv) for hyperparameter slots.
+// `epsilon_init`: finite, positive initial step size, or 0 for the heuristic.
+// With n_warmup == 0 a positive value is used unchanged, including the usual
+// independent trajectory jitter. Warmup adapts from a supplied value.
 typedef void (*NUTSFn)(
     const ModelData* data,
     const ParamLayout* layout,
@@ -116,6 +123,7 @@ typedef void (*NUTSFn)(
     int verbose,
     const SamplerControl* control,
     const double* inv_metric_diag,
+    double epsilon_init,
     NUTSResult* result_out
 );
 
@@ -147,6 +155,8 @@ inline NUTSFn get_nuts_fn() {
 //                                             every chain. For a resume, pass
 //                                             each chain's inv_metric_out and
 //                                             n_warmup = 0.
+//   epsilon_init     [n_chains] or nullptr  — chain c's step size, or the
+//                                             heuristic for every chain.
 //   results_out      [n_chains]             — caller-allocated array; entry c
 //                                             is filled exactly like the single
 //                                             -chain NUTSResult (samples,
@@ -171,6 +181,7 @@ typedef void (*NUTSChainsFn)(
     int verbose,
     const SamplerControl* control,
     const double* inv_metric_diag,
+    const double* epsilon_init,
     NUTSResult* results_out
 );
 

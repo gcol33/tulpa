@@ -48,11 +48,17 @@
 #'   and `cyclic`. `NULL` -> none.
 #' @param sigma_re_scale Half-Cauchy scale for the RE standard-deviation
 #'   hyperprior (sampled jointly with the latent effects).
-#' @param warm_start Optional `list(init, inv_metric_diag)` seeding the NUTS
+#' @param warm_start Optional `list(init, inv_metric_diag, epsilon_init)` seeding the NUTS
 #'   kernel: `init` an `n_chains x total_params` matrix of initial positions,
 #'   one row per chain, and `inv_metric_diag` a positive vector of length
-#'   `total_params` used as the starting inverse mass (warmup adaptation still
-#'   runs from it). Build it with `.build_warm_start()` against
+#'   `total_params` or an `n_chains x total_params` matrix of per-chain inverse
+#'   masses. `epsilon_init` supplies one step size or one per chain; zero or
+#'   omission selects the step-size heuristic. With `warmup = 0`, positive
+#'   supplied step sizes and metrics are held fixed. A diagonal-metric fit
+#'   resumes with `init = fit$final_position`, `inv_metric_diag = fit$inv_metric`,
+#'   `epsilon_init = fit$epsilon`, and the same `max_treedepth` and fixed integrator.
+#'   Warmup adaptation runs from supplied values. Build a fresh warm start
+#'   with `.build_warm_start()` against
 #'   `cpp_tulpa_glmm_layout()` rather than by hand -- the entries are positional
 #'   and the layout owns the positions. Only the NUTS/HMC kernel takes one;
 #'   any other backend errors rather than sampling from the default start.
@@ -328,6 +334,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     zi_spec       = zi_spec,
     init_nullable = warm_start$init,
     inv_metric_diag_nullable = warm_start$inv_metric_diag,
+    epsilon_init = warm_start$epsilon_init,
     # NUTS/HMC metric. The default stays "diag" -- the metric a fit gets when
     # nothing asks for another one -- so a fit that does not set this samples
     # exactly as before. "auto" turns on the structural block detection

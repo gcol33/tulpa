@@ -18,6 +18,7 @@
 #include "sampler_model_data.h"
 #include "hmc_field_coordinates.h"
 #include "sampler_field_store.h"
+#include "sampler_resume.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -161,10 +162,10 @@ Rcpp::List cpp_test_sampler_controls(
     std::vector<tulpa::NUTSResult> results(n_chains);
     if (n_chains == 1) {
         tulpa::get_nuts_fn()(&data, &layout, init.data(), p, n_iter, n_warmup,
-            8, 0.85, seed, 0, &control, nullptr, results.data());
+            8, 0.85, seed, 0, &control, nullptr, 0.0, results.data());
     } else {
         tulpa::get_nuts_chains_fn()(&data, &layout, init.data(), p, n_chains,
-            n_iter, n_warmup, 8, 0.85, seed, 0, &control, nullptr, results.data());
+            n_iter, n_warmup, 8, 0.85, seed, 0, &control, nullptr, nullptr, results.data());
     }
     std::vector<tulpa_hmc::HMCResultCpp> direct;
     const auto* wc = walnuts ? &control.walnuts_config : nullptr;
@@ -309,19 +310,6 @@ static Rcpp::CharacterVector gaussian_col_names(int p) {
 // Model packages provide a LikelihoodFn<double> via LikelihoodSpec.
 // ============================================================================
 
-// Forward declare from hmc_sampler.cpp
-// Default for inv_metric_init lives in hmc_sampler_funcs.h.
-namespace tulpa_hmc {
-    HMCResultCpp run_hmc_chain_cpp(
-        const std::vector<double>& q_init,
-        const ModelData& data,
-        const ParamLayout& layout,
-        int n_iter, int n_warmup, int L, int chain_id,
-        unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, const tulpa::WalnutsConfig* walnuts,
-        const std::vector<double>& inv_metric_init);
-}
-
 
 // [[Rcpp::export]]
 Rcpp::List cpp_tulpa_fit_generic(
@@ -335,7 +323,8 @@ Rcpp::List cpp_tulpa_fit_generic(
     int seed = 42,
     bool verbose = true,
     Rcpp::Nullable<Rcpp::NumericVector> init = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init = R_NilValue,
+    double epsilon_init = 0.0
 ) {
     const double sigma_beta_value =
         tulpa::read_sigma_beta(sigma_beta);
@@ -360,15 +349,8 @@ Rcpp::List cpp_tulpa_fit_generic(
 
     // Optional warm-start inverse-mass diagonal (e.g. from a previous fit's
     // inv_metric output). Empty -> structural warm-start.
-    std::vector<double> inv_metric_vec;
-    if (inv_metric_init.isNotNull()) {
-        Rcpp::NumericVector mv(inv_metric_init);
-        if ((int)mv.size() != n_params) {
-            Rcpp::stop("inv_metric_init length %d != n_params %d",
-                       (int)mv.size(), n_params);
-        }
-        inv_metric_vec.assign(mv.begin(), mv.end());
-    }
+    const auto metrics = tulpa::read_inv_metric_init(inv_metric_init, 1, n_params);
+    const std::vector<double> inv_metric_vec = metrics.empty() ? std::vector<double>() : metrics[0];
 
     // Run full NUTS (L=0 means NUTS)
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
@@ -382,7 +364,7 @@ Rcpp::List cpp_tulpa_fit_generic(
         tulpa::MassMatrixType::DIAG,
         adapt_delta,
         nullptr,      // walnuts off
-        inv_metric_vec
+        inv_metric_vec, epsilon_init
     );
 
     // Convert to R matrix
@@ -439,7 +421,8 @@ Rcpp::List cpp_tulpa_fit_generic(
 // `init` / `inv_metric_init`, when supplied, are [n_chains x n_params]
 // matrices (row c = chain c). `init` NULL -> origin for every chain;
 // `inv_metric_init` NULL -> structural default for every chain. Passing the
-// previous fit's `final_position` + `inv_metric` with n_warmup = 0 continues
+// previous fit's `final_position`, `inv_metric` and `epsilon` as
+// `init`, `inv_metric_init` and `epsilon_init` with n_warmup = 0 continues
 // the chains.
 // ============================================================================
 // [[Rcpp::export]]
@@ -456,6 +439,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
     bool verbose = false,
     Rcpp::Nullable<Rcpp::NumericMatrix> init = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> epsilon_init = R_NilValue,
     std::string checkpoint_path = ""
 ) {
     const double sigma_beta_value =
@@ -485,19 +469,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
     }
 
     // Per-chain inverse-mass diagonal (rows of `inv_metric_init`, else default).
-    std::vector<std::vector<double>> inv_metric_per_chain;
-    if (inv_metric_init.isNotNull()) {
-        Rcpp::NumericMatrix mm(inv_metric_init);
-        if (mm.nrow() != n_chains || mm.ncol() != n_params) {
-            Rcpp::stop("inv_metric_init must be [n_chains x n_params] = [%d x %d]",
-                       n_chains, n_params);
-        }
-        inv_metric_per_chain.resize(n_chains);
-        for (int c = 0; c < n_chains; c++) {
-            inv_metric_per_chain[c].resize(n_params);
-            for (int j = 0; j < n_params; j++) inv_metric_per_chain[c][j] = mm(c, j);
-        }
-    }
+    const auto inv_metric_per_chain = tulpa::read_inv_metric_init(inv_metric_init, n_chains, n_params);
 
     std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
         q_init_per_chain, inv_metric_per_chain, data,
@@ -506,7 +478,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
         n_chains, static_cast<unsigned int>(seed), verbose,
         max_treedepth, tulpa::MassMatrixType::DIAG, adapt_delta,
         nullptr,          // walnuts off
-        checkpoint_path
+        checkpoint_path, nullptr, tulpa::read_epsilon_init(epsilon_init, n_chains)
     );
 
     tulpa_hmc::StackedChains st = tulpa_hmc::stack_hmc_chains(chains, n_chains, n_params);
@@ -562,7 +534,8 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
     double adapt_delta = 0.85,
     int seed = 9,
     Rcpp::Nullable<Rcpp::NumericVector> init = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init = R_NilValue,
+    double epsilon_init = 0.0
 ) {
     GaussianData gd;
     tulpa::LikelihoodSpec spec;
@@ -580,17 +553,8 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
         init_vec.assign(iv.begin(), iv.end());
     }
 
-    std::vector<double> inv_metric_vec;
-    const double* inv_metric_ptr = nullptr;
-    if (inv_metric_init.isNotNull()) {
-        Rcpp::NumericVector mv(inv_metric_init);
-        if ((int)mv.size() != n_params) {
-            Rcpp::stop("inv_metric_init length %d != n_params %d",
-                       (int)mv.size(), n_params);
-        }
-        inv_metric_vec.assign(mv.begin(), mv.end());
-        inv_metric_ptr = inv_metric_vec.data();
-    }
+    const auto metrics = tulpa::read_inv_metric_init(inv_metric_init, 1, n_params);
+    const double* inv_metric_ptr = metrics.empty() ? nullptr : metrics[0].data();
 
     // Reach the engine the way downstream packages do: through R_GetCCallable.
     // get_nuts_fn() caches the lookup and runs the ABI-version check.
@@ -607,6 +571,7 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
         /*verbose=*/0,
         nullptr,
         inv_metric_ptr,
+        epsilon_init,
         &result
     );
 
@@ -667,7 +632,8 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
     double adapt_delta = 0.85,
     int seed = 30,
     Rcpp::Nullable<Rcpp::NumericMatrix> init = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> epsilon_init = R_NilValue
 ) {
     if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
 
@@ -696,21 +662,16 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
 
     // Per-chain inverse-mass diagonal (chain-major rows), nullptr -> default.
     std::vector<double> inv_metric_flat;
-    const double* inv_metric_ptr = nullptr;
-    if (inv_metric_init.isNotNull()) {
-        Rcpp::NumericMatrix mm(inv_metric_init);
-        if (mm.nrow() != n_chains || mm.ncol() != n_params) {
-            Rcpp::stop("inv_metric_init must be [n_chains x n_params] = [%d x %d]",
-                       n_chains, n_params);
-        }
-        inv_metric_flat.assign((std::size_t)n_chains * n_params, 0.0);
+    const auto metrics = tulpa::read_inv_metric_init(inv_metric_init, n_chains, n_params);
+    if (!metrics.empty()) {
+        inv_metric_flat.resize(static_cast<std::size_t>(n_chains) * n_params);
         for (int c = 0; c < n_chains; c++) {
             for (int j = 0; j < n_params; j++) {
-                inv_metric_flat[(std::size_t)c * n_params + j] = mm(c, j);
+                inv_metric_flat[(std::size_t)c * n_params + j] = metrics[c][j];
             }
         }
-        inv_metric_ptr = inv_metric_flat.data();
     }
+    const double* inv_metric_ptr = inv_metric_flat.empty() ? nullptr : inv_metric_flat.data();
 
     // Reach the engine through R_GetCCallable. get_nuts_chains_fn() caches
     // the lookup and runs the ABI-version check on first use.
@@ -720,6 +681,7 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
     }
 
     std::vector<tulpa::NUTSResult> results(n_chains, tulpa::NUTSResult{});
+    const auto steps = tulpa::read_epsilon_init(epsilon_init, n_chains);
     run_chains(
         &data, &layout, init_flat.data(), n_params, n_chains,
         n_iter, n_warmup, max_treedepth, adapt_delta,
@@ -727,6 +689,7 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
         /*verbose=*/0,
         nullptr,
         inv_metric_ptr,
+        steps.empty() ? nullptr : steps.data(),
         results.data()
     );
 

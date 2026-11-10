@@ -213,7 +213,8 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     double adapt_delta,
     const tulpa::WalnutsConfig* walnuts,
     const std::string& checkpoint_path,
-    const ParamLayout* layout_override
+    const ParamLayout* layout_override,
+    const std::vector<double>& epsilon_init
 ) {
   // Honour a caller-supplied layout: a FullGradFn model carries
   // a minimal ModelData (total_params set by hand, no processes), so recomputing
@@ -223,6 +224,10 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
                                        : compute_param_layout(data);
 
   if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+  if (!epsilon_init.empty() && static_cast<int>(epsilon_init.size()) != n_chains)
+    Rcpp::stop("epsilon_init must have one value per chain");
+  for (double step : epsilon_init) validate_epsilon_init(step);
+  auto step_for = [&](int c) { return epsilon_init.empty() ? 0.0 : epsilon_init[c]; };
   if ((int)q_init_broadcast.size() != n_chains) {
     Rcpp::stop("run_hmc_parallel_chains_cpp: %d initial positions for %d chains",
                (int)q_init_broadcast.size(), n_chains);
@@ -281,6 +286,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int mt = static_cast<int>(metric_type);
     fp.fold_pod(mt);
     fp.fold_pod(adapt_delta);
+    fp.fold_vec(epsilon_init);
     const int walnuts_on = walnuts ? 1 : 0;
     fp.fold_pod(walnuts_on);
     if (walnuts) {
@@ -343,7 +349,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
         cpp_results[c] = run_hmc_chain_cpp(
           q_init_per_chain[c], data, layout,
           n_iter, n_warmup, L, c, seed, false, max_treedepth,
-          metric_type, adapt_delta, walnuts, metric_for(c)
+          metric_type, adapt_delta, walnuts, metric_for(c), step_for(c)
         );
         if (ckpt) ckpt->save(c, cpp_results[c]);
       } catch (const std::exception& e) {
@@ -366,7 +372,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
       cpp_results[c] = run_hmc_chain_cpp(
         q_init_per_chain[c], data, layout,
         n_iter, n_warmup, L, c, seed, verbose && n_chains == 1, max_treedepth,
-        metric_type, adapt_delta, walnuts, metric_for(c)
+        metric_type, adapt_delta, walnuts, metric_for(c), step_for(c)
       );
       if (ckpt) ckpt->save(c, cpp_results[c]);
     }
@@ -377,7 +383,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     cpp_results[c] = run_hmc_chain_cpp(
       q_init_per_chain[c], data, layout,
       n_iter, n_warmup, L, c, seed, verbose, max_treedepth,
-      metric_type, adapt_delta, walnuts, metric_for(c)
+      metric_type, adapt_delta, walnuts, metric_for(c), step_for(c)
     );
     if (ckpt) ckpt->save(c, cpp_results[c]);
   }
