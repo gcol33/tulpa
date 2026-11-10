@@ -585,6 +585,11 @@ ParamLayout compute_param_layout(const ModelData& data) {
   if (layout.has_spatiotemporal && data.spatiotemporal_data.type != STType::NONE) {
     const auto& st = data.spatiotemporal_data;
     check_st_interaction_supported(st, data.st_is_hsgp);
+    if (data.st_uniform_ranges &&
+        (!(st.phi_space_prior_lower > 0.0) || !(st.phi_space_prior_upper > st.phi_space_prior_lower) ||
+         !(st.phi_time_prior_lower > 0.0) || !(st.phi_time_prior_upper > st.phi_time_prior_lower) ||
+         !std::isfinite(st.phi_space_prior_upper) || !std::isfinite(st.phi_time_prior_upper)))
+      Rcpp::stop("ST GP uniform range bounds must be finite with 0 < lower < upper");
     if (data.st_margin_centering &&
         (st.type == STType::TYPE_III || st.type == STType::TYPE_IV) &&
         st.spatial_partition.n != st.n_spatial)

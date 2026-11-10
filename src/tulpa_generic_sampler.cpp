@@ -154,6 +154,8 @@ Rcpp::List cpp_test_field_coordinates(
     std::vector<double> stored = x;
     tulpa::store_field_draw(stored.data(), x, data, layout);
     std::vector<double> st_inverse;
+    double st_log_jacobian = NA_REAL;
+    std::vector<double> st_normalizer_gradient, st_normalizer_numerical;
     if (data.st_is_hsgp && data.st_parameterization == 1) {
         st_inverse.assign(stored.begin() + layout.st_delta_start, stored.begin() + layout.st_delta_end);
         const double rho = layout.logit_rho_st_idx < 0 ? 0.0 :
@@ -162,6 +164,41 @@ Rcpp::List cpp_test_field_coordinates(
             tulpa::math::safe_exp(x[layout.log_tau_st_idx]), rho,
             tulpa::math::safe_exp(x[layout.log_sigma2_st_hsgp_idx]), tulpa::math::safe_exp(x[layout.log_lengthscale_st_hsgp_idx]),
             data.spatiotemporal_data, data.st_hsgp_data, st_inverse.data(), data.st_hsgp_data.kernel);
+    }
+    if (layout.is_st_gp && data.st_parameterization == 1) {
+        st_inverse.assign(stored.begin() + layout.st_delta_start, stored.begin() + layout.st_delta_end);
+        tulpa_st_gp::StGpCoordinates<double> coordinates;
+        coordinates.build(1.0 / tulpa::math::safe_exp(x[layout.log_tau_st_idx]),
+            tulpa::st_gp_range_from_coordinate(x[layout.log_phi_st_space_idx], data, true),
+            tulpa::st_gp_range_from_coordinate(x[layout.log_phi_st_time_idx], data, false),
+            data.spatiotemporal_data);
+        coordinates.inverse(st_inverse.data(), st_inverse.data());
+        st_log_jacobian = coordinates.log_jacobian;
+    }
+    if (layout.is_st_gp) {
+        const double tau = tulpa::math::safe_exp(x[layout.log_tau_st_idx]);
+        const double space = tulpa::st_gp_range_from_coordinate(x[layout.log_phi_st_space_idx], data, true);
+        const double time = tulpa::st_gp_range_from_coordinate(x[layout.log_phi_st_time_idx], data, false);
+        const auto normalizer = tulpa_st_gp::st_gp_margin_normalizer_grad(tau, space, time, data.spatiotemporal_data);
+        const auto& st = data.spatiotemporal_data;
+        st_normalizer_gradient = {normalizer.log_tau,
+            normalizer.log_phi_space * tulpa::field_range_log_slope(x[layout.log_phi_st_space_idx],
+                st.phi_space_prior_lower, st.phi_space_prior_upper, data.st_uniform_ranges),
+            normalizer.log_phi_time * tulpa::field_range_log_slope(x[layout.log_phi_st_time_idx],
+                st.phi_time_prior_lower, st.phi_time_prior_upper, data.st_uniform_ranges)};
+        const auto value = [&](const std::vector<double>& point) {
+            double out = 0.0;
+            tulpa_st_gp::st_gp_margin_log_normalizer(1.0 / tulpa::math::safe_exp(point[layout.log_tau_st_idx]),
+                tulpa::st_gp_range_from_coordinate(point[layout.log_phi_st_space_idx], data, true),
+                tulpa::st_gp_range_from_coordinate(point[layout.log_phi_st_time_idx], data, false), st, &out);
+            return out;
+        };
+        for (int index : {layout.log_tau_st_idx, layout.log_phi_st_space_idx, layout.log_phi_st_time_idx}) {
+            auto plus = x, minus = x;
+            const double step = 2e-5;
+            plus[index] += step; minus[index] -= step;
+            st_normalizer_numerical.push_back((value(plus) - value(minus)) / (2.0 * step));
+        }
     }
     std::vector<double> raw_gradient, prior_gradient;
     tulpa_hmc::compute_gradient(x, data, layout, raw_gradient);
@@ -208,6 +245,9 @@ Rcpp::List cpp_test_field_coordinates(
     return Rcpp::List::create(Rcpp::Named("q") = q, Rcpp::Named("x") = x,
         Rcpp::Named("stored") = stored,
         Rcpp::Named("st_inverse") = st_inverse,
+        Rcpp::Named("st_log_jacobian") = st_log_jacobian,
+        Rcpp::Named("st_normalizer_gradient") = st_normalizer_gradient,
+        Rcpp::Named("st_normalizer_numerical") = st_normalizer_numerical,
         Rcpp::Named("last_reported_lp") = last_reported_lp,
         Rcpp::Named("last_native_lp") = last_native_lp,
         Rcpp::Named("auto_dense_equal") = auto_dense_equal,

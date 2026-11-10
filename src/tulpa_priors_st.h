@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <vector>
 #include <tulpa/st_margins.h>
+#include <tulpa/field_range.h>
 #include <tulpa/st_hsgp_kernel.h>
 #include "st_gp_kernel.h"
 #include <cmath>
@@ -274,13 +275,12 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
         if (layout.is_st_gp) {
             const T log_space = params[layout.log_phi_st_space_idx];
             const T log_time = params[layout.log_phi_st_time_idx];
-            const T space = safe_exp(log_space), time = safe_exp(log_time);
+            const T space = st_gp_range_from_coordinate(log_space, data, true);
+            const T time = st_gp_range_from_coordinate(log_time, data, false);
             const auto& st = data.spatiotemporal_data;
             if (data.st_uniform_ranges) {
-                if (get_value(space) < st.phi_space_prior_lower || get_value(space) > st.phi_space_prior_upper ||
-                    get_value(time) < st.phi_time_prior_lower || get_value(time) > st.phi_time_prior_upper)
-                    return T(-std::numeric_limits<double>::infinity());
-                log_post = log_post + log_space + log_time;
+                log_post = log_post + uniform_range_coordinate_log_density(log_space, true)
+                    + uniform_range_coordinate_log_density(log_time, true);
             } else {
                 log_post = log_post + log_prior_range_pc_at_log(log_space,
                     data.st_phi_space_prior_lower, data.st_phi_space_prior_alpha) + log_space
@@ -295,6 +295,7 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 for (const T& z : st_delta)
                     log_post = log_post - T(0.5) * z * z - T(0.5 * std::log(2.0 * std::acos(-1.0)));
                 st_delta.swap(field);
+                return log_post;
             } else {
                 log_post = log_post + tulpa_st_gp::st_gp_nngp_log_lik(
                     st_delta.data(), T(1.0) / tau_st, space, time, st);

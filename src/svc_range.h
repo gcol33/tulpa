@@ -12,8 +12,7 @@ namespace tulpa {
 template<class T>
 T svc_range_log_prior(const T& coordinate, const ModelData& data) {
     if (data.svc_range_prior == 1) {
-        const T absolute = math::get_value(coordinate) >= 0 ? coordinate : -coordinate;
-        return -absolute - T(2.0) * math::log1p_fn(math::safe_exp(-absolute));
+        return uniform_range_coordinate_log_density(coordinate, true);
     }
     if (data.svc_range_prior == 2) return T(-0.5) * coordinate * coordinate;
     return log_prior_range_pc_at_log(coordinate,

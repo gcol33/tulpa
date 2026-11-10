@@ -22,6 +22,7 @@
 
 #ifndef TULPA_SAMPLER_FIELD_STORE_H
 #define TULPA_SAMPLER_FIELD_STORE_H
+#include <tulpa/field_range.h>
 
 #include "hmc_gp.h"
 #include "hmc_sampler.h"
@@ -93,8 +94,8 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
     }
     if (layout.is_st_gp && data.st_parameterization == 1) {
         (void)tulpa_st_gp::st_gp_nc_forward(&q[layout.st_delta_start],
-            1.0 / tulpa::math::safe_exp(q[layout.log_tau_st_idx]), tulpa::math::safe_exp(q[layout.log_phi_st_space_idx]),
-            tulpa::math::safe_exp(q[layout.log_phi_st_time_idx]), data.spatiotemporal_data,
+            1.0 / tulpa::math::safe_exp(q[layout.log_tau_st_idx]), tulpa::st_gp_range_from_coordinate(q[layout.log_phi_st_space_idx], data, true),
+            tulpa::st_gp_range_from_coordinate(q[layout.log_phi_st_time_idx], data, false), data.spatiotemporal_data,
             row + layout.st_delta_start);
     }
     if (data.st_margin_centering && layout.has_spatiotemporal) {

@@ -163,19 +163,6 @@ inline bool st_gp_nngp_scan(const Scalar* w, const Scalar& sigma2,
 }
 
 template <typename Scalar, class Data>
-inline bool st_gp_nc_forward(const Scalar* z, const Scalar& sigma2,
-                             const Scalar& phi_space, const Scalar& phi_time,
-                             const Data& st, Scalar* delta) {
-  return st_gp_nngp_scan<Scalar>(
-      delta, sigma2, phi_space, phi_time, st,
-      [&](int /*i*/, int obs_idx, const int* /*nb*/, int /*n_nb*/,
-          const Scalar* /*L*/, const Scalar* /*c_vec*/, const Scalar* /*alpha*/,
-          const Scalar& cond_mean, const Scalar& cond_var, bool /*floored*/) {
-        delta[obs_idx] = cond_mean + safe_sqrt(cond_var) * z[obs_idx];
-      });
-}
-
-template <typename Scalar, class Data>
 inline Scalar st_gp_nngp_log_lik(
     const Scalar* w,
     const Scalar& sigma2,
@@ -215,6 +202,18 @@ struct StGpAutoregression {
   std::vector<int> order, start, nb;
   std::vector<Scalar> alpha, cond_var;
   std::vector<char> floored;
+  void reset(int n) {
+    order.resize(n); cond_var.resize(n); floored.resize(n);
+    start.assign(n + 1, 0); nb.clear(); alpha.clear();
+  }
+  void append(int i, int location, const int* neighbors, int count,
+              const Scalar* weights, const Scalar& variance, bool at_floor) {
+    order[i] = location; cond_var[i] = variance; floored[i] = at_floor;
+    for (int j = 0; j < count; ++j) {
+      nb.push_back(neighbors[j]); alpha.push_back(weights[j]);
+    }
+    start[i + 1] = static_cast<int>(nb.size());
+  }
 };
 
 template <typename Scalar>
@@ -228,6 +227,121 @@ inline void st_gp_autoregression_back(const StGpAutoregression<Scalar>& ar,
       for (int c = 0; c < m; c++) yn[c] = yn[c] + ar.alpha[q] * yi[c];
     }
   }
+}
+
+template<class Scalar, class Data>
+bool st_gp_build_autoregression(const Scalar& sigma2, const Scalar& space,
+    const Scalar& time, const Data& st, StGpAutoregression<Scalar>& ar) {
+  ar.reset(st.n_params);
+  std::vector<Scalar> zero(st.n_params, Scalar(0.0));
+  return st_gp_nngp_scan(zero.data(), sigma2, space, time, st,
+    [&](int i, int location, const int* neighbors, int count, const Scalar*,
+        const Scalar*, const Scalar* weights, const Scalar&, const Scalar& variance, bool at_floor) {
+      ar.append(i, location, neighbors, count, weights, variance, at_floor);
+    });
+}
+
+// Each rank-one contraction conditions the GP on one Gaussian margin.
+// Their product factors (Sigma^-1 + B B')^-1 without an N-by-N factorization.
+template<class Scalar>
+struct StGpCoordinates {
+  StGpAutoregression<Scalar> ar;
+  std::vector<Scalar> roots, directions, shrink, expand;
+  Scalar log_jacobian = Scalar(0.0);
+
+  void contract(std::vector<Scalar>& value, int column, bool inverse) const {
+    const int n = static_cast<int>(roots.size());
+    const Scalar* direction = directions.data() + static_cast<size_t>(column) * n;
+    Scalar dot(0.0);
+    for (int i = 0; i < n; ++i) dot = dot + direction[i] * value[i];
+    const Scalar coefficient = (inverse ? expand[column] : -shrink[column]) * dot;
+    for (int i = 0; i < n; ++i) value[i] = value[i] + coefficient * direction[i];
+  }
+
+  template<class Data>
+  bool build(const Scalar& sigma2, const Scalar& space, const Scalar& time, const Data& st) {
+    const int n = st.n_params, m = st.n_spatial + st.n_times;
+    if (n != st.n_spatial * st.n_times ||
+        !st_gp_build_autoregression(sigma2, space, time, st, ar)) return false;
+    roots.assign(n, Scalar(0.0));
+    log_jacobian = Scalar(0.0);
+    std::vector<Scalar> factor(static_cast<size_t>(n) * m, Scalar(0.0));
+    emit_margin_factor(st, [&](int cell, int column, double value) {
+      factor[static_cast<size_t>(cell) * m + column] = Scalar(value);
+    });
+    st_gp_autoregression_back(ar, m, factor);
+    for (int i = 0; i < n; ++i) {
+      const int location = ar.order[i];
+      roots[location] = safe_sqrt(ar.cond_var[i]);
+      log_jacobian = log_jacobian + safe_log(roots[location]);
+      for (int c = 0; c < m; ++c)
+        factor[static_cast<size_t>(location) * m + c] =
+          factor[static_cast<size_t>(location) * m + c] * roots[location];
+    }
+    directions.assign(static_cast<size_t>(n) * m, Scalar(0.0));
+    shrink.resize(m); expand.resize(m);
+    std::vector<Scalar> value(n, Scalar(0.0));
+    for (int c = 0; c < m; ++c) {
+      for (int i = 0; i < n; ++i) value[i] = factor[static_cast<size_t>(i) * m + c];
+      for (int j = 0; j < c; ++j) contract(value, j, false);
+      Scalar squared_norm(0.0);
+      for (int i = 0; i < n; ++i) {
+        directions[static_cast<size_t>(c) * n + i] = value[i];
+        squared_norm = squared_norm + value[i] * value[i];
+      }
+      const Scalar root = safe_sqrt(Scalar(1.0) + squared_norm);
+      expand[c] = Scalar(1.0) / (root + Scalar(1.0));
+      shrink[c] = expand[c] / root;
+      log_jacobian = log_jacobian - safe_log(root);
+    }
+    return true;
+  }
+
+  void forward(const Scalar* z, Scalar* field) const {
+    const int n = static_cast<int>(roots.size());
+    std::vector<Scalar> value(z, z + n);
+    for (int c = static_cast<int>(shrink.size()) - 1; c >= 0; --c) contract(value, c, false);
+    for (int i = 0; i < n; ++i) {
+      const int location = ar.order[i];
+      Scalar current = roots[location] * value[location];
+      for (int j = ar.start[i]; j < ar.start[i + 1]; ++j)
+        current = current + ar.alpha[j] * field[ar.nb[j]];
+      field[location] = current;
+    }
+  }
+
+  void inverse(const Scalar* field, Scalar* z) const {
+    const int n = static_cast<int>(roots.size());
+    std::vector<Scalar> value(n, Scalar(0.0));
+    for (int i = 0; i < n; ++i) {
+      const int location = ar.order[i];
+      Scalar current = field[location];
+      for (int j = ar.start[i]; j < ar.start[i + 1]; ++j)
+        current = current - ar.alpha[j] * field[ar.nb[j]];
+      value[location] = current / roots[location];
+    }
+    for (int c = 0; c < static_cast<int>(expand.size()); ++c) contract(value, c, true);
+    for (int i = 0; i < n; ++i) z[i] = value[i];
+  }
+};
+
+template<class Scalar, class Data>
+bool st_gp_nc_forward(const Scalar* z, const Scalar& sigma2, const Scalar& space,
+    const Scalar& time, const Data& st, Scalar* field, Scalar* log_jacobian = nullptr) {
+  StGpCoordinates<Scalar> coordinates;
+  if (!coordinates.build(sigma2, space, time, st)) return false;
+  coordinates.forward(z, field);
+  if (log_jacobian) *log_jacobian = coordinates.log_jacobian;
+  return true;
+}
+
+template<class Scalar, class Data>
+bool st_gp_nc_inverse(const Scalar* field, const Scalar& sigma2, const Scalar& space,
+    const Scalar& time, const Data& st, Scalar* z) {
+  StGpCoordinates<Scalar> coordinates;
+  if (!coordinates.build(sigma2, space, time, st)) return false;
+  coordinates.inverse(field, z);
+  return true;
 }
 
 template <typename Scalar, class Data>
@@ -259,7 +373,7 @@ inline bool st_gp_margin_factor(const StGpAutoregression<Scalar>& ar,
       M[static_cast<size_t>(c1) * m + c2] = M[static_cast<size_t>(c2) * m + c1];
     }
   }
-  return tulpa_gp_conditioning::nngp_chol(M, m, LM);
+  return tulpa_gp_conditioning::nngp_chol(M, m, LM, 0.0);
 }
 
 template <typename Scalar>
@@ -279,26 +393,7 @@ inline bool st_gp_margin_log_normalizer(const Scalar& sigma2,
   if (N != st.n_spatial * st.n_times) return false;
 
   StGpAutoregression<Scalar> ar;
-  ar.order.resize(N);
-  ar.cond_var.resize(N);
-  ar.floored.resize(N);
-  ar.start.assign(N + 1, 0);
-  std::vector<Scalar> zeros(N, Scalar(0.0));
-  const bool ok = st_gp_nngp_scan<Scalar>(
-      zeros.data(), sigma2, phi_space, phi_time, st,
-      [&](int i, int obs_idx, const int* nb, int n_nb, const Scalar* /*L*/,
-          const Scalar* /*c_vec*/, const Scalar* alpha,
-          const Scalar& /*cond_mean*/, const Scalar& cv, bool fl) {
-        ar.order[i] = obs_idx;
-        ar.cond_var[i] = cv;
-        ar.floored[i] = fl;
-        for (int j = 0; j < n_nb; j++) {
-          ar.nb.push_back(nb[j]);
-          ar.alpha.push_back(alpha[j]);
-        }
-        ar.start[i + 1] = static_cast<int>(ar.nb.size());
-      });
-  if (!ok) return false;
+  if (!st_gp_build_autoregression(sigma2, phi_space, phi_time, st, ar)) return false;
 
   std::vector<Scalar> X, LM;
   if (!st_gp_margin_factor(ar, st, X, LM)) return false;
@@ -314,6 +409,22 @@ struct StGpMarginNormalizer {
   bool ok = true;
 };
 
+// A fixed neighbour ridge makes the regression weights depend on precision.
+inline void st_gp_log_precision_direction(const double* L, const double* covariance,
+    const double* alpha, int count, double sigma2, bool floored,
+    std::vector<double>& scratch, std::vector<double>& dalpha, double& dvariance) {
+  scratch.resize(count); dalpha.resize(count);
+  double raw = sigma2, squared_norm = 0.0;
+  for (int j = 0; j < count; ++j) {
+    raw -= covariance[j] * alpha[j];
+    squared_norm += alpha[j] * alpha[j];
+  }
+  dvariance = floored ? 0.0 : -raw + tulpa_gp_conditioning::NNGP_RIDGE * squared_norm;
+  tulpa_gp_conditioning::nngp_forward_solve(L, count, alpha, scratch.data());
+  tulpa_gp_conditioning::nngp_back_solve(L, count, scratch.data(), dalpha.data());
+  for (double& value : dalpha) value *= -tulpa_gp_conditioning::NNGP_RIDGE;
+}
+
 template <class Data>
 inline StGpMarginNormalizer st_gp_margin_normalizer_grad(
     double tau, double phi_space, double phi_time, const Data& st) {
@@ -328,27 +439,19 @@ inline StGpMarginNormalizer st_gp_margin_normalizer_grad(
   const double sigma2 = 1.0 / tau;
 
   StGpAutoregression<double> ar;
-  ar.order.resize(N);
-  ar.cond_var.resize(N);
-  ar.floored.resize(N);
-  ar.start.assign(N + 1, 0);
-  std::vector<double> dalpha_s, dalpha_t, dd_s(N, 0.0), dd_t(N, 0.0);
+  ar.reset(N);
+  std::vector<double> dalpha_tau, dalpha_s, dalpha_t, dd_tau(N, 0.0), dd_s(N, 0.0), dd_t(N, 0.0);
   std::vector<double> dc_s, dc_t, dC_s, dC_t, v, tmp, da;
   std::vector<double> zeros(N, 0.0);
 
   out.ok = st_gp_nngp_scan<double>(
       zeros.data(), sigma2, phi_space, phi_time, st,
       [&](int i, int obs_idx, const int* nb, int n_nb, const double* L,
-          const double* /*c_vec*/, const double* alpha,
+          const double* c_vec, const double* alpha,
           const double& /*cond_mean*/, const double& cv, bool fl) {
-        ar.order[i] = obs_idx;
-        ar.cond_var[i] = cv;
-        ar.floored[i] = fl;
-        for (int j = 0; j < n_nb; j++) {
-          ar.nb.push_back(nb[j]);
-          ar.alpha.push_back(alpha[j]);
-        }
-        ar.start[i + 1] = static_cast<int>(ar.nb.size());
+        ar.append(i, obs_idx, nb, n_nb, alpha, cv, fl);
+        st_gp_log_precision_direction(L, c_vec, alpha, n_nb, sigma2, fl, tmp, da, dd_tau[i]);
+        dalpha_tau.insert(dalpha_tau.end(), da.begin(), da.end());
         if (n_nb == 0) return;
 
         dc_s.resize(n_nb);
@@ -420,14 +523,7 @@ inline StGpMarginNormalizer st_gp_margin_normalizer_grad(
     for (int c = 0; c < m; c++) q[i] += X[r + c] * Y[r + c];
   }
 
-  double dlog_sigma2 = 0.0;
-  for (int i = 0; i < N; i++) {
-    if (!ar.floored[i]) dlog_sigma2 += 0.5 * ar.cond_var[i] * q[i];
-  }
-  out.log_tau = -dlog_sigma2;
-
-
-  auto range_slope = [&](const std::vector<double>& dalpha,
+  auto direction_slope = [&](const std::vector<double>& dalpha,
                          const std::vector<double>& dd) {
     std::vector<double> dX(static_cast<size_t>(N) * m, 0.0);
     for (int i = 0; i < N; i++) {
@@ -447,8 +543,9 @@ inline StGpMarginNormalizer st_gp_margin_normalizer_grad(
     }
     return g;
   };
-  out.log_phi_space = range_slope(dalpha_s, dd_s) * phi_space;
-  out.log_phi_time = range_slope(dalpha_t, dd_t) * phi_time;
+  out.log_tau = direction_slope(dalpha_tau, dd_tau);
+  out.log_phi_space = direction_slope(dalpha_s, dd_s) * phi_space;
+  out.log_phi_time = direction_slope(dalpha_t, dd_t) * phi_time;
   return out;
 }
 
