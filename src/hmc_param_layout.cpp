@@ -585,6 +585,10 @@ ParamLayout compute_param_layout(const ModelData& data) {
   if (layout.has_spatiotemporal && data.spatiotemporal_data.type != STType::NONE) {
     const auto& st = data.spatiotemporal_data;
     check_st_interaction_supported(st, data.st_is_hsgp);
+    if (data.st_margin_centering &&
+        (st.type == STType::TYPE_III || st.type == STType::TYPE_IV) &&
+        st.spatial_partition.n != st.n_spatial)
+      Rcpp::stop("intrinsic ST margin coordinates require setup_st_spatial_partition");
     const bool reads_time_margin = data.st_is_hsgp || tulpa_st::st_reads_time_margin(st.type);
 
     // log_tau for interaction precision

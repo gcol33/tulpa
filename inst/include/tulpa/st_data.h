@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "tulpa/types.h"
+#include "tulpa/graph_components.h"
 
 namespace tulpa {
 
@@ -58,6 +59,7 @@ struct SpatiotemporalData {
     // HSGP-ST
     bool is_hsgp = false;
     int hsgp_m_total = 0;              // m^2 basis functions
+    GraphPartition spatial_partition;
 };
 
 } // namespace tulpa

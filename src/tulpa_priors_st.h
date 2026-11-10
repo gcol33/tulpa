@@ -106,26 +106,10 @@ T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
                              int S, int T_st, const T& rho)
 {
     const auto& st = data.spatiotemporal_data;
-    T total = T(0.0);
-    for (int s = 0; s < S; s++) {
-        const T* d_s = delta.data() + s * T_st;
-        int n_neigh = st.n_neighbors.empty() ? 0 : st.n_neighbors[s];
-        total = total + T(n_neigh) * st_time_cross_form(d_s, d_s, T_st, st, rho);
-
-        if (!st.adj_row_ptr.empty()) {
-            int row_start_s = st.adj_row_ptr[s];
-            int row_end_s = st.adj_row_ptr[s + 1];
-            for (int jj = row_start_s; jj < row_end_s; jj++) {
-                int s2 = st.adj_col_idx[jj] - 1;
-                if (s2 > s) {
-                    const T* d_s2 = delta.data() + s2 * T_st;
-                    total = total - T(2.0) *
-                        st_time_cross_form(d_s, d_s2, T_st, st, rho);
-                }
-            }
-        }
-    }
-    return total;
+    return st_kronecker_quadratic(delta.data(), S, T_st,
+        st.adj_row_ptr, st.adj_col_idx, [&](const std::vector<T>& difference) {
+            return st_time_cross_form(difference.data(), difference.data(), T_st, st, rho);
+        });
 }
 
 // Soft sum-to-zero on the S x T_st interaction: squared row and column sums,
@@ -145,23 +129,7 @@ template<typename T>
 T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st,
                          bool add_trend = false)
 {
-    T sum_s = T(0.0), sum_t = T(0.0);
-    for (int s = 0; s < S; s++) {
-        T row_sum = T(0.0);
-        for (int t = 0; t < T_st; t++) {
-            row_sum = row_sum + delta[s * T_st + t];
-        }
-        sum_s = sum_s + row_sum * row_sum;
-    }
-    for (int t = 0; t < T_st; t++) {
-        T col_sum = T(0.0);
-        for (int s = 0; s < S; s++) {
-            col_sum = col_sum + delta[s * T_st + t];
-        }
-        sum_t = sum_t + col_sum * col_sum;
-    }
-    T penalty = T(-0.5) * (T(tulpa::s2z_precision(T_st)) * sum_s
-                         + T(tulpa::s2z_precision(S)) * sum_t);
+    T penalty = st_margin_penalty(delta.data(), S, T_st, true, true);
     if (add_trend) {
         T sum_v = T(0.0);
         for (int s = 0; s < S; s++) {
@@ -218,7 +186,7 @@ T st_constrained_density(std::vector<T>& field, const ModelData& data,
     const auto& st = data.spatiotemporal_data;
     const int n = static_cast<int>(field.size());
     std::vector<T> projected = field;
-    center_st_margins(projected, st.n_spatial, st.n_times);
+    center_st_margins(projected, st.n_spatial, st.n_times, st.spatial_partition);
     T quad = st_unit_quadratic(projected, data, rho);
     for (int i = 0; i < n; ++i) {
         const T difference = field[i] - projected[i];
@@ -226,12 +194,13 @@ T st_constrained_density(std::vector<T>& field, const ModelData& data,
     }
     const bool rw2 = tulpa_st::st_reads_time_margin(st.type) &&
         st.temporal_type == TemporalType::RW2 && !st.temporal_cyclic;
-    const int rank = n - (rw2 ? st.n_spatial - 1 : 0);
+    const int spatial_contrasts = st.n_spatial - st_partition_count(st.spatial_partition);
+    const int rank = n - (rw2 ? spatial_contrasts : 0);
     const bool nc = data.st_parameterization == 1;
     T lp = T(0.5 * (nc ? rank - n : rank)) * safe_log(tau)
         - T(0.5) * (nc ? T(1.0) : tau) * quad;
     if (tulpa_st::st_reads_time_margin(st.type) && st.temporal_type == TemporalType::AR1)
-        lp = lp + T(0.5 * (st.n_spatial - 1)) * safe_log(
+        lp = lp + T(0.5 * spatial_contrasts) * safe_log(
             centered_ar1_precision_det(rho, tulpa_temporal::ar1_one_minus_rho2(rho), st.n_times));
     const T scale = nc ? T(1.0) / safe_sqrt(tau) : T(1.0);
     for (int i = 0; i < n; ++i) projected[i] = projected[i] * scale;

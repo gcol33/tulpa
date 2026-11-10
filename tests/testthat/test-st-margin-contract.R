@@ -1,16 +1,24 @@
 test_that("spatiotemporal margin coordinates match dense Gaussian operators", {
   set.seed(195)
-  S <- 3L
+  graphs <- list(list(S = 3L, edges = matrix(c(1L, 2L, 2L, 3L), ncol = 2L, byrow = TRUE),
+    components = list(1:3)), list(S = 5L,
+    edges = matrix(c(1L, 3L, 2L, 4L), ncol = 2L, byrow = TRUE),
+    components = list(c(1L, 3L), c(2L, 4L), 5L)))
+  for (graph in graphs) {
+  S <- graph$S
   nt <- 4L
   nfield <- S * nt
   index <- rep(seq_len(nfield), each = 2L)
   N <- length(index)
   X <- cbind(1, rnorm(N))
   y <- rnorm(N)
-  spatial <- matrix(c(1, -1, 0, -1, 2, -1, 0, -1, 1), S)
-  Ps <- diag(S) - matrix(1 / S, S, S)
+  adjacency <- matrix(0L, S, S)
+  adjacency[graph$edges] <- 1L
+  adjacency <- adjacency + t(adjacency)
+  spatial <- diag(rowSums(adjacency)) - adjacency
+  row_ptr <- c(0L, cumsum(rowSums(adjacency)))
+  col_idx <- unlist(lapply(seq_len(S), function(s) which(adjacency[s, ] != 0L)))
   Pt <- diag(nt) - matrix(1 / nt, nt, nt)
-  projection <- kronecker(Ps, Pt)
   specifications <- list(c(1L, 1L, 0L), c(2L, 1L, 0L), c(2L, 2L, 0L),
     c(2L, 2L, 1L), c(2L, 3L, 0L), c(3L, 1L, 0L),
     c(4L, 1L, 0L), c(4L, 2L, 0L), c(4L, 2L, 1L), c(4L, 3L, 0L))
@@ -18,10 +26,16 @@ test_that("spatiotemporal margin coordinates match dense Gaussian operators", {
     type <- case[1L]
     time_type <- case[2L]
     cyclic <- case[3L] == 1L
+    components <- if (type %in% c(3L, 4L)) graph$components else list(seq_len(S))
+    Ps <- diag(S)
+    for (component in components) Ps[component, component] <-
+      Ps[component, component] - 1 / length(component)
+    projection <- kronecker(Ps, Pt)
+    contrasts <- S - length(components)
     spec <- list(type = type, temporal_type = time_type, cyclic = cyclic,
       parameterization = coordinate, n_spatial = S, n_times = nt,
-      st_flat = as.integer(index), adj_row_ptr = c(0L, 1L, 3L, 4L),
-      adj_col_idx = c(2L, 1L, 3L, 2L))
+      st_flat = as.integer(index), adj_row_ptr = as.integer(row_ptr),
+      adj_col_idx = as.integer(col_idx))
     r <- tulpa:::cpp_test_field_coordinates(y, X, st_spec = spec)
     q <- r$x
     log_tau <- q[3L]
@@ -46,11 +60,12 @@ test_that("spatiotemporal margin coordinates match dense Gaussian operators", {
     field <- tail(q, nfield)
     centered <- drop(projection %*% field)
     effect <- centered / if (coordinate == 1L) sqrt(tau) else 1
-    rank <- nfield - if (type %in% c(2L, 4L) && time_type == 2L && !cyclic) S - 1L else 0L
+    rank <- nfield - if (type %in% c(2L, 4L) && time_type == 2L && !cyclic) contrasts else 0L
+    expect_equal(sum(eigen(H, symmetric = TRUE, only.values = TRUE)$values > 1e-8), rank)
     normalizer <- .5 * (if (coordinate == 1L) rank - nfield else rank) * log_tau
     if (ar1) {
       U <- qr.Q(qr(cbind(1, diag(nt)[, -nt])))[, -1L, drop = FALSE]
-      normalizer <- normalizer + .5 * (S - 1L) * as.numeric(determinant(crossprod(U, temporal %*% U))$modulus)
+      normalizer <- normalizer + .5 * contrasts * as.numeric(determinant(crossprod(U, temporal %*% U))$modulus)
     }
     rate <- -log(.01)
     pc <- log(rate) - log(2) - .5 * log_tau - rate * exp(-.5 * log_tau)
@@ -65,5 +80,6 @@ test_that("spatiotemporal margin coordinates match dense Gaussian operators", {
     expect_equal(r$gradient, r$numerical, tolerance = 3e-5)
     expect_equal(rowSums(matrix(effect, nt)), rep(0, nt), tolerance = 1e-12)
     expect_equal(colSums(matrix(effect, nt)), rep(0, S), tolerance = 1e-12)
+  }
   }
 })

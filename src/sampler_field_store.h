@@ -101,7 +101,8 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
         std::vector<double> field(q.begin() + layout.st_delta_start,
                                   q.begin() + layout.st_delta_end);
         tulpa::center_st_margins(field, data.spatiotemporal_data.n_spatial,
-                                 data.spatiotemporal_data.n_times);
+                                 data.spatiotemporal_data.n_times,
+                                 data.spatiotemporal_data.spatial_partition);
         const double scale = data.st_parameterization == 1 ?
             1.0 / std::sqrt(tulpa::math::safe_exp(q[layout.log_tau_st_idx])) : 1.0;
         for (size_t i = 0; i < field.size(); ++i) row[layout.st_delta_start + i] = scale * field[i];

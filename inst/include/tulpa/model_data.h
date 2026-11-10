@@ -206,7 +206,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 63;
+constexpr int TULPA_ABI_VERSION = 64;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

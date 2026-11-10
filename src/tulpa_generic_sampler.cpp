@@ -135,6 +135,7 @@ Rcpp::List cpp_test_field_coordinates(
                 data.st_hsgp_data.kernel = Rcpp::as<int>(specification["kernel"]);
         }
     }
+    if (data.st_margin_centering) tulpa::setup_st_spatial_partition(data.spatiotemporal_data);
     const auto layout = tulpa_hmc::compute_param_layout(data);
     const int p = layout.total_params;
     std::vector<double> q(p, 0.0);
