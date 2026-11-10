@@ -259,6 +259,7 @@ void build_sampler_model_inputs(
         const std::string coordinate = sampler_parameterization(sp, "centered");
         in.data.icar_collapsed = coordinate == "collapsed" && stype == "icar";
         in.data.bym2_collapsed = coordinate == "collapsed" && stype == "bym2";
+        in.data.gp_collapsed = coordinate == "collapsed" && (stype == "gp" || stype == "nngp");
         in.data.auto_spatial_coordinates = coordinate == "auto" &&
             (stype == "icar" || stype == "car_proper");
         in.data.auto_gp_coordinates = coordinate == "auto" &&

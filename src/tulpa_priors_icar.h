@@ -111,6 +111,18 @@ void icar_center_field(const T* phi, const ModelData& data, std::vector<T>& out)
 }
 
 template<typename T>
+void areal_likelihood_field(const T* phi, const ModelData& data,
+                            const ParamLayout& layout, std::vector<T>& out) {
+    if (!layout.is_car_proper) {
+        icar_center_field(phi, data, out);
+    } else {
+        out.assign(phi, phi + data.n_spatial_units);
+        if (data.car_center)
+            tulpa::s2z_centre_component(out.data(), 0, data.n_spatial_units);
+    }
+}
+
+template<typename T>
 T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData& data,
                                    const ParamLayout& layout,
                                    const T*& phi_spatial_out, T& tau_spatial_out,

@@ -34,7 +34,7 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
   out.gradient = resolve_gradient_fn(g_gradient_mode, data, layout);
   out.prior_gradient = resolve_prior_gradient_fn(g_gradient_mode, data, layout);
   const bool gaussian_spatial = layout.total_params <= DENSE_MAX_PARAMS &&
-    layout.is_gp && data.gp_parameterization == 1 && data.auto_gp_coordinates;
+    layout.is_gp && !layout.is_gp_collapsed && data.gp_parameterization == 1 && data.auto_gp_coordinates;
   if (gaussian_spatial) out.operators.push_back(prepare_spatial_gaussian_coordinate(data, layout));
   if (layout.is_bym2 && !layout.is_bym2_collapsed && layout.total_params <= DENSE_MAX_PARAMS)
     out.operators.push_back(prepare_bym2_coordinate(data, layout));

@@ -5,7 +5,8 @@
 
 namespace tulpa {
 
-// Outputs are row-major n_sample by n_spatial_units. draw selects Gaussian
+// Input rows are native ModelData coordinates, before field storage transforms.
+// Outputs are row-major n_sample by field size (n_spatial_units or GP n_obs). draw selects Gaussian
 // conditional field draws; false returns conditional modes.
 using SpatialReconstructionFn = void(*)(const ModelData* data, const ParamLayout* layout,
     const double* samples, int n_sample, unsigned int seed, bool draw,

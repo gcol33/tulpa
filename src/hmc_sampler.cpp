@@ -83,6 +83,7 @@ double compute_log_prior_normalizer(
     const ParamLayout& layout,
     std::vector<std::string>* uncarried
 ) {
+  if (has_collapsed_spatial(layout)) return compute_collapsed_spatial_normalizer(data, layout, uncarried);
   return tulpa::compute_log_prior_normalizer_generic_spec(data, layout, uncarried);
 }
 

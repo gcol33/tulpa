@@ -26,6 +26,7 @@
 #include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"
 #include "hmc_field_coordinates.h"
+#include "hmc_spatial_marginal.h"
 #include "hmc_walnuts.h"
 #include "laplace_profile.h"  // TULPA_PROFILE_PHASE (nuts_warmup / nuts_sampling)
 #include "sampler_field_store.h"  // store_field_draw

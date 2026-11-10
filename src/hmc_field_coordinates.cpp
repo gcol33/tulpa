@@ -390,17 +390,19 @@ struct SpatialMarginal {
     double last_value = -INFINITY;
 
     SpatialMarginal(const ModelData& model, const ParamLayout& outer)
-        : owner(&model), model_id(model.unique_id), data(model), n(model.n_spatial_units),
+        : owner(&model), model_id(model.unique_id), data(model),
+          n(outer.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
           d(outer.is_bym2 ? 2 * n : n), outer_size(outer.total_params) {
         const auto& spec = *static_cast<const tulpa::LikelihoodSpec*>(model.likelihood_spec);
         if (!spec.ll_arena || !spec.eta_weights_fn || !spec.eta_weights_arena_fn ||
             (spec.extra_prior && !spec.extra_prior_arena))
             Rcpp::stop("Collapsed spatial inference requires double and arena likelihood weights and priors");
-        data.icar_collapsed = data.bym2_collapsed = false;
+        data.icar_collapsed = data.bym2_collapsed = data.gp_collapsed = false;
+        if (outer.is_gp) data.gp_parameterization = 1;
         layout = compute_param_layout(data);
-        begin = layout.spatial_start;
+        begin = layout.is_gp ? layout.gp_w_start : layout.spatial_start;
         if (layout.total_params != outer_size + d) Rcpp::stop("Collapsed spatial layout must remove exactly its Gaussian field");
-        areal = areal_root(data, layout.is_bym2);
+        if (!layout.is_gp) areal = areal_root(data, layout.is_bym2);
         mode.assign(d, 0.0);
     }
 
@@ -418,7 +420,10 @@ struct SpatialMarginal {
         out.design.resize(data.N * d);
         for (int j = 0; j < d; ++j) {
             std::vector<T> column(data.N);
-            for (int i = 0; i < data.N; ++i) column[i] = out.basis.field[(data.spatial_group[i] - 1) * d + j];
+            for (int i = 0; i < data.N; ++i) {
+                const int unit = layout.is_gp ? data.gp_data.obs_to_loc[i] : data.spatial_group[i] - 1;
+                column[i] = out.basis.field[unit * d + j];
+            }
             data.spatial_restriction.apply(column);
             for (int i = 0; i < data.N; ++i) out.design[i * d + j] = column[i];
         }
@@ -616,6 +621,12 @@ double compute_collapsed_spatial(const std::vector<double>& params, const ModelD
     return marginal.solve(params) ? marginal.last_value : -INFINITY;
 }
 
+double compute_collapsed_spatial_normalizer(const ModelData& data, const ParamLayout& layout,
+    std::vector<std::string>* uncarried) {
+    const auto& marginal = spatial_coordinates::marginal(data, layout);
+    return tulpa::compute_log_prior_normalizer_generic_spec(marginal.data, marginal.layout, uncarried);
+}
+
 static void collapsed_gradient(const std::vector<double>& params, const ModelData& data,
     const ParamLayout& layout, std::vector<double>& gradient, double* log_post, bool prior_only) {
     auto& marginal = spatial_coordinates::marginal(data, layout);
@@ -647,29 +658,38 @@ void compute_prior_gradient_collapsed_spatial(const std::vector<double>& params,
     collapsed_gradient(params, data, layout, gradient, log_post, true);
 }
 
+void reconstruct_spatial_point(const std::vector<double>& position, const ModelData& data,
+    const ParamLayout& layout, std::mt19937& rng, bool draw,
+    double* structured, double* unstructured) {
+    auto& marginal = spatial_coordinates::marginal(data, layout);
+    if (!marginal.solve(position)) Rcpp::stop("Collapsed field reconstruction requires a converged conditional mode");
+    const auto prepared = marginal.prepare(position);
+    auto u = marginal.mode;
+    std::normal_distribution<double> normal;
+    if (draw) {
+        std::vector<double> z(marginal.d), increment;
+        for (double& x : z) x = normal(rng);
+        tulpa_nngp::solve_upper(marginal.chol, marginal.d, z, increment);
+        for (int j = 0; j < marginal.d; ++j) u[j] += increment[j];
+    }
+    const auto& root = layout.is_gp ? prepared.basis.field : prepared.basis.native;
+    for (int i = 0; i < marginal.d; ++i) {
+        double value = 0;
+        for (int j = 0; j < marginal.d; ++j) value += root[i * marginal.d + j] * u[j];
+        if (i < marginal.n) structured[i] = value;
+        else if (unstructured) unstructured[i - marginal.n] = value;
+    }
+}
+
 void reconstruct_collapsed_spatial(const ModelData* data, const ParamLayout* layout,
     const double* samples, int n_sample, unsigned int seed, bool draw,
     double* structured, double* unstructured) {
-    auto& marginal = spatial_coordinates::marginal(*data, *layout);
     std::mt19937 rng(seed);
-    std::normal_distribution<double> normal;
+    const int units = layout->is_gp ? data->gp_data.n_obs : data->n_spatial_units;
     for (int row = 0; row < n_sample; ++row) {
         const std::vector<double> q(samples + row * layout->total_params, samples + (row + 1) * layout->total_params);
-        if (!marginal.solve(q)) Rcpp::stop("Collapsed field reconstruction requires a converged conditional mode");
-        const auto prepared = marginal.prepare(q);
-        auto u = marginal.mode;
-        if (draw) {
-            std::vector<double> z(marginal.d), increment;
-            for (double& x : z) x = normal(rng);
-            tulpa_nngp::solve_upper(marginal.chol, marginal.d, z, increment);
-            for (int j = 0; j < marginal.d; ++j) u[j] += increment[j];
-        }
-        for (int i = 0; i < marginal.d; ++i) {
-            double value = 0;
-            for (int j = 0; j < marginal.d; ++j) value += prepared.basis.native[i * marginal.d + j] * u[j];
-            if (i < marginal.n) structured[row * marginal.n + i] = value;
-            else if (unstructured) unstructured[row * marginal.n + i - marginal.n] = value;
-        }
+        reconstruct_spatial_point(q, *data, *layout, rng, draw,
+            structured + row * units, unstructured ? unstructured + row * units : nullptr);
     }
 }
 

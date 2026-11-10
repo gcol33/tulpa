@@ -47,6 +47,7 @@ test_that("proper CAR priors and spatial projections match dense precision refer
     }
     ref <- reference(r$x); ref0 <- reference(zero$x)
     expect_equal(r$eta[, 1], ref$eta, tolerance = 1e-10)
+    expect_equal(reference(r$stored)$eta, ref$eta, tolerance = 1e-10)
     expect_equal(r$prior_lp - zero$prior_lp, ref$prior - ref0$prior, tolerance = 1e-10)
     expect_equal(r$spatial_log_normalizer,
       .5 * sum(log(degree)) - S * .5 * log(2 * pi) - lbeta(2, 3), tolerance = 1e-12)

@@ -5,6 +5,19 @@
       double* row = result.sample_row(sample_idx);
       std::vector<double> field_position;
       const double coordinate_jacobian = coordinates.forward(q, field_position);
+      if (has_collapsed_spatial(layout)) {
+        const int units = layout.is_gp ? result.n_gp_collapsed : result.n_icar_collapsed;
+        auto& fields = layout.is_gp ? result.gp_w_star_flat : result.icar_phi_star_flat;
+        reconstruct_spatial_point(field_position, data, layout, field_rng, true,
+          fields.data() + static_cast<size_t>(sample_idx) * units,
+          layout.is_bym2_collapsed ? result.bym2_theta_star_flat.data() + static_cast<size_t>(sample_idx) * units : nullptr);
+        if (!layout.is_gp) {
+          double* phi = fields.data() + static_cast<size_t>(sample_idx) * units;
+          std::vector<double> centered;
+          tulpa::priors::areal_likelihood_field(phi, data, layout, centered);
+          std::copy(centered.begin(), centered.end(), phi);
+        }
+      }
       std::memcpy(row, field_position.data(), n_params * sizeof(double));
       tulpa::store_field_draw(row, field_position, data, layout);
 

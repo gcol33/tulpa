@@ -193,19 +193,9 @@ static T initialize_generic_state(
         log_post = log_post + priors::compute_spatial_icar_bym2_prior(
             params, data, layout, state.phi_spatial, state.tau_spatial,
             state.sigma_s_bym2, state.sigma_u_bym2, state.theta_bym2);
-        // Proper CAR retains its full-rank prior when its level is removed
-        // from the likelihood by the requested centering convention.
-        if (state.phi_spatial != nullptr && (!layout.is_car_proper || data.car_center)) {
-            if (layout.is_car_proper) {
-                state.phi_spatial_centered.assign(state.phi_spatial,
-                    state.phi_spatial + data.n_spatial_units);
-                tulpa::s2z_centre_component(state.phi_spatial_centered.data(), 0,
-                    data.n_spatial_units);
-            } else {
-                priors::icar_center_field(state.phi_spatial, data,
-                    state.phi_spatial_centered);
-            }
-        }
+        if (state.phi_spatial != nullptr)
+            priors::areal_likelihood_field(state.phi_spatial, data, layout,
+                state.phi_spatial_centered);
     }
 
     if (layout.is_gp && data.has_gp) {

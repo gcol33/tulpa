@@ -55,11 +55,11 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
 
     if (layout.has_spatial && !layout.is_icar_collapsed && !layout.is_bym2_collapsed) {
         std::vector<double> field;
-        priors::icar_center_field(q.data() + layout.spatial_start, data, field);
+        priors::areal_likelihood_field(q.data() + layout.spatial_start, data, layout, field);
         std::copy(field.begin(), field.end(), row + layout.spatial_start);
     }
 
-    if (data.gp_parameterization == 1 && data.has_gp && layout.is_gp) {
+    if (data.gp_parameterization == 1 && data.has_gp && layout.is_gp && !layout.is_gp_collapsed) {
         const double sigma2 = tulpa::math::safe_exp(q[layout.log_sigma2_gp_idx]);
         const double phi = tulpa::math::safe_exp(q[layout.log_phi_gp_idx]);
         tulpa_gp::nngp_nc_forward(&q[layout.gp_w_start], sigma2, phi,

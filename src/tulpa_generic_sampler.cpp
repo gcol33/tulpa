@@ -317,7 +317,7 @@ Rcpp::List cpp_test_collapsed_spatial(Rcpp::NumericVector y, Rcpp::NumericMatrix
     in.data.model_response_data = &response;
     const auto layout = tulpa_hmc::compute_param_layout(in.data);
     if (!tulpa_hmc::has_collapsed_spatial(layout) || layout.total_params != static_cast<int>(q.size()))
-        Rcpp::stop("point must match a collapsed ICAR or BYM2 layout");
+        Rcpp::stop("point must match a collapsed Gaussian spatial layout");
     tulpa_hmc::GradientModeFitScope scope;
     tulpa_hmc::g_gradient_mode = tulpa_hmc::GradientMode::AUTODIFF_ARENA;
     std::vector<double> gradient, numerical, prior_gradient, numerical_prior;
@@ -327,24 +327,27 @@ Rcpp::List cpp_test_collapsed_spatial(Rcpp::NumericVector y, Rcpp::NumericMatrix
     tulpa_hmc::compute_prior_gradient_collapsed_spatial(q, in.data, layout, prior_gradient, &prior);
     tulpa_hmc::compute_gradient_prior_numerical(q, in.data, layout, numerical_prior, nullptr);
     const bool verified = tulpa_hmc::verify_gradient_runtime(q, in.data, layout, 1e-4);
-    Rcpp::NumericMatrix phi(n_draw, in.data.n_spatial_units), theta(n_draw, layout.is_bym2 ? in.data.n_spatial_units : 0);
-    Rcpp::NumericVector mode_phi(in.data.n_spatial_units), mode_theta(layout.is_bym2 ? in.data.n_spatial_units : 0);
+    const int units = layout.is_gp ? in.data.gp_data.n_obs : in.data.n_spatial_units;
+    Rcpp::NumericMatrix phi(n_draw, units), theta(n_draw, layout.is_bym2 ? units : 0);
+    Rcpp::NumericVector mode_phi(units), mode_theta(layout.is_bym2 ? units : 0);
     tulpa_hmc::reconstruct_collapsed_spatial(&in.data, &layout, q.data(), 1, seed, false,
         mode_phi.begin(), layout.is_bym2 ? mode_theta.begin() : nullptr);
     if (n_draw > 0) {
-        std::vector<double> rows, phi_flat(static_cast<size_t>(n_draw) * in.data.n_spatial_units), theta_flat(layout.is_bym2 ? phi_flat.size() : 0);
+        std::vector<double> rows, phi_flat(static_cast<size_t>(n_draw) * units), theta_flat(layout.is_bym2 ? phi_flat.size() : 0);
         for (int i = 0; i < n_draw; ++i) rows.insert(rows.end(), q.begin(), q.end());
         tulpa_hmc::reconstruct_collapsed_spatial(&in.data, &layout, rows.data(), n_draw, seed, true,
             phi_flat.data(), theta_flat.empty() ? nullptr : theta_flat.data());
-        for (int i = 0; i < n_draw; ++i) for (int j = 0; j < in.data.n_spatial_units; ++j) {
-            phi(i, j) = phi_flat[i * in.data.n_spatial_units + j];
-            if (layout.is_bym2) theta(i, j) = theta_flat[i * in.data.n_spatial_units + j];
+        for (int i = 0; i < n_draw; ++i) for (int j = 0; j < units; ++j) {
+            phi(i, j) = phi_flat[i * units + j];
+            if (layout.is_bym2) theta(i, j) = theta_flat[i * units + j];
         }
     }
     return Rcpp::List::create(Rcpp::Named("lp") = lp, Rcpp::Named("prior") = prior,
         Rcpp::Named("gradient") = gradient, Rcpp::Named("numerical") = numerical,
         Rcpp::Named("prior_gradient") = prior_gradient, Rcpp::Named("numerical_prior") = numerical_prior,
-        Rcpp::Named("verified") = verified, Rcpp::Named("mode_phi") = mode_phi,
+        Rcpp::Named("verified") = verified,
+        Rcpp::Named("normalizer") = tulpa_hmc::compute_log_prior_normalizer(in.data, layout, nullptr),
+        Rcpp::Named("mode_phi") = mode_phi,
         Rcpp::Named("mode_theta") = mode_theta, Rcpp::Named("phi") = phi, Rcpp::Named("theta") = theta);
 }
 

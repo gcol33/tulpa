@@ -48,6 +48,21 @@ static void fill_nuts_result_from_cpp(
             hmc.samples_flat.size() / static_cast<std::size_t>(hmc.n_params_stored)));
     }
     out->n_sample = ns;
+    out->n_spatial_fields = hmc.n_gp_collapsed > 0 ? hmc.n_gp_collapsed : hmc.n_icar_collapsed;
+    out->spatial_draws = nullptr;
+    out->unstructured_draws = nullptr;
+    const auto& spatial = hmc.n_gp_collapsed > 0 ? hmc.gp_w_star_flat : hmc.icar_phi_star_flat;
+    const size_t fields = static_cast<size_t>(ns) * out->n_spatial_fields;
+    if (fields > 0) {
+        if (spatial.size() < fields || (!hmc.bym2_theta_star_flat.empty() && hmc.bym2_theta_star_flat.size() < fields))
+            Rcpp::stop("Conditional spatial draw buffers must match the retained iterations");
+        out->spatial_draws = new double[fields];
+        std::copy_n(spatial.data(), fields, out->spatial_draws);
+        if (!hmc.bym2_theta_star_flat.empty()) {
+            out->unstructured_draws = new double[fields];
+            std::copy_n(hmc.bym2_theta_star_flat.data(), fields, out->unstructured_draws);
+        }
+    }
 
     // size_t products: int * int overflows (UB) before ~2.1e9 elements, which
     // a large-latent multi-chain run can reach.

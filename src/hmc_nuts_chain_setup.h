@@ -16,13 +16,12 @@
   result.chain_id = chain_id;
   result.n_max_treedepth = 0;
 
-  // Collapsed GP: allocate w* storage
+  // Conditional Gaussian field draws are stored beside the outer coordinates.
   if (data.gp_collapsed && data.has_gp) {
       result.n_gp_collapsed = data.gp_data.n_obs;
       result.gp_w_star_flat.resize(static_cast<size_t>(n_sample) * data.gp_data.n_obs, 0.0);
   }
 
-  // Collapsed ICAR/BYM2: allocate phi*/theta* storage
   if (data.icar_collapsed || data.bym2_collapsed) {
       int S = data.n_spatial_units;
       result.n_icar_collapsed = S;
@@ -33,6 +32,7 @@
   }
 
   std::mt19937 rng(seed + chain_id * 12345);
+  std::mt19937 field_rng((seed + chain_id * 12345) ^ 0x9e3779b9U);
   std::uniform_real_distribution<double> unif(0.0, 1.0);
 
   std::vector<double> q = sampling_init;

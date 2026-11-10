@@ -81,6 +81,10 @@ struct NUTSResult {
     int* n_leapfrog;       // [n_sample] actual integrator step count
     double* energy;       // [n_sample] starting Hamiltonian
 
+    int n_spatial_fields = 0;
+    double* spatial_draws = nullptr;      // [n_sample * n_spatial_fields] row-major
+    double* unstructured_draws = nullptr; // BYM2 conditional unstructured field
+
     void free_buffers() {
         if (samples)        { delete[] samples;         samples = nullptr; }
         if (log_prob)       { delete[] log_prob;        log_prob = nullptr; }
@@ -91,6 +95,8 @@ struct NUTSResult {
         if (final_position) { delete[] final_position;  final_position = nullptr; }
         if (n_leapfrog)     { delete[] n_leapfrog;      n_leapfrog = nullptr; }
         if (energy)         { delete[] energy;          energy = nullptr; }
+        if (spatial_draws)   { delete[] spatial_draws;   spatial_draws = nullptr; }
+        if (unstructured_draws) { delete[] unstructured_draws; unstructured_draws = nullptr; }
     }
 };
 
