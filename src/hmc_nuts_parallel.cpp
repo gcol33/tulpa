@@ -248,6 +248,18 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   // return so it does not leak into the next fit.
   GradientModeFitScope grad_mode_scope;
 
+  auto validate_initial_positions = [&]() {
+    for (int c = 0; c < n_chains; ++c) {
+      const auto coordinates = make_field_coordinates(q_init_per_chain[c], data, layout);
+      std::vector<double> initial = q_init_per_chain[c];
+      coordinates.inverse(initial);
+      FieldCoordinateScope coordinate_scope(&coordinates);
+      validate_hmc_initial_position(initial, data, layout, c + 1);
+    }
+  };
+  validate_initial_positions();
+  const GradientMode initial_gradient_mode = g_gradient_mode;
+
   // Runtime gradient check on chain 0's init, BEFORE spawning parallel chains:
   // single-threaded here, so the R API and the mode mutation are safe, and the
   // decision then applies to every chain. The per-chain gate inside
@@ -259,6 +271,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     FieldCoordinateScope coordinate_scope(&coordinates);
     ensure_gradient_verified(initial, data, layout);
   }
+  if (g_gradient_mode != initial_gradient_mode) validate_initial_positions();
 
   std::vector<HMCResultCpp> cpp_results(n_chains);
 

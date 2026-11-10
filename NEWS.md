@@ -20,6 +20,12 @@
   and short asymptotic expansions with platform-independent accuracy. The
   relative deviance uses a stable transformed series near zero (#1168).
 
+* Every NUTS, WALNUTS and fixed-L HMC entry refuses a start whose log density
+  or gradient is not finite, with one error naming the chain and, for the
+  gradient, the coordinate. Previously the runtime gradient check read such a
+  start as a gradient mismatch and fell back to numerical gradients, and the
+  step search then failed to bracket (#1171).
+
 # tulpa 0.7.7
 
 ## Models and inference

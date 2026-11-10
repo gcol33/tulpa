@@ -120,6 +120,15 @@ GradientMode get_gradient_mode();
 // runs once per fit however many chains that fit runs.
 extern bool g_gradient_verified;
 
+// Validate the density and active gradient on the main thread. Across-chain
+// workers use the positions already validated by their producer.
+void validate_hmc_initial_position(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    int chain_number = 1
+);
+
 // Runs the check unless it has already run for this fit, or unless the caller
 // is inside an across-chain OpenMP region (where the enclosing producer has
 // already run it on the main thread and an Rcpp warning would be unsafe). On a

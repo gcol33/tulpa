@@ -31,6 +31,35 @@ namespace tulpa_hmc {
 GradientMode g_gradient_mode = GradientMode::AUTO;
 bool g_gradient_verified = false;
 
+static void validate_initial_state(double log_density,
+                                   const std::vector<double>& gradient,
+                                   int chain_number) {
+    if (!std::isfinite(log_density)) {
+        Rcpp::stop("non-finite log density at the initial position (chain %d)",
+                   chain_number);
+    }
+    for (size_t j = 0; j < gradient.size(); ++j) {
+        if (!std::isfinite(gradient[j])) {
+            Rcpp::stop("non-finite gradient at the initial position, coordinate %d "
+                       "(chain %d)", static_cast<int>(j + 1), chain_number);
+        }
+    }
+}
+
+void validate_hmc_initial_position(const std::vector<double>& params,
+                                   const ModelData& data,
+                                   const ParamLayout& layout,
+                                   int chain_number) {
+#ifdef _OPENMP
+    if (omp_in_parallel()) return;
+#endif
+    double lp = compute_log_post(params, data, layout);
+    validate_initial_state(lp, {}, chain_number);
+    std::vector<double> gradient(params.size(), 0.0);
+    compute_gradient(params, data, layout, gradient, &lp);
+    validate_initial_state(lp, gradient, chain_number);
+}
+
 // =====================================================================
 // Generic LikelihoodSpec gradient: central differences against
 // compute_log_post_generic_spec_double. Used as the canonical
@@ -204,15 +233,19 @@ bool verify_gradient_runtime(
     const ParamLayout& layout,
     double tol
 ) {
+  double lp = compute_log_post(params, data, layout);
+  validate_initial_state(lp, {}, 1);
   std::vector<double> grad_active, grad_numerical;
   // The consumer gradient contract (likelihood.h) is "grad is sized to
   // params.size() and overwritten"; a hand-coded spec->gradient_fn that writes
   // grad[i] without resizing would overflow an empty buffer, so pre-size it.
   grad_active.assign(params.size(), 0.0);
   GradientFn active_fn = resolve_gradient_fn(g_gradient_mode, data, layout);
-  active_fn(params, data, layout, grad_active, nullptr);
+  active_fn(params, data, layout, grad_active, &lp);
+  validate_initial_state(lp, grad_active, 1);
 
   compute_gradient_generic_numerical(params, data, layout, grad_numerical, nullptr);
+  validate_initial_state(lp, grad_numerical, 1);
 
   // A second reference at a large step with the h^2 error extrapolated away.
   // The two references fail in opposite regimes -- the small step on a target
@@ -227,26 +260,13 @@ bool verify_gradient_runtime(
     };
     richardson_difference_gradient(log_post_fn, params, grad_richardson);
   }
+  validate_initial_state(lp, grad_richardson, 1);
 
   if (grad_numerical.size() != grad_active.size()) {
     REprintf("[tulpa] WARNING: the active gradient returned %d entries for %d "
              "parameters.\n  Falling back to numerical gradients for safety.\n",
              (int)grad_active.size(), (int)grad_numerical.size());
     return false;
-  }
-
-  // A non-finite entry is the failure this check exists to catch, and it cannot
-  // be found by the relative difference below: every comparison against a NaN
-  // is false, so the worst-difference scan would step over it and report a
-  // clean gradient.
-  for (size_t i = 0; i < grad_active.size(); i++) {
-    if (!std::isfinite(grad_active[i]) || !std::isfinite(grad_numerical[i])) {
-      REprintf("[tulpa] WARNING: non-finite gradient at param %d!\n"
-               "  active[%d] = %.8e, numerical[%d] = %.8e\n"
-               "  Falling back to numerical gradients for safety.\n",
-               (int)i, (int)i, grad_active[i], (int)i, grad_numerical[i]);
-      return false;
-    }
   }
 
   auto rel_gap = [](double ref, double act) {

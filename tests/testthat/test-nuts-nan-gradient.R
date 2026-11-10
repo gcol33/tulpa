@@ -1,119 +1,52 @@
-
 skip_on_cran_budget()
-# A non-finite gradient is a divergence, not an acceptance (gcol33/tulpa#429).
-#
-# The default leapfrog op sequence ends in a Kick, so if the gradient at the
-# endpoint carries a NaN the momentum does and the position does not: q was last
-# written by the preceding Drift, and the log-posterior is whatever the density
-# says. The leaf's state scan used to read the position vector and the
-# log-posterior only, so the leaf passed as valid; the Hamiltonian it then
-# computed was NaN, `NaN > delta_max` is false so the leaf was not divergent
-# either, and its multinomial weight H0 - H_new was NaN.
-#
-# That NaN weight does not stay local. log_sum_exp of it is NaN, every later
-# subtree's acceptance probability is NaN and gets zeroed by the finiteness
-# guard, so no subtree can be selected for the rest of the doubling and
-# sum_log_weight never recovers. The iteration keeps its initial point, is
-# counted as an acceptance, and is not counted as a divergence -- a stuck draw
-# that the output says nothing about.
-#
-# The divergence count is the diagnostic a user reads to know a fit is
-# untrustworthy, so the failure being invisible is the whole of the defect.
 
-test_that("the state scan reads the momentum, not only the position", {
-  skip_on_cran_budget()
-  # q finite, log_prob finite, p carrying a NaN: the exact state a trailing Kick
-  # on a non-finite gradient produces.
+test_that("the state scan checks position, momentum and log density", {
   load_cpp_fixture("nan_gradient_nuts")
-  r <- cpp_test_divergence_predicates(log_prob = 0, q = c(1, 2),
-                                      p = c(1, NaN), H0 = 5, H_new = 5.1)
-  expect_true(r$state_nonfinite)
-
-  # An infinite momentum the same way, and a clean state left alone.
-  expect_true(cpp_test_divergence_predicates(0, c(1, 2), c(1, Inf), 5, 5.1)$state_nonfinite)
+  for (bad in c(NaN, Inf)) {
+    expect_true(cpp_test_divergence_predicates(0, c(1, 2), c(1, bad), 5, 5.1)$state_nonfinite)
+  }
   expect_false(cpp_test_divergence_predicates(0, c(1, 2), c(1, 2), 5, 5.1)$state_nonfinite)
-
-  # The two arms it already had.
   expect_true(cpp_test_divergence_predicates(NaN, c(1, 2), c(1, 2), 5, 5.1)$state_nonfinite)
   expect_true(cpp_test_divergence_predicates(0, c(1, NaN), c(1, 2), 5, 5.1)$state_nonfinite)
 })
 
 test_that("a non-finite Hamiltonian is divergent", {
-  skip_on_cran_budget()
-  # The negated comparison is what routes NaN to the divergent branch;
-  # `H_new - H0 > delta_max` would not, because every comparison with NaN is
-  # false.
   load_cpp_fixture("nan_gradient_nuts")
-  expect_true(cpp_test_divergence_predicates(0, 1, 1, H0 = 5, H_new = NaN)$hamiltonian_divergent)
-  expect_true(cpp_test_divergence_predicates(0, 1, 1, H0 = 5, H_new = Inf)$hamiltonian_divergent)
-  expect_false(isTRUE(NaN - 5 > 1000))   # what the old form evaluated
-
-  # The ordinary arms are unchanged.
+  expect_true(cpp_test_divergence_predicates(0, 1, 1, 5, NaN)$hamiltonian_divergent)
+  expect_true(cpp_test_divergence_predicates(0, 1, 1, 5, Inf)$hamiltonian_divergent)
+  expect_false(isTRUE(NaN - 5 > 1000))
   expect_false(cpp_test_divergence_predicates(0, 1, 1, 5, 5.1)$hamiltonian_divergent)
   expect_true(cpp_test_divergence_predicates(0, 1, 1, 5, 5 + 1001)$hamiltonian_divergent)
-  # An energy DROP is never a divergence, however large.
   expect_false(cpp_test_divergence_predicates(0, 1, 1, 5, 5 - 1e6)$hamiltonian_divergent)
 })
 
-test_that("a step search refuses a target with no finite integration steps", {
-  skip_on_cran_budget()
+test_that("initial gradient validation precedes the step search", {
   load_cpp_fixture("nan_gradient_nuts")
-  expect_error(cpp_test_nan_gradient_nuts(plant_nan = TRUE),
-               "Step-size search did not bracket")
+  expect_silent(expect_error(cpp_test_nan_gradient_nuts(TRUE),
+    "non-finite gradient at the initial position, coordinate 1"))
 })
 
-test_that("a chain whose gradient is NaN reports every iteration divergent", {
-  skip_on_cran_budget()
-  # LikelihoodSpec::gradient_fn is a model package's hand-coded full gradient
-  # and writes the fused log-posterior itself, so it is the supported way to put
-  # the sampler in the state above: a finite log-posterior with a non-finite
-  # gradient. The target is a standard normal, so the two arms differ in one
-  # planted entry and nothing else.
+test_that("a NaN gradient during a trajectory marks every iteration divergent", {
   load_cpp_fixture("nan_gradient_nuts")
-  nan   <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, epsilon_init = 0.1)
-  clean <- cpp_test_nan_gradient_nuts(plant_nan = FALSE)
-
+  nan <- cpp_test_nan_gradient_nuts(TRUE, epsilon_init = 0.1, nan_at_start = FALSE)
+  clean <- cpp_test_nan_gradient_nuts(FALSE)
   expect_identical(nan$n_divergent, nan$n_samples)
-  # The chain is stuck, which is the honest outcome -- what must not happen is
-  # it being stuck AND reported clean.
   expect_identical(nan$n_moved, 0L)
   expect_true(all(is.finite(nan$draws)))
-
-  # The control: the same model with an intact gradient samples and diverges on
-  # nothing, so the count is not saturated by the harness.
   expect_identical(clean$n_divergent, 0L)
   expect_gt(clean$n_moved, 0L)
 })
 
-test_that("run_hmc_chain_cpp verifies the gradient on a direct entry", {
-  skip_on_cran_budget()
-  # gcol33/tulpa#684: the check sat in two callers -- the R wrapper and the
-  # multi-chain producer -- while six production sites entered
-  # run_hmc_chain_cpp directly, including the R_RegisterCCallable a LinkingTo
-  # consumer reaches for backend "hmc". A consumer's hand-coded
-  # spec->gradient_fn was checked when it asked for several chains and
-  # unchecked when it asked for one.
-  #
-  # This probe IS such a direct entry. With the gate live, the planted NaN is
-  # caught before the first trajectory and the chain falls back to numerical
-  # gradients, so it samples instead of standing still.
+test_that("direct chain entry validates a start with either gate state", {
   load_cpp_fixture("nan_gradient_nuts")
-  expect_warning(
-    gated <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, bypass_gate = FALSE),
-    "Gradient mismatch"
-  )
-  expect_gt(gated$n_moved, 0L)
-  expect_true(all(is.finite(gated$draws)))
-  expect_lt(gated$n_divergent, gated$n_samples)
-
-  # Bypassing it reproduces the pre-fix behaviour, which is what the test above
-  # measures: the same planted NaN, unchecked, leaves the chain stuck.
-  stuck <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, bypass_gate = TRUE,
-                                     epsilon_init = 0.1)
-  expect_identical(stuck$n_moved, 0L)
-
-  # A clean gradient passes the gate and is not reported as a mismatch.
-  expect_silent(
-    ok <- cpp_test_nan_gradient_nuts(plant_nan = FALSE, bypass_gate = FALSE))
+  for (bypass in c(FALSE, TRUE)) {
+    for (epsilon in c(0, 0.1)) {
+      expect_silent(expect_error(
+        cpp_test_nan_gradient_nuts(TRUE, bypass_gate = bypass, epsilon_init = epsilon),
+        "non-finite gradient at the initial position, coordinate 1 \\(chain 1\\)"))
+    }
+  }
+  expect_silent(ok <- cpp_test_nan_gradient_nuts(FALSE, bypass_gate = FALSE))
+  expect_identical(ok, cpp_test_nan_gradient_nuts(FALSE, bypass_gate = TRUE))
   expect_gt(ok$n_moved, 0L)
 })

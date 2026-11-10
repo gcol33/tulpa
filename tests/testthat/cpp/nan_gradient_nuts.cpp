@@ -39,6 +39,7 @@ namespace {
 // model_data because the gradient hook is a plain function pointer and the two
 // arms are run one after the other from a single-threaded probe.
 bool g_plant_nan = false;
+bool g_nan_at_start = true;
 
 // Whether the hand-coded gradient throws, and after how many evaluations. The
 // same "gradient the model controls" lever as g_plant_nan, aimed at the other
@@ -80,7 +81,9 @@ void normal_gradient(const std::vector<double>& params, const ModelData& data,
         grad[j] = -params[j];
         lp += -0.5 * params[j] * params[j];
     }
-    if (g_plant_nan) {
+    bool at_start = true;
+    for (double value : params) at_start &= value == 0.3;
+    if (g_plant_nan && (g_nan_at_start || !at_start)) {
         grad[layout.extra_offset] = std::numeric_limits<double>::quiet_NaN();
     }
     if (log_post_out) *log_post_out = lp;
@@ -125,7 +128,8 @@ void build_normal_model(int K, NormalData& nd, tulpa::LikelihoodSpec& spec,
 Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K = 3,
                                        int n_iter = 40, int n_warmup = 20,
                                        int seed = 1, bool bypass_gate = true,
-                                       double epsilon_init = 0.0) {
+                                       double epsilon_init = 0.0,
+                                       bool nan_at_start = true) {
     if (K < 1) Rcpp::stop("K must be >= 1");
 
     NormalData nd;
@@ -139,6 +143,10 @@ Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K = 3,
 
     g_throw_after = -1; g_grad_calls = 0;
     g_plant_nan = plant_nan;
+    g_nan_at_start = nan_at_start;
+    struct NanReset {
+        ~NanReset() { g_plant_nan = false; g_nan_at_start = true; }
+    } nan_reset;
     // Two things to measure, and they need opposite settings of the entry gate.
     // bypass_gate = true asks what the chain does with a NaN raised DURING a
     // trajectory, so it declares the gradient already verified and the planted

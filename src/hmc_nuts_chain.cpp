@@ -68,6 +68,7 @@ HMCResultCpp run_hmc_chain_cpp(
   std::vector<double> sampling_init = q_init;
   coordinates.inverse(sampling_init);
   FieldCoordinateScope coordinate_scope(&coordinates);
+  validate_hmc_initial_position(sampling_init, data, layout);
   ensure_gradient_verified(sampling_init, data, layout);
 
 #include "hmc_nuts_chain_setup.h"
