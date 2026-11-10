@@ -115,7 +115,7 @@ HMCResultCpp run_hmc_chain_cpp(
 
   if (own_progress) own_progress->finish();
 
-  result.epsilon = da.final_epsilon();
+  result.epsilon = epsilon;
   result.sampler = use_walnuts ? "WALNUTS" : (use_nuts ? "nuts" : "HMC");
 
   // Warm-start / resume outputs: the adapted inverse-mass

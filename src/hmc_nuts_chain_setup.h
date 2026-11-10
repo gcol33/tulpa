@@ -48,12 +48,9 @@
     log_prob_current = compute_log_post(q, data, layout);
   }
 
-  double epsilon = find_reasonable_epsilon(q, data, layout, rng);
-
   // One target for the chain, honoured by the NUTS and the fixed-trajectory
   // path alike and re-used at every warmup window reset below.
   const double target_accept = resolve_target_accept(data, layout, adapt_delta);
-  DualAveraging da(epsilon, target_accept);
 
   // current_grad already computed above (fused with log_prob for NUTS)
 
@@ -100,12 +97,9 @@
     }
   }
 
-  // Recompute epsilon under the starting metric the chain runs with (the
-  // structural warm start or a caller-supplied one), so the dual averaging
-  // starts from a step size tuned for it rather than for the identity.
-  if (!mass.inv_mass_diag.empty()) {
-    epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-  }
+  // Initialize the step size and its adaptation under the active metric.
+  double epsilon = find_reasonable_epsilon_dense(q, data, layout, rng, mass);
+  DualAveraging da(epsilon, target_accept);
 
   WelfordStats mass_stats(n_params);              // Always track diagonal
   {
@@ -168,11 +162,14 @@
   // A first mass window smaller than the parameter count is skipped rather than
   // used: the next window carries enough samples for a usable estimate.
 
-  // Adjust for short warmup
+  // A short warmup tunes the step size against the fixed starting metric.
+  // Center shrinkage at that step: the tenfold exploration anchor needs a
+  // terminal tuning phase to settle after its initial expansion.
   if (n_warmup < init_buffer + term_buffer + init_window) {
-    init_buffer = std::max(1, n_warmup / 5);
-    term_buffer = std::max(1, n_warmup / 10);
-    init_window = std::max(1, n_warmup - init_buffer - term_buffer);
+    init_buffer = n_warmup;
+    term_buffer = 0;
+    init_window = 0;
+    da.mu = std::log(epsilon);
   }
 
   // Compute mass adaptation window endpoints
@@ -180,8 +177,6 @@
   {
     int adapt_end = n_warmup - term_buffer;
     if (adapt_end <= init_buffer) {
-      // No room for mass adaptation windows
-      mass_window_ends.push_back(std::max(1, adapt_end));
     } else {
       int next_end = init_buffer + init_window;
       int win_size = init_window;
