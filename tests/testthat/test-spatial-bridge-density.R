@@ -265,6 +265,7 @@ test_that("ICAR and NNGP transports match independent dense Gaussian conditional
   expect_true(r$verified)
   d <- data.frame(lon = c(0, .2, .4, .7, 1)[group], lat = c(.2, .8, .1, .6, .3)[group])
   gp <- tulpa:::.gp_sampler_spec(tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = 4L), d))
+  gp$conditional_coordinates <- TRUE
   gp$range_prior <- list(type = 'lognormal', meanlog = 0, sdlog = 1)
   r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = gp, shift = .3)
   K <- exp(r$x[3]) * exp(-as.matrix(dist(gp$coords)) / exp(r$x[4])) + diag(1e-8, S)

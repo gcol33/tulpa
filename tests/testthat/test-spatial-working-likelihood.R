@@ -5,7 +5,18 @@ test_that("fixed working predictors give the same dense Gaussian field coordinat
   X <- cbind(1, seq(-1, 1, length.out = N)); y <- rnorm(N)
   gp <- tulpa:::.gp_sampler_spec(tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = 3L, cov = 'exponential'), d))
   gp$parameterization <- 'auto'; gp$gp_parameterization <- 1L
+  gp$conditional_coordinates <- TRUE
   gp$range_prior <- list(type = 'lognormal', meanlog = 0, sdlog = 1)
+  ordinary <- gp
+  ordinary$conditional_coordinates <- FALSE
+  full <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = gp)
+  scaled <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = ordinary, point = full$x)
+  expect_true(full$conditional)
+  expect_false(scaled$conditional)
+  expect_equal(full$raw_lp, scaled$raw_lp, tolerance = 1e-9)
+  expect_equal(full$stored, scaled$stored, tolerance = 1e-9)
+  expect_equal(full$raw_gradient, scaled$raw_gradient, tolerance = 1e-9)
+  expect_true(full$verified && scaled$verified)
   bym <- list(type = 'bym2', parameterization = 'auto', spatial_idx = rep(1:S, each = 4),
     n_spatial_units = S, adj_row_ptr = c(0L, 1L, 3L, 5L, 6L),
     adj_col_idx = c(1L, 0L, 2L, 1L, 3L, 2L), n_neighbors = c(1L, 2L, 2L, 1L))

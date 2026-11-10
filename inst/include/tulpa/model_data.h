@@ -208,7 +208,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 66;
+constexpr int TULPA_ABI_VERSION = 67;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -701,6 +701,7 @@ struct ModelData {
     bool auto_spatial_coordinates = false;
     bool auto_temporal_coordinates = false;
     bool auto_gp_coordinates = false;
+    bool conditional_gp_coordinates = false;
     bool auto_multiscale_coordinates = false;
     bool auto_temporal_gp_coordinates = false;
     bool auto_svc_coordinates = false;

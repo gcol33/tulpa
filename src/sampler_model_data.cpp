@@ -264,6 +264,8 @@ void build_sampler_model_inputs(
             (stype == "icar" || stype == "car_proper");
         in.data.auto_gp_coordinates = coordinate == "auto" &&
             (stype == "gp" || stype == "nngp");
+        in.data.conditional_gp_coordinates = sp.containsElementNamed("conditional_coordinates") &&
+            Rcpp::as<bool>(sp["conditional_coordinates"]);
         if (stype == "icar" || stype == "bym2" || stype == "car_proper") {
             read_pc_anchors(sp, "sigma_prior_U", "sigma_prior_alpha",
                             in.data.spatial_sigma_prior_U,
