@@ -24,6 +24,47 @@ using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
 
 // [[Rcpp::export]]
+Rcpp::List cpp_test_temporal_coordinates(Rcpp::NumericVector z, int n_times,
+    int n_groups, std::string structure, bool cyclic, double log_tau,
+    double logit_rho = 0.3) {
+    ModelData data;
+    data.n_processes = 1;
+    data.processes.resize(1);
+    data.sharing.init(1);
+    data.n_times = n_times;
+    data.n_temporal_groups = n_groups;
+    data.n_temporal_params = n_times * n_groups;
+    data.temporal_group_centering = true;
+    data.temporal_cyclic = cyclic;
+    if (structure == "rw1") data.temporal_type = tulpa::TemporalType::RW1;
+    else if (structure == "rw2") data.temporal_type = tulpa::TemporalType::RW2;
+    else if (structure == "ar1") data.temporal_type = tulpa::TemporalType::AR1;
+    else if (structure == "iid") data.temporal_type = tulpa::TemporalType::IID;
+    else Rcpp::stop("Unknown temporal structure");
+    tulpa::LikelihoodSpec spec;
+    spec.n_processes = 1;
+    data.likelihood_spec = &spec;
+    const auto layout = tulpa_hmc::compute_param_layout(data);
+    if (z.size() != data.n_temporal_params) Rcpp::stop("z length must match temporal dimensions");
+    std::vector<double> q(layout.total_params, 0.0);
+    q[layout.log_tau_temporal_idx] = log_tau;
+    if (layout.is_ar1) q[layout.logit_rho_ar1_idx] = logit_rho;
+    std::copy(z.begin(), z.end(), q.begin() + layout.temporal_start);
+    std::vector<double> field;
+    double tau = 0, rho = 0, sigma2 = 0, phi = 0;
+    data.temporal_parameterization = 1;
+    const double nc = tulpa::priors::compute_temporal_prior(q, data, layout,
+        field, tau, rho, sigma2, phi);
+    std::copy(field.begin(), field.end(), q.begin() + layout.temporal_start);
+    data.temporal_parameterization = 0;
+    std::vector<double> centered_field;
+    const double centered = tulpa::priors::compute_temporal_prior(q, data, layout,
+        centered_field, tau, rho, sigma2, phi);
+    return Rcpp::List::create(Rcpp::Named("field") = field,
+        Rcpp::Named("nc") = nc, Rcpp::Named("centered") = centered);
+}
+
+// [[Rcpp::export]]
 Rcpp::List cpp_test_field_coordinates(
     Rcpp::NumericVector y, Rcpp::NumericMatrix X,
     Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,

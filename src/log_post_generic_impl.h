@@ -61,6 +61,7 @@ struct GenericLogPostState {
     T rho_ar1 = T(0.5);
     T sigma2_temporal_gp = T(1.0);
     T phi_temporal_gp = T(1.0);
+    std::vector<T> temporal_obs_eta;
     std::vector<T> ms_temporal_eta;
     std::vector<T> ms_temporal_by_time;
     std::vector<T> svc_eta;
@@ -259,9 +260,11 @@ static T initialize_generic_state(
              data.temporal_type == tulpa_temporal::TemporalType::RW2) &&
             !state.phi_temporal.empty();
         if (state.phi_temporal_center_all) {
-            state.phi_temporal_mean = tulpa::s2z_component_mean(
-                state.phi_temporal.data(), 0,
-                (int)state.phi_temporal.size());
+            if (data.temporal_group_centering)
+                tulpa::s2z_centre_blocks(state.phi_temporal.data(), data.n_temporal_groups, data.n_times);
+            else
+                tulpa::s2z_centre_component(state.phi_temporal.data(), 0, n_temporal);
+            state.phi_temporal_mean = T(0.0);
         }
     }
 
@@ -269,6 +272,25 @@ static T initialize_generic_state(
         log_post = log_post + priors::compute_multiscale_temporal_prior(
             params, data, layout, state.ms_temporal_eta,
             state.ms_temporal_by_time);
+    }
+
+    if (data.temporal_restriction_rank > 0) {
+        state.temporal_obs_eta.assign(data.N, T(0.0));
+        for (int i = 0; i < data.N; ++i) {
+            if (!state.phi_temporal.empty()) {
+                const int g = data.temporal_group_idx.empty() ? 0 : data.temporal_group_idx[i] - 1;
+                const int t = data.temporal_time_idx[i] - 1;
+                state.temporal_obs_eta[i] = state.phi_temporal[g * data.n_times + t];
+            }
+            if (!state.ms_temporal_eta.empty())
+                state.temporal_obs_eta[i] = state.temporal_obs_eta[i] + state.ms_temporal_eta[i];
+        }
+        const int r = data.temporal_restriction_rank;
+        std::vector<T> coefficients(r, T(0.0));
+        for (int i = 0; i < data.N; ++i) for (int j = 0; j < r; ++j)
+            coefficients[j] = coefficients[j] + T(data.temporal_restriction_basis[i * r + j]) * state.temporal_obs_eta[i];
+        for (int i = 0; i < data.N; ++i) for (int j = 0; j < r; ++j)
+            state.temporal_obs_eta[i] = state.temporal_obs_eta[i] - T(data.temporal_restriction_basis[i * r + j]) * coefficients[j];
     }
 
     if (layout.has_svc && data.has_svc) {
@@ -562,6 +584,11 @@ static void add_generic_temporal_effect(
     const ParamLayout& layout,
     const GenericLogPostState<T>& state
 ) {
+    if (!state.temporal_obs_eta.empty()) {
+        add_to_shared_processes(eta, data.sharing.temporal, data.n_processes,
+                                state.temporal_obs_eta[i]);
+        return;
+    }
     if (layout.has_temporal && !data.temporal_time_idx.empty() &&
         i < (int)data.temporal_time_idx.size() && data.temporal_time_idx[i] > 0 &&
         !state.phi_temporal.empty()) {

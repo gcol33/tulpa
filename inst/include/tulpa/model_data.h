@@ -697,6 +697,26 @@ struct ModelData {
     bool auto_temporal_gp_coordinates = false;
     bool auto_svc_coordinates = false;
     bool spatial_component_centering = false;
+    int temporal_parameterization = 0;
+    bool temporal_group_centering = false;
+    std::vector<double> temporal_restriction_basis;
+    int temporal_restriction_rank = 0;
+
+    void set_temporal_restriction(std::vector<double> basis, int rank) {
+        if (rank < 0 || rank > N || basis.size() != static_cast<size_t>(N) * rank)
+            throw std::invalid_argument("temporal restriction basis must have N * rank entries");
+        for (double value : basis)
+            if (!std::isfinite(value))
+                throw std::invalid_argument("temporal restriction basis must be finite");
+        for (int j = 0; j < rank; ++j) for (int k = 0; k <= j; ++k) {
+            double dot = 0.0;
+            for (int i = 0; i < N; ++i) dot += basis[i * rank + j] * basis[i * rank + k];
+            if (std::abs(dot - (j == k ? 1.0 : 0.0)) > 1e-8)
+                throw std::invalid_argument("temporal restriction basis must have orthonormal columns");
+        }
+        temporal_restriction_basis = std::move(basis);
+        temporal_restriction_rank = rank;
+    }
 };
 
 // Does RE term t carry the implicit group intercept (coef 0, z = 1)? Default

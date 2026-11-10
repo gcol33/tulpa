@@ -90,31 +90,18 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
                                  tv.n_groups * tv.n_tvc, tv.n_times);
     }
 
-    if (layout.has_temporal &&
-        (data.temporal_type == tulpa_temporal::TemporalType::RW1 ||
-         data.temporal_type == tulpa_temporal::TemporalType::RW2)) {
-        (void)tulpa::s2z_centre_component(row, layout.temporal_start,
-            layout.temporal_end - layout.temporal_start);
-    }
-
-    // Non-centered temporal GP: the field the likelihood saw is f = sigma L z,
-    // and compute_temporal_prior() is the one place that transform lives (it
-    // overwrites its field argument with f), so the stored field is taken from
-    // the same call. Its return value, the prior density, is not needed.
-    if (data.temporal_gp_parameterization == 1 && layout.has_temporal &&
-        layout.is_temporal_gp) {
+    if (layout.has_temporal) {
         std::vector<double> f;
-        double tau_unused = 0.0, rho_unused = 0.0;
-        double sigma2_unused = 0.0, phi_unused = 0.0;
-        (void)tulpa::priors::compute_temporal_prior<double>(
-            q, data, layout, f, tau_unused, rho_unused, sigma2_unused,
-            phi_unused);
-        const int n_temporal = layout.temporal_end - layout.temporal_start;
-        if ((int)f.size() == n_temporal) {
-            for (int t = 0; t < n_temporal; t++) {
-                row[layout.temporal_start + t] = f[t];
-            }
+        double tau = 0, rho = 0, sigma2 = 0, phi = 0;
+        (void)tulpa::priors::compute_temporal_prior(q, data, layout, f,
+                                                   tau, rho, sigma2, phi);
+        if (data.temporal_type == TemporalType::RW1 || data.temporal_type == TemporalType::RW2) {
+            if (data.temporal_group_centering)
+                tulpa::s2z_centre_blocks(f.data(), data.n_temporal_groups, data.n_times);
+            else
+                tulpa::s2z_centre_component(f.data(), 0, static_cast<int>(f.size()));
         }
+        std::copy(f.begin(), f.end(), row + layout.temporal_start);
     }
 
     // Non-centred multiscale trend: the sampled slice is the walk's level,

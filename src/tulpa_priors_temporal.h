@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include <tulpa/temporal_nc.h>
 #include "hmc_temporal.h"  // single-source RW1/RW2/AR1 kernels
 #include "temporal_gp_kernel.h"  // temporal GP covariance + dense factorization
 #include "tulpa/sum_to_zero.h"  // s2z_aug_coef / s2z_aug_rank
@@ -185,77 +186,54 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 log_tau, data.temporal_sigma_prior_U,
                 data.temporal_sigma_prior_alpha);
 
-            // RW1 and RW2 are intrinsic, and this path carried no sum-to-zero
-            // term at all, so the field level would be free to wander
-            // against the intercept, as it is on any intrinsic field left
-            // unpinned.
-            //
-            // Exactly ONE direction is augmented: the single GLOBAL constant,
-            // the only one confounded with the intercept. With several groups
-            // the walks are disconnected, so the prior's null space is G
-            // constants, but a per-group level shifts eta only for that group's
-            // observations and the likelihood pins it. Augmenting per group
-            // would put a proper N(0, 1/tau) prior on those differences and
-            // shrink them, which is a different model -- and one the
-            // nested-Laplace temporal block deliberately does not fit (see
-            // make_temporal_latent_block). The G - 1 group contrasts therefore
-            // stay improper on both paths, and the global constant is
-            // centred out of eta.
-            const int n_total = T_times * data.n_temporal_groups;
-            const auto global_aug = [&](void) {
-                const T s = tulpa::s2z_component_sum(phi_temporal.data(), 0, n_total);
-                return tulpa::s2z_aug_coef(T(1.0), n_total) * s * s;
-            };
-
-            if (data.temporal_type == TemporalType::RW1) {
-                // RW1: sum of (phi[t] - phi[t-1])^2 per group
-                T quad_form = T(0.0);
-                for (int g = 0; g < data.n_temporal_groups; g++) {
-                    quad_form = quad_form + tulpa_temporal::rw1_quadratic_form(
+            const bool intrinsic = data.temporal_type == TemporalType::RW1 ||
+                                   data.temporal_type == TemporalType::RW2;
+            const int order = data.temporal_type == TemporalType::RW2 ? 2 : 1;
+            const bool rw_nc = intrinsic && data.temporal_parameterization == 1 &&
+                tulpa_temporal_nc::nc_applies(T_times, order, data.temporal_cyclic);
+            const bool ar1_nc = layout.is_ar1 && data.temporal_parameterization == 1;
+            if (layout.is_ar1) {
+                const T u = inv_logit(params[layout.logit_rho_ar1_idx]);
+                log_post = log_post + T(data.ar1_rho_prior_a) * safe_log(u)
+                    + T(data.ar1_rho_prior_b) * safe_log(T(1.0) - u);
+            }
+            if (rw_nc) {
+                log_post = log_post + tulpa_temporal_nc::rw_nc_grouped_log_prior(
+                    phi_temporal.data(), T_times, data.n_temporal_groups,
+                    order, data.temporal_cyclic);
+                std::vector<T> field(n_temporal);
+                tulpa_temporal_nc::rw_nc_grouped_forward(phi_temporal.data(),
+                    T_times, data.n_temporal_groups, order, data.temporal_cyclic,
+                    T(1.0) / safe_sqrt(tau_temporal_out), field.data());
+                phi_temporal = std::move(field);
+            } else if (ar1_nc) {
+                const T sigma = T(1.0) / safe_sqrt(tau_temporal_out);
+                const T initial_scale = sigma /
+                    safe_sqrt(tulpa_temporal::ar1_one_minus_rho2(rho_ar1_out));
+                for (int g = 0; g < data.n_temporal_groups; ++g) {
+                    const int off = g * T_times;
+                    for (int t = 0; t < T_times; ++t) {
+                        const T z = phi_temporal[off + t];
+                        log_post = log_post - T(0.5) * z * z
+                            - T(0.5 * tulpa_temporal::kLogTwoPi);
+                        phi_temporal[off + t] = t == 0 ? initial_scale * z :
+                            rho_ar1_out * phi_temporal[off + t - 1] + sigma * z;
+                    }
+                }
+            } else {
+                for (int g = 0; g < data.n_temporal_groups; ++g) {
+                    log_post = log_post + tulpa_temporal::log_prior_temporal(
                         phi_temporal.data() + g * T_times, T_times,
+                        data.temporal_type, tau_temporal_out, rho_ar1_out,
                         data.temporal_cyclic);
                 }
-                quad_form = quad_form + global_aug();
-                int rank_rw1 = tulpa::s2z_aug_rank(
-                    tulpa_temporal::rw1_rank(T_times, data.temporal_cyclic)
-                        * data.n_temporal_groups, 1);
-                log_post = log_post
-                    + tulpa_temporal::gmrf_log_norm(rank_rw1, log_tau);
-                log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
-
-            } else if (data.temporal_type == TemporalType::RW2) {
-                // RW2: sum of (phi[t] - 2*phi[t-1] + phi[t-2])^2 per group
-                T quad_form = T(0.0);
-                for (int g = 0; g < data.n_temporal_groups; g++) {
-                    quad_form = quad_form + tulpa_temporal::rw2_quadratic_form(
-                        phi_temporal.data() + g * T_times, T_times,
-                        data.temporal_cyclic);
-                }
-                quad_form = quad_form + global_aug();
-                // A non-cyclic RW2 also keeps its per-group LINEAR null
-                // direction, which this does not touch.
-                int rank_rw2 = tulpa::s2z_aug_rank(
-                    tulpa_temporal::rw2_rank(T_times, data.temporal_cyclic)
-                        * data.n_temporal_groups, 1);
-                log_post = log_post
-                    + tulpa_temporal::gmrf_log_norm(rank_rw2, log_tau);
-                log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
-
-            } else if (data.temporal_type == TemporalType::AR1) {
-                // AR1: phi[t] | phi[t-1] ~ N(rho * phi[t-1], 1/tau)
-                // Beta(a, b) prior on u = (rho + 1)/2 = inv_logit. In the
-                // sampler's unconstrained space the Beta density combines with
-                // the logit change-of-variables to a*log(u) + b*log(1-u); the
-                // default (a, b) = (1, 1) recovers the Uniform(-1, 1) prior.
-                T u_ar1 = T(0.5) * (rho_ar1_out + T(1.0));
-                log_post = log_post
-                    + T(data.ar1_rho_prior_a) * safe_log(u_ar1)
-                    + T(data.ar1_rho_prior_b) * safe_log(T(1.0) - u_ar1);
-
-                for (int g = 0; g < data.n_temporal_groups; g++) {
-                    log_post = log_post + tulpa_temporal::ar1_log_density(
-                        phi_temporal.data() + g * T_times, T_times,
-                        rho_ar1_out, tau_temporal_out);
+                if (intrinsic) {
+                    const int blocks = data.temporal_group_centering ? data.n_temporal_groups : 1;
+                    const int width = n_temporal / blocks;
+                    log_post = log_post + tulpa_temporal::gmrf_log_norm(blocks, log_tau);
+                    for (int g = 0; g < blocks; ++g)
+                        log_post = log_post - T(0.5) * tulpa::s2z_aug_quad(
+                            phi_temporal.data(), g * width, width, tau_temporal_out);
                 }
             }
         }
@@ -296,6 +274,7 @@ inline double temporal_prior_log_normalizer(const ModelData& data,
         return log_prior_beta_logit_log_normalizer(
             data.ar1_rho_prior_a, data.ar1_rho_prior_b);
     }
+    if (data.temporal_type == TemporalType::IID) return 0.0;
     const bool rw2 = data.temporal_type == TemporalType::RW2;
     if (data.temporal_type != TemporalType::RW1 && !rw2) {
         if (declined) declined->push_back("temporal");
@@ -305,11 +284,13 @@ inline double temporal_prior_log_normalizer(const ModelData& data,
         if (declined) declined->push_back("temporal:rw2_improper");
         return nan;
     }
-    if (data.n_temporal_groups > 1) {
+    if (data.n_temporal_groups > 1 && !data.temporal_group_centering) {
         if (declined) declined->push_back("temporal:group_contrasts_improper");
         return nan;
     }
-    return 0.5 * rw_log_pdet(data.n_times, rw2 ? 2 : 1,
+    if (data.temporal_parameterization == 1 &&
+        tulpa_temporal_nc::nc_applies(data.n_times, rw2 ? 2 : 1, data.temporal_cyclic)) return 0.0;
+    return 0.5 * data.n_temporal_groups * rw_log_pdet(data.n_times, rw2 ? 2 : 1,
                                        data.temporal_cyclic);
 }
 

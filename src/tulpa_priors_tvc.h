@@ -163,6 +163,7 @@ inline double tvc_prior_log_normalizer(const ModelData& data,
         return tv.n_tvc * log_prior_uniform_log_normalizer(
             data.tvc_gp_phi_prior_lower, data.tvc_gp_phi_prior_upper);
     case tulpa_temporal::TemporalType::AR1:
+    case tulpa_temporal::TemporalType::IID:
         return 0.0;
     case tulpa_temporal::TemporalType::RW1:
         return 0.5 * tv.n_groups * tv.n_tvc * rw_log_pdet(tv.n_times, 1, tv.cyclic);

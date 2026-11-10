@@ -633,8 +633,18 @@ void build_sampler_model_inputs(
             in.data.ar1_rho_prior_a = Rcpp::as<double>(tp["rho_prior_a"]);
         if (tp.containsElementNamed("rho_prior_b"))
             in.data.ar1_rho_prior_b = Rcpp::as<double>(tp["rho_prior_b"]);
+        if (tp.containsElementNamed("restriction_basis")) {
+            in.data.set_temporal_restriction(
+                Rcpp::as<std::vector<double>>(tp["restriction_basis"]),
+                Rcpp::as<int>(tp["restriction_rank"]));
+        }
         in.data.n_temporal_params = in.data.n_times * in.data.n_temporal_groups;
-        if (ttype == "rw1" || ttype == "rw2" || ttype == "ar1") {
+        in.data.temporal_parameterization = coordinate == "noncentered" ? 1 : 0;
+        in.data.temporal_group_centering = tp.containsElementNamed("group_centering") &&
+            Rcpp::as<bool>(tp["group_centering"]);
+        if (in.data.temporal_parameterization == 1 &&
+            (ttype == "rw1" || ttype == "rw2")) in.data.temporal_group_centering = true;
+        if (ttype == "rw1" || ttype == "rw2" || ttype == "ar1" || ttype == "iid") {
             read_pc_anchors(tp, "sigma_prior_U", "sigma_prior_alpha",
                             in.data.temporal_sigma_prior_U,
                             in.data.temporal_sigma_prior_alpha,
@@ -643,6 +653,7 @@ void build_sampler_model_inputs(
         if (ttype == "rw1")      in.data.temporal_type = TemporalType::RW1;
         else if (ttype == "rw2") in.data.temporal_type = TemporalType::RW2;
         else if (ttype == "ar1") in.data.temporal_type = TemporalType::AR1;
+        else if (ttype == "iid") in.data.temporal_type = TemporalType::IID;
         else if (ttype == "gp") {
             // Continuous-time GP over irregularly-spaced times. The field is
             // indexed by n_times unique instants (time_idx maps observations
@@ -832,6 +843,7 @@ void build_sampler_model_inputs(
         if (st == "rw1")      t.structure = TemporalType::RW1;
         else if (st == "rw2") t.structure = TemporalType::RW2;
         else if (st == "ar1") t.structure = TemporalType::AR1;
+        else if (st == "iid") t.structure = TemporalType::IID;
         else if (st == "gp") {
             // A coefficient evolving as a continuous-time GP: the field is
             // indexed by the same n_times distinct instants, and time_values
