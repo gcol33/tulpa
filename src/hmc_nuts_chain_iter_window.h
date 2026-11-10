@@ -176,26 +176,14 @@
       if (mass.type != MassMatrixType::DENSE || dense_covariance_set) {
         cov_stats.reset();
       }
-      // Re-initialize step size with current mass matrix (A3)
-      // Use dense-aware version when dense mass is adapted, so the step size
-      // is calibrated for the rotated phase space (not just the diagonal).
-      if (use_mass_matrix &&
-          ((mass.type == MassMatrixType::DENSE && mass.adapted) ||
-           mass.has_lowrank())) {
-        epsilon = find_reasonable_epsilon_dense(q, data, layout, rng, mass);
-      } else if (use_mass_matrix) {
-        epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-      } else {
-        epsilon = find_reasonable_epsilon(q, data, layout, rng);
-      }
-      da = DualAveraging(epsilon, target_accept);
+      restart_step_adaptation();
 
       next_window_idx++;
     }
 
-    // L-BFGS: transition from L-BFGS to standard HMC at end of warmup
-    // Extract diagonal mass matrix from learned curvature
-    if (use_lbfgs && !lbfgs_warmup_done && iter == n_warmup - 1 && lbfgs_initialized) {
+    // The terminal buffer tunes the standard metric after L-BFGS learning.
+    if (use_lbfgs && !lbfgs_warmup_done && lbfgs_initialized &&
+        iter >= std::max(1, n_warmup - term_buffer)) {
       // Use gamma from L-BFGS as uniform scaling for mass matrix
       // gamma = (s^T y) / (y^T y) approximates average inverse Hessian scaling
       double gamma = lbfgs_state.gamma;
@@ -206,5 +194,7 @@
         mass.set_diagonal(inv_m, sqrt_m);
         use_mass_matrix = true;
       }
+      restart_step_adaptation();
+      if (mass_window_ends.empty()) da.mu = std::log(epsilon);
       lbfgs_warmup_done = true;
     }

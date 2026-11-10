@@ -61,30 +61,14 @@ double resolve_target_accept(
     double adapt_delta
 );
 
-// Find reasonable initial step size
-double find_reasonable_epsilon(
-    const std::vector<double>& q,
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::mt19937& rng
-);
-
-// Mass-aware version: uses diagonal mass matrix for leapfrog and kinetic energy
+// Search with the same metric used by momentum refresh, drift and energy.
 double find_reasonable_epsilon(
     const std::vector<double>& q,
     const ModelData& data,
     const ParamLayout& layout,
     std::mt19937& rng,
-    const std::vector<double>& inv_mass
-);
-
-// Dense-mass-aware version: uses full DenseMassMatrix for momentum, leapfrog, and kinetic energy
-double find_reasonable_epsilon_dense(
-    const std::vector<double>& q,
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::mt19937& rng,
-    const DenseMassMatrix& mass
+    const DenseMassMatrix& mass,
+    double epsilon = 1.0
 );
 
 // Largest dimensionless leapfrog step in play for the step-adapted integrator,

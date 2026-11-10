@@ -268,8 +268,7 @@
           }
           mass.type = MassMatrixType::DIAG;
           // inv_mass_diag already populated from dense diagonal (update_from_covariance)
-          epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-          da = DualAveraging(epsilon, target_accept);
+          restart_step_adaptation();
         }
 
         // DIAG?DENSE recovery is checked at warmup end (after da.final_epsilon)
@@ -305,8 +304,7 @@
               mass.init_block_diag(n_params, block_specs);
               effective_metric = MassMatrixType::BLOCK_DIAG;
               auto_selected_diag = false;
-              epsilon = find_reasonable_epsilon(q, data, layout, rng);
-              da = DualAveraging(epsilon, target_accept);
+              restart_step_adaptation();
               epsilon = da.final_epsilon();
             } else if (n_params <= DENSE_MAX_PARAMS) {
               if (verbose) {
@@ -316,8 +314,7 @@
               mass.init(n_params, MassMatrixType::DENSE);
               effective_metric = MassMatrixType::DENSE;
               auto_selected_diag = false;
-              epsilon = find_reasonable_epsilon(q, data, layout, rng);
-              da = DualAveraging(epsilon, target_accept);
+              restart_step_adaptation();
               epsilon = da.final_epsilon();
             }
           }
@@ -330,8 +327,7 @@
             }
             mass.init(n_params, MassMatrixType::DIAG);
             effective_metric = MassMatrixType::DIAG;
-            epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-            da = DualAveraging(epsilon, target_accept);
+            restart_step_adaptation();
             epsilon = da.final_epsilon();
           }
 
@@ -344,8 +340,7 @@
                        "Falling back to DIAG mass.\n", epsilon);
             }
             mass.type = MassMatrixType::DIAG;
-            epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-            da = DualAveraging(epsilon, target_accept);
+            restart_step_adaptation();
             epsilon = da.final_epsilon();
           }
 

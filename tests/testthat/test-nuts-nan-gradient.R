@@ -55,6 +55,13 @@ test_that("a non-finite Hamiltonian is divergent", {
   expect_false(cpp_test_divergence_predicates(0, 1, 1, 5, 5 - 1e6)$hamiltonian_divergent)
 })
 
+test_that("a step search refuses a target with no finite integration steps", {
+  skip_on_cran_budget()
+  load_cpp_fixture("nan_gradient_nuts")
+  expect_error(cpp_test_nan_gradient_nuts(plant_nan = TRUE),
+               "Step-size search did not bracket")
+})
+
 test_that("a chain whose gradient is NaN reports every iteration divergent", {
   skip_on_cran_budget()
   # LikelihoodSpec::gradient_fn is a model package's hand-coded full gradient
@@ -63,7 +70,7 @@ test_that("a chain whose gradient is NaN reports every iteration divergent", {
   # gradient. The target is a standard normal, so the two arms differ in one
   # planted entry and nothing else.
   load_cpp_fixture("nan_gradient_nuts")
-  nan   <- cpp_test_nan_gradient_nuts(plant_nan = TRUE)
+  nan   <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, epsilon_init = 0.1)
   clean <- cpp_test_nan_gradient_nuts(plant_nan = FALSE)
 
   expect_identical(nan$n_divergent, nan$n_samples)
@@ -101,7 +108,8 @@ test_that("run_hmc_chain_cpp verifies the gradient on a direct entry", {
 
   # Bypassing it reproduces the pre-fix behaviour, which is what the test above
   # measures: the same planted NaN, unchecked, leaves the chain stuck.
-  stuck <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, bypass_gate = TRUE)
+  stuck <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, bypass_gate = TRUE,
+                                     epsilon_init = 0.1)
   expect_identical(stuck$n_moved, 0L)
 
   # A clean gradient passes the gate and is not reported as a mismatch.

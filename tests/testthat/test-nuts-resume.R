@@ -6,6 +6,19 @@ skip_on_cran()
   list(y_r = as.numeric(X %*% c(0.4, 1) + rnorm(60L, sd = 0.3)), X_r = X)
 }
 
+test_that("metric step searches match the harmonic energy error", {
+  load_cpp_fixture("nuts_resume")
+  old <- tulpa_integrator("leapfrog")
+  on.exit(tulpa_integrator(old), add = TRUE)
+  for (metric in c("diag", "dense", "block")) for (seed in 1:5) {
+    for (initial in c(0.1, 4)) {
+      r <- cpp_test_nuts_stepsize_search(seed, metric, initial)
+      expect_identical(r$actual, r$expected)
+      expect_true(r$rng_equal)
+    }
+  }
+})
+
 test_that("a zero-warmup chain uses the reference diagonal kernel", {
   skip_on_cran()
   load_cpp_fixture("nuts_resume")

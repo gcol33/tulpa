@@ -124,7 +124,8 @@ void build_normal_model(int K, NormalData& nd, tulpa::LikelihoodSpec& spec,
 // [[Rcpp::export]]
 Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K = 3,
                                        int n_iter = 40, int n_warmup = 20,
-                                       int seed = 1, bool bypass_gate = true) {
+                                       int seed = 1, bool bypass_gate = true,
+                                       double epsilon_init = 0.0) {
     if (K < 1) Rcpp::stop("K must be >= 1");
 
     NormalData nd;
@@ -152,7 +153,7 @@ Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K = 3,
         init, data, layout, n_iter, n_warmup, /*L=*/0, /*chain_id=*/1,
         static_cast<unsigned int>(seed), /*verbose=*/false,
         /*max_treedepth=*/6, tulpa::MassMatrixType::DIAG,
-        /*adapt_delta=*/0.8, /*walnuts=*/nullptr, inv_metric_vec);
+        /*adapt_delta=*/0.8, /*walnuts=*/nullptr, inv_metric_vec, epsilon_init);
     g_plant_nan = false;
 
     const int n_sample = result.n_sample;

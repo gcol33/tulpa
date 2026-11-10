@@ -92,8 +92,12 @@
   // Initialize the step size and its adaptation under the active metric.
   validate_epsilon_init(epsilon_init);
   double epsilon = epsilon_init > 0.0 ? epsilon_init :
-      find_reasonable_epsilon_dense(q, data, layout, rng, mass);
+      find_reasonable_epsilon(q, data, layout, rng, mass);
   DualAveraging da(epsilon, target_accept);
+  auto restart_step_adaptation = [&]() {
+    epsilon = find_reasonable_epsilon(q, data, layout, rng, mass, epsilon);
+    da = DualAveraging(epsilon, target_accept);
+  };
 
   WelfordStats mass_stats(n_params);              // Always track diagonal
   {

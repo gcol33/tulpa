@@ -19,6 +19,80 @@ double potential(const std::vector<double>& q) {
   for (int j = 0; j < 3; ++j) out += 0.5 * q[j] * q[j] / variance[j];
   return out;
 }
+
+template <typename T>
+T correlated_normal(int i, const T*, const T&, const T&,
+                    const std::vector<T>& q, const tulpa::ModelData&,
+                    const tulpa::ParamLayout& layout, const void* context) {
+  const double rho = *static_cast<const double*>(context);
+  const T x = q[layout.extra_offset];
+  const T y = q[layout.extra_offset + 1];
+  return T(-0.5 / (1 - rho * rho)) *
+      (i == 0 ? x * x - T(2 * rho) * x * y : y * y);
+}
+}
+
+// [[Rcpp::export]]
+Rcpp::List cpp_test_nuts_stepsize_search(int seed, std::string metric, double initial) {
+  using namespace tulpa_hmc;
+  double rho = metric == "diag" ? 0 : 0.6;
+  tulpa::LikelihoodSpec spec;
+  spec.name = "correlated_normal";
+  spec.n_extra_params = 2;
+  spec.ll_double = correlated_normal<double>;
+  spec.ll_arena = correlated_normal<tulpa::arena::Var>;
+  ModelData data;
+  data.N = 2;
+  data.n_processes = 1;
+  data.processes.resize(1);
+  data.processes[0].p = 0;
+  data.sharing.init(1);
+  data.likelihood_spec = &spec;
+  data.model_response_data = &rho;
+  const auto layout = compute_param_layout(data);
+  DenseMassMatrix mass;
+  if (metric == "dense") {
+    mass.init(2, MassMatrixType::DENSE);
+    const double covariance[] = {1, rho, rho, 1};
+    if (!mass.update_from_covariance(covariance, 100)) Rcpp::stop("Metric failed");
+  } else if (metric == "block") {
+    mass.init_block_diag(2, {{0, 2}});
+    mass.set_diagonal({1, 1}, {1, 1});
+    auto& block = mass.blocks[0];
+    block.inv_mass[0] = block.inv_mass[5] = 1;
+    block.inv_mass[1] = block.inv_mass[4] = rho;
+    if (!MassBlock::cholesky_small(block.inv_mass, block.L_inv_mass, 2))
+      Rcpp::stop("Block failed");
+    block.adapted = true;
+  } else {
+    mass.init(2, MassMatrixType::DIAG);
+    mass.set_diagonal({1, 1}, {1, 1});
+  }
+  GradientModeFitScope scope;
+  set_gradient_mode(GradientMode::AUTODIFF_ARENA);
+  std::mt19937 actual_rng(seed), expected_rng(seed);
+  const std::vector<double> q(2, 0);
+  const double actual = find_reasonable_epsilon(q, data, layout, actual_rng, mass, initial);
+
+  // At q = 0 with inverse mass equal to the Gaussian covariance, the
+  // velocity-Verlet energy error is epsilon^4 * ||z||^2 / 8.
+  double expected = initial;
+  auto error = [&]() {
+    std::normal_distribution<double> normal(0, 1);
+    if (metric == "block") { normal(expected_rng); normal(expected_rng); }
+    const double z0 = normal(expected_rng), z1 = normal(expected_rng);
+    return -std::pow(expected, 4) * (z0 * z0 + z1 * z1) / 8;
+  };
+  const int direction = error() > std::log(0.8) ? 1 : -1;
+  for (;;) {
+    const double delta = error();
+    if ((direction == 1 && delta <= std::log(0.8)) ||
+        (direction == -1 && delta >= std::log(0.8))) break;
+    expected *= direction == 1 ? 2 : 0.5;
+  }
+  return Rcpp::List::create(Rcpp::Named("actual") = actual,
+      Rcpp::Named("expected") = expected,
+      Rcpp::Named("rng_equal") = (actual_rng == expected_rng));
 }
 
 // [[Rcpp::export]]

@@ -385,7 +385,6 @@ unity_hmc.o: \
   hmc_nuts_chain_iter_nuts.h \
   hmc_nuts_chain_iter_hmc.h \
   hmc_nuts_chain_iter_store.h \
-  linalg_fast.h \
   hmc_mass_drift.h \
   hmc_chain_checkpoint.h \
   omp_threads.h \
@@ -422,6 +421,7 @@ unity_hmc.o: \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
   tulpa_priors_mstemporal.h \
+  linalg_fast.h \
   checkpoint_io.h \
   nngp_cond.h \
   hmc_gp_cg.h \
