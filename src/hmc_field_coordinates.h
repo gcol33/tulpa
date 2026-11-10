@@ -10,6 +10,10 @@ namespace tulpa_hmc {
 using tulpa::FieldCoordinate;
 using FieldCoordinates = tulpa::FieldCoordinates<GradientFn>;
 
+tulpa::FieldCoordinateOperator prepare_spatial_gaussian_coordinate(const ModelData& data,
+    const ParamLayout& layout);
+tulpa::FieldCoordinateOperator prepare_bym2_coordinate(const ModelData& data, const ParamLayout& layout);
+
 inline thread_local const FieldCoordinates* field_coordinates = nullptr;
 
 class FieldCoordinateScope {
@@ -29,6 +33,13 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
   FieldCoordinates out;
   out.gradient = resolve_gradient_fn(g_gradient_mode, data, layout);
   out.prior_gradient = resolve_prior_gradient_fn(g_gradient_mode, data, layout);
+  const bool gaussian_spatial = layout.total_params <= DENSE_MAX_PARAMS &&
+    layout.is_gp && data.gp_parameterization == 1 && data.auto_gp_coordinates;
+  if (gaussian_spatial) out.operators.push_back(prepare_spatial_gaussian_coordinate(data, layout));
+  if (layout.is_bym2 && !layout.is_bym2_collapsed && layout.total_params <= DENSE_MAX_PARAMS)
+    out.operators.push_back(prepare_bym2_coordinate(data, layout));
+  if (layout.is_gp && data.has_gp && data.gp_range_prior.type == tulpa::RangePriorType::UNIFORM)
+    out.ranges.push_back({layout.log_phi_gp_idx, data.gp_range_prior.lower, data.gp_range_prior.upper});
   struct Block {
     int begin, end, scale;
     double sign;
@@ -45,12 +56,12 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
       blocks.push_back({i, i + step, scale, sign, coordinatewise ? 0 : width,
                         constant, linear, standardized, coordinatewise});
   };
-  if (data.auto_spatial_coordinates && layout.has_spatial && !layout.is_bym2)
+  if (!gaussian_spatial && data.auto_spatial_coordinates && layout.has_spatial && !layout.is_bym2)
     add(layout.spatial_start, layout.spatial_end, layout.log_tau_spatial_idx, 1);
   if (data.auto_temporal_coordinates && layout.has_temporal && !layout.is_temporal_gp)
     add(layout.temporal_start, layout.temporal_end, layout.log_tau_temporal_idx, 1,
         data.n_times, false, data.temporal_type == TemporalType::RW2 && !data.temporal_cyclic);
-  if (data.auto_gp_coordinates && layout.is_gp && !layout.is_gp_collapsed)
+  if (!gaussian_spatial && data.auto_gp_coordinates && layout.is_gp && !layout.is_gp_collapsed)
     add(layout.gp_w_start, layout.gp_w_end, layout.log_sigma2_gp_idx,
         1, 0, false, false, true);
   if (data.auto_temporal_gp_coordinates && layout.is_temporal_gp)
@@ -151,6 +162,11 @@ inline void compute_gradient_field_coordinates(
     if (!workspace) workspace = new std::vector<double>();
     auto& x = *workspace;
     const double jacobian = coordinates.forward(z, x);
+    if (!std::isfinite(jacobian)) {
+        gradient.assign(z.size(), 0.0);
+        if (log_post) *log_post = -INFINITY;
+        return;
+    }
     FieldCoordinateScope raw(nullptr);
     const auto fn = prior_only ? coordinates.prior_gradient : coordinates.gradient;
     fn(x, data, layout, gradient, log_post);

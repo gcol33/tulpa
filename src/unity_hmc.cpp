@@ -8,6 +8,7 @@
 #include <RcppEigen.h>
 
 #include "ess_sampler.cpp"
+#include "hmc_field_coordinates.cpp"
 #include "hmc_gradient_dispatch.cpp"
 #include "hmc_gradient_fallback.cpp"
 #include "hmc_gradients.cpp"

@@ -126,7 +126,7 @@ test_that("NNGP covariance arms and repeated-location restriction match dense co
       gaussian = 2L, spherical = 3L)[[cov]]
     sp$gp_parameterization <- 0L
     sp$parameterization <- 'centered'
-    sp$range_prior <- list(type = 'uniform', lower = .001, upper = 100)
+    sp$range_prior <- list(type = 'uniform', lower = .001, upper = 2)
     sp$restriction_basis <- Q
     r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, shift = .25)
     zero <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, shift = 0)
@@ -165,4 +165,154 @@ test_that("NNGP covariance arms and repeated-location restriction match dense co
     expect_equal(r$gradient, r$numerical, tolerance = 2e-5, info = cov)
     expect_true(r$verified)
   }
+})
+
+test_that("uniform GP range coordinates have the exact logit Jacobian and score", {
+  set.seed(194)
+  d <- data.frame(lon = runif(6), lat = runif(6))
+  sp <- tulpa:::.gp_sampler_spec(tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = 5L), d))
+  sp$parameterization <- 'centered'; sp$gp_parameterization <- 0L
+  X <- cbind(1, seq(-1, 1, length.out = 6)); y <- rnorm(6)
+  for (lower in c(0, .05)) {
+    sp$range_prior <- list(type = 'uniform', lower = lower, upper = 2)
+    r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, shift = .3)
+    u <- plogis(r$q[4]); phi <- lower + (2 - lower) * u
+    derivative <- (2 - lower) * u * (1 - u) / phi
+    expected <- r$raw_gradient
+    expected[4] <- derivative * expected[4] + 1 - 2 * u - derivative
+    expect_equal(r$x[4], log(phi), tolerance = 1e-12)
+    expect_equal(r$jacobian, log(derivative), tolerance = 1e-12)
+    expect_equal(r$gradient, expected, tolerance = 1e-9)
+    expect_equal(r$gradient, r$numerical, tolerance = 2e-5)
+    expect_equal(r$prior_gradient, r$numerical_prior, tolerance = 2e-5)
+    expect_equal(r$inverse, r$q, tolerance = 1e-11)
+    expect_true(r$verified)
+  }
+})
+
+test_that("BYM2 conditional coordinates match the dense Gaussian posterior", {
+  S <- 4L; group <- rep(1:S, each = 4L)
+  X <- cbind(1, seq(-1, 1, length.out = length(group))); y <- sin(seq_along(group))
+  W <- matrix(0, S, S)
+  for (j in 1:3) W[j, j + 1L] <- W[j + 1L, j] <- 1
+  Q <- diag(rowSums(W)) - W + 1 / S
+  P <- diag(S) - 1 / S
+  sp <- list(type = 'bym2', spatial_idx = group, n_spatial_units = S,
+    adj_row_ptr = c(0L, 1L, 3L, 5L, 6L), adj_col_idx = c(1L, 0L, 2L, 1L, 3L, 2L),
+    n_neighbors = as.integer(rowSums(W)))
+  point <- c(.1, -.2, 0, 0, .2, -.1, .3, -.2, -.1, .3, -.2, .1)
+  r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, point = point, gaussian = TRUE)
+  check_conditional <- function(result) {
+    sigma <- exp(result$x[3]); rho <- plogis(result$x[4])
+    B <- sigma * cbind(sqrt(rho) * P[group, ], sqrt(1 - rho) * diag(S)[group, ])
+    precision <- matrix(0, 2 * S, 2 * S)
+    precision[1:S, 1:S] <- Q; precision[S + (1:S), S + (1:S)] <- diag(S)
+    H <- precision + crossprod(B)
+    mean <- solve(H, crossprod(B, y - X %*% result$x[1:2]))
+    difference <- result$x[5:12] - mean
+    expect_equal(sum(difference * drop(H %*% difference)), sum(result$q[5:12]^2),
+      tolerance = 2e-6)
+    expect_equal(result$jacobian, -.5 * as.numeric(determinant(H)$modulus), tolerance = 2e-6)
+  }
+  check_conditional(r)
+  expect_equal(r$inverse, r$q, tolerance = 1e-10)
+  expect_equal(r$gradient, r$numerical, tolerance = 2e-5)
+  expect_true(r$verified)
+  native <- r$x
+  perturbation <- c(.1, -.2, .3, -.1)
+  rho <- plogis(native[4])
+  native[5:8] <- native[5:8] + perturbation
+  native[9:12] <- native[9:12] - sqrt(rho / (1 - rho)) * drop(P %*% perturbation)
+  other <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, point = native, gaussian = TRUE)
+  expect_equal(other$eta, r$eta, tolerance = 1e-10)
+  check_conditional(other)
+  z <- r$q
+  z[3:4] <- c(.3, -.7)
+  at <- function(position) tulpa:::cpp_test_field_coordinates(y, X,
+    spatial_spec = sp, point = position, native_point = FALSE, gaussian = TRUE)
+  curved <- at(z)
+  check_conditional(curved)
+  h <- 1e-5
+  J <- vapply(seq_along(z), function(j) {
+    upper <- lower <- z
+    upper[j] <- upper[j] + h; lower[j] <- lower[j] - h
+    (at(upper)$x - at(lower)$x) / (2 * h)
+  }, numeric(length(z)))
+  expect_equal(curved$jacobian, as.numeric(determinant(J)$modulus), tolerance = 2e-7)
+  expect_equal(curved$gradient, curved$numerical, tolerance = 2e-5)
+  expect_true(curved$verified)
+})
+
+test_that("ICAR and NNGP transports match independent dense Gaussian conditionals", {
+  S <- 5L; group <- rep(1:S, each = 3L); N <- length(group)
+  X <- cbind(1, seq(-1, 1, length.out = N)); y <- cos(seq_len(N))
+  W <- matrix(0, S, S)
+  for (j in 1:4) W[j, j + 1L] <- W[j + 1L, j] <- 1
+  sp <- list(type = 'icar', parameterization = 'auto', spatial_idx = group,
+    n_spatial_units = S, adj_row_ptr = c(0L, 1L, 3L, 5L, 7L, 8L),
+    adj_col_idx = c(1L, 0L, 2L, 1L, 3L, 2L, 4L, 3L),
+    n_neighbors = as.integer(rowSums(W)))
+  r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, shift = .3, gaussian = TRUE)
+  Q <- exp(r$x[3]) * (diag(rowSums(W)) - W + 1 / S)
+  B <- (diag(S) - 1 / S)[group, ]
+  H <- Q + crossprod(B)
+  mean <- solve(H, crossprod(B, y - X %*% r$x[1:2]))
+  difference <- r$x[4:8] - mean
+  expect_equal(sum(difference * drop(H %*% difference)), sum(r$q[4:8]^2), tolerance = 2e-6)
+  expect_equal(r$jacobian, -.5 * as.numeric(determinant(H)$modulus), tolerance = 2e-6)
+  expect_equal(r$gradient, r$numerical, tolerance = 2e-5)
+  expect_true(r$verified)
+  d <- data.frame(lon = c(0, .2, .4, .7, 1)[group], lat = c(.2, .8, .1, .6, .3)[group])
+  gp <- tulpa:::.gp_sampler_spec(tulpa:::validate_gp(spatial_gp(~ lon + lat, nn = 4L), d))
+  gp$range_prior <- list(type = 'lognormal', meanlog = 0, sdlog = 1)
+  r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = gp, shift = .3)
+  K <- exp(r$x[3]) * exp(-as.matrix(dist(gp$coords)) / exp(r$x[4])) + diag(1e-8, S)
+  B <- diag(S)[gp$obs_to_loc + 1L, ]
+  H <- solve(K) + crossprod(B)
+  mean <- solve(H, crossprod(B, y - X %*% r$x[1:2]))
+  difference <- r$stored[5:9] - mean
+  expect_equal(sum(difference * drop(H %*% difference)), sum(r$q[5:9]^2), tolerance = 2e-6)
+  expect_equal(r$jacobian + .5 * as.numeric(determinant(K)$modulus),
+    -.5 * as.numeric(determinant(H)$modulus), tolerance = 2e-6)
+  expect_equal(r$gradient, r$numerical, tolerance = 2e-5)
+  expect_equal(r$prior_gradient, r$numerical_prior, tolerance = 2e-5)
+  expect_true(r$verified)
+})
+
+test_that("BYM2 joint coordinates separate the observed sum and preserve the Gaussian prior", {
+  S <- 4L; group <- rep(1:S, each = 4L)
+  X <- cbind(1, seq(-1, 1, length.out = length(group))); y <- sin(seq_along(group))
+  W <- matrix(0, S, S)
+  for (j in 1:3) W[j, j + 1L] <- W[j + 1L, j] <- 1
+  Q <- diag(rowSums(W)) - W + 1 / S; P <- diag(S) - 1 / S
+  sp <- list(type = 'bym2', spatial_idx = group, n_spatial_units = S,
+    adj_row_ptr = c(0L, 1L, 3L, 5L, 6L), adj_col_idx = c(1L, 0L, 2L, 1L, 3L, 2L),
+    n_neighbors = as.integer(rowSums(W)))
+  point <- c(.1, -.2, 0, 0, .2, -.1, .3, -.2, -.1, .3, -.2, .1)
+  r <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, point = point)
+  expect_equal(sum(r$x[5:8] * drop(Q %*% r$x[5:8])) + sum(r$x[9:12]^2),
+    sum(r$q[5:12]^2), tolerance = 1e-10)
+  expect_equal(r$jacobian, -.5 * as.numeric(determinant(Q)$modulus), tolerance = 1e-10)
+  expect_equal(r$inverse, r$q, tolerance = 1e-10)
+  expect_equal(r$gradient, r$numerical, tolerance = 2e-5)
+  expect_true(r$verified)
+  native <- r$x; perturbation <- c(.1, -.2, .3, -.1)
+  native[5:8] <- native[5:8] + perturbation
+  native[9:12] <- native[9:12] - drop(P %*% perturbation)
+  other <- tulpa:::cpp_test_field_coordinates(y, X, spatial_spec = sp, point = native)
+  expect_equal(other$eta, r$eta, tolerance = 1e-10)
+  expect_equal(other$q[5:8], r$q[5:8], tolerance = 1e-10)
+  expect_gt(max(abs(other$q[9:12] - r$q[9:12])), .01)
+  z <- r$q; z[3:4] <- c(.3, -.7)
+  at <- function(position) tulpa:::cpp_test_field_coordinates(y, X,
+    spatial_spec = sp, point = position, native_point = FALSE)
+  curved <- at(z); h <- 1e-5
+  J <- vapply(seq_along(z), function(j) {
+    upper <- lower <- z; upper[j] <- upper[j] + h; lower[j] <- lower[j] - h
+    (at(upper)$x - at(lower)$x) / (2 * h)
+  }, numeric(length(z)))
+  expect_equal(curved$jacobian, as.numeric(determinant(J)$modulus), tolerance = 2e-7)
+  expect_equal(curved$gradient, curved$numerical, tolerance = 2e-5)
+  expect_equal(curved$prior_gradient, curved$numerical_prior, tolerance = 2e-5)
+  expect_true(curved$verified)
 })

@@ -18,6 +18,7 @@
 #include "sampler_model_data.h"
 #include <tulpa/field_setup_api.h>
 #include "hmc_field_coordinates.h"
+#include "hmc_spatial_marginal.h"
 #include "sampler_field_store.h"
 #include "sampler_resume.h"
 
@@ -75,7 +76,9 @@ Rcpp::List cpp_test_field_coordinates(
     double shift = 0.3, int n_iter = 0,
     Rcpp::Nullable<Rcpp::NumericVector> point = R_NilValue,
     Rcpp::Nullable<Rcpp::List> latent_spec = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> st_spec = R_NilValue) {
+    Rcpp::Nullable<Rcpp::List> st_spec = R_NilValue,
+
+    bool native_point = true, bool gaussian = false) {
     tulpa::SamplerModelInputs in;
     tulpa::build_sampler_model_inputs(in, y, Rcpp::IntegerVector(y.size(), 1), X,
         "gaussian", 1.0, NA_REAL, 2.5, {}, 1.0, R_NilValue,
@@ -147,7 +150,13 @@ Rcpp::List cpp_test_field_coordinates(
     }
     tulpa_hmc::GradientModeFitScope gradient_scope;
     tulpa_hmc::g_gradient_mode = tulpa_hmc::GradientMode::AUTODIFF_ARENA;
-    const auto map = tulpa_hmc::make_field_coordinates(q, data, layout);
+    auto map = tulpa_hmc::make_field_coordinates(q, data, layout);
+    if (gaussian) {
+        map.entries.clear();
+        map.operators.clear();
+        map.operators.push_back(tulpa_hmc::prepare_spatial_gaussian_coordinate(data, layout));
+    }
+    if (point.isNotNull() && native_point) map.inverse(q);
     std::vector<double> x;
     const double jacobian = map.forward(q, x);
     const double raw_lp = tulpa_hmc::compute_log_post(x, data, layout);
@@ -220,7 +229,7 @@ Rcpp::List cpp_test_field_coordinates(
     Rcpp::LogicalVector auto_dense_equal = Rcpp::LogicalVector::create(NA_LOGICAL);
     if (n_iter > 0) {
         auto sample = [&](tulpa::MassMatrixType metric) {
-            return tulpa_hmc::run_hmc_chain_cpp(q, data, layout,
+            return tulpa_hmc::run_hmc_chain_cpp(x, data, layout,
                 n_iter, n_iter / 2, 0, 1, 18, false, 8, metric, .9, nullptr, {});
         };
         const auto result = sample(tulpa::MassMatrixType::AUTO);
@@ -270,6 +279,7 @@ Rcpp::List cpp_test_field_coordinates(
         Rcpp::Named("prior_gradient") = full_prior,
         Rcpp::Named("numerical_prior") = numerical_prior,
         Rcpp::Named("verified") = verified, Rcpp::Named("blocks") = blocks,
+        Rcpp::Named("conditional") = !map.operators.empty(),
         Rcpp::Named("numerical_dispatch") =
             tulpa_hmc::resolve_gradient_fn(tulpa_hmc::GradientMode::NUMERICAL,
                 data, layout) == &tulpa_hmc::compute_gradient_generic_numerical);
@@ -282,6 +292,60 @@ T unit_gaussian_likelihood(
     const auto* y = static_cast<const std::vector<double>*>(response);
     const T residual = T((*y)[i]) - eta[0];
     return T(-0.5) * residual * residual;
+}
+
+template<typename T>
+void unit_gaussian_weights(int i, const T* eta, tulpa::EtaWeightScalar<T>, tulpa::EtaWeightScalar<T>, const std::vector<T>&,
+    const ModelData&, const ParamLayout&, const void* response, T* score, T* weights) {
+    const auto& y = *static_cast<const std::vector<double>*>(response);
+    score[0] = T(y[i]) - eta[0];
+    weights[0] = T(1);
+}
+
+// [[Rcpp::export]]
+Rcpp::List cpp_test_collapsed_spatial(Rcpp::NumericVector y, Rcpp::NumericMatrix X,
+    Rcpp::List spatial_spec, Rcpp::NumericVector point, int n_draw = 0, int seed = 19) {
+    tulpa::SamplerModelInputs in;
+    tulpa::build_sampler_model_inputs(in, y, Rcpp::IntegerVector(y.size(), 1), X,
+        "gaussian", 1.0, NA_REAL, 2.5, {}, 1.0, R_NilValue,
+        spatial_spec, R_NilValue, R_NilValue, R_NilValue, R_NilValue);
+    std::vector<double> response(y.begin(), y.end()), q(point.begin(), point.end());
+    in.spec.ll_double = unit_gaussian_likelihood<double>;
+    in.spec.ll_arena = unit_gaussian_likelihood<tulpa::arena::Var>;
+    in.spec.eta_weights_fn = unit_gaussian_weights<double>;
+    in.spec.eta_weights_arena_fn = unit_gaussian_weights<tulpa::arena::Var>;
+    in.data.model_response_data = &response;
+    const auto layout = tulpa_hmc::compute_param_layout(in.data);
+    if (!tulpa_hmc::has_collapsed_spatial(layout) || layout.total_params != static_cast<int>(q.size()))
+        Rcpp::stop("point must match a collapsed ICAR or BYM2 layout");
+    tulpa_hmc::GradientModeFitScope scope;
+    tulpa_hmc::g_gradient_mode = tulpa_hmc::GradientMode::AUTODIFF_ARENA;
+    std::vector<double> gradient, numerical, prior_gradient, numerical_prior;
+    double lp = 0, prior = 0;
+    tulpa_hmc::compute_gradient(q, in.data, layout, gradient, &lp);
+    tulpa_hmc::compute_gradient_generic_numerical(q, in.data, layout, numerical, nullptr);
+    tulpa_hmc::compute_prior_gradient_collapsed_spatial(q, in.data, layout, prior_gradient, &prior);
+    tulpa_hmc::compute_gradient_prior_numerical(q, in.data, layout, numerical_prior, nullptr);
+    const bool verified = tulpa_hmc::verify_gradient_runtime(q, in.data, layout, 1e-4);
+    Rcpp::NumericMatrix phi(n_draw, in.data.n_spatial_units), theta(n_draw, layout.is_bym2 ? in.data.n_spatial_units : 0);
+    Rcpp::NumericVector mode_phi(in.data.n_spatial_units), mode_theta(layout.is_bym2 ? in.data.n_spatial_units : 0);
+    tulpa_hmc::reconstruct_collapsed_spatial(&in.data, &layout, q.data(), 1, seed, false,
+        mode_phi.begin(), layout.is_bym2 ? mode_theta.begin() : nullptr);
+    if (n_draw > 0) {
+        std::vector<double> rows, phi_flat(static_cast<size_t>(n_draw) * in.data.n_spatial_units), theta_flat(layout.is_bym2 ? phi_flat.size() : 0);
+        for (int i = 0; i < n_draw; ++i) rows.insert(rows.end(), q.begin(), q.end());
+        tulpa_hmc::reconstruct_collapsed_spatial(&in.data, &layout, rows.data(), n_draw, seed, true,
+            phi_flat.data(), theta_flat.empty() ? nullptr : theta_flat.data());
+        for (int i = 0; i < n_draw; ++i) for (int j = 0; j < in.data.n_spatial_units; ++j) {
+            phi(i, j) = phi_flat[i * in.data.n_spatial_units + j];
+            if (layout.is_bym2) theta(i, j) = theta_flat[i * in.data.n_spatial_units + j];
+        }
+    }
+    return Rcpp::List::create(Rcpp::Named("lp") = lp, Rcpp::Named("prior") = prior,
+        Rcpp::Named("gradient") = gradient, Rcpp::Named("numerical") = numerical,
+        Rcpp::Named("prior_gradient") = prior_gradient, Rcpp::Named("numerical_prior") = numerical_prior,
+        Rcpp::Named("verified") = verified, Rcpp::Named("mode_phi") = mode_phi,
+        Rcpp::Named("mode_theta") = mode_theta, Rcpp::Named("phi") = phi, Rcpp::Named("theta") = theta);
 }
 
 // [[Rcpp::export]]

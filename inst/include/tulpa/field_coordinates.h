@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <stdexcept>
 #include <vector>
 
 namespace tulpa {
@@ -76,17 +78,76 @@ struct FieldCoordinate {
     }
 };
 
+// phi = lower + (upper - lower) logistic(z), stored as log(phi).
+struct LogRangeCoordinate {
+    int index;
+    double lower, upper;
+
+    struct Geometry {
+        double value, log_jacobian, derivative, jacobian_score;
+    };
+
+    Geometry geometry(double z) const {
+        const double soft = std::log1p(std::exp(-std::abs(z)));
+        const double log_s = -std::max(-z, 0.0) - soft;
+        const double log_t = -std::max(z, 0.0) - soft;
+        const double log_width = std::log(upper - lower);
+        const double log_part = log_width + log_s;
+        double value = log_part;
+        if (lower > 0.0) {
+            const double log_lower = std::log(lower);
+            value = std::max(log_lower, log_part) +
+                std::log1p(std::exp(-std::abs(log_lower - log_part)));
+        }
+        const double log_jacobian = log_width + log_s + log_t - value;
+        const double derivative = std::exp(log_jacobian);
+        return {value, log_jacobian, derivative,
+                1.0 - 2.0 * std::exp(log_s) - derivative};
+    }
+
+    double inverse(double value) const {
+        const double log_upper = std::log(upper);
+        if (!(value < log_upper) || (lower > 0.0 && !(value > std::log(lower))))
+            throw std::domain_error("Initial GP range must lie strictly inside its uniform prior bounds");
+        const double numerator = lower == 0.0 ? value :
+            value + std::log1p(-std::exp(std::log(lower) - value));
+        const double denominator = log_upper + std::log1p(-std::exp(value - log_upper));
+        return numerator - denominator;
+    }
+
+    double interior(double value) const {
+        return std::isfinite(value) && value < std::log(upper) &&
+            (lower == 0.0 || value > std::log(lower)) ? value : geometry(0.0).value;
+    }
+};
+
+struct FieldCoordinateOperator {
+    std::function<double(const std::vector<double>&, std::vector<double>&)> forward;
+    std::function<void(std::vector<double>&)> inverse;
+    std::function<void(const std::vector<double>&, std::vector<double>&)> pullback;
+};
+
 template<typename Gradient>
 struct FieldCoordinates {
     std::vector<FieldCoordinate> entries;
+    std::vector<LogRangeCoordinate> ranges;
+    std::vector<FieldCoordinateOperator> operators;
     Gradient gradient = nullptr;
     Gradient prior_gradient = nullptr;
+
+    bool empty() const { return entries.empty() && ranges.empty() && operators.empty(); }
 
     double forward(const std::vector<double>& z, std::vector<double>& x) const {
         x = z;
         double jacobian = 0;
+        for (const auto& r : ranges) {
+            const auto geometry = r.geometry(z[r.index]);
+            x[r.index] = geometry.value;
+            jacobian += geometry.log_jacobian;
+        }
+        for (const auto& op : operators) jacobian += op.forward(x, x);
         for (const auto& e : entries) {
-            const double log_a = e.log_scale(z);
+            const double log_a = e.log_scale(x);
             const double a = std::exp(log_a);
             e.apply(z, x, a);
             jacobian += e.rank() * log_a;
@@ -98,11 +159,13 @@ struct FieldCoordinates {
             const double a = std::exp(-e.log_scale(x));
             e.apply(x, x, a);
         }
+        for (const auto& op : operators) op.inverse(x);
+        for (const auto& r : ranges) x[r.index] = r.inverse(x[r.index]);
     }
     void pullback(const std::vector<double>& z, const std::vector<double>& x,
                   std::vector<double>& gradient) const {
         for (const auto& e : entries) {
-            const double a = std::exp(e.log_scale(z));
+            const double a = std::exp(e.log_scale(x));
             double scale_gradient = e.rank();
             for (int start = e.begin; start < e.end; start += e.width()) {
                 const auto null = e.null_component(x, start);
@@ -112,7 +175,16 @@ struct FieldCoordinates {
                 }
             }
             e.apply(gradient, gradient, a);
-            gradient[e.scale_index] += e.derivative(z) * scale_gradient;
+            gradient[e.scale_index] += e.derivative(x) * scale_gradient;
+        }
+        if (!operators.empty()) {
+            auto position = z;
+            for (const auto& r : ranges) position[r.index] = x[r.index];
+            for (const auto& op : operators) op.pullback(position, gradient);
+        }
+        for (const auto& r : ranges) {
+            const auto geometry = r.geometry(z[r.index]);
+            gradient[r.index] = geometry.derivative * gradient[r.index] + geometry.jacobian_score;
         }
     }
 };

@@ -93,14 +93,16 @@ test_that("field transports match dense Jacobians and the engine gradient check"
     for (shift in c(.1, .8)) {
       r <- do.call(tulpa:::cpp_test_field_coordinates,
         c(list(y = y, X = X, shift = shift), case))
-      expect_gt(length(r$blocks), 0L)
+      expect_true(length(r$blocks) > 0L || r$conditional)
       if (is.null(initial_blocks)) initial_blocks <- r$blocks
       else expect_identical(r$blocks, initial_blocks)
-      reference <- coordinate_reference(r)
-      expect_equal(r$x, reference$x, tolerance = 1e-11)
-      expect_equal(r$jacobian, reference$log_det, tolerance = 1e-11)
-      expect_equal(r$jacobian, reference$dense_log_det, tolerance = 1e-11)
-      expect_equal(r$gradient, reference$gradient, tolerance = 1e-9)
+      if (!r$conditional) {
+        reference <- coordinate_reference(r)
+        expect_equal(r$x, reference$x, tolerance = 1e-11)
+        expect_equal(r$jacobian, reference$log_det, tolerance = 1e-11)
+        expect_equal(r$jacobian, reference$dense_log_det, tolerance = 1e-11)
+        expect_equal(r$gradient, reference$gradient, tolerance = 1e-9)
+      }
       expect_equal(r$lp, r$raw_lp + r$jacobian, tolerance = 1e-11)
       expect_equal(r$inverse, r$q, tolerance = 1e-11)
       if (is.null(case$tvc_spec)) {

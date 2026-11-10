@@ -10,6 +10,7 @@
 #include "tulpa/nuts_api.h"
 #include "tulpa/field_setup_api.h"
 namespace tulpa { void prepare_field_impl(ModelData*, FieldSetup); }
+#include "hmc_spatial_marginal.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -311,6 +312,8 @@ void tulpa_register_callables(DllInfo* dll) {
                         (DL_FUNC)&tulpa_set_gradient_mode_str_impl);
     R_RegisterCCallable("tulpa", "tulpa_omp_max_threads",
                         (DL_FUNC)&tulpa_omp_max_threads_impl);
+    R_RegisterCCallable("tulpa", "tulpa_reconstruct_collapsed_spatial",
+                        (DL_FUNC)&tulpa_hmc::reconstruct_collapsed_spatial);
 
     tulpa_register_shims(dll);
     tulpa_register_tgmrf_callables(dll);

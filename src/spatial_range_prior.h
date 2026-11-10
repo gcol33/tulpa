@@ -13,8 +13,9 @@ T spatial_range_log_prior(const T& log_range, const RangePrior& prior,
                            double U, double alpha) {
     using namespace math;
     if (prior.type == RangePriorType::UNIFORM) {
-        const double value = get_value(safe_exp(log_range));
-        if (value < prior.lower || value > prior.upper) return T(-INFINITY);
+        const double value = get_value(log_range);
+        if (value < (prior.lower > 0.0 ? std::log(prior.lower) : -INFINITY) ||
+            value > std::log(prior.upper)) return T(-INFINITY);
         return log_range - T(std::log(prior.upper - prior.lower));
     }
     if (prior.type == RangePriorType::LOGNORMAL) {

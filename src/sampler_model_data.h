@@ -26,6 +26,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
+#include "tulpa/field_coordinates.h"
 #include "tulpa/types.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
@@ -325,6 +326,11 @@ inline double gp_phi_logit_init(const std::vector<double>& time_values,
 inline void init_gp_lengthscales(std::vector<double>& q,
                                  const ModelData& data,
                                  const ParamLayout& layout) {
+    if (layout.is_gp && data.has_gp && data.gp_range_prior.type == tulpa::RangePriorType::UNIFORM) {
+        const tulpa::LogRangeCoordinate range{layout.log_phi_gp_idx,
+            data.gp_range_prior.lower, data.gp_range_prior.upper};
+        q[range.index] = range.interior(q[range.index]);
+    }
     if (layout.logit_phi_tvc_gp_start >= 0) {
         const double l0 = gp_phi_logit_init(data.tvc_data.time_values,
                                             data.tvc_gp_phi_prior_lower,

@@ -6,6 +6,7 @@
 
 #include "hmc_sampler.h"
 #include "hmc_field_coordinates.h"
+#include "hmc_spatial_marginal.h"
 #include "tulpa/likelihood.h"
 #include <Rcpp.h>
 

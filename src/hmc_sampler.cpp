@@ -1,11 +1,11 @@
 // hmc_sampler.cpp
 // HMC/NUTS log-posterior orchestrators.
 //
-// The one supported path is the generic LikelihoodSpec interface, evaluated
-// via tulpa::compute_log_post_generic_spec_double.
+// LikelihoodSpec supplies observations for joint and marginal field targets.
 
 #include "hmc_sampler.h"
 #include "hmc_field_coordinates.h"
+#include "hmc_spatial_marginal.h"
 #include "log_post_impl.h"
 #include "tulpa/likelihood.h"
 
@@ -21,8 +21,8 @@ namespace tulpa_hmc {
 // Orchestrators: compute_log_post / compute_log_prior / compute_log_lik_only
 //
 // Every caller has n_processes > 0 and a non-null likelihood_spec. The
-// orchestrators forward to the generic-spec evaluator; the `skip_obs_loop`
-// argument controls whether the observation loop is executed.
+// orchestrators evaluate the joint or marginal field target; `skip_obs_loop`
+// selects its prior contribution.
 // =====================================================================
 
 double compute_log_post(
@@ -33,12 +33,14 @@ double compute_log_post(
     const double* /*precomputed_st_log_prior*/,
     const double* /*precomputed_tgp_log_prior*/
 ) {
-  if (field_coordinates && !field_coordinates->entries.empty()) {
+  if (field_coordinates && !field_coordinates->empty()) {
     std::vector<double> x;
     const double jacobian = field_coordinates->forward(params, x);
+    if (!std::isfinite(jacobian)) return -INFINITY;
     FieldCoordinateScope raw(nullptr);
     return compute_log_post(x, data, layout, skip_obs_loop) + jacobian;
   }
+  if (has_collapsed_spatial(layout)) return compute_collapsed_spatial(params, data, layout, skip_obs_loop);
   if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
     Rcpp::stop("tulpa: compute_log_post requires a generic LikelihoodSpec "
                "ModelData (n_processes > 0 and data.likelihood_spec set).");
@@ -60,12 +62,14 @@ double compute_log_lik_only(
     const ModelData& data,
     const ParamLayout& layout
 ) {
-  if (field_coordinates && !field_coordinates->entries.empty()) {
+  if (field_coordinates && !field_coordinates->empty()) {
     std::vector<double> x;
-    field_coordinates->forward(params, x);
+    if (!std::isfinite(field_coordinates->forward(params, x))) return -INFINITY;
     FieldCoordinateScope raw(nullptr);
     return compute_log_lik_only(x, data, layout);
   }
+  if (has_collapsed_spatial(layout)) return compute_collapsed_spatial(params, data, layout) -
+      compute_collapsed_spatial(params, data, layout, true);
   if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
     Rcpp::stop("tulpa: compute_log_lik_only requires a generic LikelihoodSpec "
                "ModelData (n_processes > 0 and data.likelihood_spec set).");

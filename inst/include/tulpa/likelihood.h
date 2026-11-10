@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <type_traits>
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "tulpa/autodiff_arena.h"
@@ -99,6 +100,15 @@ using EtaWeightsFn = void(*)(
     double* grad_eta,                // [n_processes] out
     double* neg_hess_eta             // [n_processes * n_processes] out
 );
+
+template<class T>
+using EtaWeightScalar = std::conditional_t<std::is_same_v<T, double>, double, const T&>;
+
+using EtaWeightsArenaFn = void(*)(
+    int i, const arena::Var* eta, const arena::Var& logit_zi,
+    const arena::Var& logit_oi, const std::vector<arena::Var>& params,
+    const ModelData& data, const ParamLayout& layout, const void* model_data,
+    arena::Var* grad_eta, arena::Var* neg_hess_eta);
 
 // ============================================================================
 // LlEtaWeightsFn: the per-observation log-likelihood together with its
@@ -229,6 +239,8 @@ struct LikelihoodSpec {
     // Fused log-likelihood + IRLS weights (optional; see LlEtaWeightsFn).
     // Covered by the 46 -> 47 bump.
     LlEtaWeightsFn ll_eta_weights_fn = nullptr;
+    // Arena derivatives of the eta-space score and curvature for marginal fields.
+    EtaWeightsArenaFn eta_weights_arena_fn = nullptr;
 };
 
 } // namespace tulpa

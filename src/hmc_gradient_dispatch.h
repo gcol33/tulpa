@@ -1,7 +1,5 @@
 // hmc_gradient_dispatch.h
-// Gradient-mode dispatch policy for the HMC backend. This is the whole of it:
-// the dispatcher is layout-agnostic, so no `layout.has_*` flag selects a
-// kernel and there are no per-structure predicates to consult.
+// Gradient-mode dispatch for model likelihoods and engine-owned field targets.
 //
 // The only supported entry path is the generic LikelihoodSpec interface
 // (`n_processes > 0` plus a non-null `data.likelihood_spec`); downstream
@@ -35,9 +33,9 @@
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
     if (mode == GradientMode::NUMERICAL)
         return &compute_gradient_generic_numerical;
-    if (field_coordinates && !field_coordinates->entries.empty())
+    if (field_coordinates && !field_coordinates->empty())
         return &compute_full_gradient_field_coordinates;
-    (void)layout;  // no layout flag selects a gradient source
+    if (has_collapsed_spatial(layout)) return &compute_gradient_collapsed_spatial;
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
         Rcpp::stop("tulpa: ModelData has n_processes == 0. Downstream packages "
                    "must populate `n_processes > 0` and `data.likelihood_spec` "
@@ -86,9 +84,9 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
 GradientFn resolve_prior_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
     if (mode == GradientMode::NUMERICAL)
         return &compute_gradient_prior_numerical;
-    if (field_coordinates && !field_coordinates->entries.empty())
+    if (field_coordinates && !field_coordinates->empty())
         return &compute_prior_gradient_field_coordinates;
-    (void)layout;
+    if (has_collapsed_spatial(layout)) return &compute_prior_gradient_collapsed_spatial;
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
         Rcpp::stop("tulpa: ModelData has n_processes == 0 — the generic "
                    "LikelihoodSpec interface is required for the prior-only "

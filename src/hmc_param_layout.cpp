@@ -276,17 +276,9 @@ ParamLayout compute_param_layout(const ModelData& data) {
   if (layout.has_spatial) {
     require_spatial_partition(data);
     if (layout.is_bym2 && !data.bym2_node_prec.empty()) {
-      // Per-component BYM2 scaling (#902) is read by the sampled phi's prior;
-      // the collapsed parameterization marginalizes phi and has no prior to
-      // carry it, so it would fit the one-scale model instead.
       if ((int)data.bym2_node_prec.size() != data.n_spatial_units) {
         Rcpp::stop("tulpa: bym2_node_prec has %d entries for %d spatial units.",
                    (int)data.bym2_node_prec.size(), data.n_spatial_units);
-      }
-      if (data.bym2_collapsed) {
-        Rcpp::stop("tulpa: the collapsed BYM2 parameterization carries one "
-                   "scale for the whole graph, and this graph is scaled per "
-                   "connected component. Use parameterization = \"standard\".");
       }
     }
     if (layout.is_bym2) {
@@ -459,22 +451,6 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.log_sigma2_gp_regional_idx = -1;
     layout.log_phi_gp_regional_idx = -1;
     layout.gp_regional_start = layout.gp_regional_end = -1;
-  }
-
-  // HSGP (Hilbert Space GP) parameters
-  layout.is_hsgp = (data.spatial_type == SpatialType::HSGP);
-  if (layout.is_hsgp && data.has_hsgp) {
-    tulpa::priors::validate_spatial_range_prior(data.hsgp_range_prior,
-        data.hsgp_lengthscale_prior_U, data.hsgp_lengthscale_prior_alpha, "hsgp");
-    layout.log_sigma2_hsgp_idx = idx++;
-    layout.log_lengthscale_hsgp_idx = idx++;
-    layout.hsgp_beta_start = idx;
-    idx += data.hsgp_data.m_total;  // m^2 basis coefficients
-    layout.hsgp_beta_end = idx;
-  } else {
-    layout.log_sigma2_hsgp_idx = -1;
-    layout.log_lengthscale_hsgp_idx = -1;
-    layout.hsgp_beta_start = layout.hsgp_beta_end = -1;
   }
 
   // Multi-scale temporal parameters
@@ -656,6 +632,22 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.log_lengthscale_st_hsgp_idx = -1;
     layout.is_st_hsgp = false;
     layout.st_delta_start = layout.st_delta_end = -1;
+  }
+
+  // HSGP (Hilbert Space GP) parameters
+  layout.is_hsgp = (data.spatial_type == SpatialType::HSGP);
+  if (layout.is_hsgp && data.has_hsgp) {
+    tulpa::priors::validate_spatial_range_prior(data.hsgp_range_prior,
+        data.hsgp_lengthscale_prior_U, data.hsgp_lengthscale_prior_alpha, "hsgp");
+    layout.log_sigma2_hsgp_idx = idx++;
+    layout.log_lengthscale_hsgp_idx = idx++;
+    layout.hsgp_beta_start = idx;
+    idx += data.hsgp_data.m_total;  // m^2 basis coefficients
+    layout.hsgp_beta_end = idx;
+  } else {
+    layout.log_sigma2_hsgp_idx = -1;
+    layout.log_lengthscale_hsgp_idx = -1;
+    layout.hsgp_beta_start = layout.hsgp_beta_end = -1;
   }
 
   // SPDE (continuous Matern via FEM). Joint NUTS layout: the latent block

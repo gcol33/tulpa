@@ -126,14 +126,14 @@ inline double eval_penalized_log_lik(
 // step-trial buffer. Reused across trials AND across Newton iterations.
 // `n_evals_out`, if non-null, accumulates the number of objective evaluations
 // (line-search instrumentation; production callers pass nullptr).
-template<typename EvalObj>
+template<typename Vector, typename EvalObj>
 inline double line_search_backtrack(
-    Rcpp::NumericVector& x,
+    Vector& x,
     const std::vector<double>& delta,
     int n_x, double obj_old, double slope,
     EvalObj eval_obj,
     double& obj_out,
-    Rcpp::NumericVector& x_try_scratch,
+    Vector& x_try_scratch,
     int* n_evals_out = nullptr,
     double start_scale = 1.0
 ) {
@@ -436,8 +436,9 @@ inline bool newton_converged(const std::vector<double>& delta,
 // fixed-length gradient step is negligible or enormous depending on the units of
 // the predictors. Every driver takes this step, so a solve that meets a failed
 // factorization walks the same path whichever Hessian container it runs on.
+template<typename Vector>
 inline void newton_damped_fallback(
-    Rcpp::NumericVector& x, const std::vector<double>& delta, int n_x,
+    Vector& x, const std::vector<double>& delta, int n_x,
     bool& obj_valid
 ) {
     for (int j = 0; j < n_x; j++) {
@@ -457,12 +458,12 @@ inline void newton_damped_fallback(
 // `obj_current` / `obj_valid` / `conv_state` carry across iterations, and
 // `n_iter_out` records the iteration count the caller reports. Returns true when
 // the solve has converged, which is the caller's signal to break.
-template <typename EvalObj>
+template <typename Vector, typename EvalObj>
 inline bool newton_step_tail(
-    Rcpp::NumericVector& x,
+    Vector& x,
     const std::vector<double>& grad,
     const std::vector<double>& delta,
-    Rcpp::NumericVector& x_try,
+    Vector& x_try,
     int n_x, int iter, double tol,
     EvalObj eval_objective,
     double& obj_current,
@@ -487,9 +488,9 @@ inline bool newton_step_tail(
 }
 
 // The same tail over a scratch carrying `grad` / `delta` / `x_try`.
-template <typename Scratch, typename EvalObj>
+template <typename Vector, typename Scratch, typename EvalObj>
 inline bool newton_step_tail(
-    Rcpp::NumericVector& x,
+    Vector& x,
     Scratch& scratch,
     int n_x, int iter, double tol,
     EvalObj eval_objective,
@@ -516,10 +517,10 @@ inline bool newton_step_tail(
 // The factorize and line-search profiler scopes live here, so both drivers
 // report them under one name; the eta / scatter split is the driver's, since
 // only it can see inside `refresh_grad_hess`.
-template <typename Scratch, typename RefreshFn, typename SolveFn,
+template <typename Vector, typename Scratch, typename RefreshFn, typename SolveFn,
           typename EvalObj>
 inline bool newton_step(
-    Rcpp::NumericVector& x,
+    Vector& x,
     Scratch& scratch,
     int n_x, int iter, double tol,
     RefreshFn refresh_grad_hess,
