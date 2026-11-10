@@ -2,6 +2,8 @@
 #define TULPA_MODEL_DATA_H
 
 #include <vector>
+#include "tulpa/range_prior.h"
+#include "tulpa/orthogonal_projection.h"
 #include <cstdint>
 #include <utility>
 #include <cmath>
@@ -507,9 +509,14 @@ struct ModelData {
     bool has_spde = false;
 
     // RSR (Restricted Spatial Regression)
-    bool has_rsr = false;
-    std::vector<double> rsr_projection;   // P_perp matrix (n x n, flattened)
-    int rsr_n = 0;
+    OrthogonalProjection spatial_restriction;
+    RangePrior gp_range_prior;
+    RangePrior hsgp_range_prior;
+    RangePrior ms_local_range_prior;
+    RangePrior ms_regional_range_prior;
+    double car_rho_prior_a = 1.0;
+    double car_rho_prior_b = 1.0;
+    bool car_center = false;
 
     // ================================================================
     // SVC (Spatially-Varying Coefficients)

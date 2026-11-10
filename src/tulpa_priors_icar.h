@@ -180,7 +180,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             T u = T(1.0) / (T(1.0) + safe_exp(-logit_rho));
             T rho = T(data.car_rho_lower)
                   + (T(data.car_rho_upper) - T(data.car_rho_lower)) * u;
-            log_post = log_post + safe_log(u) + safe_log(T(1.0) - u);
+            log_post = log_post + T(data.car_rho_prior_a) * safe_log(u)
+                + T(data.car_rho_prior_b) * safe_log(T(1.0) - u);
 
             // Quadratic form phi' Q(rho) phi = sum_i d_i phi_i^2
             //   - 2 rho sum_{i~j, j>i} phi_i phi_j.
@@ -239,7 +240,9 @@ inline double spatial_icar_bym2_prior_log_normalizer(const ModelData& data,
     if (layout.is_car_proper) {
         double log_det_d = 0.0;
         for (int i = 0; i < J; i++) log_det_d += std::log(double(data.n_neighbors[i]));
-        return 0.5 * log_det_d + J * unit_normal;
+        return 0.5 * log_det_d + J * unit_normal
+            + std::lgamma(data.car_rho_prior_a + data.car_rho_prior_b)
+            - std::lgamma(data.car_rho_prior_a) - std::lgamma(data.car_rho_prior_b);
     }
     const double log_pdet = icar_log_pdet(
         J, data.adj_row_ptr.data(), data.adj_col_idx.data(),

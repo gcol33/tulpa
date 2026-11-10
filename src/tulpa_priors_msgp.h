@@ -15,6 +15,8 @@
 #include "autodiff_utils.h"
 #include "hmc_gp_autodiff.h"
 #include "pc_prior.h"
+#include "spatial_range_prior.h"
+#include "tulpa_priors_hsgp.h"
 #include <limits>
 #include <string>
 
@@ -73,20 +75,30 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
         // library defaults that put the regional prior mean at 5.5, several
         // times a unit-square domain's diameter. Measured at 82-88% of
         // post-warmup draws divergent.
-        log_post = log_post + log_prior_range_pc_at_log(
-            log_phi_local, data.multiscale_gp_data.range_local_lower,
+        log_post = log_post + spatial_range_log_prior(
+            log_phi_local, data.ms_local_range_prior, data.multiscale_gp_data.range_local_lower,
             data.multiscale_gp_data.range_local_prior_alpha);
-        log_post = log_post + log_phi_local;  // Jacobian
 
-        log_post = log_post + log_prior_range_pc_at_log(
-            log_phi_regional, data.multiscale_gp_data.range_regional_lower,
+        log_post = log_post + spatial_range_log_prior(
+            log_phi_regional, data.ms_regional_range_prior, data.multiscale_gp_data.range_regional_lower,
             data.multiscale_gp_data.range_regional_prior_alpha);
-        log_post = log_post + log_phi_regional;  // Jacobian
 
         int n_gp_local = layout.gp_local_end - layout.gp_local_start;
         int n_gp_regional = layout.gp_regional_end - layout.gp_regional_start;
 
-        if (data.msgp_parameterization == 1) {
+        if (data.msgp_is_hsgp) {
+            std::vector<T> local, regional;
+            evaluate_hsgp_field(&params[layout.gp_local_start], sigma2_local_n,
+                phi_local, data.msgp_hsgp_data, local);
+            evaluate_hsgp_field(&params[layout.gp_regional_start], sigma2_regional_n,
+                phi_regional, data.msgp_hsgp_data, regional);
+            ms_gp_effect.resize(data.N);
+            for (int i = 0; i < data.N; ++i) ms_gp_effect[i] = local[i] + regional[i];
+            for (int j = layout.gp_local_start; j < layout.gp_local_end; ++j)
+                log_post = log_post - T(0.5) * params[j] * params[j];
+            for (int j = layout.gp_regional_start; j < layout.gp_regional_end; ++j)
+                log_post = log_post - T(0.5) * params[j] * params[j];
+        } else if (data.msgp_parameterization == 1) {
             // Non-centered: params[gp_local_start..]/[gp_regional_start..]
             // are z ~ N(0, I) per scale. Each scale's field
             // w = f(z, sigma2, phi) is reconstructed by
@@ -120,35 +132,6 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
             std::vector<T> ms_gp_w_regional(n_gp_regional);
             for (int k = 0; k < n_gp_regional; k++) {
                 ms_gp_w_regional[k] = params[layout.gp_regional_start + k];
-            }
-
-            // Apply RSR projection if enabled
-            if (data.has_rsr && !data.rsr_projection.empty()) {
-                if (data.rsr_n != n_gp_local || data.rsr_n != n_gp_regional) {
-                    Rcpp::stop("RSR projection: rsr_n (%d) must equal both "
-                               "multiscale field lengths (local %d, "
-                               "regional %d).",
-                               data.rsr_n, n_gp_local, n_gp_regional);
-                }
-                if (data.rsr_projection.size() <
-                        (std::size_t)data.rsr_n * (std::size_t)data.rsr_n) {
-                    Rcpp::stop("RSR projection: rsr_projection holds %d "
-                               "entries but rsr_n = %d needs %d.",
-                               (int)data.rsr_projection.size(), data.rsr_n,
-                               data.rsr_n * data.rsr_n);
-                }
-                std::vector<T> local_proj(data.rsr_n, T(0.0));
-                std::vector<T> regional_proj(data.rsr_n, T(0.0));
-                for (int ii = 0; ii < data.rsr_n; ii++) {
-                    for (int jj = 0; jj < data.rsr_n; jj++) {
-                        local_proj[ii] = local_proj[ii]
-                            + T(data.rsr_projection[ii * data.rsr_n + jj]) * ms_gp_w_local[jj];
-                        regional_proj[ii] = regional_proj[ii]
-                            + T(data.rsr_projection[ii * data.rsr_n + jj]) * ms_gp_w_regional[jj];
-                    }
-                }
-                ms_gp_w_local = local_proj;
-                ms_gp_w_regional = regional_proj;
             }
 
             // Multiscale NNGP log-likelihood for both scales
@@ -198,15 +181,13 @@ inline double multiscale_gp_prior_log_normalizer(const ModelData& data,
                                                  std::vector<std::string>* declined) {
     if (!(layout.is_multiscale_gp && data.has_multiscale_gp)) return 0.0;
     const double unit_normal = log_prior_normal_log_normalizer(1.0);
-    if (data.msgp_parameterization == 1) {
+    const double c = spatial_range_prior_log_normalizer(data.ms_local_range_prior)
+        + spatial_range_prior_log_normalizer(data.ms_regional_range_prior);
+    if (data.msgp_parameterization == 1 || data.msgp_is_hsgp) {
         return ((layout.gp_local_end - layout.gp_local_start) +
-                (layout.gp_regional_end - layout.gp_regional_start)) * unit_normal;
+                (layout.gp_regional_end - layout.gp_regional_start)) * unit_normal + c;
     }
-    if (data.has_rsr && !data.rsr_projection.empty()) {
-        if (declined) declined->push_back("multiscale_gp:rsr_projection");
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-    return 0.0;
+    return c;
 }
 
 } // namespace priors

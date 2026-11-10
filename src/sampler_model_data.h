@@ -83,6 +83,23 @@ inline void require_pc_anchors(const Rcpp::List& spec,
     read_pc_anchors(spec, key_U, key_alpha, U, alpha, what);
 }
 
+inline RangePrior read_range_prior(const Rcpp::List& sp) {
+    RangePrior prior;
+    if (!sp.containsElementNamed("range_prior")) return prior;
+    Rcpp::List p = sp["range_prior"];
+    const std::string type = Rcpp::as<std::string>(p["type"]);
+    if (type == "uniform") {
+        prior.type = RangePriorType::UNIFORM;
+        prior.lower = Rcpp::as<double>(p["lower"]);
+        prior.upper = Rcpp::as<double>(p["upper"]);
+    } else if (type == "lognormal") {
+        prior.type = RangePriorType::LOGNORMAL;
+        prior.meanlog = Rcpp::as<double>(p["meanlog"]);
+        prior.sdlog = Rcpp::as<double>(p["sdlog"]);
+    } else if (type != "pc") Rcpp::stop("Unknown range prior: %s", type);
+    return prior;
+}
+
 // The per-observation field-node map for a sampler-side GP spec is 0-based:
 // the R layer passes `obs_to_loc - 1`, and the log-posterior reads
 // `w[obs_to_loc[i]]` with no bound of its own.

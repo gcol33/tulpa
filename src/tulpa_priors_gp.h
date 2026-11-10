@@ -13,6 +13,7 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "pc_prior.h"
+#include "spatial_range_prior.h"
 #include "hmc_gp_autodiff.h"
 #include <limits>
 #include <string>
@@ -47,9 +48,8 @@ T compute_gp_spatial_prior(const std::vector<T>& params, const ModelData& data,
         // PC prior on the range + Jacobian for log transform. phi is sampled
         // unconstrained on the log scale: the PC density is proper on
         // (0, inf) and penalizes short ranges, so it needs no bounding box.
-        log_post = log_post + log_prior_range_pc_at_log(
-            log_phi_gp, data.gp_phi_prior_U, data.gp_phi_prior_alpha);
-        log_post = log_post + log_phi_gp;  // Jacobian
+        log_post = log_post + spatial_range_log_prior(
+            log_phi_gp, data.gp_range_prior, data.gp_phi_prior_U, data.gp_phi_prior_alpha);
 
         int n_gp = layout.gp_w_end - layout.gp_w_start;
 
@@ -82,29 +82,6 @@ T compute_gp_spatial_prior(const std::vector<T>& params, const ModelData& data,
                 gp_w[k] = params[layout.gp_w_start + k];
             }
 
-            // Apply RSR projection if enabled
-            if (data.has_rsr && !data.rsr_projection.empty()) {
-                if (data.rsr_n != n_gp) {
-                    Rcpp::stop("RSR projection: rsr_n (%d) must equal the GP "
-                               "field length (%d).", data.rsr_n, n_gp);
-                }
-                if (data.rsr_projection.size() <
-                        (std::size_t)data.rsr_n * (std::size_t)data.rsr_n) {
-                    Rcpp::stop("RSR projection: rsr_projection holds %d entries "
-                               "but rsr_n = %d needs %d.",
-                               (int)data.rsr_projection.size(), data.rsr_n,
-                               data.rsr_n * data.rsr_n);
-                }
-                std::vector<T> w_projected(data.rsr_n, T(0.0));
-                for (int ii = 0; ii < data.rsr_n; ii++) {
-                    for (int jj = 0; jj < data.rsr_n; jj++) {
-                        w_projected[ii] = w_projected[ii]
-                            + T(data.rsr_projection[ii * data.rsr_n + jj]) * gp_w[jj];
-                    }
-                }
-                gp_w = w_projected;
-            }
-
             // NNGP log-likelihood on spatial effects
             log_post = log_post + tulpa_gp::gp_nngp_log_lik_t(
                 gp_w, sigma2_gp, phi_gp, data.gp_data);
@@ -123,14 +100,10 @@ inline double gp_spatial_prior_log_normalizer(const ModelData& data,
                                               const ParamLayout& layout,
                                               std::vector<std::string>* declined) {
     if (!(layout.is_gp && data.has_gp)) return 0.0;
-    if (data.gp_parameterization != 1 && data.has_rsr &&
-        !data.rsr_projection.empty()) {
-        if (declined) declined->push_back("gp:rsr_projection");
-        return std::numeric_limits<double>::quiet_NaN();
-    }
-    if (data.gp_parameterization != 1) return 0.0;
-    return (layout.gp_w_end - layout.gp_w_start)
-           * log_prior_normal_log_normalizer(1.0);
+    const double c = spatial_range_prior_log_normalizer(data.gp_range_prior);
+    return c + (data.gp_parameterization == 1
+        ? (layout.gp_w_end - layout.gp_w_start) * log_prior_normal_log_normalizer(1.0)
+        : 0.0);
 }
 
 } // namespace priors

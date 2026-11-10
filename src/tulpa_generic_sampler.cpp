@@ -242,7 +242,17 @@ Rcpp::List cpp_test_field_coordinates(
     prior_fn(q, data, layout, full_prior, nullptr);
     tulpa_hmc::compute_gradient_prior_numerical(q, data, layout, numerical_prior, nullptr);
     const bool verified = tulpa_hmc::verify_gradient_runtime(q, data, layout, 1e-4);
+    tulpa::GenericLogPostState<double> state;
+    const double prior_lp = tulpa::initialize_generic_state(x, data, layout, state);
+    tulpa::precompute_generic_fixed_eta(data, state);
+    Rcpp::NumericMatrix eta(data.N, data.n_processes);
+    for (int i = 0; i < data.N; ++i) {
+        double row[tulpa::MAX_PROCESSES];
+        tulpa::generic_eta_at(i, data, layout, state, row);
+        for (int k = 0; k < data.n_processes; ++k) eta(i, k) = row[k];
+    }
     return Rcpp::List::create(Rcpp::Named("q") = q, Rcpp::Named("x") = x,
+        Rcpp::Named("eta") = eta, Rcpp::Named("prior_lp") = prior_lp,
         Rcpp::Named("stored") = stored,
         Rcpp::Named("st_inverse") = st_inverse,
         Rcpp::Named("st_log_jacobian") = st_log_jacobian,

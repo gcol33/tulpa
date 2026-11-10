@@ -247,6 +247,13 @@ void build_sampler_model_inputs(
     if (spatial_spec.isNotNull()) {
         Rcpp::List sp = Rcpp::as<Rcpp::List>(spatial_spec);
         std::string stype = Rcpp::as<std::string>(sp["type"]);
+        if (sp.containsElementNamed("restriction_basis")) {
+            Rcpp::NumericMatrix Q = sp["restriction_basis"];
+            in.data.spatial_restriction.rank = Q.ncol();
+            for (int i = 0; i < Q.nrow(); ++i)
+                for (int j = 0; j < Q.ncol(); ++j)
+                    in.data.spatial_restriction.basis.push_back(Q(i, j));
+        }
         in.data.spatial_component_centering = sp.containsElementNamed("component_centering") &&
             Rcpp::as<bool>(sp["component_centering"]);
         const std::string coordinate = sampler_parameterization(sp, "centered");
@@ -344,12 +351,35 @@ void build_sampler_model_inputs(
             in.data.gp_parameterization =
                 sp.containsElementNamed("gp_parameterization")
                     ? Rcpp::as<int>(sp["gp_parameterization"]) : 1;
+            in.data.gp_range_prior = read_range_prior(sp);
+            if (in.data.gp_range_prior.type == RangePriorType::PC) {
             read_pc_anchors(sp, "phi_prior_U", "phi_prior_alpha",
                             in.data.gp_phi_prior_U, in.data.gp_phi_prior_alpha,
                             "gp() range");
+            }
             read_pc_anchors(sp, "sigma2_prior_U", "sigma2_prior_alpha",
                             in.data.gp_sigma2_prior_U,
                             in.data.gp_sigma2_prior_alpha, "gp() scale");
+        } else if (stype == "multiscale_hsgp") {
+            in.data.spatial_type = SpatialType::MULTISCALE_GP;
+            in.data.has_multiscale_gp = true;
+            in.data.msgp_is_hsgp = true;
+            Rcpp::NumericMatrix coords = sp["coords"];
+            tulpa_linalg::require_coords_2col(coords, "multiscale HSGP");
+            if (coords.nrow() != N) Rcpp::stop("Multiscale HSGP requires N coordinate rows");
+            std::vector<double> flat;
+            for (int i = 0; i < N; ++i) {
+                flat.push_back(coords(i, 0)); flat.push_back(coords(i, 1));
+            }
+            tulpa_hsgp::setup_hsgp_2d(flat, N, Rcpp::as<int>(sp["m"]),
+                Rcpp::as<double>(sp["c"]), true, in.data.msgp_hsgp_data);
+            Rcpp::List local = sp["local_range"], regional = sp["regional_range"];
+            in.data.ms_local_range_prior = read_range_prior(local);
+            in.data.ms_regional_range_prior = read_range_prior(regional);
+            read_pc_anchors(sp, "sigma2_local_prior_U", "sigma2_local_prior_alpha",
+                in.data.ms_sigma2_local_prior_U, in.data.ms_sigma2_local_prior_alpha, "local scale");
+            read_pc_anchors(sp, "sigma2_regional_prior_U", "sigma2_regional_prior_alpha",
+                in.data.ms_sigma2_regional_prior_U, in.data.ms_sigma2_regional_prior_alpha, "regional scale");
         } else if (stype == "multiscale") {
             // Multi-scale (local + regional) NNGP field. Two independent
             // GPData-shaped neighbour structures packed side by side in
@@ -489,6 +519,10 @@ void build_sampler_model_inputs(
             in.data.car_adj_eigenvalues.assign(eig.begin(), eig.end());
             in.data.car_rho_lower = Rcpp::as<double>(sp["rho_lower"]);
             in.data.car_rho_upper = Rcpp::as<double>(sp["rho_upper"]);
+            if (sp.containsElementNamed("rho_prior_a")) in.data.car_rho_prior_a = Rcpp::as<double>(sp["rho_prior_a"]);
+            if (sp.containsElementNamed("rho_prior_b")) in.data.car_rho_prior_b = Rcpp::as<double>(sp["rho_prior_b"]);
+            if (sp.containsElementNamed("center")) in.data.car_center = Rcpp::as<bool>(sp["center"]);
+
         } else if (stype == "hsgp") {
             // Hilbert-space GP. compute_param_layout keys the HSGP block on
             // spatial_type == HSGP, allocating log_sigma2_hsgp /
@@ -517,11 +551,14 @@ void build_sampler_model_inputs(
                             in.data.hsgp_sigma2_prior_U,
                             in.data.hsgp_sigma2_prior_alpha,
                             "gp(approx = \"hsgp\") scale");
+            in.data.hsgp_range_prior = read_range_prior(sp);
+            if (in.data.hsgp_range_prior.type == RangePriorType::PC) {
             require_pc_anchors(sp, "lengthscale_prior_U",
                                "lengthscale_prior_alpha",
                                in.data.hsgp_lengthscale_prior_U,
                                in.data.hsgp_lengthscale_prior_alpha,
                                "gp(approx = \"hsgp\") lengthscale");
+            }
         } else {
             Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
                        "supported on the sampler path (use 'icar'/'bym2'/"

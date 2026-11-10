@@ -10,6 +10,7 @@
 #include "tulpa/likelihood.h"
 #include "pc_prior.h"
 #include <tulpa/bilinear_factor.h>
+#include "spatial_range_prior.h"
 #include "st_null_space.h"
 
 namespace tulpa_hmc {
@@ -261,6 +262,8 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // block at layout.extra_offset (length spec->n_extra_params), allocated at
   // the bottom of this function.
 
+  data.spatial_restriction.validate(data.N);
+
   // Spatial effects (ICAR/BYM2/CAR_PROPER only - GP handled separately below)
   layout.has_spatial = (data.spatial_type == SpatialType::ICAR ||
                         data.spatial_type == SpatialType::BYM2 ||
@@ -407,8 +410,8 @@ ParamLayout compute_param_layout(const ModelData& data) {
   layout.is_gp_collapsed = layout.is_gp && data.has_gp && data.gp_collapsed;
 
   if (layout.is_gp && data.has_gp) {
-    require_range_prior_anchors(data.gp_phi_prior_U, data.gp_phi_prior_alpha,
-                                "gp");
+    tulpa::priors::validate_spatial_range_prior(data.gp_range_prior,
+        data.gp_phi_prior_U, data.gp_phi_prior_alpha, "gp");
     layout.log_sigma2_gp_idx = idx++;
     layout.log_phi_gp_idx = idx++;
     if (!data.gp_collapsed) {
@@ -428,11 +431,14 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   // Multi-scale GP parameters
   if (layout.is_multiscale_gp && data.has_multiscale_gp) {
-    if (data.msgp_is_hsgp) {
-      Rcpp::stop("tulpa: the sampler has no multiscale HSGP density; "
-                 "use spatial_multiscale(approx = \"hsgp\") with nested Laplace.");
-    }
-    int n_per_scale = data.multiscale_gp_data.n_obs;
+    int n_per_scale = data.msgp_is_hsgp ? data.msgp_hsgp_data.m_total
+        : data.multiscale_gp_data.n_obs;
+    tulpa::priors::validate_spatial_range_prior(data.ms_local_range_prior,
+        data.multiscale_gp_data.range_local_lower,
+        data.multiscale_gp_data.range_local_prior_alpha, "multiscale local");
+    tulpa::priors::validate_spatial_range_prior(data.ms_regional_range_prior,
+        data.multiscale_gp_data.range_regional_lower,
+        data.multiscale_gp_data.range_regional_prior_alpha, "multiscale regional");
     // Local scale
     layout.log_sigma2_gp_local_idx = idx++;
     layout.log_phi_gp_local_idx = idx++;
@@ -453,6 +459,22 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.log_sigma2_gp_regional_idx = -1;
     layout.log_phi_gp_regional_idx = -1;
     layout.gp_regional_start = layout.gp_regional_end = -1;
+  }
+
+  // HSGP (Hilbert Space GP) parameters
+  layout.is_hsgp = (data.spatial_type == SpatialType::HSGP);
+  if (layout.is_hsgp && data.has_hsgp) {
+    tulpa::priors::validate_spatial_range_prior(data.hsgp_range_prior,
+        data.hsgp_lengthscale_prior_U, data.hsgp_lengthscale_prior_alpha, "hsgp");
+    layout.log_sigma2_hsgp_idx = idx++;
+    layout.log_lengthscale_hsgp_idx = idx++;
+    layout.hsgp_beta_start = idx;
+    idx += data.hsgp_data.m_total;  // m^2 basis coefficients
+    layout.hsgp_beta_end = idx;
+  } else {
+    layout.log_sigma2_hsgp_idx = -1;
+    layout.log_lengthscale_hsgp_idx = -1;
+    layout.hsgp_beta_start = layout.hsgp_beta_end = -1;
   }
 
   // Multi-scale temporal parameters
@@ -634,20 +656,6 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.log_lengthscale_st_hsgp_idx = -1;
     layout.is_st_hsgp = false;
     layout.st_delta_start = layout.st_delta_end = -1;
-  }
-
-  // HSGP (Hilbert Space GP) parameters
-  layout.is_hsgp = (data.spatial_type == SpatialType::HSGP);
-  if (layout.is_hsgp && data.has_hsgp) {
-    layout.log_sigma2_hsgp_idx = idx++;
-    layout.log_lengthscale_hsgp_idx = idx++;
-    layout.hsgp_beta_start = idx;
-    idx += data.hsgp_data.m_total;  // m^2 basis coefficients
-    layout.hsgp_beta_end = idx;
-  } else {
-    layout.log_sigma2_hsgp_idx = -1;
-    layout.log_lengthscale_hsgp_idx = -1;
-    layout.hsgp_beta_start = layout.hsgp_beta_end = -1;
   }
 
   // SPDE (continuous Matern via FEM). Joint NUTS layout: the latent block

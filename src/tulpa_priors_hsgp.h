@@ -12,6 +12,7 @@
 #include "autodiff_utils.h"
 #include "hsgp_spectral.h"
 #include "pc_prior.h"
+#include "spatial_range_prior.h"
 
 namespace tulpa {
 namespace priors {
@@ -21,6 +22,24 @@ using namespace math;
 // ============================================================================
 // 5. HSGP spatial prior
 // ============================================================================
+
+template<typename T>
+void evaluate_hsgp_field(const T* beta, const T& sigma2, const T& lengthscale,
+                         const HSGPData& basis, std::vector<T>& out) {
+    const int m_total = basis.m_total;
+        out.assign(basis.n_obs, T(0.0));
+        const HsgpKernel kernel =
+            static_cast<HsgpKernel>(basis.kernel);
+        for (int j = 0; j < m_total; j++) {
+            T S_j = hsgp_spectral_density_2d(
+                kernel, sigma2, lengthscale, basis.eigenvalues[j]);
+            T scaled_beta_j = safe_sqrt(S_j) * beta[j];
+            for (int i = 0; i < basis.n_obs; i++) {
+                out[i] = out[i]
+                    + T(basis.phi_flat[i * m_total + j]) * scaled_beta_j;
+            }
+        }
+}
 
 template<typename T>
 T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data,
@@ -51,9 +70,9 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
         // PC prior on the lengthscale as a range in two dimensions,
         // P(ell < U) = alpha, the prior the nested route puts on the same
         // field's `lengthscale` axis; sampled on log(ell), hence the Jacobian.
-        log_post = log_post + log_prior_range_pc_at_log(
-            log_lengthscale_hsgp, data.hsgp_lengthscale_prior_U,
-            data.hsgp_lengthscale_prior_alpha) + log_lengthscale_hsgp;
+        log_post = log_post + spatial_range_log_prior(
+            log_lengthscale_hsgp, data.hsgp_range_prior, data.hsgp_lengthscale_prior_U,
+            data.hsgp_lengthscale_prior_alpha);
 
         // N(0, I) prior on beta
         for (int j = 0; j < m_total; j++) {
@@ -62,18 +81,8 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
 
         // Evaluate HSGP spatial effect: f = Phi * (sqrt(S) .* beta)
         // Phi and eigenvalues are double (precomputed data), but sigma2/lengthscale/beta are T
-        hsgp_f.resize(data.N, T(0.0));
-        const HsgpKernel kernel =
-            static_cast<HsgpKernel>(data.hsgp_data.kernel);
-        for (int j = 0; j < m_total; j++) {
-            T S_j = hsgp_spectral_density_2d(
-                kernel, sigma2_hsgp, lengthscale_hsgp, data.hsgp_data.eigenvalues[j]);
-            T scaled_beta_j = safe_sqrt(S_j) * hsgp_beta[j];
-            for (int i = 0; i < data.N; i++) {
-                hsgp_f[i] = hsgp_f[i]
-                    + T(data.hsgp_data.phi_flat[i * m_total + j]) * scaled_beta_j;
-            }
-        }
+        evaluate_hsgp_field(hsgp_beta.data(), sigma2_hsgp, lengthscale_hsgp,
+                            data.hsgp_data, hsgp_f);
     }
 
     return log_post;
@@ -85,7 +94,8 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
 inline double hsgp_spatial_prior_log_normalizer(const ModelData& data,
                                                 const ParamLayout& layout) {
     if (!(layout.is_hsgp && data.has_hsgp)) return 0.0;
-    return data.hsgp_data.m_total * log_prior_normal_log_normalizer(1.0);
+    return data.hsgp_data.m_total * log_prior_normal_log_normalizer(1.0)
+        + spatial_range_prior_log_normalizer(data.hsgp_range_prior);
 }
 
 } // namespace priors

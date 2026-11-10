@@ -46,6 +46,7 @@ struct GenericLogPostState {
     T sigma_s_bym2 = T(1.0);
     T sigma_u_bym2 = T(1.0);
     const T* theta_bym2 = nullptr;
+    std::vector<T> spatial_projected;
     std::vector<T> gp_w;
     std::vector<T> ms_gp_effect;
     std::vector<T> hsgp_f;
@@ -132,6 +133,37 @@ static inline void add_to_shared_processes(
     }
 }
 
+// The areal field's contribution to eta at spatial unit `s` (0-based): the
+// field centred per connected component on the intrinsic branches, and for BYM2 the
+// structured and unstructured components at the draw's scales. Every
+// observation of unit s receives this value, and the per-unit field readers
+// read it here, so a unit and its observations carry one value.
+template<typename T>
+static inline T generic_spatial_unit_effect(
+    int s,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const GenericLogPostState<T>& state
+) {
+    const T* phi = state.phi_spatial_centered.empty()
+        ? state.phi_spatial : state.phi_spatial_centered.data();
+    return layout.is_bym2
+        ? state.sigma_s_bym2 * phi[s] * T(data.bym2_scale_factor)
+            + state.sigma_u_bym2 * state.theta_bym2[s]
+        : phi[s];
+}
+
+template<typename T>
+static T generic_spatial_observation_effect(int i, const ModelData& data,
+    const ParamLayout& layout, const GenericLogPostState<T>& state) {
+    if (layout.has_spatial && !data.spatial_group.empty() && data.spatial_group[i] > 0)
+        return generic_spatial_unit_effect(data.spatial_group[i] - 1, data, layout, state);
+    if (layout.is_gp && !state.gp_w.empty()) return state.gp_w[data.gp_data.obs_to_loc[i]];
+    if (layout.is_multiscale_gp && !state.ms_gp_effect.empty()) return state.ms_gp_effect[i];
+    if (layout.is_hsgp && !state.hsgp_f.empty()) return state.hsgp_f[i];
+    return T(0.0);
+}
+
 template<typename T>
 static T initialize_generic_state(
     const std::vector<T>& params,
@@ -161,12 +193,18 @@ static T initialize_generic_state(
         log_post = log_post + priors::compute_spatial_icar_bym2_prior(
             params, data, layout, state.phi_spatial, state.tau_spatial,
             state.sigma_s_bym2, state.sigma_u_bym2, state.theta_bym2);
-        // CAR_proper is full rank, so its level is identified by the prior and
-        // must not be centred away; only the intrinsic branches are.
-        if (state.phi_spatial != nullptr && !layout.is_car_proper) {
-            priors::icar_center_field(
-                state.phi_spatial, data,
-                state.phi_spatial_centered);
+        // Proper CAR retains its full-rank prior when its level is removed
+        // from the likelihood by the requested centering convention.
+        if (state.phi_spatial != nullptr && (!layout.is_car_proper || data.car_center)) {
+            if (layout.is_car_proper) {
+                state.phi_spatial_centered.assign(state.phi_spatial,
+                    state.phi_spatial + data.n_spatial_units);
+                tulpa::s2z_centre_component(state.phi_spatial_centered.data(), 0,
+                    data.n_spatial_units);
+            } else {
+                priors::icar_center_field(state.phi_spatial, data,
+                    state.phi_spatial_centered);
+            }
         }
     }
 
@@ -344,6 +382,13 @@ static T initialize_generic_state(
             params, data, layout, state.st_delta);
     }
 
+    if (data.spatial_restriction.rank > 0) {
+        state.spatial_projected.resize(data.N);
+        for (int i = 0; i < data.N; ++i)
+            state.spatial_projected[i] = generic_spatial_observation_effect(i, data, layout, state);
+        data.spatial_restriction.apply(state.spatial_projected);
+    }
+
     return log_post + priors::compute_zi_oi_prior(
         params, data, layout, state.beta_zi, state.beta_oi);
 }
@@ -494,27 +539,6 @@ static T generic_re_effect(
     return effect;
 }
 
-// The areal field's contribution to eta at spatial unit `s` (0-based): the
-// field centred per connected component on the intrinsic branches (CAR_proper
-// is full rank and keeps its own identified level), and for BYM2 the
-// structured and unstructured components at the draw's scales. Every
-// observation of unit s receives this value, and the per-unit field readers
-// read it here, so a unit and its observations carry one value.
-template<typename T>
-static inline T generic_spatial_unit_effect(
-    int s,
-    const ModelData& data,
-    const ParamLayout& layout,
-    const GenericLogPostState<T>& state
-) {
-    const T* phi = state.phi_spatial_centered.empty()
-        ? state.phi_spatial : state.phi_spatial_centered.data();
-    return layout.is_bym2
-        ? state.sigma_s_bym2 * phi[s] * T(data.bym2_scale_factor)
-            + state.sigma_u_bym2 * state.theta_bym2[s]
-        : phi[s];
-}
-
 // The temporal field's contribution to eta at block position `idx_t`
 // (group-major, `g * n_times + t`). Intrinsic walks (RW1/RW2) are centred on
 // the way in; their augmented constant carries tau, so leaving it in eta would
@@ -537,28 +561,10 @@ static void add_generic_spatial_effect(
     const ParamLayout& layout,
     const GenericLogPostState<T>& state
 ) {
-    if (layout.has_spatial && !data.spatial_group.empty() && data.spatial_group[i] > 0) {
-        add_to_shared_processes(
-            eta, data.sharing.spatial, data.n_processes,
-            generic_spatial_unit_effect(data.spatial_group[i] - 1, data, layout,
-                                        state));
-    }
-
-    if (layout.is_gp && !state.gp_w.empty()) {
-        add_to_shared_processes(
-            eta, data.sharing.spatial, data.n_processes,
-            state.gp_w[data.gp_data.obs_to_loc[i]]);
-    }
-
-    if (layout.is_multiscale_gp && !state.ms_gp_effect.empty()) {
-        add_to_shared_processes(
-            eta, data.sharing.spatial, data.n_processes, state.ms_gp_effect[i]);
-    }
-
-    if (layout.is_hsgp && !state.hsgp_f.empty()) {
-        add_to_shared_processes(
-            eta, data.sharing.spatial, data.n_processes, state.hsgp_f[i]);
-    }
+    const T effect = state.spatial_projected.empty()
+        ? generic_spatial_observation_effect(i, data, layout, state)
+        : state.spatial_projected[i];
+    add_to_shared_processes(eta, data.sharing.spatial, data.n_processes, effect);
 
     if (layout.is_spde && !state.spde_w.empty()) {
         // eta_i += sum_j A_ij * w_j. The projection A is sparse: each obs
