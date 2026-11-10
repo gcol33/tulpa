@@ -8,7 +8,7 @@
 // instead: each non-centered GP / SVC / multiscale-GP / temporal-GP block, the
 // non-centered multiscale trend, seasonal and short-term arm is replaced by its
 // forward transform, and every block whose level is removed on its way into eta
-// (SVC, TVC, the non-centred multiscale trend and seasonal arm) is stored
+// (areal, SVC, TVC, the non-centred multiscale trend and seasonal arm) is stored
 // centred. Every reader of `$draws` therefore sees
 // one convention whatever backend produced them, and reads them back at the
 // centered parameterization, on which the forward transform is the identity.

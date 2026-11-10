@@ -94,8 +94,8 @@ T compute_gp_spatial_prior(const std::vector<T>& params, const ModelData& data,
 // The constant compute_gp_spatial_prior leaves out, or NaN with the reason
 // appended to `declined`. The PC priors and the NNGP density on a centered
 // field are normalized; a non-centered field's N(0, I) z omits -0.5 log(2 pi)
-// per coordinate. A restricted (RSR) field evaluates the NNGP density at the
-// projected field, which is not a density on the sampled one.
+// per coordinate. Observation-space restriction retains the native field's
+// prior and its normalizer.
 inline double gp_spatial_prior_log_normalizer(const ModelData& data,
                                               const ParamLayout& layout,
                                               std::vector<std::string>* declined) {

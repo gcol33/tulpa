@@ -8,8 +8,8 @@
 namespace tulpa {
 
 // P_perp = I - Q Q', with Q stored row-major with orthonormal columns.
-// Applying P_perp after the observation gather represents S P_perp when Q
-// is a field basis, and P_perp S when Q is an observation basis.
+// Projection before a field gather represents S P_perp; projection of
+// observation values represents P_perp S.
 struct OrthogonalProjection {
     std::vector<double> basis;
     int rank = 0;
