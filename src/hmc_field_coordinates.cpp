@@ -6,6 +6,7 @@
 #include "hmc_spatial_marginal.h"
 #include "laplace_newton_loop.h"
 #include "joint_pd_step.h"
+#include "coordinate_linalg.h"
 #include <memory>
 #include <random>
 #include <type_traits>
@@ -345,22 +346,20 @@ struct GaussianConditional {
         out.root = std::move(basis.native);
         out.jacobian = basis.jacobian;
         const auto& F = basis.field;
-        std::vector<T> weighted(n * d, T(0)), H(d * d, T(0)), rhs(d, T(0)), b(n);
+        std::vector<T> information(working.information.begin(), working.information.end());
+        const auto weighted = tulpa_coordinate_linalg::product(information, F, n, n, d);
+        auto H = tulpa_coordinate_linalg::product(F, weighted, d, n, d, true);
+        std::vector<T> rhs(d, T(0)), b(n);
         for (int i = 0; i < n; ++i) {
             b[i] = T(working.score[i]);
             for (size_t j = 0; j < working.beta.size(); ++j)
                 b[i] = b[i] - T(working.cross[i * working.beta.size() + j]) * q[working.beta[j]];
-            for (int j = 0; j < d; ++j) for (int k = 0; k < n; ++k)
-                weighted[i * d + j] = weighted[i * d + j] + T(working.information[i * n + k]) * F[k * d + j];
         }
         for (int i = 0; i < d; ++i) {
             for (int k = 0; k < n; ++k) rhs[i] = rhs[i] + F[k * d + i] * b[k];
-            for (int j = 0; j < d; ++j) {
-                H[i * d + j] = T(i == j ? 1 : 0);
-                for (int k = 0; k < n; ++k) H[i * d + j] = H[i * d + j] + F[k * d + i] * weighted[k * d + j];
-            }
+            H[i * d + i] = H[i * d + i] + T(1);
         }
-        if (!tulpa_nngp::chol_decomp(H, d, out.chol, 0)) throw InvalidPrecision{};
+        if (!tulpa_coordinate_linalg::cholesky(H, d, out.chol)) throw InvalidPrecision{};
         std::vector<T> intermediate;
         tulpa_nngp::solve_lower(out.chol, d, rhs, intermediate);
         tulpa_nngp::solve_upper(out.chol, d, intermediate, out.mean);
