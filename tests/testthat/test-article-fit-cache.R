@@ -1,3 +1,9 @@
+test_that("a fit-cache stamp does not depend on the R version that wrote it", {
+  x <- list(code = c("fit <- tulpa(y ~ x, data = d)", "fit"), objects = "fit",
+            upstream = c(setup = "a", load = "b"))
+  expect_identical(tulpa:::.fit_cache_hash(x), "ca20e87faa3b8adea8c31f9cbf959ea8")
+})
+
 test_that("article caches replay output and objects without fitting", {
   skip_if_not_installed("knitr")
   withr::local_options(tulpa.fit_cache.build = TRUE)

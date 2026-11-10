@@ -5,12 +5,7 @@ local({
   building <- isTRUE(getOption("tulpa.fit_cache.build"))
   env <- knitr::knit_global()
   version <- as.character(utils::packageVersion("tulpa"))
-  hash <- function(x) {
-    path <- tempfile()
-    on.exit(unlink(path))
-    writeBin(serialize(x, NULL, version = 2), path)
-    unname(tools::md5sum(path))
-  }
+  hash <- utils::getFromNamespace(".fit_cache_hash", "tulpa")
   fail <- function(label, reason) {
     stop(sprintf("Fit cache for article '%s', chunk '%s': %s. Rebuild with data-raw/build-article-fits.R",
                  article, label, reason), call. = FALSE)
