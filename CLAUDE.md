@@ -195,26 +195,21 @@ coverage). CRAN runs tier 1 of the smoke files only (`CRAN_SMOKE_FILES`).
 - Heavy multi-recovery files can SIGKILL (exit 137) under a background test
   harness; run decisive files individually rather than the full suite at once.
 
-**Windows objects carry `-Wa,-mbig-obj`** (`src/Makevars.win`). A plain COFF
-object holds 32767 sections, gcc emits one comdat section per template
-instantiation, and nothing merges them when the build does not optimize: at
-`-O0` `nested_laplace_joint_multi.cpp` assembles 50241 sections and
-`aghq_re.cpp` 36959, and the assembler stops with "file too big". That is the
-default path -- `pkgbuild::compile_dll(debug = TRUE)` is what
-`devtools::load_all()` goes through, and it replaces R's flags with
-`-UNDEBUG -Wall -pedantic -g -O0`. The flag selects the bigobj variant and the
-ceiling stops binding. Do not drop it and do not read it as a property of one
-file: six further sources sit between 21000 and 31000 sections on their own at
-those flags, while at R's own `-O2` the largest of the 11 unity objects is 2721,
-8.3% of the ceiling. The flag is therefore CONDITIONAL on a non-optimizing build: it is
-added only when `CXXFLAGS` carries none of `-O2` / `-O3` / `-Os` / `-Ofast`,
-tested inside a recursive variable so it expands when a compile rule runs,
-after `Makeconf` and the user Makevars are read (`R CMD SHLIB` sets `CXXFLAGS`
-to `$(CXX17FLAGS)`, so it is the rule's own flags). Unconditional, it drew a
-win-builder NOTE: "checking compilation flags used" reads the compile
-COMMANDS, not the Makevars text, so living only in `Makevars.win` does not
-hide it -- the claim that it did was never measured, and tulpa 0.4.0's first
-win-builder r-devel run is what refuted it.
+**Windows objects carry `-Wa,-mbig-obj` conditionally** (`src/Makevars.win`).
+A clean `pkgbuild::compile_dll(debug = TRUE)` with pkgbuild 1.4.8 and R 4.6.1
+emitted `-O2 ... -UNDEBUG -Wall -pedantic -g -O0` and bigobj on all ten unity
+compile commands. All ten objects built; `objdump -h` counted 81400 sections
+in the largest, `unity_glmm.o`, above plain COFF's 32767-section ceiling.
+An `R CMD INSTALL` at R's own `-O2` built all ten objects with zero bigobj
+flags in the compile commands; the largest object had 2200 sections.
+Native make probes enabled bigobj for `-O0` and `-O2 -O0`, and omitted it for
+`-O2` and `-O0 -O2`. The condition reads the LAST of `-O0`, `-O1`, `-O2`,
+`-O3`, `-Os`, `-Ofast`, and `-Og` in `CXXFLAGS`: `-O2`, `-O3`, `-Os`, and
+`-Ofast` omit bigobj; `-O0`, `-O1`, `-Og`, and an absent flag enable it.
+`BIGOBJ_FLAG` is recursive, so the test expands when a compile rule runs,
+after `Makeconf` and user Makevars have been read. `R CMD SHLIB` sets
+`CXXFLAGS` to `$(CXX17FLAGS)`, the flags used by the C++17 compile rule.
+Inspect the emitted compile commands for "checking compilation flags used".
 
 **`src/` is a unity build** (gcol33/tulpa#966). Each `src/unity_<group>.cpp`
 includes the sources of one subsystem, `OBJECTS` in both Makevars names only

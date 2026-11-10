@@ -8,15 +8,16 @@ PKG_CPPFLAGS = -I../inst/include
 # nested_laplace_joint_multi.cpp alone assembles 50241 sections and aghq_re.cpp
 # 36959, and the assembler stops with "file too big". Any build that does not
 # optimize hits this -- pkgbuild::compile_dll(debug = TRUE) is the default and is
-# what devtools::load_all() goes through. At R's own -O2 the largest of the 11
-# unity objects is 2721 sections, 8.3% of the ceiling, so an optimizing
+# what devtools::load_all() goes through. At R's own -O2 the largest of the 10
+# unity objects is 2200 sections, so an optimizing
 # build does not need the flag and does not get it: R CMD check reports
 # -Wa,-mbig-obj as a non-portable flag whenever a compile command carries it.
 # The test is expanded when a compile rule runs, after Makeconf and any user
 # Makevars have been read, and R CMD SHLIB sets CXXFLAGS to the CXX17FLAGS the
 # rule compiles with, so it reads the flags actually in use.
+# The last recognized optimization flag determines whether bigobj is enabled.
 comma := ,
-BIGOBJ_FLAG = $(if $(filter -O2 -O3 -Os -Ofast,$(CXXFLAGS)),,-Wa$(comma)-mbig-obj)
+BIGOBJ_FLAG = $(if $(filter -O2 -O3 -Os -Ofast,$(lastword $(filter -O0 -O1 -O2 -O3 -Os -Ofast -Og,$(CXXFLAGS)))),,-Wa$(comma)-mbig-obj)
 
 # gcc reports every RcppEigen SSE packet type it instantiates under
 # -Wignored-attributes, about 7400 warnings over the 11 unity objects, and prints
