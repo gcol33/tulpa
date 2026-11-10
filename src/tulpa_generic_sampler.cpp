@@ -16,6 +16,7 @@
 #include "tulpa/autodiff_fwd.h"
 #include "tulpa/nuts_api.h"
 #include "sampler_model_data.h"
+#include <tulpa/field_setup_api.h>
 #include "hmc_field_coordinates.h"
 #include "sampler_field_store.h"
 #include "sampler_resume.h"
@@ -26,7 +27,7 @@ using tulpa_hmc::ParamLayout;
 // [[Rcpp::export]]
 Rcpp::List cpp_test_temporal_coordinates(Rcpp::NumericVector z, int n_times,
     int n_groups, std::string structure, bool cyclic, double log_tau,
-    double logit_rho = 0.3) {
+    double logit_rho = 0.3, bool group_centering = true) {
     ModelData data;
     data.n_processes = 1;
     data.processes.resize(1);
@@ -34,7 +35,7 @@ Rcpp::List cpp_test_temporal_coordinates(Rcpp::NumericVector z, int n_times,
     data.n_times = n_times;
     data.n_temporal_groups = n_groups;
     data.n_temporal_params = n_times * n_groups;
-    data.temporal_group_centering = true;
+    data.temporal_group_centering = group_centering;
     data.temporal_cyclic = cyclic;
     if (structure == "rw1") data.temporal_type = tulpa::TemporalType::RW1;
     else if (structure == "rw2") data.temporal_type = tulpa::TemporalType::RW2;
@@ -72,12 +73,68 @@ Rcpp::List cpp_test_field_coordinates(
     Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
     double shift = 0.3, int n_iter = 0,
-    Rcpp::Nullable<Rcpp::NumericVector> point = R_NilValue) {
+    Rcpp::Nullable<Rcpp::NumericVector> point = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> latent_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> st_spec = R_NilValue) {
     tulpa::SamplerModelInputs in;
     tulpa::build_sampler_model_inputs(in, y, Rcpp::IntegerVector(y.size(), 1), X,
         "gaussian", 1.0, NA_REAL, 2.5, {}, 1.0, R_NilValue,
         spatial_spec, temporal_spec, svc_spec, tvc_spec, R_NilValue);
     auto& data = in.data;
+    if (latent_spec.isNotNull()) {
+        const Rcpp::List latent(latent_spec);
+        data.has_latent = true;
+        data.latent_bilinear = true;
+        data.latent_loading_processes = 1;
+        data.latent_n_factors = Rcpp::as<int>(latent["n_factors"]);
+        if (latent.containsElementNamed("constraint"))
+            data.latent_constraint = Rcpp::as<int>(latent["constraint"]);
+    }
+    if (st_spec.isNotNull()) {
+        const Rcpp::List specification(st_spec);
+        data.has_spatiotemporal = true;
+        data.st_margin_centering = true;
+        data.st_parameterization = Rcpp::as<int>(specification["parameterization"]);
+        auto& st = data.spatiotemporal_data;
+        st.type = static_cast<tulpa::STType>(Rcpp::as<int>(specification["type"]));
+        st.temporal_type = static_cast<tulpa::TemporalType>(Rcpp::as<int>(specification["temporal_type"]));
+        st.temporal_cyclic = Rcpp::as<bool>(specification["cyclic"]);
+        st.n_spatial = Rcpp::as<int>(specification["n_spatial"]);
+        st.n_times = Rcpp::as<int>(specification["n_times"]);
+        st.n_params = st.n_spatial * st.n_times;
+        st.st_flat = Rcpp::as<std::vector<int>>(specification["st_flat"]);
+        st.adj_row_ptr = Rcpp::as<std::vector<int>>(specification["adj_row_ptr"]);
+        st.adj_col_idx = Rcpp::as<std::vector<int>>(specification["adj_col_idx"]);
+        if (st.adj_row_ptr.size() == static_cast<size_t>(st.n_spatial + 1)) {
+            st.n_neighbors.resize(st.n_spatial);
+            for (int s = 0; s < st.n_spatial; ++s)
+                st.n_neighbors[s] = st.adj_row_ptr[s + 1] - st.adj_row_ptr[s];
+        }
+        if (st.type == tulpa::STType::SEPARABLE || st.type == tulpa::STType::NONSEP_GP) {
+            data.st_margin_centering = false;
+            data.st_uniform_ranges = true;
+            st.nn = Rcpp::as<int>(specification["nn"]);
+            st.coords = Rcpp::as<std::vector<double>>(specification["coords"]);
+            st.time_values = Rcpp::as<std::vector<double>>(specification["time_values"]);
+            st.nn_idx = Rcpp::as<std::vector<int>>(specification["nn_idx"]);
+            st.nn_dist_space = Rcpp::as<std::vector<double>>(specification["nn_dist_space"]);
+            st.nn_dist_time = Rcpp::as<std::vector<double>>(specification["nn_dist_time"]);
+            st.nn_order = Rcpp::as<std::vector<int>>(specification["nn_order"]);
+            st.nonsep_type = static_cast<tulpa::NonsepType>(Rcpp::as<int>(specification["nonsep"]));
+            st.cov_space = static_cast<tulpa::CovType>(Rcpp::as<int>(specification["cov_space"]));
+            st.cov_time = static_cast<tulpa::CovType>(Rcpp::as<int>(specification["cov_time"]));
+        }
+        if (specification.containsElementNamed("hsgp_coords")) {
+            data.st_is_hsgp = true;
+            data.st_margin_centering = false;
+            data.st_hsgp_coords = Rcpp::as<std::vector<double>>(specification["hsgp_coords"]);
+            data.st_hsgp_m_per_dim = Rcpp::as<int>(specification["m"]);
+            st.t_idx = Rcpp::as<std::vector<int>>(specification["t_idx"]);
+            tulpa::prepare_field(data, tulpa::FieldSetup::ST_HSGP);
+            if (specification.containsElementNamed("kernel"))
+                data.st_hsgp_data.kernel = Rcpp::as<int>(specification["kernel"]);
+        }
+    }
     const auto layout = tulpa_hmc::compute_param_layout(data);
     const int p = layout.total_params;
     std::vector<double> q(p, 0.0);
@@ -95,6 +152,16 @@ Rcpp::List cpp_test_field_coordinates(
     const double raw_lp = tulpa_hmc::compute_log_post(x, data, layout);
     std::vector<double> stored = x;
     tulpa::store_field_draw(stored.data(), x, data, layout);
+    std::vector<double> st_inverse;
+    if (data.st_is_hsgp && data.st_parameterization == 1) {
+        st_inverse.assign(stored.begin() + layout.st_delta_start, stored.begin() + layout.st_delta_end);
+        const double rho = layout.logit_rho_st_idx < 0 ? 0.0 :
+            2.0 * tulpa::math::inv_logit(x[layout.logit_rho_st_idx]) - 1.0;
+        tulpa_st_hsgp::nc_inverse(st_inverse.data(),
+            tulpa::math::safe_exp(x[layout.log_tau_st_idx]), rho,
+            tulpa::math::safe_exp(x[layout.log_sigma2_st_hsgp_idx]), tulpa::math::safe_exp(x[layout.log_lengthscale_st_hsgp_idx]),
+            data.spatiotemporal_data, data.st_hsgp_data, st_inverse.data(), data.st_hsgp_data.kernel);
+    }
     std::vector<double> raw_gradient, prior_gradient;
     tulpa_hmc::compute_gradient(x, data, layout, raw_gradient);
     std::vector<double> inverse = x;
@@ -139,6 +206,7 @@ Rcpp::List cpp_test_field_coordinates(
     const bool verified = tulpa_hmc::verify_gradient_runtime(q, data, layout, 1e-4);
     return Rcpp::List::create(Rcpp::Named("q") = q, Rcpp::Named("x") = x,
         Rcpp::Named("stored") = stored,
+        Rcpp::Named("st_inverse") = st_inverse,
         Rcpp::Named("last_reported_lp") = last_reported_lp,
         Rcpp::Named("last_native_lp") = last_native_lp,
         Rcpp::Named("auto_dense_equal") = auto_dense_equal,

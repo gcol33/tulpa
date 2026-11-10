@@ -1,3 +1,56 @@
+test_that("restrictions normalize exactly removed RW2 slopes", {
+  n <- 6L
+  linear <- seq_len(n) - (n + 1) / 2
+  norm <- sqrt(sum(linear^2))
+  unit <- linear / norm
+  for (groups in 1:2) for (multiscale in c(FALSE, TRUE)) {
+    if (multiscale && groups > 1L) next
+    time <- rep(seq_len(n), 4L * groups)
+    group <- rep(rep(seq_len(groups), each = n), 4L)
+    X <- cbind(1, linear[time])
+    basis <- qr.Q(qr(X))
+    for (coordinate in c("centered", "noncentered")) {
+      spec <- list(type = "rw2", parameterization = coordinate,
+        group_centering = TRUE, n_groups = groups, n_times = n,
+        time_idx = as.integer(time), group_idx = as.integer(group),
+        restriction_basis = as.numeric(t(basis)), restriction_rank = ncol(basis))
+      if (multiscale) {
+        spec$type <- "multiscale"
+        spec$time_index <- as.integer(time)
+        spec$trend <- "rw2"
+        spec$seasonal <- 0L
+        spec$short_term <- "none"
+      }
+      evaluate <- function(point = NULL) tulpa:::cpp_test_field_coordinates(
+        rep(0, length(time)), X, temporal_spec = spec, point = point)
+      initial <- evaluate()
+      q <- numeric(length(initial$q))
+      center <- evaluate(q)
+      offset <- length(q) - n * groups
+      direction <- numeric(length(q))
+      for (g in seq_len(groups)) {
+        block <- offset + (g - 1L) * n + seq_len(n)
+        if (coordinate == "centered") direction[block] <- unit / sqrt(groups)
+        else if (multiscale) direction[block[2L]] <- 1
+        else direction[block[n]] <- 1 / (norm * sqrt(groups))
+      }
+      plus <- evaluate(q + .7 * direction)
+      minus <- evaluate(q - .7 * direction)
+      expect_equal(plus$raw_lp + minus$raw_lp - 2 * center$raw_lp, -.7^2, tolerance = 1e-9)
+      expect_equal(tail(plus$stored, n * groups), numeric(n * groups), tolerance = 1e-12)
+      expect_true(plus$verified)
+      expect_equal(plus$gradient, plus$numerical, tolerance = 2e-5)
+      if (groups == 2L) {
+        contrast <- direction
+        contrast[offset + n + seq_len(n)] <- -contrast[offset + n + seq_len(n)]
+        retained <- evaluate(q + .7 * contrast)
+        field <- matrix(tail(retained$stored, n * groups), n)
+        expect_equal(drop(crossprod(unit, field)), c(.7, -.7) / sqrt(2), tolerance = 1e-12)
+      }
+    }
+  }
+})
+
 test_that("standalone temporal innovations reproduce dense precisions", {
   n <- 6L
   groups <- 2L
@@ -24,7 +77,7 @@ test_that("standalone temporal innovations reproduce dense precisions", {
       field <- matrix(r$field, nrow = n)
       reference_quad <- sum(field * (Q %*% field)) * exp(log_tau)
       normal <- if (structure == "rw2" && !cyclic) n - 1L else n
-      nc_applies <- structure %in% c("rw1", "ar1") || (structure == "rw2" && !cyclic)
+      nc_applies <- structure %in% c("rw1", "rw2", "ar1")
       if (nc_applies) {
         expect_equal(reference_quad, sum(matrix(z, n)[seq_len(normal), ]^2), tolerance = 1e-10)
         eigenvalues <- eigen(Q, symmetric = TRUE, only.values = TRUE)$values
@@ -69,4 +122,23 @@ test_that("grouped temporal, IID and restriction gradients pass the runtime gate
   }
   spec$restriction_basis[1L] <- NA_real_
   expect_error(tulpa:::cpp_test_field_coordinates(y, X, temporal_spec = spec), "finite")
+})
+
+test_that("global intrinsic innovations retain the flat group contrasts", {
+  n <- 6L
+  groups <- 2L
+  z <- sin(seq_len(n * groups))
+  for (structure in c("rw1", "rw2")) {
+    order <- if (structure == "rw1") 1L else 2L
+    D <- diff(diag(n), differences = order)
+    Q <- kronecker(diag(groups), crossprod(D)) + matrix(1 / (n * groups), n * groups, n * groups)
+    r <- tulpa:::cpp_test_temporal_coordinates(z, n, groups, structure, FALSE,
+      .7, group_centering = FALSE)
+    zz <- matrix(z, n)
+    expected_quad <- sum(zz[seq_len(n - order), ]^2) + sum(zz[n - order + 1L, ])^2 / groups
+    expect_equal(exp(.7) * drop(crossprod(r$field, Q %*% r$field)), expected_quad,
+      tolerance = 1e-10)
+    rank <- groups * (n - order) + 1L
+    expect_equal(r$nc - r$centered, -.5 * rank * .7, tolerance = 1e-10)
+  }
 })

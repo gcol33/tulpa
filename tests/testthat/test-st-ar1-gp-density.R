@@ -203,12 +203,12 @@ test_that("a correlation is laid out exactly where the density reads a time marg
   expect_identical(st_d_layout(st_d_fixture("rw1", "iv"))$logit_rho_st_idx, -1L)
 })
 
-test_that("the GP interaction types are refused rather than laid out", {
+test_that("the GP interaction types require their field-indexed geometry", {
   skip_on_cran_budget()
   expect_error(st_d_layout(st_d_fixture("rw1", "separable")),
-               "SEPARABLE spatiotemporal interaction has no density")
+               "complete field-indexed NNGP geometry")
   expect_error(st_d_layout(st_d_fixture("rw1", "nonsep_gp")),
-               "NONSEP_GP spatiotemporal interaction has no density")
+               "complete field-indexed NNGP geometry")
 })
 
 # ---------------------------------------------------------------------------

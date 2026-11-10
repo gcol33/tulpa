@@ -14,6 +14,7 @@
 #include "tulpa/svc_data.h"
 #include "tulpa/tvc_data.h"
 #include "tulpa/st_data.h"
+#include "tulpa/restricted_slopes.h"
 #include "tulpa/spde_model_data.h"
 
 namespace tulpa {
@@ -205,7 +206,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 58;
+constexpr int TULPA_ABI_VERSION = 63;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -697,10 +698,28 @@ struct ModelData {
     bool auto_temporal_gp_coordinates = false;
     bool auto_svc_coordinates = false;
     bool spatial_component_centering = false;
+    bool st_uniform_ranges = false;
+    std::vector<double> st_hsgp_coords;
+    int st_hsgp_m_per_dim = 6;
+    double st_hsgp_boundary_factor = 1.5;
+    double temporal_gp_relative_nugget = 0.0;
+    bool st_margin_centering = false;
+    double st_rho_prior_a = 1.0;
+    double st_rho_prior_b = 1.0;
+    bool latent_bilinear = false;
+    int latent_loading_processes = 0;
+    double latent_offdiag_sd = 1.0;
+    int svc_range_prior = 0;
+    double svc_range_lower = 0.01;
+    double svc_range_upper = 10.0;
+    double tvc_rho_prior_a = 1.0;
+    double tvc_rho_prior_b = 1.0;
     int temporal_parameterization = 0;
     bool temporal_group_centering = false;
     std::vector<double> temporal_restriction_basis;
     int temporal_restriction_rank = 0;
+    RestrictedSlopes temporal_restricted_slopes;
+    RestrictedSlopes ms_trend_restricted_slopes;
 
     void set_temporal_restriction(std::vector<double> basis, int rank) {
         if (rank < 0 || rank > N || basis.size() != static_cast<size_t>(N) * rank)
@@ -716,6 +735,8 @@ struct ModelData {
         }
         temporal_restriction_basis = std::move(basis);
         temporal_restriction_rank = rank;
+        temporal_restricted_slopes = RestrictedSlopes{};
+        ms_trend_restricted_slopes = RestrictedSlopes{};
     }
 };
 

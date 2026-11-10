@@ -180,6 +180,7 @@ struct ParamLayout {
     bool has_latent = false;
     int log_sigma_latent_start = -1, log_sigma_latent_end = -1;
     int latent_factor_start = -1, latent_factor_end = -1;
+    int latent_loading_start = -1, latent_loading_end = -1;
 
     // ================================================================
     // SPATIOTEMPORAL INTERACTION

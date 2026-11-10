@@ -9,30 +9,10 @@
 // hmc_nuts_chain_iter_*.h fragments, which hmc_nuts_chain.cpp documents.
 
 #include "omp_threads.h"
-// Instead of sampling w ~ NNGP(0, sigma2, phi) directly (centered),
-// sample z ~ N(0, I) and transform z -> w via the NNGP autoregressive structure:
-//   w[order[0]] = sqrt(sigma2 + jitter) * z[0]
-//   w[order[i]] = sum_j B[i,j] * w[nb_j(i)] + sqrt(d_i) * z[i]
-// where B[i,:] = C_nb^{-1} c_i (regression coefficients) and
-//       d_i = sigma2 + jitter - c_i' C_nb^{-1} c_i (conditional variance),
-// C_nb carrying the jitter on its diagonal: the nugget sits on every diagonal
-// entry, a location's own included, so w is the NNGP of K + jitter I.
-//
-// This improves posterior geometry for large N, reducing NUTS treedepth.
-// The prior on z is N(0,I), and no Jacobian is needed since we sample in z-space.
+// Non-centred Vecchia fields satisfy w_i = sum_j B_ij w_j + sqrt(d_i) z_i.
+// The neighbour covariance and marginal variance carry their declared nuggets.
+// Likelihood derivatives pass through both the weights and conditional variances.
 
-// A lightweight, non-owning view over the neighbour-structure fields the
-// transform needs. Lets nngp_nc_forward / nngp_nc_backward serve GPData and
-// each independent scale of MultiscaleGPData (both cache pairwise neighbour
-// distances in nn_neighbor_dist, the fast path) as well as SVCData (which
-// does not cache them -- its density kernel, tulpa_svc::nngp_log_lik,
-// recomputes neighbour-pair distances from coords instead) without
-// duplicating the Cholesky / adjoint-propagation logic per caller. One
-// `make_*_view` factory per source struct lives below, next to the view it
-// builds, so the two consumers of each -- the log-post transform
-// (gp/svc/msgp_nc_apply.cpp) and the draw-storage transform
-// (hmc_nuts_chain_iter_store.h) -- read the same field mapping
-//.
 struct NNGPNCView {
     int n_obs = 0, nn = 0;
     const int* nn_idx = nullptr;              // [n_obs x nn], 1-based, 0 = no neighbor
@@ -45,14 +25,10 @@ struct NNGPNCView {
                                                // nn_neighbor_dist is null
     CovType cov_type = CovType::EXPONENTIAL;
 
-    // Conditioning policy of the density kernel this view's field belongs to:
-    // the diagonal NUGGET on the neighbour covariance, the floor on the
-    // conditional variance, and how that floor is applied. The transform below
-    // reads them from here rather than from literals, so a field fitted
-    // non-centered and the same field fitted centered condition identically and
-    // therefore describe the same posterior. Each make_*_nc_view factory sets
-    // all three from its own kernel's constants.
+    // A negative marginal nugget couples it to the neighbour nugget.
     double jitter = kGpJitter;
+    double marginal_nugget = -1.0;
+    double own_nugget() const { return marginal_nugget < 0.0 ? jitter : marginal_nugget; }
     double var_floor = kGpVarFloor;
     tulpa_nngp::VarFloor floor_mode = tulpa_nngp::VarFloor::Clamp;
 
@@ -142,12 +118,10 @@ inline NNGPNCView make_svc_nc_view(const tulpa::SVCData& s) {
     v.nn_order_inv = s.nn_order_inv.data();
     v.coords = s.coords.data();
     v.cov_type = s.cov_type;
-    // The SVC density kernel conditions deliberately more loosely than the GP
-    // one, and blends at the floor; the transform has to match it or a
-    // non-centered SVC fit targets a different posterior than a centered one.
-    v.jitter = tulpa_svc::kSvcJitter;
-    v.var_floor = tulpa_svc::kSvcVarFloor;
-    v.floor_mode = tulpa_nngp::VarFloor::Blend;
+    v.jitter = s.neighbor_jitter;
+    v.marginal_nugget = s.marginal_nugget;
+    v.var_floor = s.variance_floor;
+    v.floor_mode = tulpa_svc::svc_floor_mode(s);
     return v;
 }
 
@@ -202,9 +176,8 @@ inline void nngp_nc_forward(
     Eigen::VectorXd c_eigen(nn);
     Eigen::LLT<Eigen::MatrixXd> llt(nn);
 
-    // A location conditioned on nothing has the marginal variance, with the
-    // nugget every diagonal entry carries.
-    const double own_var = sigma2 + view.jitter;
+    // An unconditioned location has variance sigma2 plus its marginal nugget.
+    const double own_var = sigma2 + view.own_nugget();
 
     // First observation: marginal N(0, own_var). Guard the location index: a
     // malformed nn_order (e.g. a 1-based ordering leaking through) would make
@@ -401,28 +374,8 @@ inline void nngp_nc_backward(
     //
     // The conditional variance is NOT homogeneous of degree 1 in sigma2 once
     // the neighbour covariance carries a diagonal nugget: the forward builds
-    // C = sigma2 R + jitter I against c = sigma2 r, so alpha = C^{-1} c moves
-    // with sigma2 as well. Differentiating d = sigma2 + jitter - c'alpha gives
-    //
-    //     dd/dsigma2 = 1 - 2 r'alpha + alpha' R alpha,
-    //
-    // and substituting r = c / sigma2 and R = (C - jitter I) / sigma2, with
-    // C alpha = c, collapses the whole expression to
-    //
-    //     dd/d log sigma2 = (sigma2 - c'alpha) - jitter * ||alpha||^2
-    //                     = (d_raw - jitter) - jitter * ||alpha||^2.
-    //
-    // At jitter = 0 the correction vanishes and d_raw is recovered, which is
-    // the homogeneous case. It is 1e-8 on the GP / multiscale-GP views and
-    // 1e-4 on the SVC one, and it enters relative to d_raw, so the term is
-    // invisible on the first and reaches 1e-2 relative on the second wherever
-    // the field is strongly correlated -- exactly where alpha is large and
-    // d_raw is small.
-    //
-    // Where the floor bound, the variance no longer tracks the raw one at all:
-    // the derivative carries the floor's own slope, which is 0 under Clamp and
-    // 0.01 under Blend. Unbound rows have slope 1 and d_i == d_raw, so the one
-    // expression serves both regimes.
+    // For C = sigma2 R + j_neighbor I and d_raw = sigma2 + j_marginal - c' alpha,
+    // d(d_raw)/d(log sigma2) = d_raw - j_marginal - j_neighbor ||alpha||^2.
     grad_log_sigma2_lik = 0.0;
     for (int i = 0; i < N; i++) {
         if (!(ws.sqrt_d[i] > 0.0)) continue;
@@ -434,7 +387,7 @@ inline void nngp_nc_backward(
             alpha_sq += a_j * a_j;
         }
         const double dd_dlog_sigma2 =
-            ws.d_slope[i] * (ws.d_raw[i] - view.jitter - view.jitter * alpha_sq);
+            ws.d_slope[i] * (ws.d_raw[i] - view.own_nugget() - view.jitter * alpha_sq);
         grad_log_sigma2_lik +=
             adj[i] * dd_dlog_sigma2 / (2.0 * ws.sqrt_d[i]) * z[loc];
     }

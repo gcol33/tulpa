@@ -8,6 +8,8 @@
 #include "shim_guard.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/nuts_api.h"
+#include "tulpa/field_setup_api.h"
+namespace tulpa { void prepare_field_impl(ModelData*, FieldSetup); }
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -227,6 +229,12 @@ static int tulpa_get_abi_version_impl() {
     return tulpa::TULPA_ABI_VERSION;
 }
 
+static void tulpa_prepare_field_impl(tulpa::ModelData* data, tulpa::FieldSetup setup) {
+    TULPA_SHIM_GUARD_BEGIN
+    tulpa::prepare_field_impl(data, setup);
+    TULPA_SHIM_GUARD_END("tulpa_prepare_field")
+}
+
 // The OpenMP thread cap of THIS DLL's runtime: sets it to `n` when n > 0 and
 // returns the cap in force before the call (n <= 0 only reads it). A model
 // package linking its own OpenMP runtime cannot reach tulpa's cap with its own
@@ -290,6 +298,7 @@ namespace tulpa { void cholmod_resolve_stubs(); }
 
 // [[Rcpp::init]]
 void tulpa_register_callables(DllInfo* dll) {
+    R_RegisterCCallable("tulpa", "tulpa_prepare_field", (DL_FUNC)&tulpa_prepare_field_impl);
     R_RegisterCCallable("tulpa", "tulpa_run_nuts_generic",
                         (DL_FUNC)&tulpa_run_nuts_generic_impl);
     R_RegisterCCallable("tulpa", "tulpa_run_nuts_chains",

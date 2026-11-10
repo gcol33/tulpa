@@ -12,6 +12,7 @@
 #include "autodiff_utils.h"
 #include "hsgp_spectral.h"
 #include "pc_prior.h"
+#include "svc_range.h"
 #include "hmc_svc_autodiff.h"
 
 namespace tulpa {
@@ -82,14 +83,12 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 T sigma2_j = safe_exp(log_sigma2);
 
                 T log_ls = params[layout.log_phi_svc_start + j];
-                T ls_j = safe_exp(log_ls);
+                T ls_j = svc_range_from_coordinate(log_ls, data);
 
                 // PC prior on the lengthscale as a range in two dimensions,
                 // P(ell < U) = alpha, the prior an HSGP field's lengthscale
                 // carries on every route; sampled on log(ell).
-                log_post = log_post + log_prior_range_pc_at_log(
-                    log_ls, data.svc_phi_prior_U, data.svc_phi_prior_alpha)
-                    + log_ls;
+                log_post = log_post + svc_range_log_prior(log_ls, data);
 
                 // N(0, I) prior on the basis coefficients beta_j
                 const T* beta_j = &params[layout.svc_w_start + j * m_total];
@@ -117,19 +116,13 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 svc_sigma2[j] = safe_exp(log_sigma2);
             }
 
-            // Extract phi (spatial range) parameters. Sampled unconstrained on
-            // the log scale under a PC prior on the range: the density is
-            // proper on (0, inf) and penalizes short ranges, so no bounding
-            // box is needed. phi is the range itself (every kernel is
-            // exp(-d / phi)), so the d = 2 density applies to it directly.
+            // Transform each range and evaluate its prior on the sampled coordinate.
             std::vector<T> svc_phi(n_svc);
             for (int j = 0; j < n_svc; j++) {
                 T log_phi = params[layout.log_phi_svc_start + j];
-                svc_phi[j] = safe_exp(log_phi);
+                svc_phi[j] = svc_range_from_coordinate(log_phi, data);
 
-                log_post = log_post + log_prior_range_pc_at_log(
-                    log_phi, data.svc_phi_prior_U, data.svc_phi_prior_alpha);
-                log_post = log_post + log_phi;  // Jacobian
+                log_post = log_post + svc_range_log_prior(log_phi, data);
             }
 
             int n_svc_params = n_svc * n_obs;
@@ -195,7 +188,7 @@ inline double svc_prior_log_normalizer(const ModelData& data,
     if (!layout.has_svc || data.svc_data.n_svc <= 0) return 0.0;
     const int n_svc = data.svc_data.n_svc;
     const double unit_normal = log_prior_normal_log_normalizer(1.0);
-    double c = 0.0;
+    double c = data.svc_range_prior == 2 ? n_svc * unit_normal : 0.0;
     if (data.svc_is_hsgp) {
         c += n_svc * data.svc_hsgp_data.m_total * unit_normal;
     } else if (data.svc_parameterization == 1) {

@@ -1,3 +1,4 @@
+#include "st_gp_kernel.h"
 // hmc_param_layout.cpp
 // Parameter layout and size accounting for HMC/NUTS model data.
 
@@ -8,6 +9,7 @@
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"
 #include "pc_prior.h"
+#include <tulpa/bilinear_factor.h>
 #include "st_null_space.h"
 
 namespace tulpa_hmc {
@@ -49,35 +51,45 @@ void require_spatial_partition(const ModelData& data) {
              have, data.n_spatial_units);
 }
 
-// The spatiotemporal interactions the density defines. Anything else would be
-// laid out with parameters no density term reads and sampled under a prior that
-// is not the one declared, so it is refused here, once, before any buffer is
-// sized.
-//
-// SEPARABLE / NONSEP_GP: the engine carries no space-time covariance family
-// and no NNGP scan over SpatiotemporalData's neighbour structure (nn_idx,
-// nn_dist_space, nn_dist_time, nn_order, coords, time_values are read by no
-// density), so the two ranges would be sampled from their priors alone while
-// the interaction field has no GP structure at all.
-//
-// A temporal margin outside RW1 / RW2 / AR1 on an interaction that reads one
-// (Type II, Type IV, HSGP-ST) contributes no quadratic form, so the field would
-// be flat along time.
 static void check_st_interaction_supported(const SpatiotemporalData& st,
                                            bool is_hsgp) {
-  if (is_hsgp) {
-    Rcpp::stop("tulpa: the samplers carry no HSGP space-time interaction "
-               "(ModelData::st_is_hsgp); fit it by nested Laplace, "
-               "fit_st_nested(spatial_type = \"hsgp\").");
-  }
-  if (st.type == STType::SEPARABLE || st.type == STType::NONSEP_GP) {
-    Rcpp::stop("tulpa: the %s spatiotemporal interaction has no density in "
-               "the engine (no space-time covariance kernel or NNGP "
-               "neighbour scan is defined for it). Use a Knorr-Held Type I-IV "
-               "interaction or the HSGP-ST interaction.",
-               st.type == STType::SEPARABLE ? "SEPARABLE" : "NONSEP_GP");
-  }
-  if (tulpa_st::st_reads_time_margin(st.type) &&
+    if (is_hsgp && (st.type == STType::SEPARABLE || st.type == STType::NONSEP_GP))
+      Rcpp::stop("tulpa: HSGP ST uses a spectral spatial basis and a temporal precision margin");
+    if ((is_hsgp || tulpa_st::st_reads_time_margin(st.type)) &&
+        st.temporal_type == TemporalType::RW2 && st.n_times < 3)
+      Rcpp::stop("tulpa: an RW2 ST margin needs at least three time levels");
+    if (st.type == STType::SEPARABLE || st.type == STType::NONSEP_GP) {
+      if (!tulpa_st_gp::st_gp_structure_filled(st))
+        Rcpp::stop("tulpa: the ST GP needs complete field-indexed NNGP geometry");
+      if (st.n_params != st.n_spatial * st.n_times)
+        Rcpp::stop("tulpa: ST GP coordinates must index the spatial-by-time grid");
+      if (st.nonsep_type != tulpa::NonsepType::PRODUCT && st.nonsep_type != tulpa::NonsepType::GNEITING)
+        Rcpp::stop("tulpa: ST GP supports product and Gneiting covariances");
+      for (double value : st.coords)
+        if (!std::isfinite(value)) Rcpp::stop("tulpa: ST GP coordinates must be finite");
+      for (double value : st.time_values)
+        if (!std::isfinite(value)) Rcpp::stop("tulpa: ST GP times must be finite");
+      for (const auto* distances : {&st.nn_dist_space, &st.nn_dist_time})
+        for (double value : *distances)
+          if (!std::isfinite(value) || value < 0.0)
+            Rcpp::stop("tulpa: ST GP distances must be finite and nonnegative");
+      std::vector<bool> visited(st.n_params, false);
+      for (int i = 0; i < st.n_params; ++i) {
+        const int k = st.nn_order[i];
+        if (k < 0 || k >= st.n_params || visited[k])
+          Rcpp::stop("tulpa: ST GP ordering must permute the field indices");
+        visited[k] = true;
+        bool absent = false;
+        for (int j = 0; j < st.nn; ++j) {
+          const int nb = st.nn_idx[static_cast<size_t>(i) * st.nn + j];
+          if (nb == 0) absent = true;
+          else if (nb < 1 || nb > i || absent)
+            Rcpp::stop("tulpa: ST GP neighbors must precede their location and zero padding");
+        }
+      }
+      return;
+    }
+  if ((is_hsgp || tulpa_st::st_reads_time_margin(st.type)) &&
       !tulpa_st::st_time_margin_supported(st.temporal_type)) {
     Rcpp::stop("tulpa: the spatiotemporal interaction's temporal margin "
                "(TemporalType code %d) has no density; the interaction "
@@ -97,6 +109,14 @@ static inline void require_re_field(std::size_t have, int n_terms,
 }
 
 ParamLayout compute_param_layout(const ModelData& data) {
+  if (data.temporal_restriction_rank > 0) {
+    if (data.temporal_type == TemporalType::RW2 && !data.temporal_cyclic &&
+        data.temporal_restricted_slopes.n_times != data.n_times)
+      Rcpp::stop("restricted RW2 requires TEMPORAL_RESTRICTION field setup");
+    if (data.has_multiscale_temporal && data.multiscale_temporal_data.trend_type == TemporalType::RW2 &&
+        data.ms_trend_restricted_slopes.n_times != data.multiscale_temporal_data.n_times)
+      Rcpp::stop("restricted multiscale RW2 requires TEMPORAL_RESTRICTION field setup");
+  }
   ParamLayout layout;
   int idx = 0;
 
@@ -490,13 +510,18 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // SVC (Spatially-Varying Coefficients) parameters
   layout.has_svc = data.has_svc;
   if (layout.has_svc && data.svc_data.n_svc > 0) {
+    if (!data.svc_data.conditioning_valid())
+      Rcpp::stop("SVC conditioning needs nonnegative finite nuggets and a positive finite variance floor");
     // The HSGP path puts a LogNormal(0, 1) on its log-lengthscale and never
     // reads the range anchors, so only the NNGP path requires them.
-    if (!data.svc_is_hsgp) {
+    if (data.svc_range_prior == 0) {
       require_range_prior_anchors(data.svc_phi_prior_U,
                                   data.svc_phi_prior_alpha, "svc");
     }
 
+    if (data.svc_range_prior == 1 &&
+        (!(data.svc_range_lower > 0) || !(data.svc_range_upper > data.svc_range_lower)))
+      Rcpp::stop("SVC uniform range bounds must satisfy 0 < lower < upper");
     // Log sigma2 per SVC term (spatial variance)
     layout.log_sigma2_svc_start = idx;
     idx += data.svc_data.n_svc;
@@ -527,9 +552,20 @@ ParamLayout compute_param_layout(const ModelData& data) {
   layout.has_latent = data.has_latent;
   if (layout.has_latent && data.latent_n_factors > 0) {
     // Log sigma for each factor
-    layout.log_sigma_latent_start = idx;
-    idx += data.latent_n_factors;
-    layout.log_sigma_latent_end = idx;
+    if (data.latent_bilinear) {
+      const int P = data.latent_loading_processes;
+      const int K = data.latent_n_factors;
+      if (P < 1 || P > data.n_processes || K > P ||
+          !(data.latent_offdiag_sd > 0) || !(data.latent_sigma_prior_rate > 0))
+        Rcpp::stop("Bilinear factor dimensions and loading priors are invalid");
+      layout.latent_loading_start = idx;
+      idx += tulpa::bilinear::n_loadings(P, K);
+      layout.latent_loading_end = idx;
+    } else {
+      layout.log_sigma_latent_start = idx;
+      idx += data.latent_n_factors;
+      layout.log_sigma_latent_end = idx;
+    }
 
     // Factor scores (N x K)
     layout.latent_factor_start = idx;
@@ -542,12 +578,14 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   // Spatiotemporal interaction
   layout.has_spatiotemporal = data.has_spatiotemporal;
-  layout.is_st_gp = false;
+  layout.is_st_gp = data.has_spatiotemporal &&
+      (data.spatiotemporal_data.type == STType::SEPARABLE ||
+       data.spatiotemporal_data.type == STType::NONSEP_GP);
 
   if (layout.has_spatiotemporal && data.spatiotemporal_data.type != STType::NONE) {
     const auto& st = data.spatiotemporal_data;
     check_st_interaction_supported(st, data.st_is_hsgp);
-    const bool reads_time_margin = tulpa_st::st_reads_time_margin(st.type);
+    const bool reads_time_margin = data.st_is_hsgp || tulpa_st::st_reads_time_margin(st.type);
 
     // log_tau for interaction precision
     layout.log_tau_st_idx = idx++;
@@ -562,12 +600,16 @@ ParamLayout compute_param_layout(const ModelData& data) {
       layout.logit_rho_st_idx = -1;
     }
 
-    layout.log_phi_st_space_idx = -1;
-    layout.log_phi_st_time_idx = -1;
-
-    layout.is_st_hsgp = false;
-    layout.log_sigma2_st_hsgp_idx = -1;
-    layout.log_lengthscale_st_hsgp_idx = -1;
+    layout.log_phi_st_space_idx = layout.is_st_gp ? idx++ : -1;
+    layout.log_phi_st_time_idx = layout.is_st_gp ? idx++ : -1;
+    layout.is_st_hsgp = data.st_is_hsgp;
+    layout.log_sigma2_st_hsgp_idx = data.st_is_hsgp ? idx++ : -1;
+    layout.log_lengthscale_st_hsgp_idx = data.st_is_hsgp ? idx++ : -1;
+    if (data.st_is_hsgp && (data.st_hsgp_data.kernel < 0 || data.st_hsgp_data.kernel > 2))
+      Rcpp::stop("tulpa: HSGP ST supports squared-exponential, Matern 3/2 and Matern 5/2 spectra");
+    if (data.st_is_hsgp && (st.n_params != data.st_hsgp_data.m_total * st.n_times ||
+        data.st_hsgp_data.phi_flat.size() != static_cast<size_t>(data.N) * data.st_hsgp_data.m_total))
+      Rcpp::stop("tulpa: HSGP ST basis dimensions must match the interaction coordinates");
 
     // Spatiotemporal interaction effects
     layout.st_delta_start = idx;

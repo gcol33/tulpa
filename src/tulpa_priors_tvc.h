@@ -104,7 +104,8 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
 
                     // Uniform(-1, 1) prior on rho
                     // Jacobian for logit((rho+1)/2) transform
-                    log_post = log_post + safe_log(u) + safe_log(T(1.0) - u);
+                    log_post = log_post + T(data.tvc_rho_prior_a) * safe_log(u)
+                        + T(data.tvc_rho_prior_b) * safe_log(T(1.0) - u);
                 }
             }
         }
@@ -163,6 +164,7 @@ inline double tvc_prior_log_normalizer(const ModelData& data,
         return tv.n_tvc * log_prior_uniform_log_normalizer(
             data.tvc_gp_phi_prior_lower, data.tvc_gp_phi_prior_upper);
     case tulpa_temporal::TemporalType::AR1:
+        return tv.n_tvc * log_prior_beta_logit_log_normalizer(data.tvc_rho_prior_a, data.tvc_rho_prior_b);
     case tulpa_temporal::TemporalType::IID:
         return 0.0;
     case tulpa_temporal::TemporalType::RW1:

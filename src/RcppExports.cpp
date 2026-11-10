@@ -3110,8 +3110,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_test_temporal_coordinates
-Rcpp::List cpp_test_temporal_coordinates(Rcpp::NumericVector z, int n_times, int n_groups, std::string structure, bool cyclic, double log_tau, double logit_rho);
-RcppExport SEXP _tulpa_cpp_test_temporal_coordinates(SEXP zSEXP, SEXP n_timesSEXP, SEXP n_groupsSEXP, SEXP structureSEXP, SEXP cyclicSEXP, SEXP log_tauSEXP, SEXP logit_rhoSEXP) {
+Rcpp::List cpp_test_temporal_coordinates(Rcpp::NumericVector z, int n_times, int n_groups, std::string structure, bool cyclic, double log_tau, double logit_rho, bool group_centering);
+RcppExport SEXP _tulpa_cpp_test_temporal_coordinates(SEXP zSEXP, SEXP n_timesSEXP, SEXP n_groupsSEXP, SEXP structureSEXP, SEXP cyclicSEXP, SEXP log_tauSEXP, SEXP logit_rhoSEXP, SEXP group_centeringSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3122,13 +3122,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
     Rcpp::traits::input_parameter< double >::type log_tau(log_tauSEXP);
     Rcpp::traits::input_parameter< double >::type logit_rho(logit_rhoSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_temporal_coordinates(z, n_times, n_groups, structure, cyclic, log_tau, logit_rho));
+    Rcpp::traits::input_parameter< bool >::type group_centering(group_centeringSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_temporal_coordinates(z, n_times, n_groups, structure, cyclic, log_tau, logit_rho, group_centering));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_test_field_coordinates
-Rcpp::List cpp_test_field_coordinates(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, double shift, int n_iter, Rcpp::Nullable<Rcpp::NumericVector> point);
-RcppExport SEXP _tulpa_cpp_test_field_coordinates(SEXP ySEXP, SEXP XSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP shiftSEXP, SEXP n_iterSEXP, SEXP pointSEXP) {
+Rcpp::List cpp_test_field_coordinates(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, double shift, int n_iter, Rcpp::Nullable<Rcpp::NumericVector> point, Rcpp::Nullable<Rcpp::List> latent_spec, Rcpp::Nullable<Rcpp::List> st_spec);
+RcppExport SEXP _tulpa_cpp_test_field_coordinates(SEXP ySEXP, SEXP XSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP shiftSEXP, SEXP n_iterSEXP, SEXP pointSEXP, SEXP latent_specSEXP, SEXP st_specSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3141,7 +3142,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type shift(shiftSEXP);
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type point(pointSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_field_coordinates(y, X, spatial_spec, temporal_spec, svc_spec, tvc_spec, shift, n_iter, point));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type latent_spec(latent_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type st_spec(st_specSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_field_coordinates(y, X, spatial_spec, temporal_spec, svc_spec, tvc_spec, shift, n_iter, point, latent_spec, st_spec));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3803,8 +3806,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tgmrf_eval_mu", (DL_FUNC) &_tulpa_cpp_tgmrf_eval_mu, 2},
     {"_tulpa_cpp_beta_density_terms", (DL_FUNC) &_tulpa_cpp_beta_density_terms, 3},
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
-    {"_tulpa_cpp_test_temporal_coordinates", (DL_FUNC) &_tulpa_cpp_test_temporal_coordinates, 7},
-    {"_tulpa_cpp_test_field_coordinates", (DL_FUNC) &_tulpa_cpp_test_field_coordinates, 9},
+    {"_tulpa_cpp_test_temporal_coordinates", (DL_FUNC) &_tulpa_cpp_test_temporal_coordinates, 8},
+    {"_tulpa_cpp_test_field_coordinates", (DL_FUNC) &_tulpa_cpp_test_field_coordinates, 11},
     {"_tulpa_cpp_test_sampler_controls", (DL_FUNC) &_tulpa_cpp_test_sampler_controls, 9},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 12},
     {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 14},

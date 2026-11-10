@@ -11,6 +11,7 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "hmc_latent_autodiff.h"
+#include <tulpa/bilinear_factor.h>
 
 namespace tulpa {
 namespace priors {
@@ -23,13 +24,32 @@ using namespace math;
 
 template<typename T>
 T compute_latent_prior(const std::vector<T>& params, const ModelData& data,
-                        const ParamLayout& layout, std::vector<T>& latent_eta)
+                        const ParamLayout& layout, std::vector<T>& latent_eta,
+                        std::vector<std::vector<T>>& process_eta)
 {
     T log_post = T(0.0);
 
     if (layout.has_latent && data.latent_n_factors > 0) {
         int K = data.latent_n_factors;
         int N = data.N;
+
+        if (data.latent_bilinear) {
+            const int P = data.latent_loading_processes;
+            const T* theta = params.data() + layout.latent_loading_start;
+            const T* raw = params.data() + layout.latent_factor_start;
+            std::vector<T> loadings, scores;
+            bilinear::loadings(theta, P, K, loadings);
+            bilinear::constrain_scores(raw, N, K,
+                static_cast<bilinear::LatentConstraint>(data.latent_constraint), scores);
+            log_post = bilinear::loadings_log_prior(theta, P, K,
+                data.latent_sigma_prior_rate, data.latent_offdiag_sd)
+                + bilinear::scores_log_prior(raw, N * K);
+            process_eta.assign(P, std::vector<T>(N, T(0.0)));
+            for (int p = 0; p < P; ++p) for (int i = 0; i < N; ++i)
+                for (int k = 0; k < K; ++k)
+                    process_eta[p][i] = process_eta[p][i] + loadings[p * K + k] * scores[i * K + k];
+            return log_post;
+        }
 
         // Extract log_sigma parameters
         std::vector<T> log_sigma_latent(K);

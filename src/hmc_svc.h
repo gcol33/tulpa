@@ -27,14 +27,14 @@ namespace tulpa_svc {
 using tulpa::CovType;
 using tulpa::SVCData;
 
-// Conditioning constants for the SVC NNGP kernel. The SVC kernel deliberately
-// runs a looser diagonal nugget / conditional-variance floor than the GP one
-// (kGpJitter / kGpVarFloor in hmc_gp_autodiff.h) to reduce HMC divergences on
-// near-duplicate coordinates. They live here so the double kernel below and its
-// autodiff twin in hmc_svc_autodiff.h read the SAME values: those two are the
-// same function and must agree, whatever the value is.
-constexpr double kSvcJitter = 1e-4;
-constexpr double kSvcVarFloor = 1e-4;
+// Default SVC conditioning uses a covariance nugget. Each field can declare
+// separate neighbour regularization, marginal nugget and variance-floor policy.
+constexpr double kSvcJitter = tulpa::SVC_DEFAULT_NUGGET;
+constexpr double kSvcVarFloor = tulpa::SVC_DEFAULT_VARIANCE_FLOOR;
+inline tulpa_nngp::VarFloor svc_floor_mode(const SVCData& data) {
+  return data.blend_variance_floor ? tulpa_nngp::VarFloor::Blend : tulpa_nngp::VarFloor::Clamp;
+}
+
 
 // -----------------------------------------------------------------------------
 // Covariance functions
@@ -85,7 +85,7 @@ inline double nngp_log_lik(
   // First observation: marginal N(0, sigma2)
   int first_idx = svc_data.nn_order[0];
   if (first_idx < 0 || first_idx >= N) return -INFINITY;
-  log_lik += tulpa_nngp::marginal_log_density(w[first_idx], sigma2, kSvcJitter);
+  log_lik += tulpa_nngp::marginal_log_density(w[first_idx], sigma2, svc_data.marginal_nugget);
 
   // Remaining observations: conditional on neighbors
   for (int i = 1; i < N; i++) {
@@ -100,7 +100,7 @@ inline double nngp_log_lik(
 
     if (n_neighbors == 0) {
       // No neighbors: marginal
-      log_lik += tulpa_nngp::marginal_log_density(w[obs_idx], sigma2, kSvcJitter);
+      log_lik += tulpa_nngp::marginal_log_density(w[obs_idx], sigma2, svc_data.marginal_nugget);
       continue;
     }
 
@@ -143,18 +143,15 @@ inline double nngp_log_lik(
       }
     }
 
-    // Gather neighbor values in c_vec order, then the shared NNGP kernel at
-    // T = double. This is the double twin of tulpa_svc_ad::nngp_log_lik and must
-    // agree with it, so it takes the SAME constants (kSvcJitter / kSvcVarFloor,
-    // the deliberately looser SVC conditioning) and the same blended floor.
+    // Condition at the field's declared nuggets and variance floor.
     std::vector<double> w_nb(n_neighbors);
     for (int j = 0; j < n_neighbors; j++) w_nb[j] = w[nb_loc[j]];
     double cond_mean, cond_var;
     if (!tulpa_nngp::cond_moments(C_mat, c_vec, w_nb, n_neighbors, sigma2,
-                                  kSvcJitter,
-                                  kSvcVarFloor,
-                                  tulpa_nngp::VarFloor::Blend,
-                                  cond_mean, cond_var)) {
+                                  svc_data.marginal_nugget,
+                                  svc_data.variance_floor,
+                                  svc_floor_mode(svc_data),
+                                  cond_mean, cond_var, svc_data.neighbor_jitter)) {
       return -INFINITY;
     }
     log_lik += tulpa_nngp::cond_log_density(w[obs_idx], cond_mean, cond_var);

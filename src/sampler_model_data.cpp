@@ -5,6 +5,8 @@
 #include <RcppEigen.h>
 #include "sampler_model_data.h"
 #include "hsgp_spectral.h"
+#include <tulpa/field_setup_api.h>
+#include "restricted_slopes_setup.h"
 
 namespace tulpa {
 
@@ -90,6 +92,29 @@ void set_multiscale_seasonal_noncentered(ModelData& data) {
     std::vector<double> no_slope;
     data.ms_seasonal_basis = rw_spectral_basis(n, 1, true, no_slope,
                                                "seasonal arm");
+}
+
+void prepare_field_impl(ModelData* data, FieldSetup setup) {
+    if (setup == FieldSetup::TEMPORAL_RESTRICTION) {
+        prepare_temporal_restriction(*data);
+    } else if (setup == FieldSetup::MULTISCALE_TEMPORAL) {
+        if (data->ms_trend_parameterization == 1) set_multiscale_trend_noncentered(*data);
+        if (data->ms_seasonal_parameterization == 1) set_multiscale_seasonal_noncentered(*data);
+    } else if (setup == FieldSetup::SVC_HSGP) {
+        tulpa_hsgp::setup_hsgp_2d(data->svc_data.coords, data->svc_data.n_obs,
+            data->svc_hsgp_m_per_dim, data->svc_hsgp_boundary_factor, true,
+            data->svc_hsgp_data);
+    } else if (setup == FieldSetup::ST_HSGP) {
+        tulpa_hsgp::setup_hsgp_2d(data->st_hsgp_coords, data->N,
+            data->st_hsgp_m_per_dim, data->st_hsgp_boundary_factor,
+            data->spatiotemporal_data.shared, data->st_hsgp_data);
+        data->spatiotemporal_data.hsgp_m_total = data->st_hsgp_data.m_total;
+        data->spatiotemporal_data.n_spatial = data->st_hsgp_data.m_total;
+        data->spatiotemporal_data.n_params = data->st_hsgp_data.m_total *
+            data->spatiotemporal_data.n_times;
+    } else {
+        Rcpp::stop("Unknown field setup request");
+    }
 }
 
 void build_sampler_model_inputs(
@@ -633,17 +658,11 @@ void build_sampler_model_inputs(
             in.data.ar1_rho_prior_a = Rcpp::as<double>(tp["rho_prior_a"]);
         if (tp.containsElementNamed("rho_prior_b"))
             in.data.ar1_rho_prior_b = Rcpp::as<double>(tp["rho_prior_b"]);
-        if (tp.containsElementNamed("restriction_basis")) {
-            in.data.set_temporal_restriction(
-                Rcpp::as<std::vector<double>>(tp["restriction_basis"]),
-                Rcpp::as<int>(tp["restriction_rank"]));
-        }
         in.data.n_temporal_params = in.data.n_times * in.data.n_temporal_groups;
         in.data.temporal_parameterization = coordinate == "noncentered" ? 1 : 0;
         in.data.temporal_group_centering = tp.containsElementNamed("group_centering") &&
             Rcpp::as<bool>(tp["group_centering"]);
-        if (in.data.temporal_parameterization == 1 &&
-            (ttype == "rw1" || ttype == "rw2")) in.data.temporal_group_centering = true;
+
         if (ttype == "rw1" || ttype == "rw2" || ttype == "ar1" || ttype == "iid") {
             read_pc_anchors(tp, "sigma_prior_U", "sigma_prior_alpha",
                             in.data.temporal_sigma_prior_U,
@@ -681,6 +700,12 @@ void build_sampler_model_inputs(
             in.data.temporal_gp_parameterization =
                 (coordinate == "centered")
                 ? 0 : 1;
+            if (tp.containsElementNamed("relative_nugget")) {
+                in.data.temporal_gp_relative_nugget = Rcpp::as<double>(tp["relative_nugget"]);
+                if (!(in.data.temporal_gp_relative_nugget >= 0) ||
+                    !std::isfinite(in.data.temporal_gp_relative_nugget))
+                    Rcpp::stop("temporal GP relative nugget must be finite and nonnegative");
+            }
             read_pc_anchors(tp, "sigma2_prior_U", "sigma2_prior_alpha",
                             in.data.temporal_gp_sigma2_prior_U,
                             in.data.temporal_gp_sigma2_prior_alpha,
@@ -706,6 +731,14 @@ void build_sampler_model_inputs(
         Rcpp::List sv = Rcpp::as<Rcpp::List>(svc_spec);
         in.data.auto_svc_coordinates = sampler_parameterization(sv, "noncentered") == "auto";
         auto& s = in.data.svc_data;
+        if (sv.containsElementNamed("range_prior")) {
+            const std::string prior = Rcpp::as<std::string>(sv["range_prior"]);
+            if (prior == "uniform") in.data.svc_range_prior = 1;
+            else if (prior == "lognormal") in.data.svc_range_prior = 2;
+            else if (prior != "pc") Rcpp::stop("Unknown SVC range prior");
+        }
+        if (sv.containsElementNamed("range_lower")) in.data.svc_range_lower = Rcpp::as<double>(sv["range_lower"]);
+        if (sv.containsElementNamed("range_upper")) in.data.svc_range_upper = Rcpp::as<double>(sv["range_upper"]);
         Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sv["coords"]);
         static const char* const SVC_WHO = "svc() under a sampler mode";
         tulpa_linalg::require_coords_2col(coords, SVC_WHO);
@@ -768,7 +801,7 @@ void build_sampler_model_inputs(
             in.data.svc_hsgp_data.kernel = static_cast<int>(
                 tulpa::priors::hsgp_kernel_from_spec(
                     sv, "spatial_svc(approx = \"hsgp\")"));
-            require_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
+            if (in.data.svc_range_prior == 0) require_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
                                in.data.svc_phi_prior_U,
                                in.data.svc_phi_prior_alpha,
                                "spatial_svc(approx = \"hsgp\") lengthscale");
@@ -792,10 +825,18 @@ void build_sampler_model_inputs(
             check_nn_order(nordi, n_obs, SVC_WHO, "nn_order_inv");
             s.nn_order_inv.assign(nordi.begin(), nordi.end());
             s.cov_type = static_cast<CovType>(Rcpp::as<int>(sv["cov_type"]));
-            read_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
+            if (in.data.svc_range_prior == 0) read_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
                             in.data.svc_phi_prior_U, in.data.svc_phi_prior_alpha,
                             "spatial_svc() range");
         }
+        if (sv.containsElementNamed("neighbor_jitter"))
+            in.data.svc_data.neighbor_jitter = Rcpp::as<double>(sv["neighbor_jitter"]);
+        if (sv.containsElementNamed("marginal_nugget"))
+            in.data.svc_data.marginal_nugget = Rcpp::as<double>(sv["marginal_nugget"]);
+        if (sv.containsElementNamed("variance_floor"))
+            in.data.svc_data.variance_floor = Rcpp::as<double>(sv["variance_floor"]);
+        if (sv.containsElementNamed("blend_variance_floor"))
+            in.data.svc_data.blend_variance_floor = Rcpp::as<bool>(sv["blend_variance_floor"]);
         read_pc_anchors(sv, "sigma_prior_U", "sigma_prior_alpha",
                         in.data.svc_sigma_prior_U,
                         in.data.svc_sigma_prior_alpha,
@@ -871,9 +912,19 @@ void build_sampler_model_inputs(
         read_pc_anchors(tv, "sigma_prior_U", "sigma_prior_alpha",
                         in.data.tvc_sigma_prior_U,
                         in.data.tvc_sigma_prior_alpha, "tvc() scale");
+        if (tv.containsElementNamed("rho_prior_a")) in.data.tvc_rho_prior_a = Rcpp::as<double>(tv["rho_prior_a"]);
+        if (tv.containsElementNamed("rho_prior_b")) in.data.tvc_rho_prior_b = Rcpp::as<double>(tv["rho_prior_b"]);
         in.data.has_tvc = true;
     }
 
+    if (temporal_spec.isNotNull()) {
+        const Rcpp::List tp(temporal_spec);
+        if (tp.containsElementNamed("restriction_basis"))
+            in.data.set_temporal_restriction(
+                Rcpp::as<std::vector<double>>(tp["restriction_basis"]),
+                Rcpp::as<int>(tp["restriction_rank"]));
+    }
+    prepare_temporal_restriction(in.data);
     in.layout = tulpa_hmc::compute_param_layout(in.data);
 }
 

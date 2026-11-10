@@ -9,6 +9,9 @@
 
 #include <cstddef>
 #include <vector>
+#include <tulpa/st_margins.h>
+#include <tulpa/st_hsgp_kernel.h>
+#include "st_gp_kernel.h"
 #include <cmath>
 #include "autodiff_utils.h"
 #include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
@@ -175,6 +178,67 @@ T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st,
     return penalty;
 }
 
+template<class T>
+T st_unit_quadratic(const std::vector<T>& field, const ModelData& data, const T& rho) {
+    const auto& st = data.spatiotemporal_data;
+    const int S = st.n_spatial, nt = st.n_times;
+    if (st.type == STType::TYPE_IV) return st_kronecker_temporal_quad(field, data, S, nt, rho);
+    T quad(0.0);
+    if (st.type == STType::TYPE_I) {
+        for (const T& value : field) quad = quad + value * value;
+    } else if (st.type == STType::TYPE_II) {
+        for (int s = 0; s < S; ++s)
+            quad = quad + st_time_cross_form(field.data() + s * nt,
+                field.data() + s * nt, nt, st, rho);
+    } else if (st.type == STType::TYPE_III) {
+        for (int s = 0; s < S; ++s) for (int k = st.adj_row_ptr[s]; k < st.adj_row_ptr[s + 1]; ++k) {
+            const int other = st.adj_col_idx[k] - 1;
+            if (other <= s) continue;
+            for (int t = 0; t < nt; ++t) {
+                const T diff = field[s * nt + t] - field[other * nt + t];
+                quad = quad + diff * diff;
+            }
+        }
+    }
+    return quad;
+}
+
+inline int st_full_rank(const ModelData& data) {
+    const auto& st = data.spatiotemporal_data;
+    const int spatial_rank = st_spatial_rank(data, st.n_spatial);
+    if (st.type == STType::TYPE_I) return st.n_params;
+    if (st.type == STType::TYPE_II) return st.n_spatial * st_time_rank(st, st.n_times);
+    if (st.type == STType::TYPE_III) return spatial_rank * st.n_times;
+    return spatial_rank * st_time_rank(st, st.n_times);
+}
+
+template<class T>
+T st_constrained_density(std::vector<T>& field, const ModelData& data,
+    const T& tau, const T& rho) {
+    const auto& st = data.spatiotemporal_data;
+    const int n = static_cast<int>(field.size());
+    std::vector<T> projected = field;
+    center_st_margins(projected, st.n_spatial, st.n_times);
+    T quad = st_unit_quadratic(projected, data, rho);
+    for (int i = 0; i < n; ++i) {
+        const T difference = field[i] - projected[i];
+        quad = quad + difference * difference;
+    }
+    const bool rw2 = tulpa_st::st_reads_time_margin(st.type) &&
+        st.temporal_type == TemporalType::RW2 && !st.temporal_cyclic;
+    const int rank = n - (rw2 ? st.n_spatial - 1 : 0);
+    const bool nc = data.st_parameterization == 1;
+    T lp = T(0.5 * (nc ? rank - n : rank)) * safe_log(tau)
+        - T(0.5) * (nc ? T(1.0) : tau) * quad;
+    if (tulpa_st::st_reads_time_margin(st.type) && st.temporal_type == TemporalType::AR1)
+        lp = lp + T(0.5 * (st.n_spatial - 1)) * safe_log(
+            centered_ar1_precision_det(rho, tulpa_temporal::ar1_one_minus_rho2(rho), st.n_times));
+    const T scale = nc ? T(1.0) / safe_sqrt(tau) : T(1.0);
+    for (int i = 0; i < n; ++i) projected[i] = projected[i] * scale;
+    field.swap(projected);
+    return lp;
+}
+
 template<typename T>
 T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                     const ParamLayout& layout, std::vector<T>& st_delta)
@@ -200,7 +264,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
             // Uniform(-1, 1) prior on rho
             // Jacobian for logit((rho+1)/2) transform
-            log_post = log_post + safe_log(u_st) + safe_log(T(1.0) - u_st);
+            log_post = log_post + T(data.st_rho_prior_a) * safe_log(u_st)
+                + T(data.st_rho_prior_b) * safe_log(T(1.0) - u_st);
         }
 
         // Extract delta parameters
@@ -212,6 +277,67 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
         int S = data.spatiotemporal_data.n_spatial;
         int T_st = data.spatiotemporal_data.n_times;
+
+        if (data.st_is_hsgp) {
+            const T log_sigma2 = params[layout.log_sigma2_st_hsgp_idx];
+            const T log_range = params[layout.log_lengthscale_st_hsgp_idx];
+            log_post = log_post + log_prior_log_sigma2_pc(log_sigma2,
+                data.st_hsgp_sigma2_prior_U, data.st_hsgp_sigma2_prior_alpha)
+                - T(0.5) * log_range * log_range;
+            if (data.st_parameterization == 1) {
+                const auto& st = data.spatiotemporal_data;
+                const int normal = st.n_times - (st.temporal_type == TemporalType::RW2 && !st.temporal_cyclic ? 1 : 0);
+                for (int j = 0; j < data.st_hsgp_data.m_total; ++j)
+                    for (int t = 0; t < normal; ++t) {
+                        const T z = st_delta[j * st.n_times + t];
+                        log_post = log_post - T(0.5) * z * z;
+                    }
+                std::vector<T> field(n_st_params);
+                tulpa_st_hsgp::nc_forward(st_delta.data(), tau_st, rho_st,
+                    safe_exp(log_sigma2), safe_exp(log_range), st, data.st_hsgp_data, field.data(), data.st_hsgp_data.kernel);
+                st_delta.swap(field);
+                return log_post;
+            }
+            return log_post + tulpa_st_hsgp::log_density(st_delta.data(), tau_st,
+                rho_st, safe_exp(log_sigma2), safe_exp(log_range),
+                data.spatiotemporal_data, data.st_hsgp_data, data.st_hsgp_data.kernel);
+        }
+        if (layout.is_st_gp) {
+            const T log_space = params[layout.log_phi_st_space_idx];
+            const T log_time = params[layout.log_phi_st_time_idx];
+            const T space = safe_exp(log_space), time = safe_exp(log_time);
+            const auto& st = data.spatiotemporal_data;
+            if (data.st_uniform_ranges) {
+                if (get_value(space) < st.phi_space_prior_lower || get_value(space) > st.phi_space_prior_upper ||
+                    get_value(time) < st.phi_time_prior_lower || get_value(time) > st.phi_time_prior_upper)
+                    return T(-std::numeric_limits<double>::infinity());
+                log_post = log_post + log_space + log_time;
+            } else {
+                log_post = log_post + log_prior_range_pc_at_log(log_space,
+                    data.st_phi_space_prior_lower, data.st_phi_space_prior_alpha) + log_space
+                    + log_prior_range_pc_at_log(log_time,
+                    data.st_phi_time_prior_lower, data.st_phi_time_prior_alpha) + log_time;
+            }
+            if (data.st_parameterization == 1) {
+                std::vector<T> field(n_st_params, T(0.0));
+                if (!tulpa_st_gp::st_gp_nc_forward(st_delta.data(), T(1.0) / tau_st,
+                        space, time, st, field.data()))
+                    return T(-std::numeric_limits<double>::infinity());
+                for (const T& z : st_delta)
+                    log_post = log_post - T(0.5) * z * z - T(0.5 * std::log(2.0 * std::acos(-1.0)));
+                st_delta.swap(field);
+            } else {
+                log_post = log_post + tulpa_st_gp::st_gp_nngp_log_lik(
+                    st_delta.data(), T(1.0) / tau_st, space, time, st);
+            }
+            T normalizer;
+            if (!tulpa_st_gp::st_gp_margin_log_normalizer(T(1.0) / tau_st,
+                    space, time, st, &normalizer))
+                return T(-std::numeric_limits<double>::infinity());
+            return log_post + st_sum_to_zero_penalty(st_delta, S, T_st) + normalizer;
+        }
+        if (data.st_margin_centering)
+            return log_post + st_constrained_density(st_delta, data, tau_st, rho_st);
 
         // NC reparameterization for Type IV
         const bool st_use_nc = tulpa_st::st_non_centered(
@@ -254,69 +380,12 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             st_delta = std::move(st_delta_nc);
 
         } else {
-            // Centered parameterization (ICAR/BYM2 spatial: Types I-IV)
-            if (data.spatiotemporal_data.type == STType::TYPE_I) {
-                // IID: delta[s,t] ~ N(0, 1/tau)
-                T quad = T(0.0);
-                for (int k = 0; k < n_st_params; k++) {
-                    quad = quad + st_delta[k] * st_delta[k];
-                }
-                log_post = log_post + T(0.5 * n_st_params) * safe_log(tau_st)
-                         - T(0.5) * tau_st * quad;
-
-            } else if (data.spatiotemporal_data.type == STType::TYPE_II) {
-                // Structured time at each location: I_S (x) Q_t.
-                const auto& st = data.spatiotemporal_data;
-                const int rank_t = st_time_rank(st, T_st);
-                const T log_det_t = st_time_log_det(st, rho_st);
-                for (int s = 0; s < S; s++) {
-                    const T* d_s = st_delta.data() + s * T_st;
-                    T quad = st_time_cross_form(d_s, d_s, T_st, st, rho_st);
-                    log_post = log_post + T(0.5 * rank_t) * safe_log(tau_st)
-                             + T(0.5) * log_det_t
-                             - T(0.5) * tau_st * quad;
-                }
-
-            } else if (data.spatiotemporal_data.type == STType::TYPE_III) {
-                // Structured space at each time point (ICAR).
-                int rank_s = st_spatial_rank(data, S);
-                for (int t = 0; t < T_st; t++) {
-                    // Compute ICAR quadratic form for spatial field at time t
-                    T quad = T(0.0);
-                    for (int s = 0; s < S; s++) {
-                        T delta_st = st_delta[s * T_st + t];
-                        int n_neigh = data.spatiotemporal_data.n_neighbors.empty() ? 0
-                            : data.spatiotemporal_data.n_neighbors[s];
-                        quad = quad + T(n_neigh) * delta_st * delta_st;
-                        if (!data.spatiotemporal_data.adj_row_ptr.empty()) {
-                            int row_start_s = data.spatiotemporal_data.adj_row_ptr[s];
-                            int row_end_s = data.spatiotemporal_data.adj_row_ptr[s + 1];
-                            for (int jj = row_start_s; jj < row_end_s; jj++) {
-                                int s2 = data.spatiotemporal_data.adj_col_idx[jj] - 1;
-                                if (s2 > s) {
-                                    T delta_s2t = st_delta[s2 * T_st + t];
-                                    quad = quad - T(2.0) * delta_st * delta_s2t;
-                                }
-                            }
-                        }
-                    }
-                    log_post = log_post + T(0.5 * rank_s) * safe_log(tau_st)
-                             - T(0.5) * tau_st * quad;
-                }
-
-            } else if (data.spatiotemporal_data.type == STType::TYPE_IV) {
-                // Kronecker: Q_delta = Q_s (x) Q_t
-                T kron_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st, rho_st);
-                log_post = log_post - T(0.5) * tau_st * kron_quad;
-                // |Q_s (x) Q_t|_+ = |Q_s|_+^rank_t |Q_t|_+^rank_s: the rank
-                // terms, and the time factor where it moves with rho.
-                int rank_space = st_spatial_rank(data, S);
-                int total_rank =
-                    rank_space * st_time_rank(data.spatiotemporal_data, T_st);
-                log_post = log_post + T(0.5 * total_rank) * safe_log(tau_st)
-                         + T(0.5 * rank_space) *
-                           st_time_log_det(data.spatiotemporal_data, rho_st);
-            }
+            const auto& st = data.spatiotemporal_data;
+            const int determinant_power = st.type == STType::TYPE_II ? S :
+                (st.type == STType::TYPE_IV ? st_spatial_rank(data, S) : 0);
+            log_post = log_post + T(0.5 * st_full_rank(data)) * safe_log(tau_st)
+                + T(0.5 * determinant_power) * st_time_log_det(st, rho_st)
+                - T(0.5) * tau_st * st_unit_quadratic(st_delta, data, rho_st);
 
             // Soft sum-to-zero constraint
             log_post = log_post + st_sum_to_zero_penalty(

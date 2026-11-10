@@ -72,6 +72,7 @@ struct GenericLogPostState {
     std::vector<T> svc_w;
     std::vector<T> tvc_w;
     std::vector<T> latent_eta;
+    std::vector<std::vector<T>> latent_process_eta;
     std::vector<T> st_delta;
     std::vector<T> beta_zi;
     std::vector<T> beta_oi;
@@ -335,7 +336,7 @@ static T initialize_generic_state(
 
     if (layout.has_latent && data.has_latent) {
         log_post = log_post + priors::compute_latent_prior(
-            params, data, layout, state.latent_eta);
+            params, data, layout, state.latent_eta, state.latent_process_eta);
     }
 
     if (layout.has_spatiotemporal && data.has_spatiotemporal) {
@@ -634,6 +635,9 @@ static void add_generic_named_effects(
         add_to_shared_processes(eta, data.sharing.tvc, data.n_processes, state.tvc_eta[i]);
     }
 
+    if (!state.latent_process_eta.empty())
+        for (size_t p = 0; p < state.latent_process_eta.size(); ++p)
+            if (data.sharing.latent[p]) eta[p] = eta[p] + state.latent_process_eta[p][i];
     if (layout.has_latent && !state.latent_eta.empty() &&
         i < (int)state.latent_eta.size()) {
         add_to_shared_processes(
@@ -655,6 +659,17 @@ static void add_generic_st_effect(
     // spatiotemporal effect. Anything outside the field's own extent leaves
     // the row at zero rather than reading past the delta vector.
     T effect = T(0.0);
+    if (data.st_is_hsgp) {
+        const auto& st = data.spatiotemporal_data;
+        if (i >= static_cast<int>(st.t_idx.size())) return;
+        const int time = st.t_idx[i] - 1;
+        if (time < 0 || time >= st.n_times) return;
+        const int M = data.st_hsgp_data.m_total;
+        for (int j = 0; j < M; ++j)
+            effect = effect + T(data.st_hsgp_data.phi_flat[i * M + j]) * state.st_delta[j * st.n_times + time];
+        add_to_shared_processes(eta, data.sharing.st, data.n_processes, effect);
+        return;
+    }
     const std::vector<int>& st_flat = data.spatiotemporal_data.st_flat;
     if (i >= (int)st_flat.size()) return;
     const int st_idx = st_flat[i];

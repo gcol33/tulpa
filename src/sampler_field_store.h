@@ -31,6 +31,7 @@
 #include <vector>
 
 #include <tulpa/sum_to_zero.h>
+#include <tulpa/st_margins.h>
 #include "tulpa_priors_temporal.h"
 #include "tulpa_priors_mstemporal.h"
 
@@ -74,12 +75,36 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
                 const double sigma2 =
                     tulpa::math::safe_exp(q[layout.log_sigma2_svc_start + j]);
                 const double phi =
-                    tulpa::math::safe_exp(q[layout.log_phi_svc_start + j]);
+                    tulpa::svc_range_from_coordinate(q[layout.log_phi_svc_start + j], data);
                 tulpa_gp::nngp_nc_forward(&q[w0], sigma2, phi, view, ws);
                 for (int i = 0; i < n_svc; i++) row[w0 + i] = ws.w[i];
             }
             (void)tulpa::s2z_centre_component(row, w0, n_svc);
         }
+    }
+
+    if (data.st_is_hsgp && data.st_parameterization == 1) {
+        double rho = 0.0;
+        if (layout.logit_rho_st_idx >= 0) rho = 2.0 * tulpa::math::inv_logit(q[layout.logit_rho_st_idx]) - 1.0;
+        tulpa_st_hsgp::nc_forward(&q[layout.st_delta_start],
+            tulpa::math::safe_exp(q[layout.log_tau_st_idx]), rho,
+            tulpa::math::safe_exp(q[layout.log_sigma2_st_hsgp_idx]), tulpa::math::safe_exp(q[layout.log_lengthscale_st_hsgp_idx]),
+            data.spatiotemporal_data, data.st_hsgp_data, row + layout.st_delta_start, data.st_hsgp_data.kernel);
+    }
+    if (layout.is_st_gp && data.st_parameterization == 1) {
+        (void)tulpa_st_gp::st_gp_nc_forward(&q[layout.st_delta_start],
+            1.0 / tulpa::math::safe_exp(q[layout.log_tau_st_idx]), tulpa::math::safe_exp(q[layout.log_phi_st_space_idx]),
+            tulpa::math::safe_exp(q[layout.log_phi_st_time_idx]), data.spatiotemporal_data,
+            row + layout.st_delta_start);
+    }
+    if (data.st_margin_centering && layout.has_spatiotemporal) {
+        std::vector<double> field(q.begin() + layout.st_delta_start,
+                                  q.begin() + layout.st_delta_end);
+        tulpa::center_st_margins(field, data.spatiotemporal_data.n_spatial,
+                                 data.spatiotemporal_data.n_times);
+        const double scale = data.st_parameterization == 1 ?
+            1.0 / std::sqrt(tulpa::math::safe_exp(q[layout.log_tau_st_idx])) : 1.0;
+        for (size_t i = 0; i < field.size(); ++i) row[layout.st_delta_start + i] = scale * field[i];
     }
 
     // TVC: each (group, term) block's level is removed by tvc_center_eta() on
@@ -102,6 +127,7 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
                 tulpa::s2z_centre_component(f.data(), 0, static_cast<int>(f.size()));
         }
         std::copy(f.begin(), f.end(), row + layout.temporal_start);
+        data.temporal_restricted_slopes.remove(row + layout.temporal_start);
     }
 
     // Non-centred multiscale trend: the sampled slice is the walk's level,
@@ -109,13 +135,14 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
     // multiscale_trend_values() hands the likelihood, centred as
     // temporal_effects_by_time centres it on its way into eta.
     if (data.has_multiscale_temporal && layout.has_multiscale_temporal &&
-        tulpa::priors::multiscale_trend_noncentered(data, layout)) {
+        layout.log_sigma2_trend_idx >= 0) {
         std::vector<double> trend;
         (void)tulpa::priors::multiscale_trend_values<double>(q, data, layout,
                                                              trend);
         const int n_trend = layout.trend_end - layout.trend_start;
         for (int t = 0; t < n_trend; t++) row[layout.trend_start + t] = trend[t];
         (void)tulpa::s2z_centre_component(row, layout.trend_start, n_trend);
+        data.ms_trend_restricted_slopes.remove(row + layout.trend_start);
     }
 
     // Non-centred multiscale seasonal arm: the sampled slice is the cyclic
@@ -123,7 +150,7 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
     // multiscale_seasonal_values() hands the likelihood, centred as
     // temporal_effects_by_time centres it on its way into eta.
     if (data.has_multiscale_temporal && layout.has_multiscale_temporal &&
-        tulpa::priors::multiscale_seasonal_noncentered(data, layout)) {
+        layout.log_sigma2_seasonal_idx >= 0) {
         std::vector<double> seasonal;
         (void)tulpa::priors::multiscale_seasonal_values<double>(q, data, layout,
                                                                 seasonal);

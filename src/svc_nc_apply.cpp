@@ -11,6 +11,7 @@
 
 #include "hmc_gp.h"              // tulpa_gp::{NNGPNCView, make_svc_nc_view};
                                  // pulls in hmc_svc.h for tulpa::SVCData.
+#include "svc_range.h"
 #include "nngp_nc_term_apply.h"  // apply_nngp_nc_term_{double,arena}
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
@@ -23,6 +24,7 @@ void apply_svc_nc_transform_double(
     const ParamLayout&         layout,
     std::vector<double>&       svc_w_out)
 {
+    const auto native = svc_nc_native_coordinates(params, data, layout);
     const int N     = data.svc_data.n_obs;
     const int n_svc = data.svc_data.n_svc;
     const int w0    = layout.svc_w_start;
@@ -33,7 +35,7 @@ void apply_svc_nc_transform_double(
     for (int j = 0; j < n_svc; j++) {
         std::vector<double> w_j;
         apply_nngp_nc_term_double(
-            params, w0 + j * N, layout.log_sigma2_svc_start + j,
+            native, w0 + j * N, layout.log_sigma2_svc_start + j,
             layout.log_phi_svc_start + j, N, view, w_j);
         for (int i = 0; i < N; i++) svc_w_out[(std::size_t)j * N + i] = w_j[i];
     }
@@ -45,6 +47,7 @@ void apply_svc_nc_transform_arena(
     const ParamLayout&             layout,
     std::vector<arena::Var>&       svc_w_out)
 {
+    const auto native = svc_nc_native_coordinates(params, data, layout);
     const int N     = data.svc_data.n_obs;
     const int n_svc = data.svc_data.n_svc;
     const int w0    = layout.svc_w_start;
@@ -54,7 +57,7 @@ void apply_svc_nc_transform_arena(
     svc_w_out.resize((std::size_t)n_svc * N);
     for (int j = 0; j < n_svc; j++) {
         std::vector<arena::Var> w_j = apply_nngp_nc_term_arena(
-            params, w0 + j * N, layout.log_sigma2_svc_start + j,
+            native, w0 + j * N, layout.log_sigma2_svc_start + j,
             layout.log_phi_svc_start + j, N, view);
         for (int i = 0; i < N; i++) svc_w_out[(std::size_t)j * N + i] = w_j[i];
     }

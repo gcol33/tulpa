@@ -193,9 +193,10 @@ template <typename T>
 inline bool cond_weights(const std::vector<T>& C, const std::vector<T>& c_vec,
                          int n, const T& sigma2, double nugget,
                          double var_floor, VarFloor floor_mode,
-                         std::vector<T>& alpha, T& cond_var) {
+                         std::vector<T>& alpha, T& cond_var, double neighbor_nugget = -1.0) {
   std::vector<T> L;
-  if (!chol_decomp(C, n, L, nugget)) return false;
+  const double ridge = neighbor_nugget < 0.0 ? nugget : neighbor_nugget;
+  if (!chol_decomp(C, n, L, ridge)) return false;
 
   std::vector<T> y;
   solve_lower(L, n, c_vec, y);
@@ -217,10 +218,10 @@ template <typename T>
 inline bool cond_moments(const std::vector<T>& C, const std::vector<T>& c_vec,
                          const std::vector<T>& w_nb, int n, const T& sigma2,
                          double nugget, double var_floor, VarFloor floor_mode,
-                         T& cond_mean, T& cond_var) {
+                         T& cond_mean, T& cond_var, double neighbor_nugget = -1.0) {
   std::vector<T> alpha;
   if (!cond_weights(C, c_vec, n, sigma2, nugget, var_floor, floor_mode,
-                    alpha, cond_var)) {
+                    alpha, cond_var, neighbor_nugget)) {
     return false;
   }
   T cm = T(0.0);

@@ -106,7 +106,7 @@ inline void svc_nngp_level_forms(const tulpa::SVCData& sv, const double* w,
         const int loc = sv.nn_order[i];
         const int n_nb = (i == 0) ? 0 : tulpa_nngp::nngp_row_neighbours(
             sv.nn_idx.data() + (std::size_t)i * nn, 1, nn, n_order);
-        double r1 = 1.0, rw = w[loc], d = sigma2;
+        double r1 = 1.0, rw = w[loc], d = sigma2 + sv.marginal_nugget;
         if (n_nb > 0) {
             nb_loc.resize(n_nb);
             for (int k = 0; k < n_nb; k++) {
@@ -124,9 +124,9 @@ inline void svc_nngp_level_forms(const tulpa::SVCData& sv, const double* w,
                 }
             }
             if (!tulpa_nngp::cond_weights(C, c_vec, n_nb, sigma2,
-                                          tulpa_svc::kSvcJitter,
-                                          tulpa_svc::kSvcVarFloor,
-                                          tulpa_nngp::VarFloor::Blend, alpha, d)) {
+                                          sv.marginal_nugget,
+                                          sv.variance_floor,
+                                          tulpa_svc::svc_floor_mode(sv), alpha, d, sv.neighbor_jitter)) {
                 Rcpp::stop("svc prediction: a fitted neighbour covariance is not "
                            "positive definite at this draw.");
             }
@@ -200,9 +200,9 @@ inline void svc_nngp_predict_row(const tulpa::SVCData& sv, const PredNeighbours&
             }
             double v = 0.0;
             if (!tulpa_nngp::cond_weights(C, c_vec, m, sigma2[j],
-                                          tulpa_svc::kSvcJitter,
-                                          tulpa_svc::kSvcVarFloor,
-                                          tulpa_nngp::VarFloor::Blend, alpha, v)) {
+                                          sv.marginal_nugget,
+                                          sv.variance_floor,
+                                          tulpa_svc::svc_floor_mode(sv), alpha, v, sv.neighbor_jitter)) {
                 Rcpp::stop("svc prediction: a prediction neighbour covariance is "
                            "not positive definite at this draw.");
             }
@@ -544,7 +544,7 @@ Rcpp::List cpp_varying_coef_draws(
             } else {
                 for (int j = 0; j < sv.n_svc; j++) {
                     s2[j] = safe_exp(params[layout.log_sigma2_svc_start + j]);
-                    ph[j] = safe_exp(params[layout.log_phi_svc_start + j]);
+                    ph[j] = svc_range_from_coordinate(params[layout.log_phi_svc_start + j], data);
                 }
                 if (data.svc_is_hsgp) {
                     // The basis field is a deterministic function of the draw,

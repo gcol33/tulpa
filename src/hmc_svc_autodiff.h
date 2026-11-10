@@ -140,7 +140,7 @@ T nngp_log_lik(
     // First observation: marginal N(0, sigma2)
     int first_idx = svc_data.nn_order[0];
     if (first_idx < 0 || first_idx >= N) return T(-INFINITY);
-    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2, kSvcJitter);
+    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2, svc_data.marginal_nugget);
 
     // Remaining observations: conditional on neighbors
     for (int i = 1; i < N; i++) {
@@ -156,7 +156,7 @@ T nngp_log_lik(
 
         if (n_neighbors == 0) {
             // No neighbors: marginal
-            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2, kSvcJitter);
+            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2, svc_data.marginal_nugget);
             continue;
         }
 
@@ -200,16 +200,14 @@ T nngp_log_lik(
             }
         }
 
-        // Gather the neighbour values in c_vec order, then the shared kernel:
-        // factor, krige, floor. The SVC constants blend at the floor to keep a
-        // little gradient (see kSvcJitter / kSvcVarFloor).
+        // Condition at the field's declared nuggets and variance floor.
         std::vector<T> w_nb(n_neighbors);
         for (int j = 0; j < n_neighbors; j++) w_nb[j] = w[nb_loc[j]];
         T cond_mean, cond_var;
         if (!tulpa_nngp::cond_moments(C_mat, c_vec, w_nb, n_neighbors, sigma2,
-                                      kSvcJitter, kSvcVarFloor,
-                                      tulpa_nngp::VarFloor::Blend,
-                                      cond_mean, cond_var)) {
+                                      svc_data.marginal_nugget, svc_data.variance_floor,
+                                      tulpa_svc::svc_floor_mode(svc_data),
+                                      cond_mean, cond_var, svc_data.neighbor_jitter)) {
             return T(-INFINITY);
         }
         log_lik = log_lik + tulpa_nngp::cond_log_density(w[obs_idx], cond_mean,

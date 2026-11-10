@@ -306,6 +306,7 @@ unity_glmm.o: \
   tulpa_priors_temporal.h \
   hmc_hsgp_kernels.h \
   hsgp_spectral.h \
+  svc_range.h \
   hmc_svc_autodiff.h \
   intrinsic_log_pdet.h \
   laplace_likelihoods.h \
@@ -343,6 +344,7 @@ unity_glmm.o: \
   hmc_gp_autodiff.h \
   spde_matern_map.h \
   hmc_latent_autodiff.h \
+  st_gp_kernel.h \
   small_dense_sym.h \
   sparse_hessian.h \
   curvature3_contract.h \
@@ -389,6 +391,7 @@ unity_hmc.o: \
   hmc_mass_drift.h \
   hmc_chain_checkpoint.h \
   omp_threads.h \
+  st_gp_kernel.h \
   pc_prior.h \
   st_null_space.h \
   sysmem.h \
@@ -424,6 +427,7 @@ unity_hmc.o: \
   tulpa_priors_mstemporal.h \
   linalg_fast.h \
   checkpoint_io.h \
+  hmc_svc_autodiff.h \
   nngp_cond.h \
   hmc_gp_cg.h \
   hmc_gp_lbfgs.h \
@@ -453,7 +457,7 @@ unity_hmc.o: \
   hmc_gp_autodiff.h \
   hsgp_spectral.h \
   spde_matern_map.h \
-  hmc_svc_autodiff.h \
+  svc_range.h \
   hmc_latent_autodiff.h \
   laplace_likelihoods.h \
   fastmath.h
@@ -594,8 +598,10 @@ unity_laplace.o: \
   hmc_gp_autodiff.h \
   hsgp_spectral.h \
   spde_matern_map.h \
+  svc_range.h \
   hmc_svc_autodiff.h \
-  hmc_latent_autodiff.h
+  hmc_latent_autodiff.h \
+  st_gp_kernel.h
 unity_nl.o: \
   unity_nl.cpp \
   areal_input_check.cpp \
@@ -855,6 +861,7 @@ unity_samplers.o: \
   omp_threads.h \
   sampler_model_data.h \
   hsgp_spectral.h \
+  restricted_slopes_setup.h \
   sghmc_sampler.h \
   hmc_sampler_decls.h \
   smc_sampler.h \
@@ -933,8 +940,10 @@ unity_samplers.o: \
   st_null_space.h \
   hmc_gp_autodiff.h \
   spde_matern_map.h \
+  svc_range.h \
   hmc_svc_autodiff.h \
-  hmc_latent_autodiff.h
+  hmc_latent_autodiff.h \
+  st_gp_kernel.h
 unity_spatial.o: \
   unity_spatial.cpp \
   brasil_export.cpp \
@@ -973,6 +982,7 @@ unity_spatial.o: \
   spde_nc_apply.h \
   spde_nc_transform.h \
   svc_nc_apply.h \
+  svc_range.h \
   hmc_sampler.h \
   tulpa_priors_spde.h \
   fixed_effect_prior.h \

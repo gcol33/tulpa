@@ -2,9 +2,12 @@
 #define TULPA_SVC_DATA_H
 
 #include <vector>
+#include <cmath>
 #include "tulpa/types.h"
 
 namespace tulpa {
+inline constexpr double SVC_DEFAULT_NUGGET = 1e-4;
+inline constexpr double SVC_DEFAULT_VARIANCE_FLOOR = 1e-4;
 
 // ============================================================================
 // SVC data (Spatially-Varying Coefficients)
@@ -31,6 +34,17 @@ struct SVCData {
     // the identity (one location per row, n_rows() == n_obs), which is every
     // HSGP field and every NNGP field on distinct coordinates.
     std::vector<int> obs_to_loc;
+
+    double neighbor_jitter = SVC_DEFAULT_NUGGET;
+    double marginal_nugget = SVC_DEFAULT_NUGGET;
+    double variance_floor = SVC_DEFAULT_VARIANCE_FLOOR;
+    bool blend_variance_floor = true;
+
+    bool conditioning_valid() const {
+        return std::isfinite(neighbor_jitter) && neighbor_jitter >= 0.0 &&
+            std::isfinite(marginal_nugget) && marginal_nugget >= 0.0 &&
+            std::isfinite(variance_floor) && variance_floor > 0.0;
+    }
 
     int n_rows() const {
         return obs_to_loc.empty() ? n_obs : static_cast<int>(obs_to_loc.size());

@@ -170,6 +170,8 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
 
         // Trend component
         if (layout.log_sigma2_trend_idx >= 0) {
+            log_post = log_post + data.ms_trend_restricted_slopes.log_density(
+                params.data() + layout.trend_start, data.ms_trend_parameterization == 1);
             T log_sigma2_trend = params[layout.log_sigma2_trend_idx];
             ms_sigma2_trend = safe_exp(log_sigma2_trend);
 
@@ -270,17 +272,17 @@ inline double multiscale_temporal_prior_log_normalizer(
     const double nan = std::numeric_limits<double>::quiet_NaN();
     double c = 0.0;
     if (multiscale_trend_noncentered(data, layout)) {
-        if (ms.trend_type != TemporalType::RW1) {
+        if (ms.trend_type != TemporalType::RW1 && !data.ms_trend_restricted_slopes.covers_all()) {
             if (declined) declined->push_back("multiscale_temporal:trend_improper");
             return nan;
         }
     } else if (layout.log_sigma2_trend_idx >= 0) {
         const int n = layout.trend_end - layout.trend_start;
-        if (ms.trend_type != TemporalType::RW1 || n < 2) {
+        if ((ms.trend_type != TemporalType::RW1 && !data.ms_trend_restricted_slopes.covers_all()) || n < 2) {
             if (declined) declined->push_back("multiscale_temporal:trend_improper");
             return nan;
         }
-        c += 0.5 * rw_log_pdet(n, 1, false);
+        c += 0.5 * rw_log_pdet(n, ms.trend_type == TemporalType::RW2 ? 2 : 1, false);
     }
     if (layout.log_sigma2_seasonal_idx >= 0 &&
         !multiscale_seasonal_noncentered(data, layout)) {

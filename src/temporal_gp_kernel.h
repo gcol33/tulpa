@@ -81,7 +81,7 @@ template <typename T>
 inline bool temporal_cov_chol(const std::vector<double>& time_values,
                               int n_times, const T& sigma2, const T& phi,
                               TemporalCovType cov_type, double nu,
-                              double period, std::vector<T>& L) {
+                              double period, std::vector<T>& L, double relative_nugget = 0.0) {
     std::vector<T> K(static_cast<std::size_t>(n_times) * n_times);
     for (int i = 0; i < n_times; i++) {
         for (int j = 0; j <= i; j++) {
@@ -91,7 +91,11 @@ inline bool temporal_cov_chol(const std::vector<double>& time_values,
             K[static_cast<std::size_t>(j) * n_times + i] = k;
         }
     }
-    return tulpa_nngp::chol_decomp(K, n_times, L, 1e-8);
+    if (relative_nugget > 0)
+        for (int i = 0; i < n_times; ++i)
+            K[static_cast<std::size_t>(i) * n_times + i] =
+                K[static_cast<std::size_t>(i) * n_times + i] + sigma2 * T(relative_nugget);
+    return tulpa_nngp::chol_decomp(K, n_times, L, relative_nugget > 0 ? 0.0 : 1e-8);
 }
 
 // log N(f; 0, K) for one group, given the factor L of K.

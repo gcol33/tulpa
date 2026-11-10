@@ -13,13 +13,14 @@ inline double lin_basis(int t, int n) {
 }
 
 inline bool nc_applies(int n, int order, bool cyclic) {
-  if (order == 1) return cyclic ? (n >= 3) : (n >= 2);
+  if (cyclic && (order == 1 || order == 2)) return n >= 3;
+  if (order == 1) return n >= 2;
   return !cyclic && n >= 3;
 }
 
 inline int nc_normal_dim(int n, int order, bool cyclic) {
   if (!nc_applies(n, order, cyclic)) return 0;
-  if (order == 1) return cyclic ? n : n;
+  if (order == 1 || cyclic) return n;
   return n - 1;
 }
 
@@ -32,6 +33,13 @@ inline void rw_nc_forward(const T* z, int n, int order, bool cyclic,
   }
   const double dn = static_cast<double>(n);
   const double sqrt_n = std::sqrt(dn);
+
+  if (order == 2 && cyclic) {
+    std::vector<T> first(n);
+    rw_nc_forward(z, n, 1, true, T(1.0), first.data());
+    rw_nc_forward(first.data(), n, 1, true, sigma, phi);
+    return;
+  }
 
   if (order == 1 && !cyclic) {
 
@@ -97,6 +105,21 @@ inline void rw_nc_backward(const double* g, const double* phi, const double* z,
   }
   const double dn = static_cast<double>(n);
   const double sqrt_n = std::sqrt(dn);
+
+  if (order == 2 && cyclic) {
+    std::vector<double> first(n), first_gradient(n, 0.0);
+    rw_nc_forward(z, n, 1, true, 1.0, first.data());
+    rw_nc_backward(g, phi, first.data(), n, 1, true, sigma,
+      first_gradient.data(), nullptr);
+    rw_nc_backward(first_gradient.data(), first.data(), z, n, 1, true, 1.0,
+      gz, nullptr);
+    if (g_log_sigma2 != nullptr) {
+      double dot = 0.0;
+      for (int t = 0; t < n; ++t) dot += g[t] * phi[t];
+      *g_log_sigma2 += 0.5 * dot;
+    }
+    return;
+  }
 
   double gsum = 0.0;
   for (int t = 0; t < n; t++) gsum += g[t];
@@ -171,7 +194,7 @@ inline T rw_nc_log_prior(const T* z, int n, int order, bool cyclic) {
   const int d = nc_normal_dim(n, order, cyclic);
   T quad = T(0.0);
   for (int k = 0; k < d; k++) quad = quad + z[k] * z[k];
-  return T(-0.5) * quad - T(0.5 * d) * T(std::log(2.0 * M_PI));
+  return T(-0.5) * quad - T(0.5 * d) * T(std::log(2.0 * std::acos(-1.0)));
 }
 
 template <typename T>

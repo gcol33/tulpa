@@ -1,8 +1,5 @@
 // st_hsgp_prior.cpp
-// A ModelData carrying an HSGP space-time interaction (st_is_hsgp), as a
-// consumer would hand it to the engine, laid out by the engine's own
-// compute_param_layout. The samplers carry no density for that interaction,
-// so the layout refuses it.
+// An HSGP space-time interaction with a flat observation likelihood.
 
 #include <Rcpp.h>
 
@@ -82,6 +79,7 @@ void build_st_hsgp_model(
     data.st_hsgp_sigma2_prior_alpha = 0.01;
     data.st_hsgp_data.m_total = M;
     data.st_hsgp_data.eigenvalues = eigenvalues;
+    data.st_hsgp_data.phi_flat.assign(M, 0.0);
 
     auto& st = data.spatiotemporal_data;
     st.type = tulpa::STType::TYPE_IV;

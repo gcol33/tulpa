@@ -36,6 +36,8 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
     T log_post = T(0.0);
 
     if (layout.has_temporal) {
+        log_post = log_post + data.temporal_restricted_slopes.log_density(
+            params.data() + layout.temporal_start, data.temporal_parameterization == 1);
         // Extract temporal effects (common to all temporal types)
         int n_temporal = layout.temporal_end - layout.temporal_start;
         phi_temporal.resize(n_temporal);
@@ -106,7 +108,7 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                     sigma2_temporal_gp_out, phi_temporal_gp_out,
                     data.temporal_gp_data.cov_type,
                     data.temporal_gp_data.nu,
-                    data.temporal_gp_data.period, L);
+                    data.temporal_gp_data.period, L, data.temporal_gp_relative_nugget);
                 if (!ok) return T(-INFINITY);
 
                 if (use_nc) {
@@ -205,6 +207,26 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 tulpa_temporal_nc::rw_nc_grouped_forward(phi_temporal.data(),
                     T_times, data.n_temporal_groups, order, data.temporal_cyclic,
                     T(1.0) / safe_sqrt(tau_temporal_out), field.data());
+                if (!data.temporal_group_centering && data.n_temporal_groups > 1) {
+                    std::vector<T> levels(data.n_temporal_groups);
+                    T mean(0.0);
+                    for (int g = 0; g < data.n_temporal_groups; ++g) {
+                        levels[g] = data.temporal_cyclic ?
+                            tulpa::s2z_component_sum(phi_temporal.data(), g * T_times, T_times) / T(std::sqrt(T_times)) :
+                            phi_temporal[g * T_times + T_times - (order == 1 ? 1 : 2)];
+                        mean = mean + levels[g];
+                        log_post = log_post + T(0.5) * levels[g] * levels[g];
+                    }
+                    mean = mean / T(data.n_temporal_groups);
+                    log_post = log_post - T(0.5 * data.n_temporal_groups) * mean * mean
+                        + T(0.5 * (data.n_temporal_groups - 1) * tulpa_temporal::kLogTwoPi);
+                    const T sigma = T(1.0) / safe_sqrt(tau_temporal_out);
+                    for (int g = 0; g < data.n_temporal_groups; ++g) {
+                        const T shift = (T(1.0) - sigma) * (levels[g] - mean) / T(std::sqrt(T_times));
+                        for (int t = 0; t < T_times; ++t)
+                            field[g * T_times + t] = field[g * T_times + t] + shift;
+                    }
+                }
                 phi_temporal = std::move(field);
             } else if (ar1_nc) {
                 const T sigma = T(1.0) / safe_sqrt(tau_temporal_out);
@@ -280,7 +302,7 @@ inline double temporal_prior_log_normalizer(const ModelData& data,
         if (declined) declined->push_back("temporal");
         return nan;
     }
-    if (rw2 && !data.temporal_cyclic) {
+    if (rw2 && !data.temporal_cyclic && !data.temporal_restricted_slopes.covers_all()) {
         if (declined) declined->push_back("temporal:rw2_improper");
         return nan;
     }
