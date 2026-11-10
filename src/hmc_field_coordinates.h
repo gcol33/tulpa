@@ -40,6 +40,11 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
     out.operators.push_back(prepare_bym2_coordinate(data, layout));
   if (layout.is_gp && data.has_gp && data.gp_range_prior.type == tulpa::RangePriorType::UNIFORM)
     out.ranges.push_back({layout.log_phi_gp_idx, data.gp_range_prior.lower, data.gp_range_prior.upper});
+  if (layout.is_st_gp && data.st_uniform_ranges) {
+    const auto& st = data.spatiotemporal_data;
+    out.ranges.push_back({layout.log_phi_st_space_idx, st.phi_space_prior_lower, st.phi_space_prior_upper});
+    out.ranges.push_back({layout.log_phi_st_time_idx, st.phi_time_prior_lower, st.phi_time_prior_upper});
+  }
   struct Block {
     int begin, end, scale;
     double sign;
