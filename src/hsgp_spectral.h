@@ -1,6 +1,6 @@
 // hsgp_spectral.h
-// Single source of truth for the spectral densities the Hilbert-space GP bases
-// evaluate: the squared-exponential kernel and the Matern kernels of
+// Spectral densities for two-dimensional Hilbert-space GP bases:
+// the squared-exponential kernel and the Matern kernels of
 // smoothness 3/2 and 5/2 (Riutort-Mayol et al. 2023, Statistics and Computing
 // 33:17, Eqs. 1-3).
 //
@@ -18,14 +18,13 @@
 // (nu = 5/2). Each integrates to (2 pi)^D sigma^2, so sigma^2 is the marginal
 // variance whatever the kernel.
 //
-// TULPA'S HSGP BASES ARE TWO-DIMENSIONAL, so the constants are written out at
-// D = 2 and there is no dimension argument here:
+// At D = 2 the spectra are:
 //
 //   squared exponential: 2 pi l^2 exp(-l^2 omega_sq / 2)
 //   Matern 3/2:          6 pi 3^{3/2} l^{-3} (3 / l^2 + omega_sq)^{-5/2}
 //   Matern 5/2:          10 pi 5^{5/2} l^{-5} (5 / l^2 + omega_sq)^{-7/2}
 //
-// (times sigma^2). That is a layout constraint rather than a default: an HSGP
+// (times sigma^2). The fixed dimension follows the basis layout: an HSGP
 // basis and its eigenvalues are built from coordinates stored at a fixed 2-D
 // stride, which is why every HSGP door takes exactly two coordinate columns and
 // `tulpa_linalg::require_coords_2col()` refuses anything else at the boundary.
@@ -43,6 +42,7 @@
 #include <cmath>
 #include <Rcpp.h>
 #include "autodiff_utils.h"
+#include <tulpa/hsgp_spectral.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -84,27 +84,8 @@ inline HsgpKernel hsgp_kernel_from_spec(const Rcpp::List& spec,
 template <typename T>
 inline T hsgp_spectral_density_2d(HsgpKernel kernel, const T& sigma2,
                                   const T& lengthscale, double omega_sq) {
-    using tulpa::math::safe_exp;
-    using tulpa::math::safe_log;
-    const T l2 = lengthscale * lengthscale;
-    switch (kernel) {
-    case HsgpKernel::MATERN32: {
-        // 6 pi 3^{3/2} = 97.94...
-        const double C = 6.0 * M_PI * 3.0 * std::sqrt(3.0);
-        return sigma2 * T(C) / (l2 * lengthscale)
-            * safe_exp(T(-2.5) * safe_log(T(3.0) / l2 + T(omega_sq)));
-    }
-    case HsgpKernel::MATERN52: {
-        // 10 pi 5^{5/2}
-        const double C = 10.0 * M_PI * 25.0 * std::sqrt(5.0);
-        return sigma2 * T(C) / (l2 * l2 * lengthscale)
-            * safe_exp(T(-3.5) * safe_log(T(5.0) / l2 + T(omega_sq)));
-    }
-    case HsgpKernel::SQUARED_EXPONENTIAL:
-    default:
-        return sigma2 * T(2.0 * M_PI) * l2
-            * safe_exp(T(-0.5) * l2 * T(omega_sq));
-    }
+    return tulpa_hsgp_spectral::spectral_density(omega_sq, sigma2, lengthscale,
+        2, static_cast<int>(kernel));
 }
 
 // sqrt of the spectral density at each eigenvalue, the per-coefficient loading
