@@ -2,6 +2,42 @@
 
 ## Models and inference
 
+* The generic NUTS C entries take a sampler control carrying the fixed
+  trajectory length, the metric (`auto`, `diag`, `dense`, `block_diag`) and a
+  WALNUTS configuration, so consumer packages reach fixed-step HMC, every metric
+  and WALNUTS through the engine. Their results report the actual leapfrog
+  counts and starting Hamiltonians. Exported struct layouts changed (ABI 57),
+  so consumer packages must be rebuilt (gcol33/tulpaRatio#176).
+
+* Fixed-trajectory HMC jitters its step size independently of the state after
+  warmup, which keeps the target and removes resonant orbits. At `L = 7` a
+  binomial fixture had missed its quadrature reference by up to 1.71 posterior
+  SD (gcol33/tulpaRatio#176).
+
+* NUTS samples RW1, RW2, AR1, ICAR, proper CAR, GP/NNGP, temporal GP,
+  multiscale, TVC and NNGP SVC fields in a partial coordinate. The coordinate
+  is calibrated before sampling from the prior and likelihood information at a
+  zero predictor, and its exact Jacobian enters the target. Draws are returned
+  on the effect scale; an explicit `parameterization =` is unchanged. Stored
+  intrinsic temporal draws are the centred effects the likelihood uses
+  (gcol33/tulpaRatio#176).
+
+* An areal field can centre each connected component separately and leave an
+  island's proper value in the predictor (`ModelData::spatial_component_centering`,
+  default global), with the BYM2 precision and normaliser of that projection
+  (gcol33/tulpaRatio#176).
+
+* `metric = "auto"` adapts a full dense metric for a BYM2 field within the
+  dense-size bound. On a 180-observation binomial fixture the hyperparameter
+  block had reached minimum bulk ESS 107 with 71 divergences; the dense metric
+  reached 290 with one (gcol33/tulpaRatio#176).
+
+* A temporal field's inclusion in each process is read from the process mask
+  alone; the unread `temporal_shared` scalar is gone (gcol33/tulpaRatio#176).
+
+* A consumer whose ABI does not match is refused on every callable lookup,
+  not only the first (gcol33/tulpaRatio#176).
+
 * `spatial_svc(sigma_prior_U =, sigma_prior_alpha =)`: each spatially varying
   coefficient field's marginal SD, NNGP and HSGP alike, carries the shared PC
   prior `P(sigma > U) = alpha` (default `U = 1`, `alpha = 0.01`), validated at

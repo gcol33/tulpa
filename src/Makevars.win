@@ -866,6 +866,7 @@ unity_samplers.o: \
   log_post_impl.h \
   linalg_fast.h \
   hmc_field_coordinates.h \
+  sampler_field_store.h \
   vi_types.h \
   vi_optimizer.h \
   vi_meanfield.h \
@@ -901,6 +902,8 @@ unity_samplers.o: \
   svc_nc_apply.h \
   msgp_nc_apply.h \
   log_post_generic_impl.h \
+  sampler_log_prob.h \
+  tulpa_priors_temporal.h \
   hmc_hsgp_kernels.h \
   intrinsic_log_pdet.h \
   hmc_gp_cg.h \
@@ -918,7 +921,6 @@ unity_samplers.o: \
   tulpa_priors_msgp.h \
   tulpa_priors_hsgp.h \
   tulpa_priors_spde.h \
-  tulpa_priors_temporal.h \
   tulpa_priors_svc.h \
   tulpa_priors_tvc.h \
   tulpa_priors_latent.h \
