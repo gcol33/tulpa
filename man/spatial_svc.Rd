@@ -21,7 +21,7 @@ spatial_svc(
   sigma_prior_alpha = 0.01
 )
 
-print.tulpa_svc(x, ...)
+\method{print}{tulpa_svc}(x, ...)
 }
 \arguments{
 \item{coords}{A formula (\code{~ lon + lat}) or character vector of length 2

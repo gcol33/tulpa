@@ -21,9 +21,9 @@ spatial_gp(
   parameterization = c("auto", "noncentered", "centered", "collapsed")
 )
 
-print.tulpa_gp(x, ...)
+\method{print}{tulpa_gp}(x, ...)
 
-print.tulpa_hsgp(x, ...)
+\method{print}{tulpa_hsgp}(x, ...)
 }
 \arguments{
 \item{coords}{A formula (\code{~ lon + lat}) or character vector naming the

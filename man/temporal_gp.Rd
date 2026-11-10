@@ -16,7 +16,7 @@ temporal_gp(
   parameterization = c("auto", "noncentered", "centered")
 )
 
-print.tulpa_temporal_gp(x, ...)
+\method{print}{tulpa_temporal_gp}(x, ...)
 }
 \arguments{
 \item{time_var}{Name of the time variable in data. Can be a formula

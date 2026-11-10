@@ -14,7 +14,7 @@ temporal_multiscale(
   parameterization = c("auto", "noncentered", "centered")
 )
 
-print.tulpa_temporal_multiscale(x, ...)
+\method{print}{tulpa_temporal_multiscale}(x, ...)
 }
 \arguments{
 \item{time_var}{Single character string naming the time variable in the data.}
