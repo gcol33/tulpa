@@ -83,21 +83,31 @@ static std::vector<tulpa::arena::Var> nngp_root(
     const auto view = tulpa_gp::make_gp_nc_view(data.gp_data);
     const int n = view.n_obs;
     auto root = nngp_root(log_variance.val(), log_range.val(), data);
-    auto backward = [root, view, variance, range, n](const double*, int, const double*, int,
-        const double* adjoints, double* result) mutable {
-        std::vector<double> z(n, 0.0), adj(n), gradient(n);
-        for (int j = 0; j < n; ++j) {
-            z[j] = 1.0;
-            for (int i = 0; i < n; ++i) {
-                root.workspace->w[i] = root.value[i * n + j];
-                adj[i] = adjoints[i * n + j];
+    std::vector<double> variance_tangent(n * n, 0.0), range_tangent(n * n, 0.0);
+    tulpa_gp::NNGPRowDerivatives derivatives(view.nn);
+    const auto& ws = *root.workspace;
+    for (int row = 0; row < n; ++row) {
+        tulpa_gp::nngp_row_derivatives(row, variance, range, view, ws, derivatives);
+        const int node = view.nn_order[row];
+        variance_tangent[node * n + node] =
+            tulpa_gp::nngp_conditional_log_variance_derivative(row, view, ws) / (2.0 * ws.sqrt_d[row]);
+        range_tangent[node * n + node] = derivatives.d_variance_phi * range / (2.0 * ws.sqrt_d[row]);
+        for (int j = 0; j < ws.B_n_nb[row]; ++j) {
+            const int neighbor = ws.nb_idx_flat[row * view.nn + j];
+            const double weight = ws.B_flat[row * view.nn + j];
+            for (int column = 0; column < n; ++column) {
+                variance_tangent[node * n + column] += weight * variance_tangent[neighbor * n + column]
+                    + derivatives.d_alpha_sigma(j) * root.value[neighbor * n + column];
+                range_tangent[node * n + column] += weight * range_tangent[neighbor * n + column]
+                    + range * derivatives.d_alpha_phi(j) * root.value[neighbor * n + column];
             }
-            double gv = 0, gr = 0, jacobian = 0;
-            tulpa_gp::nngp_nc_backward(z.data(), variance, range, view, *root.workspace,
-                adj.data(), gradient.data(), gv, gr, jacobian);
-            result[0] += gv;
-            result[1] += gr;
-            z[j] = 0.0;
+        }
+    }
+    auto backward = [variance_tangent, range_tangent](const double*, int, const double*, int,
+        const double* adjoints, double* result) {
+        for (size_t i = 0; i < variance_tangent.size(); ++i) {
+            result[0] += adjoints[i] * variance_tangent[i];
+            result[1] += adjoints[i] * range_tangent[i];
         }
     };
     std::vector<int32_t> indices;

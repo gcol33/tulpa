@@ -156,6 +156,60 @@ struct NNGPNCWorkspace {
     }
 };
 
+inline double nngp_conditional_log_variance_derivative(
+    int i, const NNGPNCView& view, const NNGPNCWorkspace& ws) {
+    double norm = 0.0;
+    for (int j = 0; j < ws.B_n_nb[i]; ++j) {
+        const double value = ws.B_flat[static_cast<size_t>(i) * view.nn + j];
+        norm += value * value;
+    }
+    return ws.d_slope[i] * (ws.d_raw[i] - view.own_nugget() - view.jitter * norm);
+}
+
+struct NNGPRowDerivatives {
+    Eigen::MatrixXd L;
+    Eigen::VectorXd alpha, dc, rhs, dC_alpha, d_alpha_sigma, d_alpha_phi;
+    double d_variance_phi = 0.0;
+
+    explicit NNGPRowDerivatives(int nn) : L(nn, nn), alpha(nn), dc(nn), rhs(nn),
+        dC_alpha(nn), d_alpha_sigma(nn), d_alpha_phi(nn) {}
+};
+
+inline void nngp_row_derivatives(int i, double sigma2, double phi,
+    const NNGPNCView& view, const NNGPNCWorkspace& ws, NNGPRowDerivatives& out) {
+    const int nn = view.nn, count = ws.B_n_nb[i];
+    out.d_variance_phi = 0.0;
+    if (count == 0) return;
+    out.L.topLeftCorner(count, count).setZero();
+    for (int j = 0; j < count; ++j) {
+        const double distance = view.nn_dist[static_cast<size_t>(i) * nn + j];
+        const double covariance = compute_cov(distance, sigma2, phi, view.cov_type);
+        out.dc(j) = dcov_dphi(distance, phi, covariance, sigma2, view.cov_type);
+        out.alpha(j) = ws.B_flat[static_cast<size_t>(i) * nn + j];
+        for (int k = 0; k <= j; ++k)
+            out.L(j, k) = ws.L_flat[static_cast<size_t>(i) * nn * nn + j * nn + k];
+    }
+    const auto L = out.L.topLeftCorner(count, count);
+    out.d_alpha_sigma.head(count).setZero();
+    if (view.jitter != 0.0) {
+        const Eigen::VectorXd y = L.triangularView<Eigen::Lower>().solve(out.alpha.head(count));
+        out.d_alpha_sigma.head(count) = view.jitter *
+            L.transpose().triangularView<Eigen::Upper>().solve(y);
+    }
+    out.dC_alpha.head(count).setZero();
+    for (int j = 0; j < count; ++j) for (int k = 0; k < count; ++k) if (j != k) {
+        const double distance = view.pair_dist(i, j, k, ws.nb_idx_flat[i * nn + j],
+            ws.nb_idx_flat[i * nn + k]);
+        const double covariance = compute_cov(distance, sigma2, phi, view.cov_type);
+        out.dC_alpha(j) += dcov_dphi(distance, phi, covariance, sigma2, view.cov_type) * out.alpha(k);
+    }
+    out.rhs.head(count) = out.dc.head(count) - out.dC_alpha.head(count);
+    const Eigen::VectorXd y = L.triangularView<Eigen::Lower>().solve(out.rhs.head(count));
+    out.d_alpha_phi.head(count) = L.transpose().triangularView<Eigen::Upper>().solve(y);
+    out.d_variance_phi = ws.d_slope[i] * (-2.0 * out.alpha.head(count).dot(out.dc.head(count))
+        + out.alpha.head(count).dot(out.dC_alpha.head(count)));
+}
+
 // Forward pass: z -> w via NNGP autoregressive structure
 // z and w are both indexed by LOCATION (0-based), matching the parameter layout.
 // Caches B, sqrt_d, nb_idx for backward pass.
@@ -380,14 +434,7 @@ inline void nngp_nc_backward(
     for (int i = 0; i < N; i++) {
         if (!(ws.sqrt_d[i] > 0.0)) continue;
         const int loc = view.nn_order[i];
-        double alpha_sq = 0.0;
-        const int n_nb = ws.B_n_nb[i];
-        for (int j = 0; j < n_nb; j++) {
-            const double a_j = ws.B_flat[(std::size_t)i * nn + j];
-            alpha_sq += a_j * a_j;
-        }
-        const double dd_dlog_sigma2 =
-            ws.d_slope[i] * (ws.d_raw[i] - view.own_nugget() - view.jitter * alpha_sq);
+        const double dd_dlog_sigma2 = nngp_conditional_log_variance_derivative(i, view, ws);
         grad_log_sigma2_lik +=
             adj[i] * dd_dlog_sigma2 / (2.0 * ws.sqrt_d[i]) * z[loc];
     }
@@ -408,140 +455,26 @@ inline void nngp_nc_backward(
     std::vector<double> tl_phi_jac(n_threads, 0.0);
     std::vector<double> tl_s2_alpha(n_threads, 0.0);
 
-    struct BackwardWS {
-        Eigen::MatrixXd L_eigen, C_eigen;
-        Eigen::VectorXd c_eigen, dc_eigen, rhs_eigen, dalpha_eigen, alpha_eigen;
-        std::vector<double> dC_alpha;
-        BackwardWS(int nn_) : L_eigen(nn_, nn_), C_eigen(nn_, nn_),
-                              c_eigen(nn_), dc_eigen(nn_), rhs_eigen(nn_),
-                              dalpha_eigen(nn_), alpha_eigen(nn_), dC_alpha(nn_) {}
-    };
-    std::vector<BackwardWS> bws_vec = tulpa_thread_workspaces<BackwardWS>(n_threads, nn);
-
-    // One row's hyperparameter contribution, written once and driven from both
-    // routes. The workspace slot and the three accumulators are parameters
-    // rather than captures, so the parallel route hands each chunk its own slot
-    // and the serial route reuses slot 0 -- bws_vec is never copied onto a
-    // worker stack (the OpenMP worker-stack rule).
-    auto hyper_row = [&](int i, BackwardWS& bw, double& acc_lik,
+    std::vector<NNGPRowDerivatives> bws_vec =
+        tulpa_thread_workspaces<NNGPRowDerivatives>(n_threads, nn);
+    auto hyper_row = [&](int i, NNGPRowDerivatives& derivatives, double& acc_lik,
                          double& acc_jac, double& acc_s2) {
-        auto& L_eigen = bw.L_eigen;
-        auto& C_eigen = bw.C_eigen;
-        auto& c_eigen = bw.c_eigen;
-        auto& dc_eigen = bw.dc_eigen;
-        auto& rhs_eigen = bw.rhs_eigen;
-        auto& dalpha_eigen = bw.dalpha_eigen;
-        auto& alpha_eigen = bw.alpha_eigen;
-        auto& dC_alpha = bw.dC_alpha;
-        int obs_loc = view.nn_order[i];
-        int n_nb = ws.B_n_nb[i];
-        if (n_nb == 0 || obs_loc < 0 || obs_loc >= N) return;
-
-        // Rebuild c_vec, dc_vec, and C_mat for phi derivatives
-        for (int j = 0; j < n_nb; j++) {
-            double d = view.nn_dist[i * nn + j];
-            c_eigen(j) = compute_cov(d, sigma2, phi, view.cov_type);
-            dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, view.cov_type);
-            alpha_eigen(j) = ws.B_flat[i * nn + j];
+        const int loc = view.nn_order[i], count = ws.B_n_nb[i];
+        if (count == 0 || loc < 0 || loc >= N) return;
+        nngp_row_derivatives(i, sigma2, phi, view, ws, derivatives);
+        double ds = 0.0, dp = 0.0;
+        for (int j = 0; j < count; ++j) {
+            const double field = ws.w[ws.nb_idx_flat[i * nn + j]];
+            ds += derivatives.d_alpha_sigma(j) * field;
+            dp += derivatives.d_alpha_phi(j) * field;
         }
-
-        // Rebuild C_mat from cached distances (needed for dcov_dphi)
-        for (int j1 = 0; j1 < n_nb; j1++) {
-            C_eigen(j1, j1) = sigma2;
-            for (int j2 = j1 + 1; j2 < n_nb; j2++) {
-                double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
-                                             ws.nb_idx_flat[i * nn + j2]);
-                double cov_val = compute_cov(d12, sigma2, phi, view.cov_type);
-                C_eigen(j1, j2) = cov_val;
-                C_eigen(j2, j1) = cov_val;
-            }
-        }
-
-        // Restore cached L factor into Eigen matrix
-        L_eigen.topLeftCorner(n_nb, n_nb).setZero();
-        for (int j1 = 0; j1 < n_nb; j1++) {
-            for (int j2 = 0; j2 <= j1; j2++) {
-                L_eigen(j1, j2) = ws.L_flat[i * nn * nn + j1 * nn + j2];
-            }
-        }
-
-        auto L_restored = L_eigen.topLeftCorner(n_nb, n_nb);
-
-        // sigma2 channel through alpha. w_i = sum_j alpha_j w_nb_j +
-        // sqrt(d_i) z_i, and the reverse adjoint sweep above carries only the
-        // first term's dependence on the NEIGHBOURS. alpha itself moves with
-        // sigma2 whenever the neighbour covariance carries a nugget:
-        // differentiating alpha = C^{-1} c with C = sigma2 R + jitter I and
-        // c = sigma2 r gives dalpha/dsigma2 = C^{-1} r - C^{-1} R alpha, and
-        // the same substitution the d_i term uses collapses it to
-        //
-        //     dalpha/d log sigma2 = jitter * C^{-1} alpha,
-        //
-        // exactly zero at jitter = 0, which is why the homogeneous form never
-        // needed it. Its contribution to dw_i is (dalpha/d log sigma2)' w_nb.
-        if (view.jitter != 0.0) {
-            Eigen::VectorXd y_s2 = L_restored.triangularView<Eigen::Lower>()
-                                       .solve(alpha_eigen.head(n_nb));
-            Eigen::VectorXd Cinv_alpha =
-                L_restored.transpose().triangularView<Eigen::Upper>().solve(y_s2);
-            double dw_dlog_sigma2 = 0.0;
-            for (int j = 0; j < n_nb; j++) {
-                dw_dlog_sigma2 +=
-                    Cinv_alpha(j) * ws.w[ws.nb_idx_flat[i * nn + j]];
-            }
-            acc_s2 += adj[i] * view.jitter * dw_dlog_sigma2;
-        }
-
-        // dC/dphi * alpha (using properly rebuilt C_mat for dcov_dphi)
-        std::fill(dC_alpha.begin(), dC_alpha.begin() + n_nb, 0.0);
-        for (int j1 = 0; j1 < n_nb; j1++) {
-            for (int j2 = 0; j2 < n_nb; j2++) {
-                if (j1 != j2) {
-                    double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
-                                                 ws.nb_idx_flat[i * nn + j2]);
-                    double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
-                                              view.cov_type);
-                    dC_alpha[j1] += dC_jk * alpha_eigen(j2);
-                }
-            }
-        }
-
-        // dalpha/dphi = C^{-1} (dc/dphi - dC/dphi * alpha)
-        // Use Eigen triangular solve with cached L
-        for (int j = 0; j < n_nb; j++) rhs_eigen(j) = dc_eigen(j) - dC_alpha[j];
-        Eigen::VectorXd y_temp = L_restored.triangularView<Eigen::Lower>()
-                                     .solve(rhs_eigen.head(n_nb));
-        dalpha_eigen.head(n_nb) =
-            L_restored.transpose().triangularView<Eigen::Upper>().solve(y_temp);
-
-        // dd/dphi = -2 * dc' * alpha + alpha' * dC * alpha
-        double alpha_dc = 0.0, alpha_dC_alpha = 0.0;
-        for (int j = 0; j < n_nb; j++) {
-            alpha_dc += alpha_eigen(j) * dc_eigen(j);
-            alpha_dC_alpha += alpha_eigen(j) * dC_alpha[j];
-        }
-        // Same floor slope as the sigma2 term above: a floored d_i does not
-        // move with phi at the unfloored rate either.
-        double dd_dphi = ws.d_slope[i] * (-2.0 * alpha_dc + alpha_dC_alpha);
-
-        // Likelihood: dw[loc]/dphi = sum_j dalpha[j]*w[nb_j] + dd_dphi/(2*sqrt(d_i))*z[loc]
-        double dw_dphi = 0.0;
-        for (int j = 0; j < n_nb; j++) {
-            dw_dphi += dalpha_eigen(j) * ws.w[ws.nb_idx_flat[i * nn + j]];
-        }
-        double sqrt_di = ws.sqrt_d[i];
-        if (sqrt_di > 1e-15) {
-            dw_dphi += dd_dphi / (2.0 * sqrt_di) * z[obs_loc];
-        }
-        acc_lik += adj[i] * dw_dphi * phi;
-
-        // Jacobian: d/d(phi) [0.5*log(d_i)] = 0.5 * dd_dphi / d_i
-        double d_i = sqrt_di * sqrt_di;
-        if (d_i > 1e-15) {
-            acc_jac += 0.5 * dd_dphi / d_i * phi;
-        }
+        acc_s2 += adj[i] * ds;
+        const double sd = ws.sqrt_d[i];
+        if (sd > 1e-15) dp += derivatives.d_variance_phi / (2.0 * sd) * z[loc];
+        acc_lik += adj[i] * dp * phi;
+        if (sd * sd > 1e-15)
+            acc_jac += 0.5 * derivatives.d_variance_phi / (sd * sd) * phi;
     };
-
     // At a team of one the region is skipped entirely: entering libgomp costs
     // measurable time per reverse sweep, and this runs on every HMC gradient.
     // One thread means every row accumulates into slot 0 in index order, which
