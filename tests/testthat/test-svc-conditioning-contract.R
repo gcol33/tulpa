@@ -10,6 +10,7 @@ test_that("SVC conditioning policies describe the same dense prior in both coord
     ridge = c(1e-8, 0, 1e-10, 0), floored = c(.01, .002, .3, 1))
   for (policy in policies) for (coordinate in c("centered", "noncentered")) {
     spec <- base; spec$parameterization <- coordinate
+    spec$svc_parameterization <- as.integer(coordinate == "noncentered")
     spec$neighbor_jitter <- policy[1L]; spec$marginal_nugget <- policy[2L]
     spec$variance_floor <- policy[3L]; spec$blend_variance_floor <- policy[4L] == 1
     q <- .1 * sin(seq_len(4L + n))
@@ -17,10 +18,10 @@ test_that("SVC conditioning policies describe the same dense prior in both coord
     evaluate <- function(point) {
       r <- tulpa:::cpp_test_field_coordinates(y, X, svc_spec = spec, point = point)
       sigma2 <- exp(point[3L]); u <- plogis(point[4L]); phi <- .02 + 1.98 * u
-      C <- sigma2 * exp(-as.matrix(dist(cbind(d$lon, d$lat))) / phi)
+      C <- sigma2 * exp(-as.matrix(dist(spec$coords)) / phi)
       order <- as.integer(spec$nn_order) + 1L
       nn <- spec$nn
-      indices <- matrix(spec$nn_idx, n, nn, byrow = TRUE)
+      indices <- as.matrix(spec$nn_idx)
       A <- diag(n); variance <- rep(sigma2 + policy[2L], n)
       for (i in 2:n) {
         neighbors <- indices[i, ]; neighbors <- neighbors[neighbors > 0L]
