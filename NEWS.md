@@ -1,4 +1,4 @@
-# tulpa (development version)
+# tulpa 0.7.8
 
 ## Models and inference
 
