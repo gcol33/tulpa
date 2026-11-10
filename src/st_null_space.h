@@ -36,20 +36,12 @@
 
 #include "tulpa/soft_sum_to_zero.h"
 #include "tulpa/types.h"
+#include "tulpa/st_data.h"
 
 namespace tulpa_st {
 
 using tulpa::STType;
 using tulpa::TemporalType;
-
-// Does the interaction's density read a temporal margin Q_t at all? Type II
-// applies Q_t within each spatial unit and Type IV carries it as a Kronecker
-// margin. Type I is iid over the whole grid and Type III's time margin is unstructured,
-// so neither reads SpatiotemporalData::temporal_type, and a correlation for it
-// would be a parameter nothing scores.
-inline bool st_reads_time_margin(STType type) {
-    return type == STType::TYPE_II || type == STType::TYPE_IV;
-}
 
 // Is the interaction sampled on the non-centered scale z = delta sqrt(tau)?
 // The transform and its tau-free prior are the Kronecker Type IV form.

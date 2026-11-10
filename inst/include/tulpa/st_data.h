@@ -64,4 +64,14 @@ struct SpatiotemporalData {
 
 } // namespace tulpa
 
+namespace tulpa_st {
+
+// Type II and IV interactions apply a temporal precision to their coefficients.
+template<class Type>
+inline bool st_reads_time_margin(Type type) {
+    return type == Type::TYPE_II || type == Type::TYPE_IV;
+}
+
+}
+
 #endif // TULPA_ST_DATA_H
