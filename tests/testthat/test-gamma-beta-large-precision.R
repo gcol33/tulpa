@@ -102,3 +102,19 @@ test_that("relative deviances retain extreme positive responses", {
       dgamma(y,shape=phi,rate=phi,log=TRUE), tolerance=1e-12)
   }
 })
+
+test_that("Stirling remainders are independent of lgamma rounding", {
+  skip_on_cran()
+  load_cpp_fixture("precision_math")
+  refs <- precision_fixture("primitives")
+  for (order in 0:4) {
+    rows <- refs$kind == "s" & refs$order == order
+    actual <- cpp_test_precision_perturb(refs$x[rows], order)
+    expect_identical(attr(actual, "lgamma_calls"), 0L)
+    expect_identical(actual[, 1L], actual[, 2L])
+    expect_identical(actual[, 3L], actual[, 2L])
+    finite <- is.finite(refs$expected[rows])
+    expect_true(all(abs(actual[finite, 2L] - refs$expected[rows][finite]) <=
+                      4 * .Machine$double.eps * abs(refs$expected[rows][finite])))
+  }
+})

@@ -3,22 +3,24 @@
 
 #include <cmath>
 #include <limits>
+#include "precision_accumulator.h"
 
 namespace tulpa { namespace math {
 
 constexpr double log_two_pi = 1.837877066409345483560659472811;
 
 // B_(2n) / (2n (2n-1)), in increasing powers x^-(2n-1).
-inline long double stirling_series(long double x, int derivative) {
-    static const long double c[] = {
-        1.L/12, -1.L/360, 1.L/1260, -1.L/1680, 1.L/1188,
-        -691.L/360360, 1.L/156, -3617.L/122400, 43867.L/244188,
-        -174611.L/125400, 854513.L/63756, -236364091.L/1506960,
-        8553103.L/3900, -23749461029.L/657720};
-    const long double z = 1 / x, z2 = z * z;
-    long double acc = 0;
+inline detail::PrecisionAccumulator stirling_series(detail::PrecisionAccumulator x, int derivative) {
+    using Wide = detail::PrecisionAccumulator;
+    static const Wide c[] = {
+        Wide(1)/12, Wide(-1)/360, Wide(1)/1260, Wide(-1)/1680, Wide(1)/1188,
+        Wide(-691)/360360, Wide(1)/156, Wide(-3617)/122400, Wide(43867)/244188,
+        Wide(-174611)/125400, Wide(854513)/63756, Wide(-236364091)/1506960,
+        Wide(8553103)/3900, Wide(-23749461029.L)/657720};
+    const Wide z = Wide(1) / x, z2 = z * z;
+    Wide acc = 0;
     for (int j = 13; j >= 0; --j) {
-        long double coefficient = c[j];
+        Wide coefficient = c[j];
         for (int k = 0; k < derivative; ++k) coefficient *= -(2*j + 1 + k);
         acc = acc * z2 + coefficient;
     }
@@ -26,35 +28,44 @@ inline long double stirling_series(long double x, int derivative) {
     return acc;
 }
 
-// Derivatives of the Stirling remainder. Recurrence shifts the polygamma
-// into the same asymptotic series; extended precision protects the small-x
-// subtraction of its elementary part.
+// Derivatives of h(x) = (x + 1/2) log1p(1/x) - 1. With r = 1/(2x+1),
+// h(x) = sum_{n>=1} r^(2n)/(2n+1); its differentiated terms have one sign.
+inline detail::PrecisionAccumulator stirling_step(detail::PrecisionAccumulator x, int order) {
+    using Wide = detail::PrecisionAccumulator;
+    if (order >= 2) {
+        const Wide a = Wide(1)/x, b = Wide(1)/(x+Wide(1));
+        Wide sum = 0, coefficient = 1;
+        for (int j = 0; j <= order-2; ++j) {
+            if (j == 0) {
+                for (int k = 2; k < order; ++k) coefficient *= k;
+            } else coefficient *= Wide((order-1-j)*(j+1)) / Wide(j*(order-j));
+            Wide term = Wide(.5)*coefficient*detail::accumulator_power(b, order-j);
+            for (int k=0; k<j+2; ++k) term *= a;
+            sum += term;
+        }
+        return Wide(order % 2 ? -1 : 1)*sum;
+    }
+    if (x.hi < .25L) {
+        const Wide l = detail::accumulator_log(x+Wide(1))-detail::accumulator_log(x);
+        return order == 0 ? (x+Wide(.5L))*l-Wide(1)
+                          : l - (Wide(.5L)/x + Wide(.5L)/(x+Wide(1)));
+    }
+    const Wide r = Wide(1)/(Wide(2)*x+Wide(1)), r2 = r*r;
+    const Wide sum = detail::accumulator_log_tail(r2);
+    return order == 0 ? r2*sum : Wide(2)*r*r2*(sum-Wide(1)/(Wide(1)-r2));
+}
+
+// s^(k)(x) = s^(k)(x+n) + sum_{j<n} h^(k)(x+j). Every term has
+// sign (-1)^k, so shifting into the asymptotic range preserves relative error.
 inline double stirling_remainder_derivative(double value, int order = 0) {
-    const long double x = value;
-    if (!(x > 0)) return std::numeric_limits<double>::quiet_NaN();
+    using Wide = detail::PrecisionAccumulator;
+    const Wide x = value;
+    if (!(value > 0)) return std::numeric_limits<double>::quiet_NaN();
     if (std::isinf(value)) return 0;
-    if (x >= 10) return static_cast<double>(stirling_series(x, order));
-    if (order == 0) {
-        const long double half_log_two_pi = 0.91893853320467274178032973640561764L;
-        return static_cast<double>(std::lgamma(x) - ((x - .5L)*std::log(x) - x + half_log_two_pi));
-    }
-    long double z = x, sum = 0, fact = 1;
-    for (int k = 2; k < order; ++k) fact *= k;
-    while (z < 10) {
-        sum += std::pow(z, -order);
-        z += 1;
-    }
-    long double result = stirling_series(z, order);
-    if (order == 1) {
-        result += std::log(z/x) + .5L/x - .5L/z - sum;
-    } else {
-        const long double sign = order % 2 == 0 ? 1 : -1;
-        auto main = [&](long double t) {
-            return sign * fact * (std::pow(t, 1-order) / (order-1)
-                                  + .5L*std::pow(t, -order));
-        };
-        result += main(z) - main(x) + sign*fact*sum;
-    }
+    if (value >= 10) return static_cast<double>(stirling_series(x, order));
+    const int n = static_cast<int>(std::ceil(10-value));
+    Wide result = stirling_series(x+Wide(n), order);
+    for (int j = n-1; j >= 0; --j) result += stirling_step(x+Wide(j), order);
     return static_cast<double>(result);
 }
 
@@ -62,15 +73,16 @@ inline double stirling_remainder(double x) {
     return stirling_remainder_derivative(x);
 }
 
-// d - log(1+d), d >= -1. The first omitted series term at |d|=1/8
-// is smaller than 2^-78 times d^2.
+// d - log(1+d), d >= -1. The atanh series uses r=d/(2+d), as in
+// R's nmath pgamma.c. In this interval |r| <= 3/5.
 inline double log1pmx(double value) {
     const long double d = value;
     if (value == std::numeric_limits<double>::infinity()) return value;
-    if (std::abs(d) <= .125L) {
-        long double s = 1.L/26;
-        for (int k = 25; k >= 2; --k) s = 1.L/k - d*s;
-        return static_cast<double>(d*d*s);
+    if (d >= -.75L && d <= 2.L) {
+        using Wide = detail::PrecisionAccumulator;
+        const Wide r = Wide(d)/(Wide(2)+Wide(d)), r2 = r*r;
+        const Wide s = detail::accumulator_log_tail(r2);
+        return static_cast<double>(r*(Wide(d) - Wide(2)*r2*s));
     }
     return static_cast<double>(d - std::log1p(d));
 }

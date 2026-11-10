@@ -16,6 +16,10 @@
 * Article fit caches are stamped independently of the R version that wrote
   them, so the shipped vignettes build under any R release (#1165).
 
+* Stirling remainder values and derivatives use a compensated recurrence on
+  every platform. The relative deviance uses a stable series near zero
+  (gcol33/tulpa#1168).
+
 # tulpa 0.7.7
 
 ## Models and inference
