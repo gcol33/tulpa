@@ -3,88 +3,140 @@
 
 #include <cmath>
 #include <limits>
-#include "precision_accumulator.h"
+#include "precision_coefficients.h"
 
 namespace tulpa { namespace math {
 
 constexpr double log_two_pi = 1.837877066409345483560659472811;
 
-// B_(2n) / (2n (2n-1)), in increasing powers x^-(2n-1).
-inline detail::PrecisionAccumulator stirling_series(detail::PrecisionAccumulator x, int derivative) {
-    using Wide = detail::PrecisionAccumulator;
-    static const Wide c[] = {
-        Wide(1)/12, Wide(-1)/360, Wide(1)/1260, Wide(-1)/1680, Wide(1)/1188,
-        Wide(-691)/360360, Wide(1)/156, Wide(-3617)/122400, Wide(43867)/244188,
-        Wide(-174611)/125400, Wide(854513)/63756, Wide(-236364091)/1506960,
-        Wide(8553103)/3900, Wide(-23749461029.L)/657720};
-    const Wide z = Wide(1) / x, z2 = z * z;
-    Wide acc = 0;
-    for (int j = 13; j >= 0; --j) {
-        Wide coefficient = c[j];
-        for (int k = 0; k < derivative; ++k) coefficient *= -(2*j + 1 + k);
-        acc = acc * z2 + coefficient;
-    }
-    for (int k = 0; k <= derivative; ++k) acc *= z;
-    return acc;
+namespace detail {
+
+struct PrecisionPolynomial {
+    double hi, lo;
+    double value() const { return hi+lo; }
+};
+
+// The constant dominates the other terms on each interpolation interval.
+// Its low part and the last product residual survive the derivative scaling.
+template<int N> inline PrecisionPolynomial precision_polynomial(const double (&c)[N], double x,
+                                                              double constant_low) {
+    double p = c[0];
+    for (int j=1; j<N-1; ++j) p = p*x+c[j];
+    const double product = p*x, sum = c[N-1]+product;
+    return {sum, ((c[N-1]-sum)+product)+std::fma(p,x,-product)+constant_low};
 }
 
-// Derivatives of h(x) = (x + 1/2) log1p(1/x) - 1. With r = 1/(2x+1),
-// h(x) = sum_{n>=1} r^(2n)/(2n+1); its differentiated terms have one sign.
-inline detail::PrecisionAccumulator stirling_step(detail::PrecisionAccumulator x, int order) {
-    using Wide = detail::PrecisionAccumulator;
-    if (order >= 2) {
-        const Wide a = Wide(1)/x, b = Wide(1)/(x+Wide(1));
-        Wide sum = 0, coefficient = 1;
-        for (int j = 0; j <= order-2; ++j) {
-            if (j == 0) {
-                for (int k = 2; k < order; ++k) coefficient *= k;
-            } else coefficient *= Wide((order-1-j)*(j+1)) / Wide(j*(order-j));
-            Wide term = Wide(.5)*coefficient*detail::accumulator_power(b, order-j);
-            for (int k=0; k<j+2; ++k) term *= a;
-            sum += term;
-        }
-        return Wide(order % 2 ? -1 : 1)*sum;
+// The division residual carries rounding through x^-k without forming an
+// overflowing power or overflowing 1/x before the final result does.
+inline double precision_divide_power(double p, double x, int n, double low = 0) {
+    for (int j=0; j<n; ++j) {
+        const double q = p/x;
+        if (!std::isfinite(q)) return q;
+        low = (std::fma(-q,x,p)+low)/x;
+        p = q;
     }
-    if (x.hi < .25L) {
-        const Wide l = detail::accumulator_log(x+Wide(1))-detail::accumulator_log(x);
-        return order == 0 ? (x+Wide(.5L))*l-Wide(1)
-                          : l - (Wide(.5L)/x + Wide(.5L)/(x+Wide(1)));
-    }
-    const Wide r = Wide(1)/(Wide(2)*x+Wide(1)), r2 = r*r;
-    const Wide sum = detail::accumulator_log_tail(r2);
-    return order == 0 ? r2*sum : Wide(2)*r*r2*(sum-Wide(1)/(Wide(1)-r2));
+    return p+low;
 }
 
-// s^(k)(x) = s^(k)(x+n) + sum_{j<n} h^(k)(x+j). Every term has
-// sign (-1)^k, so shifting into the asymptotic range preserves relative error.
-inline double stirling_remainder_derivative(double value, int order = 0) {
-    using Wide = detail::PrecisionAccumulator;
-    const Wide x = value;
-    if (!(value > 0)) return std::numeric_limits<double>::quiet_NaN();
-    if (std::isinf(value)) return 0;
-    if (value >= 10) return static_cast<double>(stirling_series(x, order));
-    const int n = static_cast<int>(std::ceil(10-value));
-    Wide result = stirling_series(x+Wide(n), order);
-    for (int j = n-1; j >= 0; --j) result += stirling_step(x+Wide(j), order);
-    return static_cast<double>(result);
+// Range reduction keeps libm's logarithm on [1,2); the split ln(2)
+// retains the exponent contribution when the elementary terms are combined.
+inline double stirling_small_value(double x, double log_gamma_over_x) {
+    int e;
+    const double m = std::frexp(x,&e)*2;
+    --e;
+    const double lm = std::log(m), le = -.5*e;
+    const double a = le*0x1.62e42fefa39efp-1;
+    const double ae = std::fma(le,0x1.62e42fefa39efp-1,-a)+le*2.3190468138462996e-17;
+    const double h = a-0.91893853320467274178;
+    const double he = (a-h)-0.91893853320467274178+ae+3.8782941580672414e-17;
+    const double correction = x*(1+log_gamma_over_x-(lm+e*0x1.62e42fefa39efp-1))-.5*lm;
+    return h+(correction+he);
+}
+
+// Binet's asymptotic expansion has a remainder bounded by its first omitted
+// term. Each derivative selects its term count from that relative bound.
+template<int Order, int N> inline double stirling_series_terms(double x) {
+    const double z = 1/x, z2 = z*z;
+    const double* c = stirling_series_coefficients[Order];
+    double p = c[N-1];
+    for (int j=N-2; j>=0; --j) p = p*z2+c[j];
+    return Order == 0 ? p/x : precision_divide_power(p,x,Order+1);
+}
+
+template<int Order, int First=1, int Last=(Order==0 ? 10 : Order==1 ? 12 : Order==2 ? 13 : 14)>
+inline double stirling_series_select(double x) {
+    if constexpr (First == Last) return stirling_series_terms<Order,First>(x);
+    else {
+        constexpr int mid = (First+Last)/2;
+        return x>=stirling_series_cutoffs[Order][mid-1]
+            ? stirling_series_select<Order,First,mid>(x)
+            : stirling_series_select<Order,mid+1,Last>(x);
+    }
+}
+
+} // namespace detail
+
+inline double stirling_series(double x, int order) {
+    switch (order) {
+    case 0: return detail::stirling_series_select<0>(x);
+    case 1: return detail::stirling_series_select<1>(x);
+    case 2: return detail::stirling_series_select<2>(x);
+    case 3: return detail::stirling_series_select<3>(x);
+    default: return detail::stirling_series_select<4>(x);
+    }
+}
+
+inline double stirling_remainder_derivative(double x, int order = 0) {
+    if (!(x>0) || order<0 || order>4) return std::numeric_limits<double>::quiet_NaN();
+    if (std::isinf(x)) return 0;
+    if (x>=10) return stirling_series(x,order);
+    if (x>=.015625) {
+        int e;
+        const double t = std::frexp(x,&e)*2-1.5;
+        const auto p = detail::precision_polynomial(detail::stirling_coefficients[order][e+5],t,
+                                                   detail::stirling_constant_low[order][e+5]);
+        return order == 0 ? p.value() : detail::precision_divide_power(p.hi,x,order,p.lo);
+    }
+    if (order>=2) {
+        const auto p = detail::precision_polynomial(detail::stirling_small_coefficients[order-2],x,
+                                                   detail::stirling_small_constant_low[0][order-2]);
+        return detail::precision_divide_power(p.hi,x,order,p.lo);
+    }
+    const double p = detail::precision_polynomial(detail::stirling_elementary_coefficients[order],x,
+                         detail::stirling_elementary_constant_low[0][order]).value();
+    return order == 0 ? detail::stirling_small_value(x,p)
+                      : std::fma(x,p-std::log(x),-.5)/x;
 }
 
 inline double stirling_remainder(double x) {
     return stirling_remainder_derivative(x);
 }
 
-// d - log(1+d), d >= -1. The atanh series uses r=d/(2+d), as in
-// R's nmath pgamma.c. In this interval |r| <= 3/5.
-inline double log1pmx(double value) {
-    const long double d = value;
-    if (value == std::numeric_limits<double>::infinity()) return value;
-    if (d >= -.75L && d <= 2.L) {
-        using Wide = detail::PrecisionAccumulator;
-        const Wide r = Wide(d)/(Wide(2)+Wide(d)), r2 = r*r;
-        const Wide s = detail::accumulator_log_tail(r2);
-        return static_cast<double>(r*(Wide(d) - Wide(2)*r2*s));
+// d-log(1+d). R nmath's pgamma.c uses r=d/(2+d) and the series
+// S(y)=sum_(j>=0) y^j/(2j+3), y=r^2. The division residual and the final
+// product residual retain the bits lost at the negative end of this range.
+inline double log1pmx(double x) {
+    if (x>=-.75 && x<=2) {
+        const double d = 2+x, de = (2-d)+x;
+        const double r = x/d, re = (std::fma(-r,d,x)-r*de)/d;
+        const double y = r*r;
+        double p;
+        if (y<=.005) {
+            const int n = y<=.00003 ? 4 : 8;
+            p = detail::log1pmx_coefficients[n-1];
+            for (int j=n-2; j>=0; --j) p = p*y+detail::log1pmx_coefficients[j];
+        } else {
+            const int branch = y<=.125 ? 0 : 1;
+            const double t = y-(branch == 0 ? .0625 : .25);
+            const double* c = detail::log1pmx_tail_coefficients[branch];
+            p = c[0];
+            for (int j=1; j<16; ++j) p = p*t+c[j];
+        }
+        const double inner = x-2*y*p, out = r*inner;
+        const double err = r*std::fma(-2*y,p,x-inner)+std::fma(r,inner,-out)+(x-2*y/(1-y))*re;
+        return out+err;
     }
-    return static_cast<double>(d - std::log1p(d));
+    return x==std::numeric_limits<double>::infinity() ? x : x-std::log1p(x);
 }
 
 inline double precision_value(double x) { return x; }

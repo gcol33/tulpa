@@ -13,7 +13,7 @@ import mpmath as mp
 
 parser = argparse.ArgumentParser(description='Compare precision primitives with mpmath at binary64 inputs.')
 parser.add_argument('--output', type=Path, required=True)
-parser.add_argument('--baseline', default='1451e34b')
+parser.add_argument('--baseline', default='4e2b1d86')
 args = parser.parse_args()
 ROOT = Path(__file__).resolve().parents[1]
 WORK = args.output.resolve()
@@ -24,8 +24,8 @@ if compiler is None:
 mp.mp.dps = 50
 original = subprocess.check_output(['git', 'show', args.baseline+':inst/include/tulpa/precision_math.h'], cwd=ROOT, text=True)
 current = (ROOT/'inst/include/tulpa/precision_math.h').read_text()
-accumulator = (ROOT/'inst/include/tulpa/precision_accumulator.h').read_text()
-current = current.replace('#include "precision_accumulator.h"', accumulator)
+coefficients = (ROOT/'inst/include/tulpa/precision_coefficients.h').read_text()
+current = current.replace('#include "precision_coefficients.h"', coefficients)
 prefix = '''#include <cmath>
 #include <limits>
 static int perturb = 0, calls = 0;
@@ -70,7 +70,12 @@ fixture = list(csv.DictReader((ROOT/'tests/testthat/fixtures/precision-primitive
 xs = set(10.**(-8+16*i/10000) for i in range(10001))
 xs.update(i/2 for i in range(1,201))
 xs.update(float(r['x']) for r in fixture if r['kind']=='s')
-for t in [.25, (math.sqrt(8)-1)/2, 4.5, 10.]:
+for t in [2.**e for e in range(-6,4)]+[.25, (math.sqrt(8)-1)/2, 4.5, 10.,
+          138619474.,8608.,401.,94.,41.,25.,18.,14.,12.,
+          240095971.,12872.,554.,124.,53.,31.,21.,17.,
+          339546979.,16941.,698.,151.,63.,36.,19.,16.,
+          438353265.,20937.,838.,177.,73.,28.,15.,13.,11.,
+          536870912.,24899.,977.,203.,82.,46.,23.]:
     xs.update([math.nextafter(t, -math.inf),t,math.nextafter(t,math.inf)])
 mxs = set(10.**(-8+16*i/10000) for i in range(10001))
 mxs.update(-1+10.**(-16+16*i/5000) for i in range(5001))
@@ -80,6 +85,10 @@ for t in [-.75, -.125, .125, 2., 2/9, -2/11,
           2*math.sqrt(.125)/(1-math.sqrt(.125)),
           -2*math.sqrt(.125)/(1+math.sqrt(.125))]:
     mxs.update([math.nextafter(t,-math.inf),t,math.nextafter(t,math.inf)])
+for y in [.00003,.005,.0625,.125,.25]:
+    r=math.sqrt(y)
+    for t in [2*r/(1-r),-2*r/(1+r)]:
+        mxs.update([math.nextafter(t,-math.inf),t,math.nextafter(t,math.inf)])
 
 def reference(x, k):
     z = mp.mpf(float(x))
@@ -106,7 +115,7 @@ with (WORK/'grid.csv').open('w',newline='') as f:
         for x in points:
             ref = reference(x,k)
             rounded = float(ref)
-            branch = ('s_small_log' if x < .25 else 's_recurrence' if x < 10 else 's_asymptotic') if k>=0 else ('m_series' if -.75<=x<=2 else 'm_log1p')
+            branch = ('s_small' if x < .015625 else 's_polynomial' if x < 10 else 's_asymptotic') if k>=0 else ('m_series' if -.75<=x<=2 else 'm_log1p')
             key = f'{branch}:order{k}'
             errs = []
             for name, lib in libs.items():
