@@ -95,6 +95,7 @@ void build_st_hsgp_model(
         data.has_multiscale_gp = true;
         data.spatial_type = tulpa::SpatialType::MULTISCALE_GP;
         data.msgp_is_hsgp = true;
+        data.msgp_hsgp_data = data.st_hsgp_data;
     }
     layout = tulpa_hmc::compute_param_layout(data);
 }
