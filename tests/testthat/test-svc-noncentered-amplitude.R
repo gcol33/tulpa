@@ -33,6 +33,10 @@ sim_svc_bernoulli <- function(n = 150L, sigma2 = 1.0, phi = 0.30,
 .SVC_AMP_WARMUP <- 400L
 .SVC_AMP_LONG_ITER <- 2500L
 .SVC_AMP_LONG_WARMUP <- 1500L
+.SVC_SD_RECOVERY_CONTROL <- list(
+  nngp = list(n_iter = 6000L, n_warmup = 2000L),
+  hsgp = list(n_iter = 1500L, n_warmup = 750L)
+)
 
 .svc_amp_fits <- new.env(parent = emptyenv())
 
@@ -139,13 +143,13 @@ svc_sd_recovery_data <- function(approx) {
 
 test_that("SVC marginal SD intervals cover a simulated amplitude on both bases", {
   skip_if_not_slow()
-  for (approx in c("nngp", "hsgp")) {
+  for (approx in names(.SVC_SD_RECOVERY_CONTROL)) {
     d <- svc_sd_recovery_data(approx)
     fit <- tulpa(y ~ x, d, family = "gaussian", phi = 0.15^2,
       spatial = spatial_svc(~lon+lat, terms = ~x-1, approx = approx,
         nn = 10L, m = 8L, c_boundary = 1.5, scale_coords = FALSE),
-      mode = "exact", control = list(n_iter = 1500L, n_warmup = 750L,
-                                     n_chains = 2L, seed = 7L))
+      mode = "exact", control = c(.SVC_SD_RECOVERY_CONTROL[[approx]],
+                                   list(n_chains = 2L, seed = 7L)))
     sigma <- exp(0.5 * fit$draws[, "log_sigma2_svc[1]"])
     ci <- quantile(sigma, c(.025, .975))
     expect_lt(ci[1], 0.5, label = approx)
