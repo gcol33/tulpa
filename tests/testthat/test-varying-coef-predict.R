@@ -216,57 +216,7 @@ test_that("tvc() reads a grouped field, keyed by group, time and term", {
        var = v0 - sum(k0 * a) + (sum(a) - 1)^2 / q)
 }
 
-# The SVC NNGP density conditions every Vecchia factor with a diagonal nugget on
-# the neighbour block and a blended floor on the conditional variance
-# (`kSvcJitter`, `kSvcVarFloor` in src/hmc_svc.h), so its kriging conditional and
-# its level forms 1'Q 1 / 1'Q w are those of that conditioned factorization. On
-# a draw whose field variance is near the nugget (sigma2 ~ 1e-3), the exact
-# dense-K conditional differs from the density's by more than the Monte Carlo
-# error of the check, so the reference runs the same conditioning.
 .vcp_svc_nugget <- 1e-4
-.vcp_svc_floor  <- 1e-4
-
-.vcp_blend_floor <- function(v) {
-  if (v >= .vcp_svc_floor) return(v)
-  if (v > 0) 0.99 * .vcp_svc_floor + 0.01 * v else 0.99 * .vcp_svc_floor
-}
-
-.vcp_cond <- function(Cnb, c0, v0) {
-  a <- solve(Cnb + diag(.vcp_svc_nugget, nrow(Cnb)), c0)
-  list(a = a, var = .vcp_blend_floor(v0 - sum(c0 * a)))
-}
-
-# 1'Q 1 and 1'Q w of the Vecchia precision, one factor per location in the
-# fitted order (`nn_order`, 0-based; `nn_idx` rows hold 1-based positions in
-# that order, 0 for none).
-.vcp_nngp_level_forms <- function(ss, K, w) {
-  ord <- as.integer(ss$nn_order) + 1L
-  q <- 0; b <- 0
-  for (i in seq_along(ord)) {
-    loc <- ord[i]
-    pos <- ss$nn_idx[i, ]
-    pos <- pos[pos > 0L]
-    r1 <- 1; rw <- w[loc]; dv <- K[loc, loc]
-    if (length(pos)) {
-      nl <- ord[pos]
-      cc <- .vcp_cond(K[nl, nl, drop = FALSE], K[nl, loc], K[loc, loc])
-      r1 <- 1 - sum(cc$a); rw <- w[loc] - sum(cc$a * w[nl]); dv <- cc$var
-    }
-    q <- q + r1 * r1 / dv
-    b <- b + r1 * rw / dv
-  }
-  list(q = q, b = b)
-}
-
-# The predicted coefficient w(s0) - level, with the level drawn from its exact
-# conditional N(-b / q, 1 / q) and w(s0) from the conditioned kriging step on
-# the neighbours `nb`.
-.vcp_nngp_ref <- function(K, wc, nb, k0, v0, lev) {
-  cc <- .vcp_cond(K[nb, nb, drop = FALSE], k0, v0)
-  mh <- -lev$b / lev$q
-  list(mean = sum(cc$a * (wc[nb] + mh)) - mh,
-       var = cc$var + (sum(cc$a) - 1)^2 / lev$q)
-}
 
 test_that("an NNGP coefficient is predicted from its kriging conditional", {
   skip_on_cran()
@@ -284,18 +234,27 @@ test_that("an NNGP coefficient is predicted from its kriging conditional", {
   s2 <- exp(fit$draws[r, "log_sigma2_svc[1]"])
   ph <- exp(fit$draws[r, "log_phi_svc[1]"])
   uc <- tulpa:::.coords_plain(fit$spatial$unique_coords)
-  wc <- svc(fit)$draws[r, , 1L]
-  K <- s2 * exp(-as.matrix(stats::dist(uc)) / ph)
-
   newc <- tulpa:::.svc_query_coords(fit$spatial,
                                     data.frame(lon = c(0.5, 2.5), lat = c(0.5, 2.5)))
-  pred <- tulpa:::.varying_coef_field_draws(rep_fit, svc_coords = newc)$svc
-  lev <- .vcp_nngp_level_forms(fit$model_inputs$svc_spec, K, wc)
-  for (p in seq_len(nrow(newc))) {
-    dist0 <- sqrt(colSums((t(uc) - newc[p, ])^2))
-    nb <- order(dist0)[seq_len(n - 1L)]
-    ref <- .vcp_nngp_ref(K, wc, nb, s2 * exp(-dist0[nb] / ph), s2, lev)
-    .vcp_expect_moments(pred[, p], ref$mean, ref$var, paste("site", p))
+  settings <- rbind(original = c(s2, ph), tiny = c(1e-6, 0.3),
+                    nugget = c(1e-4, 0.3), regular = c(0.01, 0.3))
+  for (i in seq_len(nrow(settings))) {
+    s2 <- settings[i, 1L]
+    ph <- settings[i, 2L]
+    rep_fit$draws[, "log_sigma2_svc[1]"] <- log(s2)
+    rep_fit$draws[, "log_phi_svc[1]"] <- log(ph)
+    wc <- tulpa:::.varying_coef_field_draws(rep_fit, rows = 1L)$svc[1L, ]
+    K <- s2 * exp(-as.matrix(stats::dist(uc)) / ph) +
+      diag(.vcp_svc_nugget, nrow(uc))
+    pred <- tulpa:::.varying_coef_field_draws(rep_fit, svc_coords = newc)$svc
+    for (p in seq_len(nrow(newc))) {
+      dist0 <- sqrt(colSums((t(uc) - newc[p, ])^2))
+      nb <- order(dist0)[seq_len(n - 1L)]
+      ref <- .vcp_proper_ref(K, wc, nb, s2 * exp(-dist0[nb] / ph),
+                           s2 + .vcp_svc_nugget)
+      .vcp_expect_moments(pred[, p], ref$mean, ref$var,
+                          paste(rownames(settings)[i], "site", p))
+    }
   }
   # Far from every location the coefficient reverts to the field's own level,
   # -mbar, with the prior variance plus the level's: the centred field's mean
