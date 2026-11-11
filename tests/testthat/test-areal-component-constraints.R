@@ -46,6 +46,7 @@ test_that("areal constraints and island priors match dense Gaussian references",
     expected <- sum(dnorm(y, effect[group], log = TRUE) - dnorm(y, log = TRUE)) -
       .5 * quadratic
     expect_equal(r$lp - base$lp, expected, tolerance = 1e-10)
+    expect_equal(r$stored[start + seq_len(S)], drop(P %*% phi), tolerance = 1e-12)
     expect_equal(r$spatial_log_normalizer,
       .5 * as.numeric(determinant(H)$modulus) -
         .5 * S * log(2 * pi) * if (type == "bym2") 2 else 1, tolerance = 1e-10)

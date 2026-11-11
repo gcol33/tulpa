@@ -304,6 +304,7 @@ unity_glmm.o: \
   vi_optimizer.h \
   autodiff.h \
   tulpa_priors_temporal.h \
+  tulpa_priors_icar.h \
   hmc_hsgp_kernels.h \
   hsgp_spectral.h \
   svc_range.h \
@@ -321,7 +322,6 @@ unity_glmm.o: \
   laplace_newton.h \
   subspace_debias.h \
   latent_block.h \
-  tulpa_priors_icar.h \
   tulpa_priors_gp.h \
   tulpa_priors_msgp.h \
   tulpa_priors_hsgp.h \
@@ -424,6 +424,7 @@ unity_hmc.o: \
   laplace_types.h \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
+  tulpa_priors_icar.h \
   tulpa_priors_mstemporal.h \
   linalg_fast.h \
   checkpoint_io.h \
@@ -440,7 +441,6 @@ unity_hmc.o: \
   hmc_mass_lowrank.h \
   glmm_oracle.h \
   autodiff.h \
-  tulpa_priors_icar.h \
   tulpa_priors_gp.h \
   tulpa_priors_msgp.h \
   tulpa_priors_hsgp.h \
@@ -452,8 +452,8 @@ unity_hmc.o: \
   tulpa_priors_zioi.h \
   laplace_core.h \
   intrinsic_log_pdet.h \
-  glmm_family_elt.h \
   icar_kernel.h \
+  glmm_family_elt.h \
   hmc_gp_autodiff.h \
   hsgp_spectral.h \
   spde_matern_map.h \
@@ -914,6 +914,7 @@ unity_samplers.o: \
   log_post_generic_impl.h \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
+  tulpa_priors_icar.h \
   hmc_hsgp_kernels.h \
   intrinsic_log_pdet.h \
   hmc_gp_cg.h \
@@ -926,7 +927,6 @@ unity_samplers.o: \
   nngp_cond.h \
   temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
-  tulpa_priors_icar.h \
   tulpa_priors_gp.h \
   tulpa_priors_msgp.h \
   tulpa_priors_hsgp.h \

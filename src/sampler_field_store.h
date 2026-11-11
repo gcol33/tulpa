@@ -28,12 +28,14 @@
 #include "hmc_sampler.h"
 #include "sampler_log_prob.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
 #include <tulpa/sum_to_zero.h>
 #include <tulpa/st_margins.h>
 #include "tulpa_priors_temporal.h"
+#include "tulpa_priors_icar.h"
 #include "tulpa_priors_mstemporal.h"
 
 namespace tulpa {
@@ -50,6 +52,12 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
     static thread_local tulpa_gp::NNGPNCWorkspace* ws_p = nullptr;
     if (!ws_p) ws_p = new tulpa_gp::NNGPNCWorkspace();
     tulpa_gp::NNGPNCWorkspace& ws = *ws_p;
+
+    if (layout.has_spatial && !layout.is_icar_collapsed && !layout.is_bym2_collapsed) {
+        std::vector<double> field;
+        priors::icar_center_field(q.data() + layout.spatial_start, data, field);
+        std::copy(field.begin(), field.end(), row + layout.spatial_start);
+    }
 
     if (data.gp_parameterization == 1 && data.has_gp && layout.is_gp) {
         const double sigma2 = tulpa::math::safe_exp(q[layout.log_sigma2_gp_idx]);
