@@ -112,7 +112,7 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
     add(layout.short_term_start, layout.short_term_end, layout.log_sigma2_short_idx,
         short_nc ? 1 : -1, 0, false, false, short_nc, short_nc);
   }
-  if (layout.has_tvc) {
+  if (layout.has_tvc && data.tvc_data.structure != TemporalType::GP) {
     const auto& tvc = data.tvc_data;
     for (int g = 0; g < tvc.n_groups; ++g) for (int j = 0; j < tvc.n_tvc; ++j) {
       const int begin = layout.tvc_w_start + (g * tvc.n_tvc + j) * tvc.n_times;

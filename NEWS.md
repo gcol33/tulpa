@@ -6,7 +6,8 @@
   from its precision. Automatic NNGP varying-coefficient fields sample
   independent standard normal innovations through the shared non-centred
   transform. The priors and stored coefficient fields retain their
-  definitions (#1172).
+  definitions. Every temporal GP coefficient retains native field
+  coordinates (#1172).
 
 * A NUTS chain resumes with the step size it adapted: the generic R entries
   and both C entries (`nuts_api.h`) take `epsilon_init`, and with
