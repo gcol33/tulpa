@@ -2,6 +2,12 @@
 
 ## Models and inference
 
+* NUTS separates each intrinsic time-varying coefficient's augmented level
+  from its precision. Automatic NNGP varying-coefficient fields sample
+  independent standard normal innovations through the shared non-centred
+  transform. The priors and stored coefficient fields retain their
+  definitions (#1172).
+
 * A NUTS chain resumes with the step size it adapted: the generic R entries
   and both C entries (`nuts_api.h`) take `epsilon_init`, and with
   `n_warmup = 0` a supplied value is used unchanged, so a continuation runs

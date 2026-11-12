@@ -49,7 +49,8 @@ struct FieldCoordinate {
         if (out.norm > 0) out.slope /= out.norm;
         return out;
     }
-    void apply(const std::vector<double>& input, std::vector<double>& output, double a) const {
+    void apply(const std::vector<double>& input, std::vector<double>& output, double a,
+               double constant_multiplier = 1.0) const {
         if (!preserve_constant && !preserve_linear) {
             for (int i = begin; i < end; ++i) output[i] = a * input[i];
             return;
@@ -58,7 +59,8 @@ struct FieldCoordinate {
             const auto null = null_component(input, start);
             for (int t = 0; t < width(); ++t) {
                 const int i = start + t;
-                output[i] = null.at(t) + a * (input[i] - null.at(t));
+                output[i] = constant_multiplier * null.mean + null.slope * (t - null.midpoint)
+                    + a * (input[i] - null.at(t));
             }
         }
     }
@@ -75,6 +77,23 @@ struct FieldCoordinate {
             scale_sign * q[scale_index] + 2 * log_scale(q) -
             std::log(scaled_information + fixed_information);
         return -0.5 * scale_sign * std::exp(log_fraction);
+    }
+
+    void pullback(const std::vector<double>& q, const std::vector<double>& residual_position,
+                  std::vector<double>& gradient, double constant_multiplier = 1.0,
+                  double residual_multiplier = 1.0) const {
+        const double a = std::exp(log_scale(q));
+        double scale_gradient = rank();
+        for (int start = begin; start < end; start += width()) {
+            const auto null = null_component(residual_position, start);
+            for (int t = 0; t < width(); ++t) {
+                const int i = start + t;
+                scale_gradient += residual_multiplier *
+                    (residual_position[i] - null.at(t)) * gradient[i];
+            }
+        }
+        apply(gradient, gradient, a, constant_multiplier);
+        gradient[scale_index] += derivative(q) * scale_gradient;
     }
 };
 
@@ -165,17 +184,7 @@ struct FieldCoordinates {
     void pullback(const std::vector<double>& z, const std::vector<double>& x,
                   std::vector<double>& gradient) const {
         for (const auto& e : entries) {
-            const double a = std::exp(e.log_scale(x));
-            double scale_gradient = e.rank();
-            for (int start = e.begin; start < e.end; start += e.width()) {
-                const auto null = e.null_component(x, start);
-                for (int t = 0; t < e.width(); ++t) {
-                    const int i = start + t;
-                    scale_gradient += (x[i] - null.at(t)) * gradient[i];
-                }
-            }
-            e.apply(gradient, gradient, a);
-            gradient[e.scale_index] += e.derivative(x) * scale_gradient;
+            e.pullback(x, x, gradient);
         }
         if (!operators.empty()) {
             auto position = z;

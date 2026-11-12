@@ -26,6 +26,32 @@ public:
     FieldCoordinateScope& operator=(const FieldCoordinateScope&) = delete;
 };
 
+// The augmented level has precision tau and is absent from the likelihood.
+// Its standardized mean is independent of tau; the walk's linear null
+// direction and the information-scaled residual keep their own coordinates.
+inline tulpa::FieldCoordinateOperator intrinsic_level_coordinate(FieldCoordinate shape) {
+  return {
+    [shape](const std::vector<double>& q, std::vector<double>& x) {
+      const double log_a = shape.log_scale(q);
+      const double b = std::exp(-0.5 * q[shape.scale_index]);
+      shape.apply(q, x, std::exp(log_a), b);
+      return shape.rank() * log_a - 0.5 * q[shape.scale_index];
+    },
+    [shape](std::vector<double>& x) {
+      const double b = std::exp(0.5 * x[shape.scale_index]);
+      shape.apply(x, x, std::exp(-shape.log_scale(x)), b);
+    },
+    [shape](const std::vector<double>& q, std::vector<double>& gradient) {
+      const double b = std::exp(-0.5 * q[shape.scale_index]);
+      const double mean = shape.null_component(q, shape.begin).mean;
+      double sum_gradient = 0.0;
+      for (int i = shape.begin; i < shape.end; ++i) sum_gradient += gradient[i];
+      shape.pullback(q, q, gradient, b, std::exp(shape.log_scale(q)));
+      gradient[shape.scale_index] -= 0.5 * (1.0 + b * mean * sum_gradient);
+    }
+  };
+}
+
 inline FieldCoordinates make_field_coordinates(const std::vector<double>& initial,
                                          const ModelData& data,
                                          const ParamLayout& layout) {
@@ -68,12 +94,7 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
   if (data.auto_temporal_gp_coordinates && layout.is_temporal_gp)
     add(layout.temporal_start, layout.temporal_end, layout.log_sigma2_temporal_gp_idx,
         1, 0, false, false, true);
-  if (data.auto_svc_coordinates && layout.has_svc && !data.svc_is_hsgp) {
-    const int width = (layout.svc_w_end - layout.svc_w_start) / data.svc_data.n_svc;
-    for (int j = 0; j < data.svc_data.n_svc; ++j)
-      add(layout.svc_w_start + j * width, layout.svc_w_start + (j + 1) * width,
-          layout.log_sigma2_svc_start + j, 1, 0, false, false, true);
-  }
+  // NNGP SVC innovations have a unit Gaussian prior independent of scale and range.
   if (data.auto_multiscale_coordinates && layout.has_multiscale_temporal) {
     const bool trend_nc = data.ms_trend_parameterization == 1;
     const bool seasonal_nc = data.ms_seasonal_parameterization == 1;
@@ -120,7 +141,10 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
         std::sqrt(1 + std::abs(full));
     const FieldCoordinate geometry{block.begin, block.end, block.scale, block.sign,
         1, 0, block.width, block.constant, block.linear};
-    if (geometry.rank() == 0) continue;
+    if (geometry.rank() == 0) {
+      if (block.constant) out.operators.push_back(intrinsic_level_coordinate(geometry));
+      continue;
+    }
     std::vector<double> direction(origin.size(), 0.0);
     for (int i = block.begin; i < block.end; ++i) direction[i] = i % 2 ? 1 : -1;
     double denominator = 0;
@@ -149,8 +173,10 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
     const double scaled = (block.standardized ? likelihood_information : prior_curve) *
         std::exp(-block.sign * origin[block.scale]);
     const double fixed = block.standardized ? prior_curve : likelihood_information;
-    out.entries.push_back({block.begin, block.end, block.scale, block.sign, scaled, fixed,
-        block.width, block.constant, block.linear});
+    const FieldCoordinate coordinate{block.begin, block.end, block.scale, block.sign, scaled, fixed,
+        block.width, block.constant, block.linear};
+    if (block.constant) out.operators.push_back(intrinsic_level_coordinate(coordinate));
+    else out.entries.push_back(coordinate);
   }
   return out;
 }

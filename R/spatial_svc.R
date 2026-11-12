@@ -41,14 +41,10 @@
 #'   `sigma_prior_alpha` must lie in `(0, 1)`.
 #' @param parameterization Latent parameterization for the exact-NUTS field
 #'   (`approx = "nngp"` only; HSGP is already non-centered by construction).
-#'   `"auto"` scales covariance-whitened coordinates using prior and observation
-#'   information. `"noncentered"` samples `z_j ~ N(0, I)` per term and
-#'   reconstructs each field as `w_j = f(z_j, sigma2_j, phi_j)`, removing the
-#'   field/hyperparameter funnel that otherwise attenuates the field's
-#'   amplitude when it is weakly identified. `"centered"` places the NNGP
-#'   density on each term's field directly; it is marginally cheaper on a
-#'   well-identified response, but on a weakly identified one it recovers only
-#'   about a third of the field's spread.
+#'   `"auto"` and `"noncentered"` sample independent `z_j ~ N(0, I)` innovations
+#'   per term and reconstruct each field as `w_j = f(z_j, sigma2_j, phi_j)`.
+#'   The innovations' prior is independent of the sampled scale and range.
+#'   `"centered"` places the NNGP density on each term's field directly.
 #'
 #' @return A `tulpa_svc` object (also of class `tulpa_spatial`).
 #'
