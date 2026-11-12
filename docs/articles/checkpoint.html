@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -114,14 +114,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Checkpointing</h1>
-
-
+            
+      
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/checkpoint.Rmd" class="external-link"><code>vignettes/articles/checkpoint.Rmd</code></a></small>
       <div class="d-none name"><code>checkpoint.Rmd</code></div>
     </div>
 
-
-
+    
+    
 <p>A nested Laplace fit solves one inner problem per cell of its
 hyperparameter grid, and a NUTS fit runs several independent chains.
 Either can run for hours, and a reboot or a killed job near the end
@@ -221,7 +221,7 @@ resume stops before solving anything:</p>
 <span><span class="va">df_changed</span><span class="op">$</span><span class="va">y</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">df_changed</span><span class="op">$</span><span class="va">y</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="fl">1L</span></span>
 <span><span class="fu">fit_ckpt</span><span class="op">(</span><span class="va">df_changed</span>, resume <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! checkpoint: 'C:\Users\GILLES~1\AppData\Local\Temp\RtmpOQniHR\filef6f848d570b8.ckpt' was written for different data or solver settings (fingerprint mismatch). Resume needs the same inputs + grid + control; use a fresh path or set checkpoint$resume = FALSE to start over.</span></span></code></pre></div>
+<span><span class="co">#&gt; ! checkpoint: 'C:\Users\GILLES~1\AppData\Local\Temp\RtmpMfzYdZ\file76404a1d41ad.ckpt' was written for different data or solver settings (fingerprint mismatch). Resume needs the same inputs + grid + control; use a fresh path or set checkpoint$resume = FALSE to start over.</span></span></code></pre></div>
 <p><code>resume = FALSE</code> on the same path discards the old file
 and fits the new data from the start:</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">

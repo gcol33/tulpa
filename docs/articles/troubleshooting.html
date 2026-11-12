@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -114,14 +114,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Troubleshooting</h1>
-
-
+            
+      
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/troubleshooting.Rmd" class="external-link"><code>vignettes/articles/troubleshooting.Rmd</code></a></small>
       <div class="d-none name"><code>troubleshooting.Rmd</code></div>
     </div>
 
-
-
+    
+    
 <p>Each entry below starts from a situation, shows the message tulpa
 prints in that situation, and ends on a corrected call that runs. The
 entries are grouped by the stage at which the message appears: preparing
@@ -193,7 +193,7 @@ the message lists every name <code><a href="../reference/tulpa.html">tulpa()</a>
 <span>      phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_thread <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Error:</span></span>
 <span><span class="co">#&gt; ! Unknown control knob(s) for tulpa(): 'n_thread'.</span></span>
-<span><span class="co">#&gt; Allowed: L, adapt_delta, adaptive_grid, adaptive_grid_cutoff, adaptive_grid_edge_thresh, adaptive_grid_max_frac, adaptive_grid_max_passes, adaptive_grid_min_cells, adaptive_grid_stride, alpha, auto_recenter, axis_refine, batch_size, beta_init, ccd_budget, ccd_budget_floor, checkpoint, cila, copy_atom_mass, copy_slab, damping, diagnose_k, diagnose_skew, epsilon, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_proposal_sd, ess_joint_sigma_re, ess_threshold, fitted_var, force_sparse, hessian, inner_factorization, inner_refresh, integration, k_bootstrap, k_conf_bands, k_max_rounds, k_quality, k_refine, k_samples, k_tail_points, k_threads, keep_grid_hessians, local_ccd, marginal, marginal_richardson, marginal_step, mass_matrix, max_grid_cells, max_iter, max_sweeps, max_treedepth, mclmc_adjusted, method, mode_find, n_chains, n_draws, n_grid, n_iter, n_particles, n_per_axis, n_quad, n_threads, n_threads_outer, n_threads_scatter, n_warmup, noncenter, outer_maxit, outer_reltol, progress, progress.every, progress.file, progress.throttle, prune, prune_log_gap, prune_tol, qmc_nodes, qmc_tol, re_cov, recenter_pilot, scale, screen_iters, seed, sigma_init, skew_correct, skew_idx, smc_max_moves, smc_min_moves, span, store_Q, subspace_debias, thin, tile_warm, tol, var_of_means_consistency, var_of_means_min_ess, verbose, vi_max_grad_norm, vi_max_iter, vi_mc_samples, vi_patience, vi_tol_grad, vi_tol_rel_elbo, vi_variant, warmup, wbic, within_cell, x_init.</span></span></code></pre></div>
+<span><span class="co">#&gt; Allowed: adapt_delta, adaptive_grid, adaptive_grid_cutoff, adaptive_grid_edge_thresh, adaptive_grid_max_frac, adaptive_grid_max_passes, adaptive_grid_min_cells, adaptive_grid_stride, alpha, auto_recenter, axis_refine, batch_size, beta_init, ccd_budget, ccd_budget_floor, checkpoint, cila, copy_atom_mass, copy_slab, damping, diagnose_k, diagnose_skew, epsilon, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_proposal_sd, ess_joint_sigma_re, ess_threshold, fitted_var, force_sparse, hessian, inner_factorization, inner_refresh, integration, k_bootstrap, k_conf_bands, k_max_rounds, k_quality, k_refine, k_samples, k_tail_points, k_threads, keep_grid_hessians, L, local_ccd, marginal, marginal_richardson, marginal_step, mass_matrix, max_grid_cells, max_iter, max_sweeps, max_treedepth, mclmc_adjusted, method, mode_find, n_chains, n_draws, n_grid, n_iter, n_particles, n_per_axis, n_quad, n_threads, n_threads_outer, n_threads_scatter, n_warmup, noncenter, outer_design, outer_maxit, outer_reltol, progress, progress.every, progress.file, progress.throttle, prune, prune_log_gap, prune_tol, qmc_nodes, qmc_tol, quad_evidence_tol, quad_max_level, quad_read_max_nodes, quad_read_nodes, quad_tol, re_cov, recenter_pilot, scale, screen_iters, seed, sigma_init, skew_correct, skew_idx, smc_max_moves, smc_min_moves, span, store_Q, subspace_debias, thin, tile_warm, tol, var_of_means_consistency, var_of_means_min_ess, verbose, vi_max_grad_norm, vi_max_iter, vi_mc_samples, vi_patience, vi_tol_grad, vi_tol_rel_elbo, vi_variant, warmup, wbic, within_cell, x_init.</span></span></code></pre></div>
 <p>The list is long because it covers every backend; the fix is the
 spelling <code>n_threads</code> used in the previous entry.</p>
 </div>

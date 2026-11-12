@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -114,14 +114,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Inference modes</h1>
-
-
+            
+      
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/inference-modes.Rmd" class="external-link"><code>vignettes/inference-modes.Rmd</code></a></small>
       <div class="d-none name"><code>inference-modes.Rmd</code></div>
     </div>
 
-
-
+    
+    
 <p>Installation is covered in <a href="tulpa.html">Get started</a>.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/gcol33/tulpa" class="external-link">tulpa</a></span><span class="op">)</span></span></code></pre></div>
@@ -626,9 +626,9 @@ elapsed time into one table.</p>
 <span>  seconds  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">t_lap</span>, <span class="va">t_mala</span>, <span class="va">t_pf</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;      backend tier slope slope_se seconds</span></span>
-<span><span class="co">#&gt; 1    laplace    2 0.800    0.128    0.02</span></span>
-<span><span class="co">#&gt; 2       mala    1 0.834    0.132    0.32</span></span>
-<span><span class="co">#&gt; 3 pathfinder    2 0.808    0.124    0.03</span></span></code></pre></div>
+<span><span class="co">#&gt; 1    laplace    2 0.800    0.128    0.01</span></span>
+<span><span class="co">#&gt; 2       mala    1 0.834    0.132    0.33</span></span>
+<span><span class="co">#&gt; 3 pathfinder    2 0.808    0.124    0.04</span></span></code></pre></div>
 <p>Three patterns sit in this table. The slope estimates agree across
 all three backends to within their standard errors. That is expected:
 the posterior mean is the easy quantity, and every method finds it. The

@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -114,14 +114,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Space-time models</h1>
-
-
+            
+      
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/space-time.Rmd" class="external-link"><code>vignettes/articles/space-time.Rmd</code></a></small>
       <div class="d-none name"><code>space-time.Rmd</code></div>
     </div>
 
-
-
+    
+    
 <p>Counts recorded per region and per year carry two kinds of structure
 at once. Neighbouring regions look alike, consecutive years look alike,
 and sometimes the map itself changes over time: an outbreak that starts
@@ -1081,17 +1081,17 @@ this article was built (two threads, Windows workstation).</p>
 <span>              <span class="fu">time_fit</span><span class="op">(</span><span class="fl">5</span>, <span class="fl">20</span>, <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">cost</span></span>
 <span><span class="co">#&gt;      regions times grid_cells seconds</span></span>
-<span><span class="co">#&gt; [1,]      25    10        126     0.3</span></span>
-<span><span class="co">#&gt; [2,]      36    10        156     0.2</span></span>
-<span><span class="co">#&gt; [3,]      25    20        144     0.2</span></span>
-<span><span class="co">#&gt; [4,]      25    10        944    12.9</span></span>
-<span><span class="co">#&gt; [5,]      36    10        693    18.3</span></span>
-<span><span class="co">#&gt; [6,]      25    20        662    23.8</span></span></code></pre></div>
+<span><span class="co">#&gt; [1,]      25    10        126     0.4</span></span>
+<span><span class="co">#&gt; [2,]      36    10        156     0.6</span></span>
+<span><span class="co">#&gt; [3,]      25    20        144     0.5</span></span>
+<span><span class="co">#&gt; [4,]      25    10        944    31.0</span></span>
+<span><span class="co">#&gt; [5,]      36    10        693    44.2</span></span>
+<span><span class="co">#&gt; [6,]      25    20        662    58.2</span></span></code></pre></div>
 <p>The additive fit stays under a second at every size. The type IV fit
 solves 662 to 944 grid cells, each over all
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>T</mi></mrow><annotation encoding="application/x-tex">S T</annotation></semantics></math>
-interaction values, and takes 13 s on 25 regions over 10 times, 18 s on
-36 regions over 10 times and 24 s on 25 regions over 20 times.</p>
+interaction values, and takes 31 s on 25 regions over 10 times, 44 s on
+36 regions over 10 times and 58 s on 25 regions over 20 times.</p>
 </div>
 <div class="section level3">
 <h3 id="rules-of-thumb">Rules of thumb<a class="anchor" aria-label="anchor" href="#rules-of-thumb"></a>
@@ -1122,7 +1122,7 @@ IV fit carried 250 of them for a WAIC gain of 5.1 over the additive
 model, and the type I estimate, which shares nothing between cells,
 correlated with the truth at 0.20.</li>
 <li>Budget the interaction fit from the cost table: with a type IV
-interaction over 250 cells the fit took about 43 times as long as the
+interaction over 250 cells the fit took about 78 times as long as the
 additive fit on the same lattice.</li>
 </ul>
 </div>

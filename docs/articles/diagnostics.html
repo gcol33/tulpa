@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -114,14 +114,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Diagnostics</h1>
-
-
+            
+      
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/diagnostics.Rmd" class="external-link"><code>vignettes/articles/diagnostics.Rmd</code></a></small>
       <div class="d-none name"><code>diagnostics.Rmd</code></div>
     </div>
 
-
-
+    
+    
 <p>This article takes one model, Poisson counts with a covariate and an
 areal spatial field, and runs it through each diagnostic tulpa provides:
 the one-call panel, the simulation-based residual tests, residual checks
@@ -612,8 +612,8 @@ too large for the posterior.</p>
 <span>                 control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">400L</span>, warmup <span class="op">=</span> <span class="fl">200L</span>,</span>
 <span>                                n_chains <span class="op">=</span> <span class="fl">4L</span>, seed <span class="op">=</span> <span class="fl">1L</span>,</span>
 <span>                                adapt_delta <span class="op">=</span> <span class="fl">0.3</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning: tulpa(): the 'hmc' chain has not converged -- (Intercept): Rhat 1.21,</span></span>
-<span><span class="co">#&gt; bulk-ESS 19; log_tau_spatial: Rhat 1.14, bulk-ESS 25; x: Rhat 1.07, bulk-ESS</span></span>
+<span><span class="co">#&gt; Warning: tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.20, bulk-ESS</span></span>
+<span><span class="co">#&gt; 16; (Intercept): Rhat 1.20, bulk-ESS 38; log_tau_spatial: Rhat 1.23, bulk-ESS</span></span>
 <span><span class="co">#&gt; 49. Its estimates and intervals are not yet the posterior. Run longer</span></span>
 <span><span class="co">#&gt; (control$n_iter / control$warmup); see check_diagnostics().</span></span></code></pre></div>
 <p><code><a href="../reference/tulpa.html">tulpa()</a></code> already warns that the chains have not converged
@@ -628,20 +628,20 @@ and the field precision) and also counts divergences.</p>
 <div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dg_bad</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_bad</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">dg_bad</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="op">-</span><span class="va">dg_bad</span><span class="op">$</span><span class="va">rhat</span><span class="op">)</span>, <span class="op">]</span>, <span class="fl">5</span><span class="op">)</span></span>
-<span><span class="co">#&gt;          parameter     rhat  ess_bulk ess_tail</span></span>
-<span><span class="co">#&gt; 16 phi_spatial[13] 1.439409  8.460734 32.90862</span></span>
-<span><span class="co">#&gt; 38 phi_spatial[35] 1.430116 15.379338 23.28833</span></span>
-<span><span class="co">#&gt; 9   phi_spatial[6] 1.416960 23.925365 25.37086</span></span>
-<span><span class="co">#&gt; 10  phi_spatial[7] 1.402625  8.978609 25.72008</span></span>
-<span><span class="co">#&gt; 5   phi_spatial[2] 1.357897 21.337772 31.81663</span></span>
+<span><span class="co">#&gt;          parameter     rhat  ess_bulk  ess_tail</span></span>
+<span><span class="co">#&gt; 34 phi_spatial[31] 1.440025 21.807830  7.977189</span></span>
+<span><span class="co">#&gt; 16 phi_spatial[13] 1.425359  9.006118  6.191877</span></span>
+<span><span class="co">#&gt; 31 phi_spatial[28] 1.379742  9.418220 11.287377</span></span>
+<span><span class="co">#&gt; 15 phi_spatial[12] 1.307740 63.178889 40.117443</span></span>
+<span><span class="co">#&gt; 18 phi_spatial[15] 1.298548 57.122124 10.471782</span></span>
 <span><span class="fu"><a href="../reference/check_diagnostics.html">check_diagnostics</a></span><span class="op">(</span><span class="va">fit_bad</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Convergence warnings:</span></span>
 <span><span class="co">#&gt;   - 3 parameter(s) with Rhat &gt; 1.01</span></span>
 <span><span class="co">#&gt;   - 3 parameter(s) with bulk-ESS &lt; 400</span></span>
-<span><span class="co">#&gt;   - 116 divergent transition(s)</span></span></code></pre></div>
-<p>The worst parameters are field values, with Rhat up to 1.61 and
-bulk-ESS between 14 and 35 from 800 post-warmup draws. All three main
-parameters fail both thresholds, and the run has 141 divergences.</p>
+<span><span class="co">#&gt;   - 99 divergent transition(s)</span></span></code></pre></div>
+<p>The worst parameters are field values, with Rhat up to 1.44 and
+bulk-ESS between 9 and 63 from 800 post-warmup draws. All three main
+parameters fail both thresholds, and the run has 99 divergences.</p>
 <p>A divergence is a trajectory along which the sampler’s energy error
 blew up, and it marks a region of the posterior the sampler could not
 follow. <code><a href="../reference/n_divergent.html">n_divergent()</a></code> counts them. The energy Bayesian
@@ -651,11 +651,11 @@ moves between iterations with its overall spread;
 records, and a chain below 0.3 explores poorly.</p>
 <div class="sourceCode" id="cb27"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/n_divergent.html">n_divergent</a></span><span class="op">(</span><span class="va">fit_bad</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] 116</span></span>
+<span><span class="co">#&gt; [1] 99</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="../reference/energy_bfmi.html">energy_bfmi</a></span><span class="op">(</span><span class="va">fit_bad</span><span class="op">$</span><span class="va">energy</span>, <span class="va">fit_bad</span><span class="op">$</span><span class="va">chain_id</span><span class="op">)</span><span class="op">$</span><span class="va">per_chain</span>, <span class="fl">2</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    1    2    3    4 </span></span>
-<span><span class="co">#&gt; 1.27 0.79 0.93 1.20</span></span></code></pre></div>
-<p>Every chain’s E-BFMI is above 0.3 (0.89 to 2.01), so this check does
+<span><span class="co">#&gt; 1.16 1.08 1.15 0.95</span></span></code></pre></div>
+<p>Every chain’s E-BFMI is above 0.3 (0.95 to 1.16), so this check does
 not flag the run: E-BFMI detects a sampler that cannot move between
 energy levels, which is not the failure here.</p>
 <p>Three plots locate the problem. <code><a href="../reference/mcmc_plots.html">plot_rhat()</a></code> and
@@ -695,7 +695,7 @@ parameter and the energy distribution in one figure.</p>
 <span><span class="co">#&gt; Convergence checks passed (Rhat, bulk-ESS, divergences).</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_hmc</span><span class="op">)</span></span>
 <span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;   0.5162764   0.4036310</span></span></code></pre></div>
+<span><span class="co">#&gt;   0.5149618   0.4031344</span></span></code></pre></div>
 <div class="sourceCode" id="cb33"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/plot_diagnostics.html">plot_diagnostics</a></span><span class="op">(</span><span class="va">fit_hmc</span><span class="op">)</span></span></code></pre></div>
 <p><img src="diagnostics_files/figure-html/plot-diagnostics-1.png" class="r-plt" alt="Combined convergence figure for the longer HMC run: Rhat and ESS per parameter, trace of the worst parameter, and energy histograms" width="672"></p>

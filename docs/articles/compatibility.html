@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -114,14 +114,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>Compatibility with lme4, glmmTMB, brms and INLA</h1>
-
-
+            
+      
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/compatibility.Rmd" class="external-link"><code>vignettes/articles/compatibility.Rmd</code></a></small>
       <div class="d-none name"><code>compatibility.Rmd</code></div>
     </div>
 
-
-
+    
+    
 <p>Four packages shaped how a mixed or latent Gaussian model is written
 and fitted in R. <a href="https://github.com/lme4/lme4/" class="external-link">lme4</a> (Bates
 et al. 2015) introduced the <code>(1 + x | g)</code> formula syntax for
@@ -314,7 +314,7 @@ term routes to that integration (the <a href="random-slopes.html">Random
 slopes</a> article covers it). The posterior medians of the two SDs
 equal the restricted estimates to two decimals, and the median of the
 correlation is 0.52 against the restricted 0.57, inside an interval from
-0.22 to 0.73.</p>
+0.25 to 0.73.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">s_n</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d2</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>             mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
@@ -450,14 +450,14 @@ conditional check below measures how much that matters here.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">tab_bym2</span>, <span class="fl">4</span><span class="op">)</span></span>
 <span><span class="co">#&gt;               tulpa tulpa_se   other other_se    diff diff_in_se</span></span>
 <span><span class="co">#&gt; (Intercept) -0.2244   0.0354 -0.2425   0.0360  0.0181     0.5025</span></span>
-<span><span class="co">#&gt; x            0.4416   0.0571  0.4468   0.0572 -0.0052    -0.0904</span></span>
-<span><span class="co">#&gt; sigma        0.5149   0.0497  0.5084   0.0495  0.0065     0.1320</span></span>
-<span><span class="co">#&gt; mixing       0.7224   0.1352  0.7083   0.1251  0.0141     0.1124</span></span></code></pre></div>
+<span><span class="co">#&gt; x            0.4416   0.0571  0.4468   0.0572 -0.0052    -0.0906</span></span>
+<span><span class="co">#&gt; sigma        0.5149   0.0497  0.5083   0.0495  0.0066     0.1326</span></span>
+<span><span class="co">#&gt; mixing       0.7224   0.1352  0.7083   0.1251  0.0141     0.1125</span></span></code></pre></div>
 <p>The slope and the total SD agree to within 0.2 posterior SD, and the
-mixing weight’s mean differs by 0.03, although tulpa’s posterior SD for
-it is 0.17 against INLA’s 0.13. The intercept differs by half a
-posterior SD, and the next section traces that gap to the method rather
-than the model.</p>
+mixing weight’s mean differs by 0.014, and tulpa’s posterior SD for it
+is 0.14 against INLA’s 0.13. The intercept differs by half a posterior
+SD, and the next section traces that gap to the method rather than the
+model.</p>
 </div>
 <div class="section level3">
 <h3 id="the-same-model-at-fixed-hyperparameters">The same model at fixed hyperparameters<a class="anchor" aria-label="anchor" href="#the-same-model-at-fixed-hyperparameters"></a>
@@ -597,7 +597,7 @@ comparison that carry one.</p>
 <span><span class="co">#&gt;                              comparison max_abs_diff_in_se</span></span>
 <span><span class="co">#&gt; 1           binomial GLMM, ML (glmmTMB)              0.000</span></span>
 <span><span class="co">#&gt; 2            Poisson random slope, REML              0.008</span></span>
-<span><span class="co">#&gt; 3 Poisson BYM2 (INLA, defaults matched)              0.503</span></span>
+<span><span class="co">#&gt; 3 Poisson BYM2 (INLA, defaults matched)              0.502</span></span>
 <span><span class="co">#&gt; 4                  binomial GLMM (brms)              0.073</span></span></code></pre></div>
 </div>
 <div class="section level2">
@@ -605,7 +605,7 @@ comparison that carry one.</p>
 </h2>
 <p>The tables give the tulpa equivalent of each formula term, family,
 structured effect, prior and accessor of the four packages. Every tulpa
-function named here is exported by tulpa 0.7.6.</p>
+function named here is exported by tulpa 0.7.8.</p>
 <div class="section level3">
 <h3 id="formula-terms-and-data">Formula terms and data<a class="anchor" aria-label="anchor" href="#formula-terms-and-data"></a>
 </h3>
@@ -1086,7 +1086,7 @@ numbers.</p>
 <span>      inla_vb_off <span class="op">=</span> <span class="va">a_i0</span><span class="op">$</span><span class="va">summary.fixed</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span></span>
 <span><span class="co">#&gt;             (Intercept)         x</span></span>
 <span><span class="co">#&gt; tulpa        -0.2244064 0.4416127</span></span>
-<span><span class="co">#&gt; inla_vb_on   -0.2424722 0.4467861</span></span>
+<span><span class="co">#&gt; inla_vb_on   -0.2424737 0.4467936</span></span>
 <span><span class="co">#&gt; inla_vb_off  -0.2244228 0.4423572</span></span></code></pre></div>
 <p>The two choices answer different questions about a skewed posterior:
 INLA’s corrected mean moves the estimate towards the posterior mean,
@@ -1138,7 +1138,7 @@ differs from glmmTMB’s by 1e-7. The fits above set
 </h2>
 <p>The timings are elapsed seconds of one run of each fit above,
 measured on a shared Windows 11 workstation (beast) with R 4.6.1, two
-threads where a fitter takes them, with tulpa 0.7.6. The data sizes are
+threads where a fitter takes them, with tulpa 0.7.8. The data sizes are
 320 binary responses in 40 groups (GLMM), 720 counts in 60 groups
 (random slope) and 100 regions (BYM2). One run of a fit under a second
 carries noise of the order of its own value, so the table shows the
@@ -1148,21 +1148,21 @@ packages scale to larger data.</p>
 <code class="sourceCode R"><span><span class="va">tm</span><span class="op">$</span><span class="va">brms</span> <span class="op">&lt;-</span> <span class="va">tm_brms</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>fit <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">tm</span><span class="op">)</span>, seconds <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">tm</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span>
 <span><span class="co">#&gt;            fit seconds</span></span>
-<span><span class="co">#&gt; 1    tulpa_agq    0.06</span></span>
-<span><span class="co">#&gt; 2        glmer    0.06</span></span>
+<span><span class="co">#&gt; 1    tulpa_agq    0.14</span></span>
+<span><span class="co">#&gt; 2        glmer    0.11</span></span>
 <span><span class="co">#&gt; 3      glmmTMB    0.08</span></span>
 <span><span class="co">#&gt; 4     tulpa_eb    0.13</span></span>
-<span><span class="co">#&gt; 5 glmmTMB_reml    0.08</span></span>
-<span><span class="co">#&gt; 6   tulpa_bym2    0.30</span></span>
-<span><span class="co">#&gt; 7    inla_bym2    0.39</span></span>
-<span><span class="co">#&gt; 8   tulpa_aghq    5.29</span></span>
-<span><span class="co">#&gt; 9         brms   11.92</span></span></code></pre></div>
+<span><span class="co">#&gt; 5 glmmTMB_reml    0.11</span></span>
+<span><span class="co">#&gt; 6   tulpa_bym2    0.31</span></span>
+<span><span class="co">#&gt; 7    inla_bym2    1.76</span></span>
+<span><span class="co">#&gt; 8   tulpa_aghq   10.98</span></span>
+<span><span class="co">#&gt; 9         brms   49.78</span></span></code></pre></div>
 <p>The three maximum-likelihood fits of the random-intercept model take
-the same time to the precision of one run. INLA fits the BYM2 model
-faster than tulpa’s nested Laplace. The brms time includes compiling the
-Stan model, which a cached model skips on the next run, and the tulpa
-AGQ integration of the same model spends its time on nine-node
-quadrature inside each group at every grid cell.</p>
+the same time to the precision of one run. The BYM2 fit took 0.31
+seconds in tulpa and 1.76 seconds in INLA. The brms time includes
+compiling the Stan model, which a cached model skips on the next run,
+and the tulpa AGQ integration of the same model spends its time on
+nine-node quadrature inside each group at every grid cell.</p>
 </div>
 <div class="section level2">
 <h2 id="when-the-other-package-is-the-better-choice">When the other package is the better choice<a class="anchor" aria-label="anchor" href="#when-the-other-package-is-the-better-choice"></a>

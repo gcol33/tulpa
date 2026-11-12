@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -114,14 +114,14 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
       <img src="../logo.svg" class="logo" alt=""><h1>EM + Laplace</h1>
-
-
+            
+      
       <small class="dont-index">Source: <a href="https://github.com/gcol33/tulpa/blob/HEAD/vignettes/articles/em-laplace.Rmd" class="external-link"><code>vignettes/articles/em-laplace.Rmd</code></a></small>
       <div class="d-none name"><code>em-laplace.Rmd</code></div>
     </div>
 
-
-
+    
+    
 <p>Some models carry a discrete latent variable that, once known, turns
 the fit into ordinary weighted GLMs: occupancy (was the site occupied?),
 N-mixture (what was the true count?), zero inflation (is this zero
@@ -491,7 +491,7 @@ abundance intervals are nearly the same and all cover.</p>
 </h2>
 <p>One dataset shows the widths; coverage needs many. The chunk below
 repeats the simulation and every fit 100 times and counts how often each
-95% interval contains the truth. It takes about a minute and a half.</p>
+95% interval contains the truth. It takes about two minutes.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">one_run</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">d</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="va">cb</span> <span class="op">&lt;-</span> <span class="fu">zip_callbacks</span><span class="op">(</span><span class="va">d</span><span class="op">)</span></span>
