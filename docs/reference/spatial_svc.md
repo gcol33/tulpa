@@ -10,14 +10,17 @@ governed by a Gaussian process (NNGP or HSGP approximation).
 spatial_svc(
   coords,
   terms = 1,
-  cov = c("exponential", "matern"),
+  cov = NULL,
+  nu = 1.5,
   nn = 15,
   shared = NULL,
   scale_coords = TRUE,
   approx = c("nngp", "hsgp"),
-  m = 6,
-  c_boundary = 1.5,
-  parameterization = c("noncentered", "centered")
+  m = NULL,
+  c_boundary = NULL,
+  parameterization = c("auto", "noncentered", "centered"),
+  sigma_prior_U = 1,
+  sigma_prior_alpha = 0.01
 )
 
 # S3 method for class 'tulpa_svc'
@@ -39,7 +42,15 @@ print(x, ...)
 
 - cov:
 
-  Covariance function. One of `"exponential"` or `"matern"`.
+  Covariance function, read as
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  reads it: with `approx = "nngp"`, `"exponential"` (default) or `"matern"`;
+  with `approx = "hsgp"`, `"matern"` (default, at `nu = 1.5`) or
+  `"squared_exponential"`.
+
+- nu:
+
+  Matern smoothness, `1.5` (default) or `2.5`, used when `cov = "matern"`.
 
 - nn:
 
@@ -69,23 +80,35 @@ print(x, ...)
 - m:
 
   Number of basis functions per dimension for the HSGP approximation
-  (`approx = "hsgp"`).
+  (`approx = "hsgp"`), between 3 and 50. `NULL` (default) chooses it from
+  the data by the rule
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  describes, read at the smallest lengthscale of the varying coefficients,
+  which share one basis.
 
 - c_boundary:
 
-  Boundary-extension factor for the HSGP domain (`approx = "hsgp"`).
+  Boundary-extension factor for the HSGP domain (`approx = "hsgp"`), `>= 1`.
+  `NULL` (default) chooses it from the data, at the largest lengthscale of
+  the varying coefficients.
 
 - parameterization:
 
   Latent parameterization for the exact-NUTS field (`approx = "nngp"`
-  only; HSGP is already non-centered by construction). `"noncentered"`
-  (default) samples `z_j ~ N(0, I)` per term and reconstructs each field
-  as `w_j = f(z_j, sigma2_j, phi_j)`, removing the field/hyperparameter
-  funnel that otherwise attenuates the field's amplitude when it is
-  weakly identified. `"centered"` places the NNGP density on each term's
-  field directly; it is marginally cheaper on a well-identified
-  response, but on a weakly identified one it recovers only about a
-  third of the field's spread.
+  only; HSGP is already non-centered by construction). `"auto"` and
+  `"noncentered"` sample independent `z_j ~ N(0, I)` innovations per term
+  and reconstruct each field as `w_j = f(z_j, sigma2_j, phi_j)`. The
+  innovations' prior is independent of the sampled scale and range.
+  `"centered"` places the NNGP density on each term's field directly.
+
+- sigma_prior_U, sigma_prior_alpha:
+
+  Penalized-complexity prior on each coefficient field's marginal standard
+  deviation, calibrated so that `P(sigma > sigma_prior_U) = sigma_prior_alpha`.
+  Defaults to `P(sigma > 1) = 0.01`, as for HSGP fields and
+  [`temporal_tvc()`](https://gillescolling.com/tulpa/reference/temporal_tvc.md).
+  Applies to both approximations. `sigma_prior_U` must be positive and
+  `sigma_prior_alpha` must lie in `(0, 1)`.
 
 - x:
 

@@ -310,10 +310,6 @@ and the formula carries no <code><a href="../reference/spatial.html">spatial()</
 <code class="sourceCode R"><span><span class="va">fit_svc</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">ds</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>                 spatial <span class="op">=</span> <span class="fu"><a href="../reference/spatial_svc.html">spatial_svc</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span>, terms <span class="op">=</span> <span class="op">~</span> <span class="va">x</span> <span class="op">-</span> <span class="fl">1</span>, nn <span class="op">=</span> <span class="fl">8</span><span class="op">)</span>,</span>
 <span>                 mode <span class="op">=</span> <span class="st">"exact"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning: tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.01, bulk-ESS</span></span>
-<span><span class="co">#&gt; 66; (Intercept): Rhat 1.01, bulk-ESS 97. Its estimates and intervals are not</span></span>
-<span><span class="co">#&gt; yet the posterior. Run longer (control$n_iter / control$warmup); see</span></span>
-<span><span class="co">#&gt; check_diagnostics().</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_svc</span><span class="op">)</span><span class="op">$</span><span class="va">inference</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"backend"</span>, <span class="st">"inference_tier"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt; $backend</span></span>
 <span><span class="co">#&gt; [1] "hmc"</span></span>
@@ -321,13 +317,13 @@ and the formula carries no <code><a href="../reference/spatial.html">spatial()</
 <span><span class="co">#&gt; $inference_tier</span></span>
 <span><span class="co">#&gt; [1] 1</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_svc</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;              estimate std.error     2.5 %    97.5 %</span></span>
-<span><span class="co">#&gt; (Intercept) 0.3274837 0.0664998 0.2059251 0.4669077</span></span>
-<span><span class="co">#&gt; x           0.5764011 0.0626596 0.4596029 0.7084898</span></span></code></pre></div>
+<span><span class="co">#&gt;              estimate  std.error     2.5 %    97.5 %</span></span>
+<span><span class="co">#&gt; (Intercept) 0.3265819 0.06725877 0.1916009 0.4434145</span></span>
+<span><span class="co">#&gt; x           0.5797082 0.06881095 0.4511008 0.7133933</span></span></code></pre></div>
 <p>The fit ran on the <code>hmc</code> backend, Tier 1. The fixed slope
 <code>x</code> is the slope at the average site,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\beta_1</annotation></semantics></math>;
-its 95% interval runs from 0.46 to 0.71 and holds the true
+its 95% interval runs from 0.45 to 0.71 and holds the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.7</mn><annotation encoding="application/x-tex">0.7</annotation></semantics></math>
 near its upper end. The intercept interval holds the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.3</mn><annotation encoding="application/x-tex">0.3</annotation></semantics></math>.</p>
@@ -337,12 +333,14 @@ and its range, come from <code><a href="../reference/spatial_range.html">spatial
 the coordinates.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/spatial_range.html">spatial_range</a></span><span class="op">(</span><span class="va">fit_svc</span><span class="op">)</span></span>
-<span><span class="co">#&gt;                mean        sd      q2.5     q97.5</span></span>
-<span><span class="co">#&gt; sigma_svc 0.5987649 0.1771924 0.3259850  1.016541</span></span>
-<span><span class="co">#&gt; range_svc       Inf       Inf 0.5657842 11.251721</span></span></code></pre></div>
+<span><span class="co">#&gt;                mean        sd      q2.5      q97.5</span></span>
+<span><span class="co">#&gt; sigma_svc 0.5940487 0.1726595 0.3235746  0.9751209</span></span>
+<span><span class="co">#&gt; range_svc       Inf       Inf 0.5531074 10.8936137</span></span></code></pre></div>
 <p>The standard deviation of the slope field has a 95% interval from
-0.33 to 1.02. The range interval runs from 0.57 to 11.25 on a unit
-square, spanning distances within and beyond the study area.</p>
+0.32 to 0.98. The range interval runs from 0.55 to 10.89 on a unit
+square, spanning distances within and beyond the study area. The PC
+range prior gives an infinite posterior mean and standard deviation in
+this model; the interval uses posterior quantiles.</p>
 </div>
 <div class="section level3">
 <h3 id="extracting-the-coefficient-surface">Extracting the coefficient surface<a class="anchor" aria-label="anchor" href="#extracting-the-coefficient-surface"></a>
@@ -368,13 +366,13 @@ standard deviation and quantiles at each observation.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">post</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Spatially varying coefficient posterior summary, 600 posterior draws</span></span>
 <span><span class="co">#&gt;   obs term   coord_1   coord_2      mean        sd        q2.5       q50</span></span>
-<span><span class="co">#&gt; 1   1    x 0.2655087 0.2675082 0.2884504 0.2630251 -0.20533861 0.2742798</span></span>
-<span><span class="co">#&gt; 2   2    x 0.3721239 0.2186453 0.3352435 0.1583424  0.01213666 0.3356311</span></span>
-<span><span class="co">#&gt; 3   3    x 0.5728534 0.5167968 0.3799177 0.1801937  0.03454084 0.3814653</span></span>
+<span><span class="co">#&gt; 1   1    x 0.2655087 0.2675082 0.3024091 0.2571180 -0.16392180 0.2897014</span></span>
+<span><span class="co">#&gt; 2   2    x 0.3721239 0.2186453 0.3400818 0.1486070  0.03627746 0.3477845</span></span>
+<span><span class="co">#&gt; 3   3    x 0.5728534 0.5167968 0.3975704 0.1840017  0.03208768 0.4032975</span></span>
 <span><span class="co">#&gt;       q97.5</span></span>
-<span><span class="co">#&gt; 1 0.8668680</span></span>
-<span><span class="co">#&gt; 2 0.6464566</span></span>
-<span><span class="co">#&gt; 3 0.7330969</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 0.8833915</span></span>
+<span><span class="co">#&gt; 2 0.6134115</span></span>
+<span><span class="co">#&gt; 3 0.7431155</span></span></code></pre></div>
 <p>These are deviations from
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\beta_1</annotation></semantics></math>.
 The total slope at each site adds the fixed slope draw by draw. The
@@ -389,9 +387,9 @@ fixed-effect draws are the <code>x</code> column of
 <span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">slope</span>, <span class="fl">3</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt;    mean    lo    hi</span></span>
-<span><span class="co">#&gt; 1 0.865 0.351 1.517</span></span>
-<span><span class="co">#&gt; 2 0.912 0.572 1.203</span></span>
-<span><span class="co">#&gt; 3 0.956 0.610 1.299</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 0.882 0.394 1.505</span></span>
+<span><span class="co">#&gt; 2 0.920 0.623 1.212</span></span>
+<span><span class="co">#&gt; 3 0.977 0.621 1.332</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="checking-the-fit">Checking the fit<a class="anchor" aria-label="anchor" href="#checking-the-fit"></a>
@@ -411,9 +409,9 @@ fixed-effect draws are the <code>x</code> column of
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>cor <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">slope</span><span class="op">$</span><span class="va">mean</span>, <span class="va">truth</span><span class="op">)</span>,</span>
 <span>  coverage <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">slope</span><span class="op">$</span><span class="va">lo</span> <span class="op">&lt;=</span> <span class="va">truth</span> <span class="op">&amp;</span> <span class="va">truth</span> <span class="op">&lt;=</span> <span class="va">slope</span><span class="op">$</span><span class="va">hi</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;       cor  coverage </span></span>
-<span><span class="co">#&gt; 0.9269945 0.9750000</span></span></code></pre></div>
+<span><span class="co">#&gt; 0.9252383 0.9700000</span></span></code></pre></div>
 <p>The estimates follow the identity line with a correlation of 0.93,
-and 97.5% of the 200 intervals hold the true slope. The points lie on a
+and 97% of the 200 intervals hold the true slope. The points lie on a
 line slightly flatter than the identity at the extremes, where the prior
 pulls the field toward its mean.</p>
 <p>The sampler reports its own convergence. <code><a href="../reference/diagnostics.html">diagnostics()</a></code>
@@ -424,14 +422,13 @@ hyperparameters and 200 field values):</p>
 <code class="sourceCode R"><span><span class="va">dg</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_svc</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>max_rhat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">dg</span><span class="op">$</span><span class="va">rhat</span><span class="op">)</span>, min_ess_bulk <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="va">dg</span><span class="op">$</span><span class="va">ess_bulk</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;     max_rhat min_ess_bulk </span></span>
-<span><span class="co">#&gt;     1.080277    12.740497</span></span>
+<span><span class="co">#&gt;     1.030589   159.131422</span></span>
 <span><span class="fu"><a href="https://generics.r-lib.org/reference/glance.html" class="external-link">glance</a></span><span class="op">(</span><span class="va">fit_svc</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"n_divergent"</span>, <span class="st">"mean_accept"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt;   n_divergent mean_accept</span></span>
-<span><span class="co">#&gt; 1           0   0.8642729</span></span></code></pre></div>
-<p>The largest Rhat is 1.080, no transition diverged, and the smallest
-bulk effective sample size is 13 draws. The convergence warning calls
-for a longer run before interpreting the estimates. A formal check of
-the observation model compares the dispersion of the counts with data
+<span><span class="co">#&gt; 1           0   0.8962249</span></span></code></pre></div>
+<p>The largest Rhat is 1.031, there are 0 divergent transitions, and the
+smallest bulk effective sample size is 159 draws. A formal check of the
+observation model compares the dispersion of the counts with data
 simulated from the posterior:</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/simulation_tests.html">test_dispersion</a></span><span class="op">(</span><span class="va">fit_svc</span>, nsim <span class="op">=</span> <span class="fl">100</span><span class="op">)</span></span>
@@ -439,7 +436,7 @@ simulated from the posterior:</p>
 <span><span class="co">#&gt;  Simulation-based dispersion test</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; data:  fit_svc</span></span>
-<span><span class="co">#&gt; dispersion ratio = 1.0331, p-value = 0.9</span></span>
+<span><span class="co">#&gt; dispersion ratio = 1.119, p-value = 0.78</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two.sided</span></span></code></pre></div>
 <p>The ratio is close to one and the p-value large, so the counts are no
 more spread out than the fitted Poisson model predicts.</p>
@@ -476,24 +473,18 @@ better).</p>
 <span><span class="co">#&gt;    estimate  std.error     2.5 %    97.5 %</span></span>
 <span><span class="co">#&gt; x 0.6514928 0.05627359 0.5510711 0.7503711</span></span>
 <span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>constant <span class="op">=</span> <span class="va">fit_const</span>, svc <span class="op">=</span> <span class="va">fit_svc</span>, criterion <span class="op">=</span> <span class="st">"waic"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning: compare_models(): the chain(s) behind 'svc' have not converged, so</span></span>
-<span><span class="co">#&gt; their waic rows do not estimate the predictive density and the ranking is not a</span></span>
-<span><span class="co">#&gt; model comparison. Refit them with a longer run.</span></span>
 <span><span class="co">#&gt;      model      elpd  se_elpd     p_eff       ic     delta  se_diff</span></span>
-<span><span class="co">#&gt; 2      svc -318.9124 12.63474 19.464707 637.8248   0.00000       NA</span></span>
-<span><span class="co">#&gt; 1 constant -358.6960 22.21309  7.166723 717.3920 -39.78359 15.83687</span></span>
+<span><span class="co">#&gt; 2      svc -318.2351 12.57920 19.951985 636.4703   0.00000       NA</span></span>
+<span><span class="co">#&gt; 1 constant -358.6960 22.21309  7.166723 717.3920 -40.46086 15.82086</span></span>
 <span><span class="co">#&gt;         weight</span></span>
 <span><span class="co">#&gt; 2 1.000000e+00</span></span>
-<span><span class="co">#&gt; 1 5.274812e-18</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 2.679618e-18</span></span></code></pre></div>
 <p>The constant model reports one slope of 0.65 with a standard error of
-0.056, narrower than the 0.063 of the SVC’s
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\beta_1</annotation></semantics></math>,
-because it has no field to share the effect with. The displayed SVC elpd
-is 39.8 units higher, with a standard error of 15.8 for the difference
-and about 12 more effective parameters (<code>p_eff</code>).
-<code><a href="../reference/compare_models.html">compare_models()</a></code> warns that the SVC fit has failed
-convergence checks; a converged fit is needed to interpret this
-ranking.</p>
+0.056. The SVC’s
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\beta_1</annotation></semantics></math>
+has a standard error of 0.069. The SVC model gains 40.5 units of elpd,
+with a standard error of 15.8 for the difference and about 13 additional
+effective parameters (<code>p_eff</code>).</p>
 </div>
 <div class="section level3">
 <h3 id="prediction">Prediction<a class="anchor" aria-label="anchor" href="#prediction"></a>
@@ -508,9 +499,9 @@ and <code>newdata</code> needs no coordinate columns:</p>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_svc</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>        include_field <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="co">#&gt;          fit     se.fit      lower       upper</span></span>
-<span><span class="co">#&gt; 1 -0.2489174 0.11100238 -0.4664781 -0.03135672</span></span>
-<span><span class="co">#&gt; 2  0.3274837 0.06649980  0.1971465  0.45782091</span></span>
-<span><span class="co">#&gt; 3  0.9038848 0.06614657  0.7742399  1.03352968</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 -0.2531263 0.11768229 -0.4837793 -0.02247323</span></span>
+<span><span class="co">#&gt; 2  0.3265819 0.06725877  0.1947572  0.45840669</span></span>
+<span><span class="co">#&gt; 3  0.9062901 0.06832464  0.7723763  1.04020398</span></span></code></pre></div>
 <p>A site-specific prediction uses the slope at that site. For the site
 where the estimated slope is highest and the one where it is lowest, the
 expected count across
@@ -520,14 +511,15 @@ follows from the intercept and slope draws:</p>
 <code class="sourceCode R"><span><span class="va">xs</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="op">-</span><span class="fl">2</span>, <span class="fl">2</span>, length.out <span class="op">=</span> <span class="fl">40</span><span class="op">)</span></span>
 <span><span class="va">pick</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/which.min.html" class="external-link">which.max</a></span><span class="op">(</span><span class="va">slope</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/which.min.html" class="external-link">which.min</a></span><span class="op">(</span><span class="va">slope</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">b0</span>  <span class="op">&lt;-</span> <span class="va">fit_svc</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, <span class="st">"(Intercept)"</span><span class="op">]</span></span>
-<span><span class="va">band</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">j</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">mu</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">b0</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/outer.html" class="external-link">outer</a></span><span class="op">(</span><span class="va">slope_draws</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span>, <span class="va">xs</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">count_band</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">intercept</span>, <span class="va">slope</span>, <span class="va">xs</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">mu</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">intercept</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/outer.html" class="external-link">outer</a></span><span class="op">(</span><span class="va">slope</span>, <span class="va">xs</span><span class="op">)</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">mu</span>, <span class="fl">2</span>, <span class="va">quantile</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.025</span>, <span class="fl">0.5</span>, <span class="fl">0.975</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="cn">NULL</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">xs</span><span class="op">)</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">20</span><span class="op">)</span>, xlab <span class="op">=</span> <span class="st">"x"</span>,</span>
+<span><span class="va">bands</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">pick</span>, <span class="kw">function</span><span class="op">(</span><span class="va">j</span><span class="op">)</span> <span class="fu">count_band</span><span class="op">(</span><span class="va">b0</span>, <span class="va">slope_draws</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span>, <span class="va">xs</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="cn">NULL</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">xs</span><span class="op">)</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">bands</span><span class="op">)</span><span class="op">)</span>, xlab <span class="op">=</span> <span class="st">"x"</span>,</span>
 <span>     ylab <span class="op">=</span> <span class="st">"expected count"</span><span class="op">)</span></span>
 <span><span class="kw">for</span> <span class="op">(</span><span class="va">k</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">2</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">q</span> <span class="op">&lt;-</span> <span class="fu">band</span><span class="op">(</span><span class="va">pick</span><span class="op">[</span><span class="va">k</span><span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="va">q</span> <span class="op">&lt;-</span> <span class="va">bands</span><span class="op">[[</span><span class="va">k</span><span class="op">]</span><span class="op">]</span></span>
 <span>  <span class="va">cl</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"darkorange"</span>, <span class="st">"steelblue"</span><span class="op">)</span><span class="op">[</span><span class="va">k</span><span class="op">]</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/graphics/polygon.html" class="external-link">polygon</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">xs</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">xs</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">q</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">q</span><span class="op">[</span><span class="fl">3</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>          col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="va">cl</span>, <span class="fl">0.25</span><span class="op">)</span>, border <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
@@ -570,9 +562,9 @@ scale.</p>
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/par.html" class="external-link">par</a></span><span class="op">(</span><span class="va">op</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>cor <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">s_new</span>, <span class="va">s_true</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">s_new</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;        cor                       </span></span>
-<span><span class="co">#&gt;  0.9299020 -0.2669379  1.2130021</span></span></code></pre></div>
+<span><span class="co">#&gt;  0.9294189 -0.2778536  1.2346719</span></span></code></pre></div>
 <p>Over the grid the predicted slope correlates with the true surface at
-0.93 and runs from -0.27 to 1.21. It reproduces the high band along the
+0.93 and runs from -0.28 to 1.23. It reproduces the high band along the
 lower middle and the low values along the top edge.</p>
 </div>
 </div>
@@ -613,18 +605,18 @@ the intercept gives the baseline at each site.</p>
 <span>                  mode <span class="op">=</span> <span class="st">"exact"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_svci</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;              estimate  std.error     2.5 %    97.5 %</span></span>
-<span><span class="co">#&gt; (Intercept) 0.4741262 0.06246574 0.3477979 0.6000129</span></span>
-<span><span class="co">#&gt; x           0.4359323 0.05381637 0.3314583 0.5500738</span></span>
+<span><span class="co">#&gt; (Intercept) 0.4790399 0.06154434 0.3592209 0.5990962</span></span>
+<span><span class="co">#&gt; x           0.4315739 0.05797237 0.3134611 0.5447043</span></span>
 <span><span class="va">icpt</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="fu"><a href="../reference/svc.html">svc</a></span><span class="op">(</span><span class="va">fit_svci</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>cor <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">icpt</span><span class="op">$</span><span class="va">mean</span>, <span class="va">isurf</span><span class="op">)</span>,</span>
 <span>  coverage <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">icpt</span><span class="op">$</span><span class="va">q2.5</span> <span class="op">&lt;=</span> <span class="va">isurf</span> <span class="op">&amp;</span> <span class="va">isurf</span> <span class="op">&lt;=</span> <span class="va">icpt</span><span class="op">$</span><span class="va">q97.5</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;      cor coverage </span></span>
-<span><span class="co">#&gt; 0.885738 1.000000</span></span></code></pre></div>
+<span><span class="co">#&gt;       cor  coverage </span></span>
+<span><span class="co">#&gt; 0.8744212 1.0000000</span></span></code></pre></div>
 <p>The slope interval holds the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.4</mn><annotation encoding="application/x-tex">0.4</annotation></semantics></math>,
 the intercept interval the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.5</mn><annotation encoding="application/x-tex">0.5</annotation></semantics></math>,
-and the field correlates with the true baseline at 0.89. Here the
+and the field correlates with the true baseline at 0.87. Here the
 reported deviation is compared directly with <code>isurf</code>, since
 both are centred.</p>
 <div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
@@ -681,18 +673,18 @@ and the structure. The spec goes through <code>temporal=</code>.</p>
 <span>                 mode <span class="op">=</span> <span class="st">"exact"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_rw1</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;              estimate  std.error     2.5 %    97.5 %</span></span>
-<span><span class="co">#&gt; (Intercept) 0.3871088 0.05675647 0.2812560 0.4910169</span></span>
-<span><span class="co">#&gt; x           0.4829823 0.05268837 0.3815533 0.5927548</span></span>
+<span><span class="co">#&gt; (Intercept) 0.3837072 0.05353502 0.2795560 0.4822570</span></span>
+<span><span class="co">#&gt; x           0.4844206 0.05178281 0.3839078 0.5770521</span></span>
 <span><span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">fit_rw1</span><span class="op">)</span></span>
-<span><span class="co">#&gt;             mean       sd     q2.5    q97.5</span></span>
-<span><span class="co">#&gt; tau_tvc 47.09057 28.76494 12.25866 108.6486</span></span></code></pre></div>
+<span><span class="co">#&gt;            mean       sd     q2.5    q97.5</span></span>
+<span><span class="co">#&gt; tau_tvc 37.4594 23.01272 8.867804 99.70661</span></span></code></pre></div>
 <p>The fixed slope interval holds
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.5</mn><annotation encoding="application/x-tex">0.5</annotation></semantics></math>.
 <code><a href="../reference/temporal_corr.html">temporal_corr()</a></code> reports the precision
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
-of the walk’s increments, <code>tau_tvc</code>; a precision of 47 is an
-increment standard deviation of about
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.15</mn><annotation encoding="application/x-tex">0.15</annotation></semantics></math>
+of the walk’s increments, <code>tau_tvc</code>; its posterior median is
+34, corresponding to an increment standard deviation of about
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.17</mn><annotation encoding="application/x-tex">0.17</annotation></semantics></math>
 per year.</p>
 <p><code><a href="../reference/tvc.html">tvc()</a></code> returns the field draws, one column per time
 point. <code><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot()</a></code> of the result draws the deviation
@@ -717,7 +709,7 @@ varying term:</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>cor <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">s_rw1</span><span class="op">$</span><span class="va">mean</span>, <span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span><span class="op">)</span>,</span>
 <span>  coverage <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">s_rw1</span><span class="op">$</span><span class="va">lo</span> <span class="op">&lt;=</span> <span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span> <span class="op">&amp;</span> <span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span> <span class="op">&lt;=</span> <span class="va">s_rw1</span><span class="op">$</span><span class="va">hi</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;       cor  coverage </span></span>
-<span><span class="co">#&gt; 0.9754536 1.0000000</span></span></code></pre></div>
+<span><span class="co">#&gt; 0.9720211 1.0000000</span></span></code></pre></div>
 <div class="sourceCode" id="cb27"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">plot_slope</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">tt</span>, <span class="va">s</span>, <span class="va">truth</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">tt</span>, <span class="va">truth</span>, type <span class="op">=</span> <span class="st">"l"</span>, lwd <span class="op">=</span> <span class="fl">2</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">s</span><span class="op">$</span><span class="va">lo</span>, <span class="va">s</span><span class="op">$</span><span class="va">hi</span>, <span class="va">truth</span><span class="op">)</span>,</span>
@@ -731,20 +723,20 @@ varying term:</p>
 <span><span class="fu">plot_slope</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_t</span><span class="op">)</span>, <span class="va">s_rw1</span>, <span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span><span class="op">)</span></span></code></pre></div>
 <p><img src="varying-coefficients_files/figure-html/tvc-plot-1.png" class="r-plt" alt="Estimated time-varying slope with a 95 percent band over 25 years, against the true sine-shaped slope" width="576"></p>
 <p>The estimated slope rises and falls with the truth, with a
-correlation of 0.98, and its band holds the true slope in every year.
-The largest Rhat is 1.035, the smallest bulk effective sample size is
-118, and the dispersion test has a p-value of 0.82:</p>
+correlation of 0.97, and its band holds the true slope in every year.
+The largest Rhat is 1.018, the smallest bulk effective sample size is
+142, and the dispersion test has a p-value of 0.80:</p>
 <div class="sourceCode" id="cb28"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dg_t</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_rw1</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>max_rhat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">dg_t</span><span class="op">$</span><span class="va">rhat</span><span class="op">)</span>, min_ess_bulk <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="va">dg_t</span><span class="op">$</span><span class="va">ess_bulk</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;     max_rhat min_ess_bulk </span></span>
-<span><span class="co">#&gt;     1.034836   118.266996</span></span>
+<span><span class="co">#&gt;     1.018181   141.551650</span></span>
 <span><span class="fu"><a href="../reference/simulation_tests.html">test_dispersion</a></span><span class="op">(</span><span class="va">fit_rw1</span>, nsim <span class="op">=</span> <span class="fl">100</span><span class="op">)</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt;  Simulation-based dispersion test</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; data:  fit_rw1</span></span>
-<span><span class="co">#&gt; dispersion ratio = 1.0291, p-value = 0.82</span></span>
+<span><span class="co">#&gt; dispersion ratio = 1.0528, p-value = 0.8</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two.sided</span></span></code></pre></div>
 </div>
 <div class="section level3">
@@ -760,9 +752,6 @@ toward its mean at a rate set by
 <span>                 temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_tvc.html">temporal_tvc</a></span><span class="op">(</span><span class="st">"year"</span>, terms <span class="op">=</span> <span class="op">~</span> <span class="va">x</span> <span class="op">-</span> <span class="fl">1</span>,</span>
 <span>                                         structure <span class="op">=</span> <span class="st">"rw2"</span><span class="op">)</span>,</span>
 <span>                 mode <span class="op">=</span> <span class="st">"exact"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning: tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.08, bulk-ESS</span></span>
-<span><span class="co">#&gt; 173. Its estimates and intervals are not yet the posterior. Run longer</span></span>
-<span><span class="co">#&gt; (control$n_iter / control$warmup); see check_diagnostics().</span></span>
 <span><span class="va">fit_ar1</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dt</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>                 temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_tvc.html">temporal_tvc</a></span><span class="op">(</span><span class="st">"year"</span>, terms <span class="op">=</span> <span class="op">~</span> <span class="va">x</span> <span class="op">-</span> <span class="fl">1</span>,</span>
 <span>                                         structure <span class="op">=</span> <span class="st">"ar1"</span><span class="op">)</span>,</span>
@@ -773,20 +762,21 @@ toward its mean at a rate set by
 <span>  <span class="va">s</span> <span class="op">&lt;-</span> <span class="fu">total_slope</span><span class="op">(</span><span class="va">f</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>cor <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">s</span><span class="op">$</span><span class="va">mean</span>, <span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span><span class="op">)</span>, mean_sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="op">(</span><span class="va">s</span><span class="op">$</span><span class="va">hi</span> <span class="op">-</span> <span class="va">s</span><span class="op">$</span><span class="va">lo</span><span class="op">)</span> <span class="op">/</span> <span class="fl">3.92</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
-<span><span class="co">#&gt;               rw1       rw2       ar1</span></span>
-<span><span class="co">#&gt; cor     0.9754536 0.9921342 0.9667671</span></span>
-<span><span class="co">#&gt; mean_sd 0.1415913 0.1121108 0.1631418</span></span>
+<span><span class="co">#&gt;               rw1      rw2       ar1</span></span>
+<span><span class="co">#&gt; cor     0.9720211 0.988102 0.9667671</span></span>
+<span><span class="co">#&gt; mean_sd 0.1519968 0.116341 0.1631418</span></span>
 <span><span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">fit_ar1</span><span class="op">)</span></span>
 <span><span class="co">#&gt;               mean         sd      q2.5      q97.5</span></span>
 <span><span class="co">#&gt; tau_tvc 29.9522514 21.6608056 7.6531253 89.9686829</span></span>
 <span><span class="co">#&gt; rho_tvc  0.8653969  0.1280018 0.5373128  0.9989648</span></span></code></pre></div>
-<p>All three estimated curves correlate with the sine at 0.97 or more.
-The <code>rw2</code> curve has the highest displayed correlation, 0.992;
-its 101 divergent transitions among 600 retained draws and maximum Rhat
-of 1.235 require resolving the sampling difficulties before interpreting
-its uncertainty. The AR(1) correlation is estimated at 0.87, with an
-interval that reaches 0.999: on 25 years the data barely separate a
-strongly correlated stationary process from a walk.</p>
+<p>The three estimated curves have correlations from 0.967 to 0.988 with
+the sine. The <code>rw2</code> curve has the highest displayed
+correlation, 0.988, with 0 divergent transitions among 600 retained
+draws and maximum Rhat 1.037. Its minimum bulk effective sample size of
+48 calls for a longer run to assess its uncertainty. The AR(1)
+correlation is estimated at 0.87, with an interval that reaches 0.999:
+on 25 years the data barely separate a strongly correlated stationary
+process from a walk.</p>
 </div>
 <div class="section level3">
 <h3 id="comparing-against-a-constant-slope-and-a-linear-interaction">Comparing against a constant slope and a linear interaction<a class="anchor" aria-label="anchor" href="#comparing-against-a-constant-slope-and-a-linear-interaction"></a>
@@ -807,26 +797,23 @@ different scales.</p>
 <span><span class="co">#&gt; x:t_s -0.3041334 0.05295698 -0.3963946 -0.1866918</span></span>
 <span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>constant <span class="op">=</span> <span class="va">fit_c</span>, linear <span class="op">=</span> <span class="va">fit_lin</span>, rw1 <span class="op">=</span> <span class="va">fit_rw1</span>,</span>
 <span>               rw2 <span class="op">=</span> <span class="va">fit_rw2</span>, criterion <span class="op">=</span> <span class="st">"waic"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Warning: compare_models(): the chain(s) behind 'rw2' have not converged, so</span></span>
-<span><span class="co">#&gt; their waic rows do not estimate the predictive density and the ranking is not a</span></span>
-<span><span class="co">#&gt; model comparison. Refit them with a longer run.</span></span>
-<span><span class="co">#&gt;      model      elpd  se_elpd    p_eff       ic        delta   se_diff</span></span>
-<span><span class="co">#&gt; 3      rw1 -391.7162 12.04224 9.131414 783.4324   0.00000000        NA</span></span>
-<span><span class="co">#&gt; 4      rw2 -391.7520 12.21629 6.953008 783.5040  -0.03579894 0.9129576</span></span>
-<span><span class="co">#&gt; 2   linear -401.6368 13.38402 5.230567 803.2736  -9.92061845 4.5984963</span></span>
-<span><span class="co">#&gt; 1 constant -417.1355 13.74094 3.085393 834.2710 -25.41929718 8.0484312</span></span>
+<span><span class="co">#&gt;      model      elpd  se_elpd    p_eff       ic        delta  se_diff</span></span>
+<span><span class="co">#&gt; 3      rw1 -391.8736 11.99602 9.920970 783.7473   0.00000000       NA</span></span>
+<span><span class="co">#&gt; 4      rw2 -391.8853 12.22544 7.043546 783.7705  -0.01162402 1.096026</span></span>
+<span><span class="co">#&gt; 2   linear -401.6368 13.38402 5.230567 803.2736  -9.76316971 4.659041</span></span>
+<span><span class="co">#&gt; 1 constant -417.1355 13.74094 3.085393 834.2710 -25.26184843 8.087444</span></span>
 <span><span class="co">#&gt;         weight</span></span>
-<span><span class="co">#&gt; 3 5.089360e-01</span></span>
-<span><span class="co">#&gt; 4 4.910389e-01</span></span>
-<span><span class="co">#&gt; 2 2.501459e-05</span></span>
-<span><span class="co">#&gt; 1 4.647321e-12</span></span></code></pre></div>
+<span><span class="co">#&gt; 3 5.028914e-01</span></span>
+<span><span class="co">#&gt; 4 4.970796e-01</span></span>
+<span><span class="co">#&gt; 2 2.893234e-05</span></span>
+<span><span class="co">#&gt; 1 5.375178e-12</span></span></code></pre></div>
 <p>The interaction finds a real decline in the slope, an interval well
 below zero, because the second half of the sine is lower than the first.
 It cannot follow the rise in the first years. The displayed table places
 the two walks first, the linear interaction next and the constant slope
-last. The RW2 convergence warning means this ranking needs a converged
-RW2 fit. The plot shows what each model says about the slope in each
-year.</p>
+last. The RW2 fit’s minimum bulk effective sample size is 48; longer
+runs would support interpreting small differences between the walks. The
+plot shows what each model says about the slope in each year.</p>
 <div class="sourceCode" id="cb31"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">b_lin</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_lin</span><span class="op">)</span></span>
 <span><span class="va">t_s</span>   <span class="op">&lt;-</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_t</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">dt</span><span class="op">$</span><span class="va">year</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/stats/sd.html" class="external-link">sd</a></span><span class="op">(</span><span class="va">dt</span><span class="op">$</span><span class="va">year</span><span class="op">)</span></span>
@@ -856,12 +843,11 @@ lowest:</p>
 <div class="sourceCode" id="cb32"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">b0_t</span> <span class="op">&lt;-</span> <span class="va">fit_rw1</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, <span class="st">"(Intercept)"</span><span class="op">]</span></span>
 <span><span class="va">sl_t</span> <span class="op">&lt;-</span> <span class="va">fit_rw1</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, <span class="st">"x"</span><span class="op">]</span> <span class="op">+</span> <span class="va">post_t</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, , <span class="fl">1</span><span class="op">]</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="cn">NULL</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">xs</span><span class="op">)</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">8</span><span class="op">)</span>, xlab <span class="op">=</span> <span class="st">"x"</span>,</span>
+<span><span class="va">bands_t</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">6</span>, <span class="fl">19</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">yr</span><span class="op">)</span> <span class="fu">count_band</span><span class="op">(</span><span class="va">b0_t</span>, <span class="va">sl_t</span><span class="op">[</span>, <span class="va">yr</span><span class="op">]</span>, <span class="va">xs</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="cn">NULL</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">xs</span><span class="op">)</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">bands_t</span><span class="op">)</span><span class="op">)</span>, xlab <span class="op">=</span> <span class="st">"x"</span>,</span>
 <span>     ylab <span class="op">=</span> <span class="st">"expected count"</span><span class="op">)</span></span>
 <span><span class="kw">for</span> <span class="op">(</span><span class="va">k</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">2</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">yr</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">6</span>, <span class="fl">19</span><span class="op">)</span><span class="op">[</span><span class="va">k</span><span class="op">]</span></span>
-<span>  <span class="va">mu</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">b0_t</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/outer.html" class="external-link">outer</a></span><span class="op">(</span><span class="va">sl_t</span><span class="op">[</span>, <span class="va">yr</span><span class="op">]</span>, <span class="va">xs</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">q</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">mu</span>, <span class="fl">2</span>, <span class="va">quantile</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.025</span>, <span class="fl">0.5</span>, <span class="fl">0.975</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">q</span> <span class="op">&lt;-</span> <span class="va">bands_t</span><span class="op">[[</span><span class="va">k</span><span class="op">]</span><span class="op">]</span></span>
 <span>  <span class="va">cl</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"darkorange"</span>, <span class="st">"steelblue"</span><span class="op">)</span><span class="op">[</span><span class="va">k</span><span class="op">]</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/graphics/polygon.html" class="external-link">polygon</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">xs</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">xs</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">q</span><span class="op">[</span><span class="fl">1</span>, <span class="op">]</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">q</span><span class="op">[</span><span class="fl">3</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>          col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="va">cl</span>, <span class="fl">0.25</span><span class="op">)</span>, border <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
@@ -886,19 +872,19 @@ is the total slope.</p>
 <span><span class="va">p0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_rw1</span>, newdata <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span><span class="va">fy</span>, x <span class="op">=</span> <span class="fl">0</span><span class="op">)</span>, type <span class="op">=</span> <span class="st">"link"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>year <span class="op">=</span> <span class="va">fy</span><span class="op">$</span><span class="va">year</span>, slope <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">p1</span><span class="op">$</span><span class="va">fit</span> <span class="op">-</span> <span class="va">p0</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>           lower <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">p1</span><span class="op">$</span><span class="va">lower</span> <span class="op">-</span> <span class="va">p0</span>, <span class="fl">3</span><span class="op">)</span>, upper <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">p1</span><span class="op">$</span><span class="va">upper</span> <span class="op">-</span> <span class="va">p0</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   year  slope  lower upper</span></span>
-<span><span class="co">#&gt; 1   19 -0.003 -0.337 0.308</span></span>
-<span><span class="co">#&gt; 2   25  0.309  0.049 0.566</span></span>
-<span><span class="co">#&gt; 3   26  0.305 -0.126 0.757</span></span>
-<span><span class="co">#&gt; 4   28  0.300 -0.369 0.976</span></span>
-<span><span class="co">#&gt; 5   30  0.294 -0.500 1.158</span></span></code></pre></div>
+<span><span class="co">#&gt;   year slope  lower upper</span></span>
+<span><span class="co">#&gt; 1   19 0.000 -0.371 0.284</span></span>
+<span><span class="co">#&gt; 2   25 0.316  0.028 0.579</span></span>
+<span><span class="co">#&gt; 3   26 0.311 -0.173 0.837</span></span>
+<span><span class="co">#&gt; 4   28 0.302 -0.435 1.029</span></span>
+<span><span class="co">#&gt; 5   30 0.294 -0.675 1.241</span></span></code></pre></div>
 <p>The bounds are those of the linear predictor at
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">x = 1</annotation></semantics></math>
 shifted by the point prediction at
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">x = 0</annotation></semantics></math>,
 so they carry the intercept’s uncertainty as well. Past year 25 the
 slope stays at its last fitted level, about 0.30, and the interval
-widens with the horizon, from 0.52 wide in year 25 to 1.66 in year
+widens with the horizon, from 0.55 wide in year 25 to 1.92 in year
 30.</p>
 </div>
 </div>
@@ -917,13 +903,13 @@ baseline and a slope of
 <span>                  mode <span class="op">=</span> <span class="st">"exact"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_tvci</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;              estimate  std.error     2.5 %    97.5 %</span></span>
-<span><span class="co">#&gt; (Intercept) 0.3407279 0.05895351 0.2194216 0.4494147</span></span>
-<span><span class="co">#&gt; x           0.4703425 0.05033715 0.3634916 0.5654947</span></span>
+<span><span class="co">#&gt; (Intercept) 0.3391023 0.05711700 0.2319751 0.4479062</span></span>
+<span><span class="co">#&gt; x           0.4770594 0.05418746 0.3831007 0.5876838</span></span>
 <span><span class="va">s_i</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="fu"><a href="../reference/tvc.html">tvc</a></span><span class="op">(</span><span class="va">fit_tvci</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>cor <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">s_i</span><span class="op">$</span><span class="va">mean</span>, <span class="va">wt</span><span class="op">)</span>,</span>
 <span>  coverage <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">s_i</span><span class="op">$</span><span class="va">q2.5</span> <span class="op">&lt;=</span> <span class="va">wt</span> <span class="op">&amp;</span> <span class="va">wt</span> <span class="op">&lt;=</span> <span class="va">s_i</span><span class="op">$</span><span class="va">q97.5</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;       cor  coverage </span></span>
-<span><span class="co">#&gt; 0.9610984 1.0000000</span></span></code></pre></div>
+<span><span class="co">#&gt; 0.9605689 1.0000000</span></span></code></pre></div>
 <p>The slope interval holds
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.5</mn><annotation encoding="application/x-tex">0.5</annotation></semantics></math>,
 the baseline deviation correlates with the true sine at 0.96, and every
@@ -983,7 +969,7 @@ deviation and its lengthscale, the latter in days.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>gp <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span>, rw1 <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">fit_gr1</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;           cor      rmse</span></span>
 <span><span class="co">#&gt; gp  0.9446727 0.1784780</span></span>
-<span><span class="co">#&gt; rw1 0.9192369 0.1980241</span></span></code></pre></div>
+<span><span class="co">#&gt; rw1 0.9109344 0.1941991</span></span></code></pre></div>
 <div class="sourceCode" id="cb38"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">s_gp</span> <span class="op">&lt;-</span> <span class="fu">total_slope</span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span></span>
 <span><span class="fu">plot_slope</span><span class="op">(</span><span class="va">tt</span>, <span class="va">s_gp</span>, <span class="fl">0.6</span> <span class="op">+</span> <span class="va">wg</span><span class="op">)</span></span>
@@ -992,7 +978,7 @@ deviation and its lengthscale, the latter in days.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"bottomleft"</span>, <span class="st">"rw1"</span>, bty <span class="op">=</span> <span class="st">"n"</span>, col <span class="op">=</span> <span class="st">"darkorange"</span>, lwd <span class="op">=</span> <span class="fl">2</span>, lty <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
 <p><img src="varying-coefficients_files/figure-html/gp-plot-1.png" class="r-plt" alt="True slope at 20 irregular survey dates with the GP and rw1 estimates and the GP's 95 percent band" width="576"></p>
 <p>The GP follows the truth more closely than the walk: a correlation of
-0.94 against 0.92 and a root-mean-square error of 0.178 against 0.198.
+0.94 against 0.91 and a root-mean-square error of 0.178 against 0.194.
 The walk penalises a change across a 25-day gap as much as one across a
 0.3-day gap. The lengthscale is estimated at 64 days with a wide
 interval, from 4 to 232 days. This GP run has one divergent transition
@@ -1007,17 +993,16 @@ distinct times grows.</p>
 <div class="section level2">
 <h2 id="prior-sensitivity">Prior sensitivity<a class="anchor" aria-label="anchor" href="#prior-sensitivity"></a>
 </h2>
-<p><code><a href="../reference/temporal_tvc.html">temporal_tvc()</a></code> puts a penalized-complexity (PC) prior on
-the marginal standard deviation
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>σ</mi><annotation encoding="application/x-tex">\sigma</annotation></semantics></math>
-of each varying coefficient. It is calibrated by two numbers,
+<p>For the RW1 fit here, <code><a href="../reference/temporal_tvc.html">temporal_tvc()</a></code> puts a
+penalized-complexity (PC) prior on the increment standard deviation
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mo>=</mo><mn>1</mn><mi>/</mi><msqrt><mi>τ</mi></msqrt></mrow><annotation encoding="application/x-tex">\sigma = 1 / \sqrt{\tau}</annotation></semantics></math>.
+It is calibrated by two numbers,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><mi>σ</mi><mo>&gt;</mo><mi>U</mi><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mi>α</mi></mrow><annotation encoding="application/x-tex">P(\sigma &gt; U) = \alpha</annotation></semantics></math>,
 set with <code>sigma_prior_U</code> and <code>sigma_prior_alpha</code>.
 The default,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><mi>σ</mi><mo>&gt;</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>0.01</mn></mrow><annotation encoding="application/x-tex">P(\sigma &gt; 1) = 0.01</annotation></semantics></math>,
-says the coefficient is unlikely to wander by more than one unit on the
-link scale. Refit the time-varying slope under a prior ten times
-tighter,
+assigns 1% prior probability to an increment standard deviation above
+one. Refit the time-varying slope under a prior ten times tighter,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><mi>σ</mi><mo>&gt;</mo><mn>0.1</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>0.01</mn></mrow><annotation encoding="application/x-tex">P(\sigma &gt; 0.1) = 0.01</annotation></semantics></math>,
 and a much looser one,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><mi>σ</mi><mo>&gt;</mo><mn>3</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">P(\sigma &gt; 3) = 0.5</annotation></semantics></math>:</p>
@@ -1031,37 +1016,42 @@ and a much looser one,
 <span><span class="op">}</span></span>
 <span><span class="va">fits_p</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>default <span class="op">=</span> <span class="va">fit_rw1</span>, tight <span class="op">=</span> <span class="fu">fit_prior</span><span class="op">(</span><span class="fl">0.1</span>, <span class="fl">0.01</span><span class="op">)</span>,</span>
 <span>               loose <span class="op">=</span> <span class="fu">fit_prior</span><span class="op">(</span><span class="fl">3</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p>For each prior, the table gives the posterior mean of the precision,
-the spread of the estimated slope curve across years, the mean width of
-its 95% band and the correlation with the truth:</p>
+<p>The PC prior’s density approaches a positive constant as
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>σ</mi><annotation encoding="application/x-tex">\sigma</annotation></semantics></math>
+approaches zero. Here
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi><mo>=</mo><mn>1</mn><mi>/</mi><msup><mi>σ</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">\tau = 1 / \sigma^2</annotation></semantics></math>
+has an infinite posterior mean.</p>
+<p>For each prior, the table gives the posterior median of the
+precision, the spread of the estimated slope curve across years, the
+mean width of its 95% band and the correlation with the truth:</p>
 <div class="sourceCode" id="cb40"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">fits_p</span>, <span class="kw">function</span><span class="op">(</span><span class="va">f</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="va">s</span> <span class="op">&lt;-</span> <span class="fu">total_slope</span><span class="op">(</span><span class="va">f</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>tau <span class="op">=</span> <span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">f</span><span class="op">)</span><span class="op">[</span><span class="st">"tau_tvc"</span>, <span class="st">"mean"</span><span class="op">]</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>tau_median <span class="op">=</span> <span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">f</span>, probs <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span><span class="op">[</span><span class="st">"tau_tvc"</span>, <span class="st">"q50"</span><span class="op">]</span>,</span>
 <span>    curve_sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/sd.html" class="external-link">sd</a></span><span class="op">(</span><span class="va">s</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span>, band <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">s</span><span class="op">$</span><span class="va">hi</span> <span class="op">-</span> <span class="va">s</span><span class="op">$</span><span class="va">lo</span><span class="op">)</span>,</span>
 <span>    cor <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">s</span><span class="op">$</span><span class="va">mean</span>, <span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;               tau  curve_sd      band       cor</span></span>
-<span><span class="co">#&gt; default  47.09057 0.3319315 0.5550379 0.9754536</span></span>
-<span><span class="co">#&gt; tight   110.11262 0.3007470 0.4786421 0.9726430</span></span>
-<span><span class="co">#&gt; loose    38.86476 0.3361384 0.5955936 0.9755166</span></span>
+<span><span class="co">#&gt;         tau_median  curve_sd      band       cor</span></span>
+<span><span class="co">#&gt; default   33.93712 0.3330362 0.5958276 0.9720211</span></span>
+<span><span class="co">#&gt; tight    103.68834 0.3020914 0.4695708 0.9729680</span></span>
+<span><span class="co">#&gt; loose     29.17718 0.3393847 0.5859058 0.9717260</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/sd.html" class="external-link">sd</a></span><span class="op">(</span><span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] 0.4330127</span></span></code></pre></div>
-<p>The tight prior raises the precision from 47 to 110, lowers the
-spread of the curve from 0.33 to 0.30 against a true 0.43, and narrows
-the band from 0.56 to 0.48. The loose prior changes the curve spread by
-0.004, the band width by 0.041 and the precision by 8.2. The correlation
-with the truth stays between 0.97 and 0.98 under all three, so the shape
+<p>The tight prior raises the median precision from 34 to 104, lowers
+the spread of the curve from 0.33 to 0.30 against a true 0.43, and
+narrows the band from 0.60 to 0.47. The loose prior gives a median
+precision of 29, a curve spread of 0.34 and a band width of 0.59. The
+correlation with the truth stays near 0.97 under all three, so the shape
 of the slope is set by the data and the prior acts on its amplitude.
 With 250 observations over 25 years the default and the loose prior give
 nearly the same answer; a prior as tight as
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo stretchy="false" form="prefix">(</mo><mi>σ</mi><mo>&gt;</mo><mn>0.1</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>0.01</mn></mrow><annotation encoding="application/x-tex">P(\sigma &gt; 0.1) = 0.01</annotation></semantics></math>
 is a statement that the slope barely moves, and the fit shrinks toward
 it.</p>
-<p><code><a href="../reference/spatial_svc.html">spatial_svc()</a></code> does not expose its hyperpriors: the range
-has a PC prior anchored at the median nearest-neighbour spacing of the
-sites, and the field’s variance a half-Cauchy prior with a fixed
-scale.</p>
+<p><code><a href="../reference/spatial_svc.html">spatial_svc()</a></code> uses the same PC prior calibration on each
+field’s marginal standard deviation, set through
+<code>sigma_prior_U</code> and <code>sigma_prior_alpha</code>. Its range
+also has a PC prior.</p>
 <div class="sourceCode" id="cb41"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_t</span><span class="op">)</span>, <span class="fl">0.5</span> <span class="op">+</span> <span class="va">wt</span>, type <span class="op">=</span> <span class="st">"l"</span>, lwd <span class="op">=</span> <span class="fl">2</span>, xlab <span class="op">=</span> <span class="st">"year"</span>,</span>
 <span>     ylab <span class="op">=</span> <span class="st">"slope on x"</span><span class="op">)</span></span>
