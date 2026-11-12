@@ -955,9 +955,9 @@ Markov chain in time.</p>
 <span>                                         structure <span class="op">=</span> <span class="st">"rw1"</span><span class="op">)</span>,</span>
 <span>                 mode <span class="op">=</span> <span class="st">"exact"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span></span>
-<span><span class="co">#&gt;                          mean         sd      q2.5      q97.5</span></span>
-<span><span class="co">#&gt; sigma_tvc_gp        0.5197479  0.2210478 0.2289546   1.041773</span></span>
-<span><span class="co">#&gt; lengthscale_tvc_gp 63.6196911 58.5938941 4.0934494 231.918670</span></span></code></pre></div>
+<span><span class="co">#&gt;                          mean         sd     q2.5      q97.5</span></span>
+<span><span class="co">#&gt; sigma_tvc_gp        0.5557661  0.2386895 0.229160   1.111224</span></span>
+<span><span class="co">#&gt; lengthscale_tvc_gp 73.8363723 63.9734541 5.804744 234.589958</span></span></code></pre></div>
 <p><code><a href="../reference/temporal_corr.html">temporal_corr()</a></code> reports the GP’s marginal standard
 deviation and its lengthscale, the latter in days.</p>
 <div class="sourceCode" id="cb37"><pre class="downlit sourceCode r">
@@ -968,7 +968,7 @@ deviation and its lengthscale, the latter in days.</p>
 <span><span class="op">}</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>gp <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span>, rw1 <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">fit_gr1</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;           cor      rmse</span></span>
-<span><span class="co">#&gt; gp  0.9446727 0.1784780</span></span>
+<span><span class="co">#&gt; gp  0.9403402 0.1829894</span></span>
 <span><span class="co">#&gt; rw1 0.9109344 0.1941991</span></span></code></pre></div>
 <div class="sourceCode" id="cb38"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">s_gp</span> <span class="op">&lt;-</span> <span class="fu">total_slope</span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span></span>
@@ -978,13 +978,14 @@ deviation and its lengthscale, the latter in days.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"bottomleft"</span>, <span class="st">"rw1"</span>, bty <span class="op">=</span> <span class="st">"n"</span>, col <span class="op">=</span> <span class="st">"darkorange"</span>, lwd <span class="op">=</span> <span class="fl">2</span>, lty <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
 <p><img src="varying-coefficients_files/figure-html/gp-plot-1.png" class="r-plt" alt="True slope at 20 irregular survey dates with the GP and rw1 estimates and the GP's 95 percent band" width="576"></p>
 <p>The GP follows the truth more closely than the walk: a correlation of
-0.94 against 0.91 and a root-mean-square error of 0.178 against 0.194.
+0.94 against 0.91 and a root-mean-square error of 0.183 against 0.194.
 The walk penalises a change across a 25-day gap as much as one across a
-0.3-day gap. The lengthscale is estimated at 64 days with a wide
-interval, from 4 to 232 days. This GP run has one divergent transition
-and a maximum Rhat of 1.062; its uncertainty estimates need further
-sampling checks. <code>cov = "matern"</code> with <code>nu = 1.5</code>
-or <code>2.5</code>, <code>cov = "gaussian"</code> and
+0.3-day gap. The lengthscale is estimated at 74 days with a wide
+interval, from 6 to 235 days. This GP run has zero divergent
+transitions, a maximum Rhat of 1.012 and a minimum bulk effective sample
+size of 218. Its 95% intervals contain 18 of the 20 planted slope
+values. <code>cov = "matern"</code> with <code>nu = 1.5</code> or
+<code>2.5</code>, <code>cov = "gaussian"</code> and
 <code>cov = "periodic"</code> (with <code>period=</code> in the time
 units) give smoother or periodic kernels; those take a dense Cholesky
 factorization per gradient evaluation, which costs more as the number of
