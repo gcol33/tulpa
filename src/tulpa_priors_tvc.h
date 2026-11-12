@@ -81,7 +81,7 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
                 // interval, so only its Jacobian is contributed here, exactly
                 // as on temporal_gp()'s lengthscale.
                 log_post = log_post + log_jacobian_bounded(
-                    tvc_phi[j], data.tvc_gp_phi_prior_lower,
+                    params[layout.logit_phi_tvc_gp_start + j], data.tvc_gp_phi_prior_lower,
                     data.tvc_gp_phi_prior_upper);
             }
         } else {
@@ -125,7 +125,8 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
             // PD is declined as -Inf rather than carried as a NaN gradient.
             T gp_lp = T(0.0);
             if (!tulpa_tvc::tvc_log_prior_gp(tvc_w_flat, data.tvc_data,
-                                             tvc_sigma2, tvc_phi, gp_lp)) {
+                                             tvc_sigma2, tvc_phi, gp_lp,
+                                             data.tvc_gp_parameterization != 0)) {
                 return T(-INFINITY);
             }
             log_post = log_post + gp_lp;
@@ -162,7 +163,9 @@ inline double tvc_prior_log_normalizer(const ModelData& data,
     switch (tv.structure) {
     case tulpa_temporal::TemporalType::GP:
         return tv.n_tvc * log_prior_uniform_log_normalizer(
-            data.tvc_gp_phi_prior_lower, data.tvc_gp_phi_prior_upper);
+            data.tvc_gp_phi_prior_lower, data.tvc_gp_phi_prior_upper)
+            + (data.tvc_gp_parameterization != 0 ? tv.n_groups * tv.n_tvc * tv.n_times
+               * log_prior_normal_log_normalizer(1.0) : 0.0);
     case tulpa_temporal::TemporalType::AR1:
         return tv.n_tvc * log_prior_beta_logit_log_normalizer(data.tvc_rho_prior_a, data.tvc_rho_prior_b);
     case tulpa_temporal::TemporalType::IID:

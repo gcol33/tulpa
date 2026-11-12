@@ -16,7 +16,8 @@ temporal_tvc(
   shared = NULL,
   sigma_prior_U = 1,
   sigma_prior_alpha = 0.01,
-  scale_coords = TRUE
+  scale_coords = TRUE,
+  parameterization = c("auto", "noncentered", "centered")
 )
 
 \method{print}{tulpa_tvc}(x, ...)
@@ -60,6 +61,18 @@ the same anchor pair whether the field samples a log-precision (\code{rw1} /
 values before fitting (default \code{TRUE}), which puts the lengthscale on the
 same universal support \code{\link[=temporal_gp]{temporal_gp()}} uses. \code{period} is stated in the raw
 time units and makes the same trip.}
+
+\item{parameterization}{GP field coordinates: \code{"noncentered"} samples
+independent standard normal innovations and reconstructs the coefficient
+through its covariance factor. \code{"auto"} (default) uses this covariance
+whitening and adapts to likelihood information. \code{"centered"} samples the
+coefficient directly. All choices use the same variance and lengthscale
+priors and return centred coefficient draws. Applies to
+\code{structure = "gp"}. The constant field direction occupies one independent
+innovation coordinate. Within the sampler's dense parameter budget,
+\code{"auto"} also centres and scales innovations using their Gaussian
+conditional approximation at a fixed-effects reference fit. The exact
+likelihood corrects this approximation.}
 
 \item{x}{A \code{tulpa_tvc} specification.}
 

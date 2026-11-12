@@ -127,18 +127,11 @@ inv_logit(const T& x) {
 //
 //   dphi/du = (phi - lower) * (upper - phi) / (upper - lower)
 //
-// to the change of variables; log_jacobian_bounded returns its log. Callers
-// add it to whatever density they place on phi.
+// to the change of variables. Its log is evaluated from u by
+// log_jacobian_bounded, including when phi rounds to an interval endpoint.
 template<typename T>
 inline T bounded_from_logit(const T& u, double lower, double upper) {
     return T(lower) + T(upper - lower) * inv_logit(u);
-}
-
-template<typename T>
-inline T log_jacobian_bounded(const T& phi, double lower, double upper) {
-    return safe_log(phi - T(lower))
-         + safe_log(T(upper) - phi)
-         - T(std::log(upper - lower));
 }
 
 // -log(upper - lower): the Uniform(lower, upper) density a caller places on
@@ -213,6 +206,12 @@ template<typename T>
 inline T softplus(const T& x) {
     if (x > T(0.0)) return x + log1p_fn(safe_exp(T(0.0) - x));
     return log1p_fn(safe_exp(x));
+}
+
+// log(dphi/du) for phi = lower + (upper-lower) inv_logit(u).
+template<typename T>
+inline T log_jacobian_bounded(const T& u, double lower, double upper) {
+    return T(std::log(upper - lower)) - softplus(u) - softplus(T(0.0) - u);
 }
 
 // The logistic sigmoid, held strictly positive: inv_logit(x) is

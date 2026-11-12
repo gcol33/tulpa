@@ -22,6 +22,7 @@
 
 #include <cmath>
 #include <vector>
+#include <algorithm>
 
 #include "autodiff_utils.h"
 #include "hmc_temporal.h"     // ar1_one_minus_rho2, the shared correlation floor
@@ -191,16 +192,102 @@ inline void ou_forward(const T* z, int n_times, const T& sigma,
 // Non-centered forward transform f = L z for one group.
 template <typename T>
 inline void dense_gp_forward(const std::vector<T>& L, int n_times,
-                             const std::vector<T>& z, int offset,
-                             std::vector<T>& f_out) {
+                             const T* z, T* f_out) {
     for (int i = 0; i < n_times; i++) {
         T acc = T(0.0);
         for (int j = 0; j <= i; j++) {
-            acc = acc + L[static_cast<std::size_t>(i) * n_times + j] * z[offset + j];
+            acc = acc + L[static_cast<std::size_t>(i) * n_times + j] * z[j];
         }
-        f_out[offset + i] = acc;
+        f_out[i] = acc;
     }
 }
+
+template <typename T>
+inline void dense_gp_forward(const std::vector<T>& L, int n_times,
+                             const std::vector<T>& z, int offset,
+                             std::vector<T>& f_out) {
+    dense_gp_forward(L, n_times, z.data() + offset, f_out.data() + offset);
+}
+
+// A covariance factor shared by independent fields on one time axis.
+template <typename T>
+class FieldKernel {
+    int n_;
+    bool markov_, valid_, separate_level_;
+    T sigma2_, sigma_;
+    std::vector<T> rho_, omr2_, a_, L_, level_axis_;
+    T level_norm2_;
+
+public:
+    FieldKernel(const std::vector<double>& times, int n_times,
+                const T& sigma2, const T& phi, TemporalCovType cov,
+                double nu, double period, double relative_nugget = 0.0,
+                bool separate_level = false)
+        : n_(n_times), markov_(cov_is_markov(cov, nu)), valid_(true),
+          separate_level_(separate_level),
+          sigma2_(sigma2), sigma_(safe_sqrt(sigma2)) {
+        if (markov_) {
+            ou_chain(times, n_, phi, rho_, omr2_);
+            ou_forward_scale(sigma_, omr2_, a_);
+        } else {
+            valid_ = temporal_cov_chol(times, n_, sigma2, phi, cov, nu,
+                                       period, L_, relative_nugget);
+        }
+        if (!valid_ || !separate_level_) return;
+        level_axis_.resize(n_);
+        if (markov_) {
+            level_axis_[0] = T(1.0);
+            for (int t = 1; t < n_; ++t)
+                level_axis_[t] = (T(1.0) - rho_[t - 1]) / safe_sqrt(omr2_[t - 1]);
+        } else {
+            std::vector<T> constant(n_, T(1.0));
+            tulpa_nngp::solve_lower(L_, n_, constant, level_axis_);
+            const T first = level_axis_[0];
+            for (auto& v : level_axis_) v = v / first;
+        }
+        T norm2 = T(0.0);
+        for (const auto& v : level_axis_) norm2 = norm2 + v * v;
+        level_axis_[0] = level_axis_[0] + safe_sqrt(norm2);
+        level_norm2_ = T(0.0);
+        for (const auto& v : level_axis_) level_norm2_ = level_norm2_ + v * v;
+    }
+
+    bool valid() const { return valid_; }
+
+    // H maps the first innovation onto L^-1 1, so L H z carries the
+    // constant field direction in one independent Gaussian coordinate.
+    void forward(const T* innovation, T* field) const {
+        if (!separate_level_) {
+            if (markov_) ou_forward(innovation, n_, sigma_, rho_, a_, field);
+            else dense_gp_forward(L_, n_, innovation, field);
+            return;
+        }
+        T projection = T(0.0);
+        for (int t = 0; t < n_; ++t) projection = projection + level_axis_[t] * innovation[t];
+        projection = T(2.0) * projection / level_norm2_;
+        std::vector<T> rotated(n_);
+        for (int t = 0; t < n_; ++t)
+            rotated[t] = innovation[t] - projection * level_axis_[t];
+        if (markov_) ou_forward(rotated.data(), n_, sigma_, rho_, a_, field);
+        else dense_gp_forward(L_, n_, rotated.data(), field);
+    }
+
+    // Non-centred coordinates have a unit Gaussian prior. The returned field
+    // is f = L H z; its density carries no transformation Jacobian.
+    void accumulate_log_density(std::vector<T>& field, int offset,
+                                bool noncentered, T& lp) const {
+        if (!noncentered) {
+            lp = lp + (markov_ ? ou_log_density(field.data() + offset, n_, sigma2_, rho_, omr2_)
+                              : dense_gp_log_density(L_, n_, field, offset));
+            return;
+        }
+        for (int t = 0; t < n_; ++t)
+            lp = lp - T(0.5) * field[offset + t] * field[offset + t];
+        std::vector<T> reconstructed(n_);
+        forward(field.data() + offset, reconstructed.data());
+        std::copy(reconstructed.begin(), reconstructed.end(), field.begin() + offset);
+    }
+};
 
 }  // namespace tulpa_temporal_gp
 

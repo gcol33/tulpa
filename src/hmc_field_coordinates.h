@@ -12,6 +12,8 @@ using FieldCoordinates = tulpa::FieldCoordinates<GradientFn>;
 
 tulpa::FieldCoordinateOperator prepare_spatial_gaussian_coordinate(const ModelData& data,
     const ParamLayout& layout);
+std::vector<tulpa::FieldCoordinateOperator> prepare_temporal_gaussian_coordinates(const ModelData& data,
+    const ParamLayout& layout);
 tulpa::FieldCoordinateOperator prepare_bym2_coordinate(const ModelData& data, const ParamLayout& layout);
 
 inline thread_local const FieldCoordinates* field_coordinates = nullptr;
@@ -63,6 +65,13 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
     layout.is_gp && !layout.is_gp_collapsed && data.gp_parameterization == 1 &&
     data.auto_gp_coordinates && data.conditional_gp_coordinates;
   if (gaussian_spatial) out.operators.push_back(prepare_spatial_gaussian_coordinate(data, layout));
+  const bool gaussian_temporal = layout.total_params <= DENSE_MAX_PARAMS &&
+    ((layout.is_temporal_gp && data.auto_temporal_gp_coordinates) ||
+     (layout.has_tvc && data.tvc_data.structure == TemporalType::GP && data.tvc_gp_parameterization == 2));
+  if (gaussian_temporal) {
+    auto temporal = prepare_temporal_gaussian_coordinates(data, layout);
+    out.operators.insert(out.operators.end(), temporal.begin(), temporal.end());
+  }
   if (layout.is_bym2 && !layout.is_bym2_collapsed && layout.total_params <= DENSE_MAX_PARAMS)
     out.operators.push_back(prepare_bym2_coordinate(data, layout));
   if (layout.is_gp && data.has_gp && data.gp_range_prior.type == tulpa::RangePriorType::UNIFORM)
@@ -91,7 +100,7 @@ inline FieldCoordinates make_field_coordinates(const std::vector<double>& initia
   if (!gaussian_spatial && data.auto_gp_coordinates && layout.is_gp && !layout.is_gp_collapsed)
     add(layout.gp_w_start, layout.gp_w_end, layout.log_sigma2_gp_idx,
         1, 0, false, false, true);
-  if (data.auto_temporal_gp_coordinates && layout.is_temporal_gp)
+  if (!gaussian_temporal && data.auto_temporal_gp_coordinates && layout.is_temporal_gp)
     add(layout.temporal_start, layout.temporal_end, layout.log_sigma2_temporal_gp_idx,
         1, 0, false, false, true);
   // NNGP SVC innovations have a unit Gaussian prior independent of scale and range.

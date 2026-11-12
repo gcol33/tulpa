@@ -89,95 +89,20 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
             // lengthscale would need the d = 1 PC density to move off Uniform,
             // which pc_prior.h deliberately does not provide.
             log_post = log_post + log_jacobian_bounded(
-                phi_temporal_gp_out,
+                params[layout.logit_phi_temporal_gp_idx],
                 data.temporal_gp_phi_prior_lower,
                 data.temporal_gp_phi_prior_upper);
 
             const bool use_nc = (data.temporal_gp_parameterization == 1);
 
-            // The exponential kernel (and Matern nu = 1/2, which is the same
-            // kernel) is an Ornstein-Uhlenbeck process, so its joint density is
-            // a first-order Markov chain and evaluates in O(T) with no matrix.
-            // Every other kernel has no finite-dimensional state-space form and
-            // is evaluated densely off a T x T Cholesky.
-            if (!tulpa_temporal_gp::cov_is_markov(data.temporal_gp_data.cov_type,
-                                                  data.temporal_gp_data.nu)) {
-                std::vector<T> L;
-                const bool ok = tulpa_temporal_gp::temporal_cov_chol(
-                    data.temporal_gp_data.time_values, T_times,
-                    sigma2_temporal_gp_out, phi_temporal_gp_out,
-                    data.temporal_gp_data.cov_type,
-                    data.temporal_gp_data.nu,
-                    data.temporal_gp_data.period, L, data.temporal_gp_relative_nugget);
-                if (!ok) return T(-INFINITY);
-
-                if (use_nc) {
-                    // The sampled variable IS z ~ N(0, I); f = L z is handed to
-                    // the observation loop. No log|det(df/dz)| here, for the
-                    // same reason the Markov branch below omits it.
-                    for (int t = 0; t < n_temporal; t++) {
-                        log_post = log_post - T(0.5) * phi_temporal[t] * phi_temporal[t];
-                    }
-                    std::vector<T> f_reconstructed(n_temporal);
-                    for (int g = 0; g < data.n_temporal_groups; g++) {
-                        tulpa_temporal_gp::dense_gp_forward(
-                            L, T_times, phi_temporal, g * T_times, f_reconstructed);
-                    }
-                    phi_temporal = std::move(f_reconstructed);
-                } else {
-                    for (int g = 0; g < data.n_temporal_groups; g++) {
-                        log_post = log_post + tulpa_temporal_gp::dense_gp_log_density(
-                            L, T_times, phi_temporal, g * T_times);
-                    }
-                }
-                return log_post;
-            }
-
-            // The OU transitions, built once: the chain depends on
-            // (time_values, phi) alone, so every group reads the same rho[t]
-            // and 1 - rho[t]^2. Both parameterizations read that one pair --
-            // the transform's scale a_t and the centered conditional variance
-            // are the same number, and the floor binds at the same place on
-            // both (temporal_gp_kernel.h).
-            std::vector<T> rho_shared, omr2_shared, a_shared;
-            T sigma_t = safe_sqrt(sigma2_temporal_gp_out);
-            tulpa_temporal_gp::ou_chain(data.temporal_gp_data.time_values,
-                                        T_times, phi_temporal_gp_out,
-                                        rho_shared, omr2_shared);
-            tulpa_temporal_gp::ou_forward_scale(sigma_t, omr2_shared, a_shared);
-
-            if (use_nc) {
-                // Non-centered: params store z ~ N(0,1)
-                // Prior: z ~ N(0, I) for each temporal effect
-                for (int t = 0; t < n_temporal; t++) {
-                    log_post = log_post - T(0.5) * phi_temporal[t] * phi_temporal[t];
-                }
-
-                // No z -> f Jacobian here: in the non-centered parameterization
-                // the sampled variable IS z with prior N(0, I) (added above), so
-                // the target is -0.5 z'z plus the likelihood at the reconstructed
-                // f. The centered branch below places the GP prior on f directly;
-                // the two are reparameterizations of the same posterior. Adding
-                // log|det(df/dz)| = T*log(sigma) + 0.5*sum log(1 - rho_t^2) here
-                // would inflate the GP amplitude by sigma^(G*T) and shrink the
-                // lengthscale.
-                std::vector<T> f_reconstructed(n_temporal);
-                for (int g = 0; g < data.n_temporal_groups; g++) {
-                    const int off = g * T_times;
-                    tulpa_temporal_gp::ou_forward(
-                        phi_temporal.data() + off, T_times, sigma_t,
-                        rho_shared, a_shared, f_reconstructed.data() + off);
-                }
-                // Replace phi_temporal with reconstructed f for observation loop
-                phi_temporal = std::move(f_reconstructed);
-            } else {
-                // Centered: GP log-likelihood using state-space representation
-                for (int g = 0; g < data.n_temporal_groups; g++) {
-                    log_post = log_post + tulpa_temporal_gp::ou_log_density(
-                        phi_temporal.data() + g * T_times, T_times,
-                        sigma2_temporal_gp_out, rho_shared, omr2_shared);
-                }
-            }
+            tulpa_temporal_gp::FieldKernel<T> kernel(
+                data.temporal_gp_data.time_values, T_times,
+                sigma2_temporal_gp_out, phi_temporal_gp_out,
+                data.temporal_gp_data.cov_type, data.temporal_gp_data.nu,
+                data.temporal_gp_data.period, data.temporal_gp_relative_nugget);
+            if (!kernel.valid()) return T(-INFINITY);
+            for (int g = 0; g < data.n_temporal_groups; ++g)
+                kernel.accumulate_log_density(phi_temporal, g * T_times, use_nc, log_post);
         } else {
             // RW1/RW2/AR1: tau-based parameterization
             T log_tau = params[layout.log_tau_temporal_idx];

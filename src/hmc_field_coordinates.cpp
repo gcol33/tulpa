@@ -7,6 +7,7 @@
 #include "laplace_newton_loop.h"
 #include "joint_pd_step.h"
 #include "coordinate_linalg.h"
+#include "temporal_gp_kernel.h"
 #include <memory>
 #include <random>
 #include <type_traits>
@@ -118,16 +119,16 @@ static std::vector<tulpa::arena::Var> nngp_root(
     return out;
 }
 
-template<class T> struct SpatialBasis {
+template<class T> struct FieldBasis {
     std::vector<T> native, field;
     T jacobian;
 };
 
-template<class T> static SpatialBasis<T> spatial_basis(const std::vector<T>& q,
+template<class T> static FieldBasis<T> spatial_basis(const std::vector<T>& q,
     const ModelData& data, const ParamLayout& layout, const PriorRoot& areal, int n, int d) {
     using tulpa::math::safe_exp;
     using tulpa::math::safe_sqrt;
-    SpatialBasis<T> out{std::vector<T>(d * d, T(0)), std::vector<T>(n * d, T(0)),
+    FieldBasis<T> out{std::vector<T>(d * d, T(0)), std::vector<T>(n * d, T(0)),
         T(layout.is_gp ? 0 : areal.log_determinant)};
     if (layout.is_gp) {
         if constexpr (std::is_same_v<T, double>) out.field = nngp_root(q[layout.log_sigma2_gp_idx], q[layout.log_phi_gp_idx], data).value;
@@ -242,35 +243,78 @@ struct Bym2Rotation {
     }
 };
 
-struct SpatialWorkingLikelihood {
-    int n;
+struct LikelihoodWorkingReference {
+    const ModelData& model;
+    const ParamLayout& layout;
+    const tulpa::LikelihoodSpec& spec;
     std::vector<int> beta;
-    std::vector<double> information, score, cross;
+    std::vector<double> reference;
+    tulpa::GenericLogPostState<double> state;
 
-    SpatialWorkingLikelihood(const ModelData& model, const ParamLayout& layout)
-        : n(layout.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
-          information(n * n, 0.0), score(n, 0.0) {
+    LikelihoodWorkingReference(const ModelData& m, const ParamLayout& l, bool fit_fixed = false)
+        : model(m), layout(l), spec(*static_cast<const tulpa::LikelihoodSpec*>(m.likelihood_spec)),
+          reference(l.total_params, 0.0) {
         for (int k = 0; k < model.n_processes; ++k)
             for (int j = 0; j < layout.process_beta_count[k]; ++j)
                 beta.push_back(layout.process_beta_start[k] + j);
-        cross.assign(n * beta.size(), 0.0);
-        const int rank = model.spatial_restriction.rank;
-        Eigen::MatrixXd U = Eigen::MatrixXd::Zero(n, rank), V = U;
-        Eigen::MatrixXd QWQ = Eigen::MatrixXd::Zero(rank, rank);
-        Eigen::VectorXd Qr = Eigen::VectorXd::Zero(rank);
-        Eigen::MatrixXd QB = Eigen::MatrixXd::Zero(rank, beta.size());
-        const auto& spec = *static_cast<const tulpa::LikelihoodSpec*>(model.likelihood_spec);
+        if (fit_fixed && spec.working_eta.empty()) fit_fixed_effects();
         if (!spec.working_eta.empty()) {
             if (spec.working_eta.size() != static_cast<size_t>(model.n_processes))
                 Rcpp::stop("The likelihood working point must have one eta per process");
             for (double value : spec.working_eta)
                 if (!std::isfinite(value)) Rcpp::stop("The likelihood working point must be finite");
         }
-        std::vector<double> reference(layout.total_params, 0.0);
-        tulpa::GenericLogPostState<double> state;
         tulpa::initialize_generic_state(reference, model, layout, state);
         tulpa::precompute_generic_fixed_eta(model, state);
-        for (int i = 0; i < model.N; ++i) {
+    }
+
+    void fit_fixed_effects() {
+        const int p = beta.size();
+        if (p == 0) return;
+        const auto gradient = resolve_gradient_fn(g_gradient_mode, model, layout);
+        std::vector<double> score, upper, lower;
+        for (int iteration = 0; iteration < 100; ++iteration) {
+            gradient(reference, model, layout, score, nullptr);
+            Eigen::VectorXd rhs(p);
+            for (int j = 0; j < p; ++j) rhs[j] = score[beta[j]];
+            if (!rhs.allFinite() || rhs.lpNorm<Eigen::Infinity>() < 1e-8) break;
+            Eigen::MatrixXd precision(p,p);
+            for (int j = 0; j < p; ++j) {
+                auto plus = reference, minus = reference;
+                const double h = std::pow(std::numeric_limits<double>::epsilon(), .25) *
+                    std::max(1.0, std::abs(reference[beta[j]]));
+                plus[beta[j]] += h; minus[beta[j]] -= h;
+                gradient(plus, model, layout, upper, nullptr);
+                gradient(minus, model, layout, lower, nullptr);
+                for (int i = 0; i < p; ++i)
+                    precision(i,j) = -(upper[beta[i]] - lower[beta[i]]) / (2*h);
+            }
+            precision = .5 * (precision + precision.transpose()).eval();
+            if (!precision.allFinite()) break;
+            Eigen::LLT<Eigen::MatrixXd> factor;
+            if (!tulpa::pd_lm_escalate([&](double*) {
+                    factor.compute(precision);
+                    return factor.info() == Eigen::Success;
+                }, [&](double load) { precision.diagonal().array() += load; })) break;
+            const Eigen::VectorXd step = factor.solve(rhs);
+            const double current = compute_log_post(reference, model, layout);
+            double fraction = 1;
+            bool accepted = false;
+            while (fraction > std::numeric_limits<double>::epsilon()) {
+                auto trial = reference;
+                for (int j = 0; j < p; ++j) trial[beta[j]] += fraction * step[j];
+                const double value = compute_log_post(trial, model, layout);
+                if (std::isfinite(value) && value > current) {
+                    reference.swap(trial); accepted = true; break;
+                }
+                fraction *= .5;
+            }
+            if (!accepted) break;
+        }
+    }
+
+    struct Row { double score, information; std::vector<double> cross; };
+    Row at(int i, const std::vector<double>& direction) const {
             double base[tulpa::MAX_PROCESSES], anchor[tulpa::MAX_PROCESSES], zi, oi;
             tulpa::generic_eta_at(i, model, layout, state, base);
             double anchor_scale = 1;
@@ -282,7 +326,7 @@ struct SpatialWorkingLikelihood {
             const auto evaluate = [&](double a, int process, double b) {
                 double eta[tulpa::MAX_PROCESSES];
                 for (int k = 0; k < model.n_processes; ++k)
-                    eta[k] = anchor[k] + (model.sharing.spatial[k] ? a : 0.0) + (k == process ? b : 0.0);
+                    eta[k] = anchor[k] + (direction[k] * a) + (k == process ? b : 0.0);
                 return spec.ll_double(i, eta, zi, oi, reference, model, layout, model.model_response_data);
             };
             const double value = evaluate(0, -1, 0);
@@ -301,7 +345,34 @@ struct SpatialWorkingLikelihood {
                 for (int j = 0; j < layout.process_beta_count[k]; ++j)
                     row_cross[column++] = coupling * model.processes[k].X_flat[i * layout.process_beta_count[k] + j];
             }
+            for (size_t j = 0; j < beta.size(); ++j) r += row_cross[j] * reference[beta[j]];
             if (!std::isfinite(r) || !std::isfinite(w)) Rcpp::stop("Gaussian field coordinates require finite reference likelihood curvature");
+            return {r, w, std::move(row_cross)};
+    }
+};
+
+struct SpatialWorkingLikelihood {
+    int n;
+    std::vector<int> beta;
+    std::vector<double> information, score, cross;
+
+    SpatialWorkingLikelihood(const ModelData& model, const ParamLayout& layout)
+        : n(layout.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
+          information(n * n, 0.0), score(n, 0.0) {
+        LikelihoodWorkingReference reference(model, layout);
+        beta = reference.beta;
+        cross.assign(n * beta.size(), 0.0);
+        const int rank = model.spatial_restriction.rank;
+        Eigen::MatrixXd U = Eigen::MatrixXd::Zero(n, rank), V = U;
+        Eigen::MatrixXd QWQ = Eigen::MatrixXd::Zero(rank, rank);
+        Eigen::VectorXd Qr = Eigen::VectorXd::Zero(rank);
+        Eigen::MatrixXd QB = Eigen::MatrixXd::Zero(rank, beta.size());
+        std::vector<double> direction(model.n_processes);
+        for (int k = 0; k < model.n_processes; ++k) direction[k] = model.sharing.spatial[k] ? 1.0 : 0.0;
+        for (int i = 0; i < model.N; ++i) {
+            const auto row = reference.at(i, direction);
+            const double r = row.score, w = row.information;
+            const auto& row_cross = row.cross;
             const int unit = layout.is_gp ? model.gp_data.obs_to_loc[i] : model.spatial_group[i] - 1;
             score[unit] += r;
             information[unit * n + unit] += w;
@@ -328,19 +399,112 @@ struct SpatialWorkingLikelihood {
     }
 };
 
-struct GaussianConditional {
+struct SpatialGaussianBasis {
     const ModelData* data;
     ParamLayout layout;
     int n, d, begin;
     PriorRoot areal;
-    SpatialWorkingLikelihood working;
 
-    GaussianConditional(const ModelData& model, const ParamLayout& positions)
+    SpatialGaussianBasis(const ModelData& model, const ParamLayout& positions)
         : data(&model), layout(positions), n(layout.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
-          d(layout.is_bym2 ? 2 * n : n), begin(layout.is_gp ? layout.gp_w_start : layout.spatial_start),
-          working(model, positions) {
+          d(layout.is_bym2 ? 2 * n : n), begin(layout.is_gp ? layout.gp_w_start : layout.spatial_start) {
         if (!layout.is_gp) areal = areal_root(model, layout.is_bym2);
     }
+    template<class T> FieldBasis<T> geometry(const std::vector<T>& q) const {
+        return spatial_basis(q, *data, layout, areal, n, d);
+    }
+    void inverse_native(const std::vector<double>& x, std::vector<double>& u) const {
+        if (layout.is_gp) std::copy(x.begin() + begin, x.begin() + begin + d, u.begin());
+        else {
+            const double amplitude = layout.is_bym2 ? 1.0 : std::exp(.5 * x[layout.log_tau_spatial_idx]);
+            for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j)
+                u[i] += amplitude * areal.inverse(i, j) * x[begin + j];
+            if (layout.is_bym2) std::copy(x.begin() + begin + n, x.begin() + begin + d, u.begin() + n);
+        }
+    }
+};
+
+struct TemporalGaussianBasis {
+    const ModelData* data;
+    bool coefficient;
+    int group, term, n, d, begin, variance, range;
+
+    TemporalGaussianBasis(const ModelData& model, const ParamLayout& layout,
+                          bool tvc, int g, int j)
+        : data(&model), coefficient(tvc), group(g), term(j),
+          n(tvc ? model.tvc_data.n_times : model.n_times), d(n),
+          begin(tvc ? layout.tvc_w_start + tulpa_tvc::tvc_block_offset(model.tvc_data, g, j)
+                    : layout.temporal_start + g * n),
+          variance(tvc ? layout.log_sigma2_tvc_gp_start + j : layout.log_sigma2_temporal_gp_idx),
+          range(tvc ? layout.logit_phi_tvc_gp_start + j : layout.logit_phi_temporal_gp_idx) {}
+
+    template<class T> FieldBasis<T> geometry(const std::vector<T>& q) const {
+        const auto& times = coefficient ? data->tvc_data.time_values : data->temporal_gp_data.time_values;
+        const auto covariance = coefficient ? data->tvc_data.cov_type : data->temporal_gp_data.cov_type;
+        const double nu = coefficient ? data->tvc_data.nu : data->temporal_gp_data.nu;
+        const double period = coefficient ? data->tvc_data.period : data->temporal_gp_data.period;
+        const double lower = coefficient ? data->tvc_gp_phi_prior_lower : data->temporal_gp_phi_prior_lower;
+        const double upper = coefficient ? data->tvc_gp_phi_prior_upper : data->temporal_gp_phi_prior_upper;
+        const T phi = tulpa::math::bounded_from_logit(q[range], lower, upper);
+        tulpa_temporal_gp::FieldKernel<T> kernel(times, n, tulpa::math::safe_exp(q[variance]),
+            phi, covariance, nu, period, coefficient ? 0.0 : data->temporal_gp_relative_nugget,
+            coefficient);
+        if (!kernel.valid()) throw InvalidPrecision{};
+        FieldBasis<T> out{std::vector<T>(n * n, T(0)), std::vector<T>(n * n, T(0)), T(0)};
+        std::vector<T> unit(n), column(n);
+        for (int j = 0; j < n; ++j) {
+            std::fill(unit.begin(), unit.end(), T(0));
+            unit[j] = T(1);
+            kernel.forward(unit.data(), column.data());
+            T mean = T(0);
+            if (coefficient) for (const auto& value : column) mean = mean + value / T(n);
+            for (int i = 0; i < n; ++i)
+                out.field[i * n + j] = coefficient && j == 0 ? T(0) : column[i] - mean;
+            out.native[j * n + j] = T(1);
+        }
+        return out;
+    }
+    void inverse_native(const std::vector<double>& x, std::vector<double>& u) const {
+        std::copy(x.begin() + begin, x.begin() + begin + d, u.begin());
+    }
+};
+
+struct TemporalWorkingLikelihood {
+    int n;
+    std::vector<int> beta;
+    std::vector<double> information, score, cross;
+
+    TemporalWorkingLikelihood(const ModelData& model, const ParamLayout& layout,
+                              const TemporalGaussianBasis& field,
+                              const LikelihoodWorkingReference& reference)
+        : n(field.n), information(n * n, 0.0), score(n, 0.0) {
+        beta = reference.beta;
+        cross.assign(n * beta.size(), 0.0);
+        std::vector<double> direction(model.n_processes);
+        for (int i = 0; i < model.N; ++i) {
+            const int group = field.coefficient ? model.tvc_data.group_index[i] - 1 :
+                model.temporal_group_idx.empty() ? 0 : model.temporal_group_idx[i] - 1;
+            if (group != field.group) continue;
+            const int time = field.coefficient ? model.tvc_data.time_index[i] - 1 : model.temporal_time_idx[i] - 1;
+            const double x = field.coefficient ? model.tvc_data.X_tvc[i * model.tvc_data.n_tvc + field.term] : 1.0;
+            for (int k = 0; k < model.n_processes; ++k)
+                direction[k] = (field.coefficient ? model.sharing.tvc[k] : model.sharing.temporal[k]) ? x : 0.0;
+            const auto row = reference.at(i, direction);
+            score[time] += row.score;
+            information[time * n + time] += row.information;
+            for (size_t b = 0; b < beta.size(); ++b) cross[time * beta.size() + b] += row.cross[b];
+        }
+    }
+};
+
+template<class Basis, class Working> struct GaussianConditional {
+    Basis prior;
+    Working working;
+    int n, d, begin;
+
+    GaussianConditional(Basis basis, Working likelihood)
+        : prior(std::move(basis)), working(std::move(likelihood)),
+          n(prior.n), d(prior.d), begin(prior.begin) {}
 
     template<class T> struct Geometry {
         std::vector<T> root, chol, mean;
@@ -352,7 +516,7 @@ struct GaussianConditional {
         using tulpa::math::safe_log;
         using tulpa::math::safe_sqrt;
         Geometry<T> out;
-        auto basis = spatial_basis(q, *data, layout, areal, n, d);
+        auto basis = prior.geometry(q);
         out.root = std::move(basis.native);
         out.jacobian = basis.jacobian;
         const auto& F = basis.field;
@@ -400,13 +564,7 @@ struct GaussianConditional {
     void inverse(std::vector<double>& x) const {
         const auto g = geometry(x);
         std::vector<double> u(d, 0.0);
-        if (layout.is_gp) std::copy(x.begin() + begin, x.begin() + begin + d, u.begin());
-        else {
-            const double amplitude = layout.is_bym2 ? 1.0 : std::exp(.5 * x[layout.log_tau_spatial_idx]);
-            for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j)
-                u[i] += amplitude * areal.inverse(i, j) * x[begin + j];
-            if (layout.is_bym2) std::copy(x.begin() + begin + n, x.begin() + begin + d, u.begin() + n);
-        }
+        prior.inverse_native(x, u);
         for (int i = 0; i < d; ++i) {
             x[begin + i] = 0.0;
             for (int j = i; j < d; ++j) x[begin + i] += g.chol[j * d + i] * (u[j] - g.mean[j]);
@@ -456,7 +614,7 @@ struct SpatialMarginal {
 
     template<class T> struct Prepared {
         std::vector<T> params, design, eta, zi, oi;
-        SpatialBasis<T> basis;
+        FieldBasis<T> basis;
         T prior;
     };
 
@@ -742,7 +900,30 @@ void reconstruct_collapsed_spatial(const ModelData* data, const ParamLayout* lay
 }
 
 tulpa::FieldCoordinateOperator prepare_spatial_gaussian_coordinate(const ModelData& data, const ParamLayout& layout) {
-    return spatial_coordinates::coordinate_operator(std::make_shared<spatial_coordinates::GaussianConditional>(data, layout));
+    using namespace spatial_coordinates;
+    using Conditional = GaussianConditional<SpatialGaussianBasis, SpatialWorkingLikelihood>;
+    return coordinate_operator(std::make_shared<Conditional>(SpatialGaussianBasis(data, layout),
+        SpatialWorkingLikelihood(data, layout)));
+}
+
+
+std::vector<tulpa::FieldCoordinateOperator> prepare_temporal_gaussian_coordinates(
+    const ModelData& data, const ParamLayout& layout) {
+    using namespace spatial_coordinates;
+    using Conditional = GaussianConditional<TemporalGaussianBasis, TemporalWorkingLikelihood>;
+    std::vector<tulpa::FieldCoordinateOperator> out;
+    const LikelihoodWorkingReference reference(data, layout, true);
+    auto add = [&](bool coefficient, int group, int term) {
+        TemporalGaussianBasis basis(data, layout, coefficient, group, term);
+        TemporalWorkingLikelihood working(data, layout, basis, reference);
+        out.push_back(coordinate_operator(std::make_shared<Conditional>(std::move(basis), std::move(working))));
+    };
+    if (layout.is_temporal_gp && data.auto_temporal_gp_coordinates)
+        for (int g = 0; g < data.n_temporal_groups; ++g) add(false, g, 0);
+    if (layout.has_tvc && data.tvc_data.structure == TemporalType::GP && data.tvc_gp_parameterization == 2)
+        for (int g = 0; g < data.tvc_data.n_groups; ++g)
+            for (int j = 0; j < data.tvc_data.n_tvc; ++j) add(true, g, j);
+    return out;
 }
 
 tulpa::FieldCoordinateOperator prepare_bym2_coordinate(const ModelData& data, const ParamLayout& layout) {

@@ -43,6 +43,17 @@
 #'   values before fitting (default `TRUE`), which puts the lengthscale on the
 #'   same universal support [temporal_gp()] uses. `period` is stated in the raw
 #'   time units and makes the same trip.
+#' @param parameterization GP field coordinates: `"noncentered"` samples
+#'   independent standard normal innovations and reconstructs the coefficient
+#'   through its covariance factor. `"auto"` (default) uses this covariance
+#'   whitening and adapts to likelihood information. `"centered"` samples the
+#'   coefficient directly. All choices use the same variance and lengthscale
+#'   priors and return centred coefficient draws. Applies to
+#'   `structure = "gp"`. The constant field direction occupies one independent
+#'   innovation coordinate. Within the sampler's dense parameter budget,
+#'   `"auto"` also centres and scales innovations using their Gaussian
+#'   conditional approximation at a fixed-effects reference fit. The exact
+#'   likelihood corrects this approximation.
 #'
 #' @return A `tulpa_tvc` object.
 #'
@@ -68,9 +79,11 @@ temporal_tvc <- function(time_var,
                          shared = NULL,
                          sigma_prior_U = 1,
                          sigma_prior_alpha = 0.01,
-                         scale_coords = TRUE) {
+                         scale_coords = TRUE,
+                         parameterization = c("auto", "noncentered", "centered")) {
 
   structure_type <- match.arg(structure)
+  parameterization <- match.arg(parameterization)
   .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
                     "sigma_prior_U", "sigma_prior_alpha", "temporal_tvc()")
   cov_type <- match.arg(cov)
@@ -116,6 +129,7 @@ temporal_tvc <- function(time_var,
       shared = shared,
       sigma_prior_U = as.numeric(sigma_prior_U),
       sigma_prior_alpha = as.numeric(sigma_prior_alpha),
+      parameterization = if (identical(structure_type, "gp")) parameterization else NULL,
       # GP kernel; NULL on every other structure, which reads the time index as
       # a grid position and has no kernel.
       cov = if (identical(structure_type, "gp")) cov_type else NULL,

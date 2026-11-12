@@ -942,6 +942,8 @@ void build_sampler_model_inputs(
             t.cov_type = gk.cov_type;
             t.nu       = gk.nu;
             t.period   = gk.period;
+            const std::string coordinate = sampler_parameterization(tv, "centered");
+            in.data.tvc_gp_parameterization = coordinate == "centered" ? 0 : coordinate == "auto" ? 2 : 1;
             read_temporal_gp_phi_bounds(tv,
                                         "temporal_tvc(structure = \"gp\")",
                                         in.data.tvc_gp_phi_prior_lower,

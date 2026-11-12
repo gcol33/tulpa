@@ -208,7 +208,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 59;
+constexpr int TULPA_ABI_VERSION = 60;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -728,6 +728,7 @@ struct ModelData {
     int temporal_restriction_rank = 0;
     RestrictedSlopes temporal_restricted_slopes;
     RestrictedSlopes ms_trend_restricted_slopes;
+    int tvc_gp_parameterization = 0;  // 0=centered, 1=non-centered, 2=automatic
 
     void set_temporal_restriction(std::vector<double> basis, int rank) {
         if (rank < 0 || rank > N || basis.size() != static_cast<size_t>(N) * rank)

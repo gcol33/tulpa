@@ -341,7 +341,11 @@ validate_temporal_multiscale <- function(temporal, data) {
 #'   [temporal_corr()] reports the lengthscale in the original time units.
 #' @param parameterization Parameterization for GP effects:
 #'   `"auto"` scales covariance-whitened coordinates using prior and observation
-#'   information. `"noncentered"` stores z ~ N(0,1) and scales by covariance
+#'   information. Within the sampler's dense parameter budget it centres and
+#'   scales innovations using their Gaussian conditional approximation at
+#'   a fixed-effects reference fit, with the exact likelihood correcting the
+#'   approximation.
+#'   `"noncentered"` stores z ~ N(0,1) and scales by covariance
 #'   (better for weakly-informed effects);
 #'   `"centered"` stores effects directly (better for strongly-informed effects).
 #'

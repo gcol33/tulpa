@@ -53,7 +53,11 @@ support is placed relative to the spread of the times, and
 
 \item{parameterization}{Parameterization for GP effects:
 \code{"auto"} scales covariance-whitened coordinates using prior and observation
-information. \code{"noncentered"} stores z ~ N(0,1) and scales by covariance
+information. Within the sampler's dense parameter budget it centres and
+scales innovations using their Gaussian conditional approximation at
+a fixed-effects reference fit, with the exact likelihood correcting the
+approximation.
+\code{"noncentered"} stores z ~ N(0,1) and scales by covariance
 (better for weakly-informed effects);
 \code{"centered"} stores effects directly (better for strongly-informed effects).}
 

@@ -2,12 +2,24 @@
 
 ## Models and inference
 
+* GP time-varying coefficients use non-centred field coordinates by default.
+  `temporal_tvc(parameterization = "centered")` selects direct field sampling.
+  Additive temporal GPs and GP coefficients share their covariance factor,
+  field transformation and density. Their priors retain their definitions
+  (#1173). An orthogonal innovation rotation separates the constant field
+  direction. GP lengthscale Jacobians use the unconstrained logit, preserving
+  finite values and gradients when the bounded lengthscale rounds to a
+  support endpoint. Automatic temporal GP coordinates use the shared Gaussian
+  conditional transport within the sampler's dense parameter budget.
+  The exported `ModelData` layout has ABI version 60; compiled
+  consumers including tulpaRatio and tulpaObs require rebuilding.
+
 * NUTS separates each intrinsic time-varying coefficient's augmented level
   from its precision. Automatic NNGP varying-coefficient fields sample
   independent standard normal innovations through the shared non-centred
   transform. The priors and stored coefficient fields retain their
-  definitions. Every temporal GP coefficient retains native field
-  coordinates (#1172).
+  definitions. Each temporal GP coefficient carries its own variance and
+  lengthscale coordinates (#1172).
 
 * A NUTS chain resumes with the step size it adapted: the generic R entries
   and both C entries (`nuts_api.h`) take `epsilon_init`, and with

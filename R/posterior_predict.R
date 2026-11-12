@@ -916,6 +916,8 @@
   spatial_spec  <- mi$spatial_spec
   svc_spec      <- mi$svc_spec
   temporal_spec <- mi$temporal_spec
+  tvc_spec <- mi$tvc_spec
+  if (identical(tvc_spec$structure, "gp")) tvc_spec$parameterization <- "centered"
   if (!is.null(spatial_spec$gp_parameterization) &&
       spatial_spec$gp_parameterization == 1L) {
     spatial_spec$gp_parameterization <- 0L
@@ -933,7 +935,7 @@
     temporal_spec$parameterization <- "centered"
   }
   list(spatial_spec = spatial_spec, svc_spec = svc_spec,
-       temporal_spec = temporal_spec)
+       temporal_spec = temporal_spec, tvc_spec = tvc_spec)
 }
 
 # The engine's linear predictor (rows of `D` x observations) for draw rows `D`
@@ -962,7 +964,7 @@
        offset_nullable = mi$offset, re_spec = mi$re_spec,
        spatial_spec = fs$spatial_spec, temporal_spec = fs$temporal_spec,
        sigma_re_scale = mi$sigma_re_scale, phi2 = mi$phi2,
-       svc_spec = fs$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
+       svc_spec = fs$svc_spec, tvc_spec = fs$tvc_spec, zi_spec = mi$zi_spec)
 }
 
 # Engine eta at each sampler draw (the "sampler_model" source). The

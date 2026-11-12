@@ -4,7 +4,7 @@ test_that("GP coefficients retain native coordinates across term counts", {
   X <- model.matrix(~ x + z + v, d)
   for (n_terms in seq_len(3L)) {
     temporal <- tulpa:::validate_tvc(temporal_tvc("day",
-      terms = 1L + seq_len(n_terms), structure = "gp"), d, X)
+      terms = 1L + seq_len(n_terms), structure = "gp", parameterization = "noncentered"), d, X)
     spec <- tulpa:::.tvc_sampler_spec(temporal, X)
     r <- tulpa:::cpp_test_field_coordinates(y = .2 + .5 * d$x, X = X,
       tvc_spec = spec, shift = .3)

@@ -17,6 +17,7 @@
 
 #include "hmc_sampler.h"
 #include "tulpa_priors_temporal.h"
+#include "tulpa_priors_tvc.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -67,13 +68,17 @@ void tgp_fixture(const std::vector<double>& times, int n_groups,
 Rcpp::List cpp_test_temporal_gp_density(
     Rcpp::NumericVector times, int n_groups,
     Rcpp::NumericVector field, double log_sigma2, double logit_phi,
-    int parameterization, double phi_lower = 0.01, double phi_upper = 10.0
+    int parameterization, double phi_lower = 0.01, double phi_upper = 10.0,
+    bool tvc = false, int covariance = 0, double nu = 1.5, double period = 2.0
 ) {
   const std::vector<double> tv(times.begin(), times.end());
   ModelData data;
   ParamLayout layout;
   tgp_fixture(tv, n_groups, phi_lower, phi_upper, parameterization,
               data, layout);
+  data.temporal_gp_data.cov_type = static_cast<tulpa::TemporalCovType>(covariance);
+  data.temporal_gp_data.nu = nu;
+  data.temporal_gp_data.period = period;
 
   const int n_temporal = static_cast<int>(times.size()) * n_groups;
   if (field.size() != n_temporal) {
@@ -88,12 +93,47 @@ Rcpp::List cpp_test_temporal_gp_density(
   params[layout.logit_phi_temporal_gp_idx] = logit_phi;
 
   std::vector<double> phi_temporal;
-  double tau_out = 0.0, rho_out = 0.0, sigma2_out = 0.0, phi_out = 0.0;
-  const double lp = tulpa::priors::compute_temporal_prior<double>(
-      params, data, layout, phi_temporal, tau_out, rho_out, sigma2_out, phi_out);
+  double sigma2_out = 0.0, phi_out = 0.0;
+  if (tvc) {
+    auto& td = data.tvc_data;
+    td.n_obs = td.n_times = static_cast<int>(times.size());
+    td.n_groups = n_groups; td.n_tvc = 1;
+    td.structure = tulpa::TemporalType::GP;
+    td.time_values = tv;
+    td.cov_type = data.temporal_gp_data.cov_type;
+    td.nu = nu; td.period = period;
+    td.X_tvc.assign(td.n_obs, 1.0);
+    td.group_index.assign(td.n_obs, 1);
+    for (int t = 0; t < td.n_times; ++t) td.time_index.push_back(t + 1);
+    layout.has_temporal = layout.is_temporal_gp = false;
+    layout.has_tvc = data.has_tvc = true;
+    layout.tvc_w_start = 0; layout.tvc_w_end = n_temporal;
+    layout.log_sigma2_tvc_gp_start = n_temporal;
+    layout.logit_phi_tvc_gp_start = n_temporal + 1;
+    data.tvc_gp_parameterization = parameterization;
+    data.tvc_gp_phi_prior_lower = phi_lower;
+    data.tvc_gp_phi_prior_upper = phi_upper;
+  }
+  auto evaluate = [&](const auto& q, auto& field) {
+    using T = typename std::decay_t<decltype(q)>::value_type;
+    std::vector<T> eta;
+    if (tvc) return tulpa::priors::compute_tvc_prior(q, data, layout, eta, field);
+    T tau = T(0), rho = T(0), sigma2 = T(0), phi = T(0);
+    return tulpa::priors::compute_temporal_prior(q, data, layout, field, tau, rho, sigma2, phi);
+  };
+  const double lp = evaluate(params, phi_temporal);
+  sigma2_out = std::exp(log_sigma2);
+  phi_out = phi_lower + (phi_upper - phi_lower) / (1 + std::exp(-logit_phi));
+  Rcpp::NumericVector gradient(params.size());
+  for (size_t k = 0; k < params.size(); ++k) {
+    std::vector<fwd::Dual> q(params.size()), field;
+    for (size_t j = 0; j < params.size(); ++j) q[j] = fwd::Dual(params[j], j == k ? 1.0 : 0.0);
+    gradient[k] = evaluate(q, field).grad;
+  }
 
   return Rcpp::List::create(
       Rcpp::_["log_post"] = lp,
+      Rcpp::_["gradient"] = gradient,
       Rcpp::_["field"] = Rcpp::NumericVector(phi_temporal.begin(),
                                              phi_temporal.end()),
       Rcpp::_["sigma2"] = sigma2_out,

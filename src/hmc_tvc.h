@@ -112,36 +112,23 @@ inline T tvc_log_prior(
 // the caller turns into -Inf rather than a NaN gradient.
 template <typename T>
 inline bool tvc_log_prior_gp(
-    const std::vector<T>& w_flat,
+    std::vector<T>& w_flat,
     const TVCData& tvc_data,
     const std::vector<T>& sigma2,
     const std::vector<T>& phi,
-    T& log_prior_out
+    T& log_prior_out, bool noncentered = false
 ) {
   const int n_times  = tvc_data.n_times;
   const int n_tvc    = tvc_data.n_tvc;
   const int n_groups = tvc_data.n_groups;
-  const bool markov  = tulpa_temporal_gp::cov_is_markov(tvc_data.cov_type,
-                                                        tvc_data.nu);
-
   T log_prior = T(0.0);
-  std::vector<T> rho, omr2, L;
-  for (int j = 0; j < n_tvc; j++) {
-    if (markov) {
-      tulpa_temporal_gp::ou_chain(tvc_data.time_values, n_times, phi[j],
-                                  rho, omr2);
-    } else if (!tulpa_temporal_gp::temporal_cov_chol(
-                   tvc_data.time_values, n_times, sigma2[j], phi[j],
-                   tvc_data.cov_type, tvc_data.nu, tvc_data.period, L)) {
-      return false;
-    }
-    for (int g = 0; g < n_groups; g++) {
-      const int off = tvc_block_offset(tvc_data, g, j);
-      log_prior = log_prior + (markov
-          ? tulpa_temporal_gp::ou_log_density(w_flat.data() + off, n_times,
-                                              sigma2[j], rho, omr2)
-          : tulpa_temporal_gp::dense_gp_log_density(L, n_times, w_flat, off));
-    }
+  for (int j = 0; j < n_tvc; ++j) {
+    tulpa_temporal_gp::FieldKernel<T> kernel(tvc_data.time_values, n_times,
+        sigma2[j], phi[j], tvc_data.cov_type, tvc_data.nu, tvc_data.period, 0.0, true);
+    if (!kernel.valid()) return false;
+    for (int g = 0; g < n_groups; ++g)
+      kernel.accumulate_log_density(w_flat,
+          tvc_block_offset(tvc_data, g, j), noncentered, log_prior);
   }
   log_prior_out = log_prior;
   return true;

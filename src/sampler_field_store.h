@@ -122,6 +122,11 @@ inline void store_field_draw(double* row, const std::vector<double>& q,
     // TVC: each (group, term) block's level is removed by tvc_center_eta() on
     // its way into the linear predictor.
     if (data.has_tvc && layout.has_tvc && data.tvc_data.n_tvc > 0) {
+        if (data.tvc_data.structure == tulpa::TemporalType::GP && data.tvc_gp_parameterization != 0) {
+            std::vector<double> eta, field;
+            priors::compute_tvc_prior(q, data, layout, eta, field);
+            std::copy(field.begin(), field.end(), row + layout.tvc_w_start);
+        }
         const auto& tv = data.tvc_data;
         tulpa::s2z_centre_blocks(row + layout.tvc_w_start,
                                  tv.n_groups * tv.n_tvc, tv.n_times);

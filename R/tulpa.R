@@ -679,6 +679,7 @@
     }
     spec$time_values <- as.numeric(temporal$time_values)
     spec$cov         <- as.character(temporal$cov %||% "exponential")
+    spec$parameterization <- temporal$parameterization %||% "centered"
     spec$nu          <- temporal$nu
     # The period in the units `time_values` now carries, which is what the
     # kernel measures its lag in.
