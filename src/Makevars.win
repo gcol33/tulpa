@@ -93,6 +93,7 @@ unity_core.o: \
   tgmrf_registry.h \
   shim_guard.h \
   hmc_sampler.h \
+  hmc_spatial_marginal.h \
   laplace_types.h \
   linalg_fast.h \
   omp_threads.h \
@@ -341,6 +342,7 @@ unity_glmm.o: \
   inner_laplace_skew.h \
   laplace_profile.h \
   inner_laplace_probe.h \
+  spatial_range_prior.h \
   hmc_gp_autodiff.h \
   spde_matern_map.h \
   hmc_latent_autodiff.h \
@@ -353,6 +355,7 @@ unity_glmm.o: \
 unity_hmc.o: \
   unity_hmc.cpp \
   ess_sampler.cpp \
+  hmc_field_coordinates.cpp \
   hmc_gradient_dispatch.cpp \
   hmc_gradient_fallback.cpp \
   hmc_gradients.cpp \
@@ -376,6 +379,12 @@ unity_hmc.o: \
   ess_sampler.h \
   log_post_impl.h \
   hmc_field_coordinates.h \
+  hmc_gp.h \
+  nngp_cond.h \
+  hmc_spatial_marginal.h \
+  laplace_newton_loop.h \
+  joint_pd_step.h \
+  coordinate_linalg.h \
   hmc_gradient_dispatch.h \
   laplace_profile.h \
   hmc_mass_st_gmrf.h \
@@ -393,13 +402,13 @@ unity_hmc.o: \
   omp_threads.h \
   st_gp_kernel.h \
   pc_prior.h \
+  spatial_range_prior.h \
   st_null_space.h \
   sysmem.h \
   mclmc.h \
   mclmc_modeldata.h \
   hmc_temporal.h \
   hmc_svc.h \
-  hmc_gp.h \
   hmc_temporal_multiscale.h \
   hmc_latent.h \
   hmc_hsgp.h \
@@ -421,21 +430,22 @@ unity_hmc.o: \
   svc_nc_apply.h \
   msgp_nc_apply.h \
   log_post_generic_impl.h \
-  laplace_types.h \
-  sampler_log_prob.h \
-  tulpa_priors_temporal.h \
-  tulpa_priors_icar.h \
-  tulpa_priors_mstemporal.h \
-  linalg_fast.h \
-  checkpoint_io.h \
-  hmc_svc_autodiff.h \
-  nngp_cond.h \
   hmc_gp_cg.h \
   hmc_gp_lbfgs.h \
   hmc_gp_solvers.h \
   hmc_gp_log_lik.h \
   hmc_gp_gradients.h \
   hmc_gp_nc.h \
+  linalg_fast.h \
+  laplace_cholesky.h \
+  laplace_family_link.h \
+  laplace_types.h \
+  sampler_log_prob.h \
+  tulpa_priors_temporal.h \
+  tulpa_priors_icar.h \
+  tulpa_priors_mstemporal.h \
+  checkpoint_io.h \
+  hmc_svc_autodiff.h \
   hmc_hsgp_kernels.h \
   temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
@@ -450,6 +460,7 @@ unity_hmc.o: \
   tulpa_priors_latent.h \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
+  laplace_likelihoods.h \
   laplace_core.h \
   intrinsic_log_pdet.h \
   icar_kernel.h \
@@ -459,7 +470,6 @@ unity_hmc.o: \
   spde_matern_map.h \
   svc_range.h \
   hmc_latent_autodiff.h \
-  laplace_likelihoods.h \
   fastmath.h
 unity_laplace.o: \
   unity_laplace.cpp \
@@ -595,6 +605,7 @@ unity_laplace.o: \
   tulpa_priors_zioi.h \
   sobol_direction_numbers.h \
   st_null_space.h \
+  spatial_range_prior.h \
   hmc_gp_autodiff.h \
   hsgp_spectral.h \
   spde_matern_map.h \
@@ -875,6 +886,7 @@ unity_samplers.o: \
   log_post_impl.h \
   linalg_fast.h \
   hmc_field_coordinates.h \
+  hmc_spatial_marginal.h \
   sampler_field_store.h \
   sampler_resume.h \
   vi_types.h \
@@ -938,6 +950,7 @@ unity_samplers.o: \
   tulpa_priors_zioi.h \
   fastmath.h \
   st_null_space.h \
+  spatial_range_prior.h \
   hmc_gp_autodiff.h \
   spde_matern_map.h \
   svc_range.h \

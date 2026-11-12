@@ -637,8 +637,12 @@ cpp_test_temporal_coordinates <- function(z, n_times, n_groups, structure, cycli
     .Call(`_tulpa_cpp_test_temporal_coordinates`, z, n_times, n_groups, structure, cyclic, log_tau, logit_rho, group_centering)
 }
 
-cpp_test_field_coordinates <- function(y, X, spatial_spec = NULL, temporal_spec = NULL, svc_spec = NULL, tvc_spec = NULL, shift = 0.3, n_iter = 0L, point = NULL, latent_spec = NULL, st_spec = NULL) {
-    .Call(`_tulpa_cpp_test_field_coordinates`, y, X, spatial_spec, temporal_spec, svc_spec, tvc_spec, shift, n_iter, point, latent_spec, st_spec)
+cpp_test_field_coordinates <- function(y, X, spatial_spec = NULL, temporal_spec = NULL, svc_spec = NULL, tvc_spec = NULL, shift = 0.3, n_iter = 0L, point = NULL, native_point = TRUE, gaussian = FALSE, working_eta = NULL, latent_spec = NULL, st_spec = NULL) {
+    .Call(`_tulpa_cpp_test_field_coordinates`, y, X, spatial_spec, temporal_spec, svc_spec, tvc_spec, shift, n_iter, point, native_point, gaussian, working_eta, latent_spec, st_spec)
+}
+
+cpp_test_collapsed_spatial <- function(y, X, spatial_spec, point, n_draw = 0L, seed = 19L) {
+    .Call(`_tulpa_cpp_test_collapsed_spatial`, y, X, spatial_spec, point, n_draw, seed)
 }
 
 cpp_test_sampler_controls <- function(y_r, X_r, L = 0L, metric = "diag", walnuts = FALSE, n_chains = 1L, seed = 18L, n_iter = 2000L, n_warmup = 750L) {

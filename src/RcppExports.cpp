@@ -3128,8 +3128,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_test_field_coordinates
-Rcpp::List cpp_test_field_coordinates(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, double shift, int n_iter, Rcpp::Nullable<Rcpp::NumericVector> point, Rcpp::Nullable<Rcpp::List> latent_spec, Rcpp::Nullable<Rcpp::List> st_spec);
-RcppExport SEXP _tulpa_cpp_test_field_coordinates(SEXP ySEXP, SEXP XSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP shiftSEXP, SEXP n_iterSEXP, SEXP pointSEXP, SEXP latent_specSEXP, SEXP st_specSEXP) {
+Rcpp::List cpp_test_field_coordinates(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, double shift, int n_iter, Rcpp::Nullable<Rcpp::NumericVector> point, bool native_point, bool gaussian, Rcpp::Nullable<Rcpp::NumericVector> working_eta, Rcpp::Nullable<Rcpp::List> latent_spec, Rcpp::Nullable<Rcpp::List> st_spec);
+RcppExport SEXP _tulpa_cpp_test_field_coordinates(SEXP ySEXP, SEXP XSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP shiftSEXP, SEXP n_iterSEXP, SEXP pointSEXP, SEXP native_pointSEXP, SEXP gaussianSEXP, SEXP working_etaSEXP, SEXP latent_specSEXP, SEXP st_specSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3142,9 +3142,28 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type shift(shiftSEXP);
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type point(pointSEXP);
+    Rcpp::traits::input_parameter< bool >::type native_point(native_pointSEXP);
+    Rcpp::traits::input_parameter< bool >::type gaussian(gaussianSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type working_eta(working_etaSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type latent_spec(latent_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type st_spec(st_specSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_field_coordinates(y, X, spatial_spec, temporal_spec, svc_spec, tvc_spec, shift, n_iter, point, latent_spec, st_spec));
+    rcpp_result_gen = Rcpp::wrap(cpp_test_field_coordinates(y, X, spatial_spec, temporal_spec, svc_spec, tvc_spec, shift, n_iter, point, native_point, gaussian, working_eta, latent_spec, st_spec));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_collapsed_spatial
+Rcpp::List cpp_test_collapsed_spatial(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::List spatial_spec, Rcpp::NumericVector point, int n_draw, int seed);
+RcppExport SEXP _tulpa_cpp_test_collapsed_spatial(SEXP ySEXP, SEXP XSEXP, SEXP spatial_specSEXP, SEXP pointSEXP, SEXP n_drawSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type spatial_spec(spatial_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type point(pointSEXP);
+    Rcpp::traits::input_parameter< int >::type n_draw(n_drawSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_collapsed_spatial(y, X, spatial_spec, point, n_draw, seed));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3807,7 +3826,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_beta_density_terms", (DL_FUNC) &_tulpa_cpp_beta_density_terms, 3},
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
     {"_tulpa_cpp_test_temporal_coordinates", (DL_FUNC) &_tulpa_cpp_test_temporal_coordinates, 8},
-    {"_tulpa_cpp_test_field_coordinates", (DL_FUNC) &_tulpa_cpp_test_field_coordinates, 11},
+    {"_tulpa_cpp_test_field_coordinates", (DL_FUNC) &_tulpa_cpp_test_field_coordinates, 14},
+    {"_tulpa_cpp_test_collapsed_spatial", (DL_FUNC) &_tulpa_cpp_test_collapsed_spatial, 6},
     {"_tulpa_cpp_test_sampler_controls", (DL_FUNC) &_tulpa_cpp_test_sampler_controls, 9},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 12},
     {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 14},

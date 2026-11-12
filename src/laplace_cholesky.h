@@ -217,7 +217,7 @@ inline CholeskyResult dense_cholesky_solve(
     res.delta = Rcpp::NumericVector(n);
     res.success = true;
 
-    detail::cholesky_factorize_impl(H, n, res.L, res.log_det);
+    tulpa::detail::cholesky_factorize_impl(H, n, res.L, res.log_det);
 
     // Substitute through chol_substitute_raw, which the comment on it already
     // calls the single source of truth. It reads a column-major factor, and an
@@ -232,14 +232,14 @@ inline void dense_cholesky_factorize(
     const DenseMat& H, int n,
     Rcpp::NumericMatrix& L, double& log_det
 ) {
-    detail::cholesky_factorize_impl(H, n, L, log_det);
+    tulpa::detail::cholesky_factorize_impl(H, n, L, log_det);
 }
 
 inline void dense_cholesky_factorize(
     const Rcpp::NumericMatrix& H, int n,
     Rcpp::NumericMatrix& L, double& log_det
 ) {
-    detail::cholesky_factorize_impl(H, n, L, log_det);
+    tulpa::detail::cholesky_factorize_impl(H, n, L, log_det);
 }
 
 
@@ -257,7 +257,7 @@ inline bool dense_cholesky_solve_raw(
     scratch.ensure(n);
     if (static_cast<int>(delta_out.size()) < n) delta_out.assign(n, 0.0);
 
-    detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
+    tulpa::detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
 
     return chol_substitute_raw(scratch.L.data(), n,
                                rhs.data(), delta_out.data(), scratch.z.data());
@@ -275,7 +275,7 @@ inline bool dense_cholesky_log_det_raw(
     double& log_det_out
 ) {
     scratch.ensure(n);
-    detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
+    tulpa::detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
     return std::isfinite(log_det_out);
 }
 
