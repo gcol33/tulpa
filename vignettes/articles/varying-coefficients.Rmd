@@ -152,7 +152,7 @@ coef(summary(fit_svc))
 ```
 
 The fit ran on the `hmc` backend, Tier 1. The fixed slope `x` is the slope at
-the average site, $\beta_1$; its 95% interval runs from 0.47 to 0.71 and holds
+the average site, $\beta_1$; its 95% interval runs from 0.46 to 0.71 and holds
 the true $0.7$ near its upper end. The intercept interval holds the true $0.3$.
 
 The field's hyperparameters, its marginal standard deviation $\sigma$ and its
@@ -162,10 +162,9 @@ range, come from `spatial_range()`, in the units of the coordinates.
 spatial_range(fit_svc)
 ```
 
-The standard deviation of the slope field sits between 0.38 and 2.2. The range
-interval runs from 0.81 to 37 on a unit square, so the data say the slopes are
-correlated over at least the size of the study area and leave its upper end
-open.
+The standard deviation of the slope field has a 95% interval from 0.33 to 1.02.
+The range interval runs from 0.57 to 11.25 on a unit square, spanning distances
+within and beyond the study area.
 
 ### Extracting the coefficient surface
 
@@ -213,7 +212,7 @@ c(cor = cor(slope$mean, truth),
   coverage = mean(slope$lo <= truth & truth <= slope$hi))
 ```
 
-The estimates follow the identity line with a correlation of 0.93, and 97% of
+The estimates follow the identity line with a correlation of 0.93, and 97.5% of
 the 200 intervals hold the true slope. The points lie on a line slightly
 flatter than the identity at the extremes, where the prior pulls the field
 toward its mean.
@@ -228,8 +227,9 @@ c(max_rhat = max(dg$rhat), min_ess_bulk = min(dg$ess_bulk))
 glance(fit_svc)[c("n_divergent", "mean_accept")]
 ```
 
-All Rhat values are below 1.05, no transition diverged, and the smallest bulk
-effective sample size is 151 draws. A formal check of the observation model
+The largest Rhat is 1.080, no transition diverged, and the smallest bulk
+effective sample size is 13 draws. The convergence warning calls for a longer
+run before interpreting the estimates. A formal check of the observation model
 compares the dispersion of the counts with data simulated from the posterior:
 
 ```{r svc-dispersion}
@@ -270,11 +270,12 @@ coef(summary(fit_const))["x", ]
 compare_models(constant = fit_const, svc = fit_svc, criterion = "waic")
 ```
 
-The constant model reports one slope of 0.65 with a standard error of 0.053,
+The constant model reports one slope of 0.65 with a standard error of 0.056,
 narrower than the 0.063 of the SVC's $\beta_1$, because it has no field to
-share the effect with. The SVC model is ahead by 40 units of elpd, about two
-and a half standard errors of the difference, at the cost of about 13 more
-effective parameters (`p_eff`).
+share the effect with. The displayed SVC elpd is 39.8 units higher, with a
+standard error of 15.8 for the difference and about 12 more effective
+parameters (`p_eff`). `compare_models()` warns that the SVC fit has failed
+convergence checks; a converged fit is needed to interpret this ranking.
 
 ### Prediction
 
@@ -342,7 +343,7 @@ c(cor = cor(s_new, s_true), range(s_new))
 ```
 
 Over the grid the predicted slope correlates with the true surface at 0.93
-and runs from -0.28 to 1.31. It reproduces the high band along the lower
+and runs from -0.27 to 1.21. It reproduces the high band along the lower
 middle and the low values along the top edge.
 
 ## A spatially varying intercept
@@ -384,7 +385,7 @@ c(cor = cor(icpt$mean, isurf),
 ```
 
 The slope interval holds the true $0.4$, the intercept interval the true $0.5$,
-and the field correlates with the true baseline at 0.88. Here the reported
+and the field correlates with the true baseline at 0.89. Here the reported
 deviation is compared directly with `isurf`, since both are centred.
 
 ```{r svci-plot, fig.alt = "Estimated spatial intercept deviation with 95 percent intervals against the true deviation at 200 sites"}
@@ -439,7 +440,7 @@ temporal_corr(fit_rw1)
 ```
 
 The fixed slope interval holds $0.5$. `temporal_corr()` reports the precision
-$\tau$ of the walk's increments, `tau_tvc`; a precision of 46 is an increment
+$\tau$ of the walk's increments, `tau_tvc`; a precision of 47 is an increment
 standard deviation of about $0.15$ per year.
 
 `tvc()` returns the field draws, one column per time point. `plot()` of the
@@ -479,8 +480,9 @@ plot_slope(seq_len(n_t), s_rw1, 0.5 + wt)
 ```
 
 The estimated slope rises and falls with the truth, with a correlation of 0.98,
-and its band holds the true slope in every year. Convergence and the
-observation model check out as before:
+and its band holds the true slope in every year. The largest Rhat is 1.035,
+the smallest bulk effective sample size is 118, and the dispersion test has
+a p-value of 0.82:
 
 ```{r tvc-check}
 dg_t <- diagnostics(fit_rw1)
@@ -512,9 +514,11 @@ sapply(list(rw1 = fit_rw1, rw2 = fit_rw2, ar1 = fit_ar1), function(f) {
 temporal_corr(fit_ar1)
 ```
 
-All three recover the sine with a correlation of 0.97 or more. The `rw2`
-curve is the smoothest and closest to the truth, which is itself smooth. The
-AR(1) correlation is estimated at 0.83, with an interval that reaches 0.98:
+All three estimated curves correlate with the sine at 0.97 or more. The `rw2`
+curve has the highest displayed correlation, 0.992; its 101 divergent
+transitions among 600 retained draws and maximum Rhat of 1.235 require
+resolving the sampling difficulties before interpreting its uncertainty. The
+AR(1) correlation is estimated at 0.87, with an interval that reaches 0.999:
 on 25 years the data barely separate a strongly correlated stationary process
 from a walk.
 
@@ -538,8 +542,9 @@ compare_models(constant = fit_c, linear = fit_lin, rw1 = fit_rw1,
 
 The interaction finds a real decline in the slope, an interval well below
 zero, because the second half of the sine is lower than the first. It cannot
-follow the rise in the first years. The two walks lead the table, the linear
-interaction comes next and the constant slope last. The plot shows what each
+follow the rise in the first years. The displayed table places the two walks
+first, the linear interaction next and the constant slope last. The RW2
+convergence warning means this ranking needs a converged RW2 fit. The plot shows what each
 model says about the slope in each year.
 
 ```{r tvc-compare-plot, fig.alt = "True time-varying slope with the rw2 estimate, the linear-interaction slope and the constant slope over 25 years"}
@@ -600,7 +605,7 @@ data.frame(year = fy$year, slope = round(p1$fit - p0, 3),
 The bounds are those of the linear predictor at $x = 1$ shifted by the point
 prediction at $x = 0$, so they carry the intercept's uncertainty as well.
 Past year 25 the slope stays at its last fitted level, about 0.30, and the
-interval widens with the horizon, from 0.62 wide in year 25 to 1.62 in year
+interval widens with the horizon, from 0.52 wide in year 25 to 1.66 in year
 30.
 
 ## A time-varying intercept
@@ -686,10 +691,11 @@ legend("bottomleft", "rw1", bty = "n", col = "darkorange", lwd = 2, lty = 3)
 ```
 
 The GP follows the truth more closely than the walk: a correlation of 0.94
-against 0.92 and a root-mean-square error of 0.188 against 0.193. The walk
+against 0.92 and a root-mean-square error of 0.178 against 0.198. The walk
 penalises a change across a 25-day gap as much as one across a 0.3-day gap.
-The lengthscale is estimated at 81 days with a wide interval, from 6 to 227
-days, which says only that the slope changes slowly relative to the gaps. `cov = "matern"` with `nu = 1.5` or
+The lengthscale is estimated at 64 days with a wide interval, from 4 to 232
+days. This GP run has one divergent transition and a maximum Rhat of 1.062;
+its uncertainty estimates need further sampling checks. `cov = "matern"` with `nu = 1.5` or
 `2.5`, `cov = "gaussian"` and `cov = "periodic"` (with `period=` in the time
 units) give smoother or periodic kernels; those take a dense Cholesky
 factorization per gradient evaluation, which costs more as the number of
@@ -731,9 +737,10 @@ t(sapply(fits_p, function(f) {
 sd(0.5 + wt)
 ```
 
-The tight prior raises the precision from 46 to 113, lowers the spread of the
-curve from 0.33 to 0.30 against a true 0.43, and narrows the band from 0.58 to
-0.48. The loose prior moves all three by less than 0.02 or a precision of 7.
+The tight prior raises the precision from 47 to 110, lowers the spread of the
+curve from 0.33 to 0.30 against a true 0.43, and narrows the band from 0.56 to
+0.48. The loose prior changes the curve spread by 0.004, the band width by
+0.041 and the precision by 8.2.
 The correlation with the truth stays between 0.97 and 0.98 under all three,
 so the shape of the slope is set by the data and the prior acts on its
 amplitude. With 250 observations over 25 years the default and the loose prior

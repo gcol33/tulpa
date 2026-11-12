@@ -217,7 +217,7 @@ at the maximum. With `mode = "laplace"` a slope term routes to that
 integration (the [Random slopes](random-slopes.html) article covers it). The
 posterior medians of the two SDs equal the restricted estimates to two
 decimals, and the median of the correlation is 0.52 against the restricted
-0.57, inside an interval from 0.22 to 0.73.
+0.57, inside an interval from 0.25 to 0.73.
 
 ```{r slopes-nested, fit = TRUE}
 s_n <- tulpa(y ~ x + (1 + x | g), data = d2, family = "poisson",
@@ -309,7 +309,7 @@ round(tab_bym2, 4)
 ```
 
 The slope and the total SD agree to within 0.2 posterior SD, and the mixing
-weight's mean differs by 0.03, although tulpa's posterior SD for it is 0.17
+weight's mean differs by 0.014, and tulpa's posterior SD for it is 0.14
 against INLA's 0.13. The intercept differs by half a posterior SD, and the
 next section traces that gap to the method rather than the model.
 
@@ -654,8 +654,8 @@ data.frame(fit = names(tm), seconds = round(unlist(tm), 2), row.names = NULL)
 ```
 
 The three maximum-likelihood fits of the random-intercept model take the same
-time to the precision of one run. INLA fits the BYM2 model faster than tulpa's
-nested Laplace. The brms time includes compiling the Stan model, which a
+time to the precision of one run. The BYM2 fit took 0.31 seconds in tulpa and
+1.76 seconds in INLA. The brms time includes compiling the Stan model, which a
 cached model skips on the next run, and the tulpa AGQ integration of the same
 model spends its time on nine-node quadrature inside each group at every grid
 cell.

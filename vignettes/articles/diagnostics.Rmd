@@ -415,9 +415,9 @@ head(dg_bad[order(-dg_bad$rhat), ], 5)
 check_diagnostics(fit_bad)
 ```
 
-The worst parameters are field values, with Rhat up to 1.61 and bulk-ESS
-between 14 and 35 from 800 post-warmup draws. All three main parameters fail
-both thresholds, and the run has 141 divergences.
+The worst parameters are field values, with Rhat up to 1.44 and bulk-ESS
+between 9 and 63 from 800 post-warmup draws. All three main parameters fail
+both thresholds, and the run has 99 divergences.
 
 A divergence is a trajectory along which the sampler's energy error blew up,
 and it marks a region of the posterior the sampler could not follow.
@@ -431,7 +431,7 @@ n_divergent(fit_bad)
 round(energy_bfmi(fit_bad$energy, fit_bad$chain_id)$per_chain, 2)
 ```
 
-Every chain's E-BFMI is above 0.3 (0.89 to 2.01), so this check does not flag
+Every chain's E-BFMI is above 0.3 (0.95 to 1.16), so this check does not flag
 the run: E-BFMI
 detects a sampler that cannot move between energy levels, which is not the
 failure here.

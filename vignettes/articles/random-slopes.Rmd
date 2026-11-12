@@ -520,8 +520,8 @@ replaces the per-group Laplace step by adaptive Gauss-Hermite quadrature with
 `n_quad` points per dimension (`control$re_cov = "aghq"`). `n_quad = 1` is the
 Laplace step; higher orders integrate each group's non-Gaussian likelihood more
 accurately. It costs far more than the Laplace step: the call below, on one of
-the binary data sets, takes about 50 seconds where the Laplace fit takes about
-20.
+the binary data sets, takes about 100 seconds where the Laplace fit takes about
+50.
 
 ```{r aghq, fit = TRUE}
 db1 <- sim_bin(1)

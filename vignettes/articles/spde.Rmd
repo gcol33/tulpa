@@ -340,7 +340,7 @@ Times are elapsed seconds on the machine that built this page, 300
 observations, two threads. All three meshes report a range between 0.37 and
 0.40, within the posterior SD of the range; the coarsest mesh, with edges as
 long as the range, reports a larger SD, 1.17 against 0.93 and 0.97 on the two
-finer meshes. The finest takes about thirteen times as long as the middle one
+finer meshes. The finest takes about twelve times as long as the middle one
 for a grid error 0.006 lower.
 
 ## Comparing with other spatial fits

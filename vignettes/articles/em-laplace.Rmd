@@ -306,7 +306,7 @@ cover.
 
 One dataset shows the widths; coverage needs many. The chunk below repeats
 the simulation and every fit 100 times and counts how often each 95%
-interval contains the truth. It takes about a minute and a half.
+interval contains the truth. It takes about two minutes.
 
 ```{r replicate, fit = c("runs")}
 one_run <- function(d) {
