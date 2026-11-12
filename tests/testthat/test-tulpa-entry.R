@@ -66,11 +66,7 @@ test_that("tulpa() routes through a sampler (logpost) backend", {
 
 test_that("tulpa(mode = 'ess') samples a random-effect model jointly (gcol33/tulpa#75)", {
   skip_if_not_slow()
-  # The ModelData sampler kernels (ess/hmc/sghmc/...) pack random effects into
-  # the latent layout and sample the variance component jointly with the latent
-  # and fixed effects -- they are not fixed-effect-only GLMs. ESS only declines
-  # the structured spatial / temporal precision (its isotropic proposal cannot
-  # carry it; see test-sample-glmm-structure.R); a plain (1 | g) term is sampled.
+  # The latent layout carries random effects and their sampled variance component.
   d <- make_pois_re()
   fit <- suppressWarnings(
     tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "ess",

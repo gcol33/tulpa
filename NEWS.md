@@ -26,6 +26,22 @@
   start as a gradient mismatch and fell back to numerical gradients, and the
   step search then failed to bracket (#1171).
 
+* The engine owns the structural densities, gradients and coordinate charts of
+  every spatial, temporal, varying-coefficient, spatio-temporal and latent-factor
+  block a model package samples through NUTS, fixed-L HMC, WALNUTS, ESS, SGHMC,
+  SGLD or VI; tulpaRatio's own sampler stack is gone. New public headers carry
+  the pieces consumers read: `model_point_api.h` (log density, gradient,
+  structural prior, chart Jacobian and stored physical fields at a point),
+  `scalar_priors.h`, the field-range and range-prior charts, the HSGP and
+  spatio-temporal kernels, and `vi_variant.h`, one enum and name registry for
+  the VI variants (the public and internal enums had different integer orders
+  behind a direct cast). ESS registers spatial, temporal and GP fields through
+  one Gaussian-reference registry, so IID and GP temporal fields are no longer
+  refused. The collapsed spatial conditional mode starts each new position from
+  zero, so a gradient no longer depends on the order positions were evaluated
+  in (differences up to 4.5e-13). Exported struct layouts changed (ABI 59), so
+  consumer packages must be rebuilt (gcol33/tulpaRatio#176).
+
 # tulpa 0.7.7
 
 ## Models and inference

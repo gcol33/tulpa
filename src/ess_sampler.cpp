@@ -43,12 +43,12 @@ ESSResult run_ess_sampler(
     result.n_slice_exhausted = 0;
     result.n_degenerate_scale = 0;
 
-    // Build Gaussian priors for ESS blocks
-    std::vector<GaussianPrior> gaussian_priors = build_gaussian_priors(data, layout, n_params);
+    // Build Gaussian references for ESS blocks
+    std::vector<GaussianReference> gaussian_references = build_gaussian_references(data, layout, n_params);
 
     // Get non-Gaussian parameters for RWMH
     std::vector<int> non_gaussian = get_non_gaussian_params(layout, n_params);
-    complete_ess_partition(gaussian_priors, non_gaussian, n_params);
+    complete_ess_partition(gaussian_references, non_gaussian, n_params);
 
     // Random-effect terms, and the one-dimensional slice moves the sweep
     // adds for them: each log-SD in the other parameterization (when
@@ -100,7 +100,7 @@ ESSResult run_ess_sampler(
     const int n_rwmh = (int)non_gaussian.size();
     AdaptiveProposal adaptive(n_rwmh, config.adapt_interval);
 
-    EllipseFit ellipse_fit(gaussian_priors, config.n_warmup);
+    EllipseFit ellipse_fit(gaussian_references, config.n_warmup);
 
     // Current state
     std::vector<double> params = init_params;
@@ -118,7 +118,7 @@ ESSResult run_ess_sampler(
     if (config.verbose) {
         Rcpp::Rcout << "Running ESS sampler...\n";
         Rcpp::Rcout << "  Parameters: " << n_params << "\n";
-        Rcpp::Rcout << "  Gaussian blocks: " << gaussian_priors.size() << "\n";
+        Rcpp::Rcout << "  Gaussian blocks: " << gaussian_references.size() << "\n";
         Rcpp::Rcout << "  Non-Gaussian params: " << non_gaussian.size() << "\n";
         Rcpp::Rcout << "  Iterations: " << config.n_iter << " (warmup: " << config.n_warmup << ")\n";
     }
@@ -138,7 +138,7 @@ ESSResult run_ess_sampler(
         // ----------------------------------------------------------------
         // ESS updates for Gaussian-prior blocks
         // ----------------------------------------------------------------
-        for (auto& prior : gaussian_priors) {
+        for (auto& prior : gaussian_references) {
             // Refresh the ellipse scale from the sampled log-SD when bound to a
             // parameter (the RE block tracks sigma_re = exp(log_sigma_re)).
             if (prior.scale_param_idx >= 0) {
@@ -287,7 +287,7 @@ ESSResult run_ess_sampler(
         // Adapt RWMH proposals during warmup, and fit the block ellipses.
         if (iter < config.n_warmup && config.adapt_during_warmup) {
             adaptive.adapt(iter);
-            ellipse_fit.observe(iter, params, gaussian_priors);
+            ellipse_fit.observe(iter, params, gaussian_references);
         }
 
         // ----------------------------------------------------------------

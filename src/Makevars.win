@@ -905,6 +905,7 @@ unity_samplers.o: \
   vi_lowrank.h \
   autodiff.h \
   test_prior_model.h \
+  ess_sampler.h \
   hmc_mass_drift.h \
   hmc_multiscale_temporal_grad.h \
   st_gp_kernel.h \
@@ -941,6 +942,8 @@ unity_samplers.o: \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
+  rwmh.h \
+  re_cov_gibbs_sweep.h \
   hmc_tvc_grad.h \
   hmc_svc_autodiff.h \
   temporal_gp_kernel.h \
@@ -964,12 +967,14 @@ unity_samplers.o: \
   tulpa_priors_tvc.h \
   tulpa_priors_latent.h \
   tulpa_priors_zioi.h \
+  glmm_oracle.h \
   fastmath.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
   spde_matern_map.h \
   svc_range.h \
-  hmc_latent_autodiff.h
+  hmc_latent_autodiff.h \
+  glmm_family_elt.h
 unity_spatial.o: \
   unity_spatial.cpp \
   brasil_export.cpp \

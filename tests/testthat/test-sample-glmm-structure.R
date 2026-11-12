@@ -3,7 +3,7 @@
 # RW2 / AR1) now reach the kernels through the same ModelData builder the Laplace
 # fit uses, so the variance components are sampled jointly with the latent field.
 # These tests check parameter recovery (NUTS), shape / finiteness for the
-# approximate kernels (SMC / VI) on the variance funnel, and the ESS guard.
+# approximate kernels (SMC / VI) on the variance funnel, and ESS field blocks.
 
 # Random intercepts (poisson) through NUTS: the slope, intercept, and the RE
 # standard deviation all recover, and the layout exposes log_sigma_re + b[G].
@@ -163,10 +163,7 @@ test_that("tulpa(mode = 'hmc') routes a random-intercept model through the sampl
   expect_lt(abs(exp(fit$means[["log_sigma_re"]]) - 0.7), 0.35)
 })
 
-# ESS carries random effects (its joint_sigma_re block samples the RE SD) but its
-# isotropic Gaussian-prior block cannot carry a graph-precision spatial / temporal
-# field, so a structured spatial or temporal spec is declined with guidance.
-test_that("ESS declines a structured spatial or temporal field", {
+test_that("ESS carries a structured spatial field through the full target", {
   skip_if_not_slow()
   set.seed(6)
   S <- 12L
@@ -180,8 +177,8 @@ test_that("ESS declines a structured spatial or temporal field", {
                   n_spatial_units = S, adj_row_ptr = as.integer(csr$row_ptr),
                   adj_col_idx = as.integer(csr$col_idx),
                   n_neighbors = as.integer(csr$n_neighbors), scale_factor = 1.0)
-  expect_error(
-    tulpa_sample_glmm(ys, NULL, Xs, "poisson", "ess", spatial_spec = sp_spec,
-                      control = list(n_iter = 200L, warmup = 100L)),
-    "cannot carry")
+  fit <- tulpa_sample_glmm(ys, NULL, Xs, "poisson", "ess", spatial_spec = sp_spec,
+                           control = list(n_iter = 200L, warmup = 100L))
+  expect_gte(ncol(fit$draws), S + ncol(Xs))
+  expect_true(all(is.finite(fit$draws)))
 })

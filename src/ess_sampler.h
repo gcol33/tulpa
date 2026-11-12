@@ -87,14 +87,12 @@ struct ESSResult {
 };
 
 // ============================================================================
-// Gaussian Prior specification
+// Gaussian reference specification
 // ============================================================================
 
-// Specifies which parameters share one zero-mean isotropic ellipse for ESS.
-// Every block the builder below emits is N(0, scale^2 I): the structured
-// blocks that would need a covariance (spatial / temporal / GP) error there
-// rather than being carried here.
-struct GaussianPrior {
+// Gaussian reference blocks for ESS. The slice target divides the full
+// posterior by this reference density, including for correlated fields.
+struct GaussianReference {
     std::vector<int> param_indices;  // Indices of parameters in this block
     double scale;                    // Ellipse is N(0, scale^2 * I)
     int scale_param_idx;             // If >= 0, scale = exp(params[scale_param_idx])
@@ -123,7 +121,7 @@ struct GaussianPrior {
         return u;
     }
 
-    GaussianPrior() : scale(1.0), scale_param_idx(-1) {}
+    GaussianReference() : scale(1.0), scale_param_idx(-1) {}
 
     bool fitted() const { return center.size() > 0; }
 
@@ -171,7 +169,7 @@ struct GaussianPrior {
 template<typename LogLikFn>
 Eigen::VectorXd ess_step(
     const Eigen::VectorXd& f,           // Current parameter values (block)
-    const GaussianPrior& prior,         // Ellipse for this block
+    const GaussianReference& prior,         // Ellipse for this block
     LogLikFn log_lik_fn,                // Function: f -> log_likelihood
     double current_log_lik,             // Current log-likelihood
     int& n_evals,                       // Output: number of likelihood evaluations
@@ -239,23 +237,23 @@ Eigen::VectorXd ess_step(
 }
 
 // ============================================================================
-// Build Gaussian priors from model structure
+// Build Gaussian references from model structure
 // ============================================================================
 
-// Extract which parameters have Gaussian priors from the model
-inline std::vector<GaussianPrior> build_gaussian_priors(
+// Construct Gaussian reference blocks from the parameter layout
+inline std::vector<GaussianReference> build_gaussian_references(
     const ModelData& data,
     const ParamLayout& layout,
     int n_params
 ) {
-    std::vector<GaussianPrior> priors;
+    std::vector<GaussianReference> priors;
 
     // Fixed effects: beta ~ N(0, sigma_beta^2). Walk every process's
     // β block; the slice for process k is
     // [process_beta_start[k], process_beta_start[k] + process_beta_count[k]).
     // All β's share one Gaussian-prior block (single data.sigma_beta).
     {
-        GaussianPrior prior;
+        GaussianReference prior;
         for (int k = 0; k < data.n_processes; k++) {
             const int start = layout.process_beta_start[k];
             const int count = layout.process_beta_count[k];
@@ -286,7 +284,7 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
                        "term's sigma would be applied. Use a per-term sampler "
                        "(NUTS / Gibbs) or a single RE term.");
         }
-        GaussianPrior prior;
+        GaussianReference prior;
         for (int j = layout.re_start; j < layout.re_end; j++) {
             prior.param_indices.push_back(j);
         }
@@ -317,52 +315,22 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
         priors.push_back(prior);
     }
 
-    // Spatial effects (ICAR / BYM2): phi ~ N(0, tau^-1 * Q^-), where Q is the
-    // graph Laplacian with a sum-to-zero constraint. The ESS prior block carries
-    // an isotropic N(0, scale^2 I) covariance only; it cannot represent the
-    // neighbour-coupling precision Q, so sampling a structured spatial field
-    // here would silently drop all spatial smoothing. Error rather than fall
-    // back to N(0, I).
-    if (layout.has_spatial && layout.spatial_end > layout.spatial_start) {
-        Rcpp::stop("ESS prior builder: structured spatial (ICAR/BYM2) block at "
-                   "indices [%d, %d) requires the graph-Laplacian precision "
-                   "tau^-1 Q^-, which the ESS Gaussian-prior block cannot carry. "
-                   "Sample the spatial field with the NUTS/Laplace spatial path, "
-                   "not the legacy ESS sampler.",
-                   layout.spatial_start, layout.spatial_end);
-    }
-
-    // Temporal effects: phi_temporal ~ N(0, tau_temporal^-1 * Q) with Q the
-    // AR1 / RW graph precision. Same limitation as the spatial block: the ESS
-    // Gaussian-prior block is isotropic and cannot carry Q. Error rather than
-    // silently drop the temporal correlation.
-    if (layout.has_temporal && layout.temporal_end > layout.temporal_start) {
-        Rcpp::stop("ESS prior builder: structured temporal (AR1/RW) block at "
-                   "indices [%d, %d) requires the graph precision "
-                   "tau^-1 Q^-, which the ESS Gaussian-prior block cannot carry. "
-                   "Sample the temporal field with the NUTS/Laplace temporal path, "
-                   "not the legacy ESS sampler.",
-                   layout.temporal_start, layout.temporal_end);
-    }
-
-    // GP spatial effects: w ~ N(0, K(sigma2, phi)) with K the (NN)GP kernel
-    // covariance. The ESS Gaussian-prior block is isotropic N(0, scale^2 I) and
-    // cannot represent K -- an isotropic N(0, 1) ellipse combined with the full
-    // log-posterior target (which already carries the GP prior) samples the
-    // wrong distribution (extra N(0,1) factor, no kernel correlation). Error
-    // rather than sample silently wrong, matching the spatial / temporal blocks.
-    if (layout.is_gp && layout.gp_w_end > layout.gp_w_start) {
-        Rcpp::stop("ESS prior builder: GP field block at indices [%d, %d) "
-                   "requires the kernel covariance K(sigma2, phi), which the "
-                   "isotropic ESS Gaussian-prior block cannot carry. Sample the "
-                   "GP field with the NUTS/Laplace GP path, not the legacy ESS "
-                   "sampler.",
-                   layout.gp_w_start, layout.gp_w_end);
+    const std::pair<int, int> fields[] = {
+        {layout.spatial_start, layout.spatial_end},
+        {layout.temporal_start, layout.temporal_end},
+        {layout.gp_w_start, layout.gp_w_end}
+    };
+    for (const auto& field : fields) {
+        if (field.first < 0 || field.second <= field.first) continue;
+        GaussianReference prior;
+        for (int j = field.first; j < field.second; ++j)
+            prior.param_indices.push_back(j);
+        priors.push_back(prior);
     }
 
     // ZI coefficients: beta_zi ~ N(0, zi_prior_sd^2)
     if (layout.has_zi && layout.beta_zi_end > layout.beta_zi_start) {
-        GaussianPrior prior;
+        GaussianReference prior;
         for (int j = layout.beta_zi_start; j < layout.beta_zi_end; j++) {
             prior.param_indices.push_back(j);
         }
@@ -381,7 +349,7 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
     // close the ellipse sits to the block's actual prior, and hence how often a
     // proposal clears the slice.
     if (layout.has_latent && layout.latent_factor_end > layout.latent_factor_start) {
-        GaussianPrior prior;
+        GaussianReference prior;
         for (int j = layout.latent_factor_start; j < layout.latent_factor_end; j++) {
             prior.param_indices.push_back(j);
         }
@@ -478,12 +446,12 @@ inline std::vector<int> get_non_gaussian_params(
 // coordinate (a Metropolis step on the full log-posterior) and only slower
 // than a dedicated move.
 inline void complete_ess_partition(
-    const std::vector<GaussianPrior>& gaussian_priors,
+    const std::vector<GaussianReference>& gaussian_references,
     std::vector<int>& non_gaussian,
     int n_params
 ) {
     std::vector<bool> covered(n_params, false);
-    for (const auto& prior : gaussian_priors)
+    for (const auto& prior : gaussian_references)
         for (int j : prior.param_indices)
             if (j >= 0 && j < n_params) covered[j] = true;
     for (int j : non_gaussian)
@@ -1175,7 +1143,7 @@ struct EllipseFit {
     int n = 0;
     const int start, mid, end;
 
-    EllipseFit(const std::vector<GaussianPrior>& priors, int n_warmup)
+    EllipseFit(const std::vector<GaussianReference>& priors, int n_warmup)
         : start(n_warmup / 2), mid(n_warmup - n_warmup / 4), end(n_warmup) {
         for (const auto& pr : priors) {
             sum.push_back(Eigen::VectorXd::Zero(pr.param_indices.size()));
@@ -1184,7 +1152,7 @@ struct EllipseFit {
     }
 
     void observe(int iter, const std::vector<double>& params,
-                 std::vector<GaussianPrior>& priors) {
+                 std::vector<GaussianReference>& priors) {
         if (iter < start) return;
         for (size_t b = 0; b < priors.size(); b++) {
             const Eigen::VectorXd unit = priors[b].effect_units(params);
@@ -1209,7 +1177,7 @@ struct EllipseFit {
     }
 
 private:
-    void fit(std::vector<GaussianPrior>& priors) const {
+    void fit(std::vector<GaussianReference>& priors) const {
         if (n < 20) return;
         for (size_t b = 0; b < priors.size(); b++) {
             if (priors[b].scale_param_idx >= 0) continue;

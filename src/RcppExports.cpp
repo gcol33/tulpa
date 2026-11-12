@@ -2996,6 +2996,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_ess_correlated_reference
+Rcpp::NumericMatrix cpp_test_ess_correlated_reference();
+RcppExport SEXP _tulpa_cpp_test_ess_correlated_reference() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_test_ess_correlated_reference());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_integrator
 Rcpp::List cpp_test_integrator(Rcpp::NumericVector q, Rcpp::NumericVector p, double epsilon);
 RcppExport SEXP _tulpa_cpp_test_integrator(SEXP qSEXP, SEXP pSEXP, SEXP epsilonSEXP) {
@@ -4072,6 +4082,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 42},
     {"_tulpa_cpp_spde_orphan_mass", (DL_FUNC) &_tulpa_cpp_spde_orphan_mass, 1},
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
+    {"_tulpa_cpp_test_ess_correlated_reference", (DL_FUNC) &_tulpa_cpp_test_ess_correlated_reference, 0},
     {"_tulpa_cpp_test_integrator", (DL_FUNC) &_tulpa_cpp_test_integrator, 3},
     {"_tulpa_cpp_test_gradient_trajectory", (DL_FUNC) &_tulpa_cpp_test_gradient_trajectory, 7},
     {"_tulpa_cpp_test_metric_step", (DL_FUNC) &_tulpa_cpp_test_metric_step, 5},

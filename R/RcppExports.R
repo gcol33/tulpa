@@ -605,6 +605,10 @@ cpp_stochastic_log_determinant <- function(Q_x, Q_i, Q_p, n, n_probes = 30L, n_l
     .Call(`_tulpa_cpp_stochastic_log_determinant`, Q_x, Q_i, Q_p, n, n_probes, n_lanczos, seed)
 }
 
+cpp_test_ess_correlated_reference <- function() {
+    .Call(`_tulpa_cpp_test_ess_correlated_reference`)
+}
+
 cpp_test_integrator <- function(q, p, epsilon) {
     .Call(`_tulpa_cpp_test_integrator`, q, p, epsilon)
 }

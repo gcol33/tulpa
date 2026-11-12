@@ -1,0 +1,12 @@
+test_that("ESS reference correction recovers a correlated Gaussian target", {
+  skip_if_not_installed("posterior")
+  set.seed(4013623)
+  draws <- tulpa:::cpp_test_ess_correlated_reference()
+  mu <- c(.6, -.35)
+  covariance <- matrix(c(1, .8, .8, 1.5), 2)
+  moments <- cbind(draws, draws[, 1]^2, draws[, 2]^2, draws[, 1]*draws[, 2])
+  reference <- c(mu, diag(covariance) + mu^2, covariance[1, 2] + prod(mu))
+  mcse <- apply(moments, 2, function(x) posterior::mcse_mean(matrix(x, ncol = 1)))
+  expect_true(all(is.finite(draws)))
+  expect_lt(max(abs(colMeans(moments) - reference) / mcse), 6)
+})
