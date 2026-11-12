@@ -559,7 +559,7 @@ struct SpatialMarginal {
         last_position = position;
         last_value = -INFINITY;
         const auto p = prepare(position);
-        for (double x : mode) if (!std::isfinite(x)) { mode.assign(d, 0.0); break; }
+        mode.assign(d, 0.0);
         struct Scratch { std::vector<double> grad, delta, x_try; } scratch;
         scratch.grad.resize(d); scratch.delta.resize(d); scratch.x_try.resize(d);
         Inner<double> evaluated;

@@ -6,6 +6,7 @@
 #define TULPA_VI_TYPES_H
 
 #include <Rcpp.h>
+#include <tulpa/vi_variant.h>
 #include <vector>
 #include <cmath>
 #include <memory>
@@ -17,38 +18,6 @@
 
 namespace tulpa {
 namespace vi {
-
-// ---------------------------------------------------------------------
-// VI Variant Enumeration
-// ---------------------------------------------------------------------
-
-enum class VIVariant {
-  MEANFIELD,   // Diagonal covariance: q(θ) = ∏ N(θᵢ; μᵢ, σᵢ²)
-  LOWRANK,     // Low-rank + diagonal: q(θ) = N(θ; μ, LL' + D)
-  FULLRANK,    // Full covariance: q(θ) = N(θ; μ, LL')
-  AUTO         // Auto-select based on dimension
-};
-
-// Convert string to VIVariant
-inline VIVariant parse_variant(const std::string& s) {
-  if (s == "meanfield") return VIVariant::MEANFIELD;
-  if (s == "lowrank") return VIVariant::LOWRANK;
-  if (s == "fullrank") return VIVariant::FULLRANK;
-  if (s == "auto") return VIVariant::AUTO;
-  Rcpp::stop("Unknown VI variant: " + s);
-  return VIVariant::AUTO;  // Never reached
-}
-
-// Convert VIVariant to string
-inline std::string variant_to_string(VIVariant v) {
-  switch (v) {
-    case VIVariant::MEANFIELD: return "meanfield";
-    case VIVariant::LOWRANK: return "lowrank";
-    case VIVariant::FULLRANK: return "fullrank";
-    case VIVariant::AUTO: return "auto";
-  }
-  return "unknown";
-}
 
 // ---------------------------------------------------------------------
 // VI Configuration

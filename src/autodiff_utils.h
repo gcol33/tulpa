@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <tulpa/scalar_priors.h>
 #include <vector>
 #include <Rcpp.h>
 #include "autodiff.h"
@@ -542,19 +543,6 @@ inline T log_lik_beta_binomial(int y, int n, const T& mu, const T& phi) {
 // Prior distributions (templated)
 // ============================================================================
 
-// Normal prior: -0.5 * tau * x^2, the N(0, 1 / tau) log-density up to the
-// constant log_prior_normal_log_normalizer(tau).
-template<typename T>
-inline T log_prior_normal(const T& x, double tau) {
-    return T(-0.5) * tau * x * x;
-}
-
-// 0.5 log(tau / (2 pi)): what log_prior_normal leaves out of the N(0, 1 / tau)
-// log-density.
-inline double log_prior_normal_log_normalizer(double tau) {
-    return 0.5 * std::log(tau / (2.0 * 3.14159265358979323846));
-}
-
 // Capped half-Cauchy on sigma: log_prior_half_cauchy on the supported region,
 // -INFINITY above sigma_max. Pass sigma_max <= 0 to disable the cap.
 //
@@ -577,7 +565,7 @@ inline T log_prior_capped_half_cauchy(const T& log_sigma,
 template<typename T>
 inline T log_prior_gamma(const T& log_phi, double shape, double rate) {
     T phi = safe_exp(log_phi);
-    return (shape - 1.0) * log_phi - rate * phi + log_phi;
+    return log_prior_gamma_value(log_phi,phi,shape,rate);
 }
 
 // shape log(rate) - lgamma(shape): what log_prior_gamma leaves out of the

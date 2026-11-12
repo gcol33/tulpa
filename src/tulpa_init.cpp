@@ -296,6 +296,7 @@ static int tulpa_set_gradient_mode_str_impl(const char* mode_str) {
 
 // Defined in tulpa_shims.cpp — registers laplace / pg / vi / ess shims.
 void tulpa_register_shims(DllInfo* dll);
+void tulpa_register_model_point(DllInfo* dll);
 
 // Defined in tgmrf_registry.cpp — registers the tulpa_register_tgmrf
 // C callable that user DLLs use to insert TgmrfSpec POD into the
@@ -331,6 +332,7 @@ void tulpa_register_callables(DllInfo* dll) {
                         (DL_FUNC)&tulpa_hmc::reconstruct_collapsed_spatial);
 
     tulpa_register_shims(dll);
+    tulpa_register_model_point(dll);
     tulpa_register_tgmrf_callables(dll);
     tulpa_register_cell_coupling_callables(dll);
 

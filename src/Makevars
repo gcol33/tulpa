@@ -276,6 +276,7 @@ unity_glmm.o: \
   smc_sampler.h \
   vi_optimizer.h \
   autodiff.h \
+  st_gp_kernel.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
   hmc_hsgp_kernels.h \
@@ -318,7 +319,6 @@ unity_glmm.o: \
   hmc_gp_autodiff.h \
   spde_matern_map.h \
   hmc_latent_autodiff.h \
-  st_gp_kernel.h \
   small_dense_sym.h \
   sparse_hessian.h \
   curvature3_contract.h \
@@ -347,6 +347,7 @@ unity_hmc.o: \
   hmc_sampler.cpp \
   hmc_walnuts.cpp \
   mclmc.cpp \
+  model_point.cpp \
   hmc_sampler.h \
   ess_sampler.h \
   log_post_impl.h \
@@ -379,6 +380,7 @@ unity_hmc.o: \
   sysmem.h \
   mclmc.h \
   mclmc_modeldata.h \
+  shim_guard.h \
   hmc_temporal.h \
   hmc_svc.h \
   hmc_temporal_multiscale.h \
@@ -840,6 +842,13 @@ unity_samplers.o: \
   tulpa_beta_sampler.cpp \
   tulpa_generic_sampler.cpp \
   vi_sampler.cpp \
+  test_ratio_integrator.cpp \
+  test_ratio_metric.cpp \
+  test_ratio_multiscale.cpp \
+  test_ratio_st.cpp \
+  test_ratio_temporal.cpp \
+  test_ratio_vi.cpp \
+  test_temporal_gp_prior.cpp \
   hmc_chain_stack.h \
   omp_threads.h \
   sampler_model_data.h \
@@ -867,6 +876,13 @@ unity_samplers.o: \
   vi_fullrank.h \
   vi_lowrank.h \
   autodiff.h \
+  test_prior_model.h \
+  hmc_mass_drift.h \
+  hmc_multiscale_temporal_grad.h \
+  st_gp_kernel.h \
+  hmc_temporal_multiscale.h \
+  hmc_tvc.h \
+  tulpa_priors_st.h \
   builtin_family_ll_ad.h \
   re_structure.h \
   icar_kernel.h \
@@ -881,9 +897,7 @@ unity_samplers.o: \
   builtin_family_zi.h \
   hmc_temporal.h \
   hmc_svc.h \
-  hmc_temporal_multiscale.h \
   hmc_latent.h \
-  hmc_tvc.h \
   hmc_sampler_nuts_infra.h \
   hmc_sampler_mass_blocks.h \
   hmc_sampler_adapt.h \
@@ -899,6 +913,10 @@ unity_samplers.o: \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
+  hmc_tvc_grad.h \
+  hmc_svc_autodiff.h \
+  temporal_gp_kernel.h \
+  st_null_space.h \
   hmc_hsgp_kernels.h \
   intrinsic_log_pdet.h \
   hmc_gp_cg.h \
@@ -909,7 +927,6 @@ unity_samplers.o: \
   hmc_gp_nc.h \
   laplace_likelihoods.h \
   nngp_cond.h \
-  temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
   tulpa_priors_gp.h \
   tulpa_priors_msgp.h \
@@ -918,17 +935,13 @@ unity_samplers.o: \
   tulpa_priors_svc.h \
   tulpa_priors_tvc.h \
   tulpa_priors_latent.h \
-  tulpa_priors_st.h \
   tulpa_priors_zioi.h \
   fastmath.h \
-  st_null_space.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
   spde_matern_map.h \
   svc_range.h \
-  hmc_svc_autodiff.h \
-  hmc_latent_autodiff.h \
-  st_gp_kernel.h
+  hmc_latent_autodiff.h
 unity_spatial.o: \
   unity_spatial.cpp \
   brasil_export.cpp \

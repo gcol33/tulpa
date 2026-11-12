@@ -20,10 +20,9 @@ extern "C" void tulpa_fit_vi_impl(
 ) {
     TULPA_SHIM_GUARD_BEGIN
     using tulpa::vi::VIConfig;
-    using tulpa::vi::VIVariant;
 
     VIConfig cfg;
-    cfg.variant = static_cast<VIVariant>(shim_config->variant);
+    cfg.variant = shim_config->variant;
     cfg.max_iter = shim_config->max_iter;
     cfg.mc_samples = shim_config->mc_samples;
     cfg.tol_grad = shim_config->tol_grad;
@@ -50,7 +49,11 @@ extern "C" void tulpa_fit_vi_impl(
 
     tulpa::vi::VIResult res = tulpa::vi::fit_vi(*data, *layout, D, cfg, init_ptr);
 
-    result_out->variant_used = static_cast<int>(res.variant_used);
+    result_out->n_samples = res.samples.rows();
+    result_out->samples = new double[static_cast<size_t>(result_out->n_samples) * D];
+    for (int i = 0; i < result_out->n_samples; ++i) for (int j = 0; j < D; ++j)
+        result_out->samples[static_cast<size_t>(i) * D + j] = res.samples(i,j);
+    result_out->variant_used = res.variant_used;
     result_out->D = D;
     result_out->rank_used = res.rank_used;
     result_out->iterations = res.iterations;

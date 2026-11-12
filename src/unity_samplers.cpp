@@ -16,3 +16,17 @@
 #include "tulpa_beta_sampler.cpp"
 #include "tulpa_generic_sampler.cpp"
 #include "vi_sampler.cpp"
+
+#include "test_ratio_integrator.cpp"
+
+#include "test_ratio_metric.cpp"
+
+#include "test_ratio_multiscale.cpp"
+
+#include "test_ratio_st.cpp"
+
+#include "test_ratio_temporal.cpp"
+
+#include "test_ratio_vi.cpp"
+
+#include "test_temporal_gp_prior.cpp"

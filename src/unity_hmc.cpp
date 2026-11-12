@@ -28,3 +28,4 @@
 #include "hmc_sampler.cpp"
 #include "hmc_walnuts.cpp"
 #include "mclmc.cpp"
+#include "model_point.cpp"

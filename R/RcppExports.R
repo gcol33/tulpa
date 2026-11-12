@@ -605,6 +605,74 @@ cpp_stochastic_log_determinant <- function(Q_x, Q_i, Q_p, n, n_probes = 30L, n_l
     .Call(`_tulpa_cpp_stochastic_log_determinant`, Q_x, Q_i, Q_p, n, n_probes, n_lanczos, seed)
 }
 
+cpp_test_integrator <- function(q, p, epsilon) {
+    .Call(`_tulpa_cpp_test_integrator`, q, p, epsilon)
+}
+
+cpp_test_gradient_trajectory <- function(type, block, mode, path, n = 5L, steps = 7L, epsilon = 0.1) {
+    .Call(`_tulpa_cpp_test_gradient_trajectory`, type, block, mode, path, n, steps, epsilon)
+}
+
+cpp_test_metric_step <- function(type, block, n = 5L, epsilon = 0.15, extreme = FALSE) {
+    .Call(`_tulpa_cpp_test_metric_step`, type, block, n, epsilon, extreme)
+}
+
+cpp_test_metric_epsilon <- function(type, n = 5L) {
+    .Call(`_tulpa_cpp_test_metric_epsilon`, type, n)
+}
+
+cpp_test_metric_geometry <- function(type, block, n = 5L, n_draws = 20000L) {
+    .Call(`_tulpa_cpp_test_metric_geometry`, type, block, n, n_draws)
+}
+
+cpp_test_multiscale_prior <- function(structure, phi, log_sigma2, logit_rho) {
+    .Call(`_tulpa_cpp_test_multiscale_prior`, structure, phi, log_sigma2, logit_rho)
+}
+
+cpp_test_st_gp_log_lik <- function(w, sigma2, phi_space, phi_time, coords, time_values, nn, nn_idx, nn_dist_space, nn_dist_time, nn_order, nonsep_type = "product", cov_space = "exponential", cov_time = "exponential") {
+    .Call(`_tulpa_cpp_test_st_gp_log_lik`, w, sigma2, phi_space, phi_time, coords, time_values, nn, nn_idx, nn_dist_space, nn_dist_time, nn_order, nonsep_type, cov_space, cov_time)
+}
+
+cpp_test_st_gp_margin_normalizer <- function(tau, phi_space, phi_time, n_spatial, n_times, coords, time_values, nn, nn_idx, nn_dist_space, nn_dist_time, nn_order, nonsep_type = "gneiting") {
+    .Call(`_tulpa_cpp_test_st_gp_margin_normalizer`, tau, phi_space, phi_time, n_spatial, n_times, coords, time_values, nn, nn_idx, nn_dist_space, nn_dist_time, nn_order, nonsep_type)
+}
+
+cpp_test_rw1_quadratic_form <- function(phi, cyclic) {
+    .Call(`_tulpa_cpp_test_rw1_quadratic_form`, phi, cyclic)
+}
+
+cpp_test_rw2_quadratic_form <- function(phi, cyclic) {
+    .Call(`_tulpa_cpp_test_rw2_quadratic_form`, phi, cyclic)
+}
+
+cpp_test_ar1_log_density <- function(phi, rho, tau) {
+    .Call(`_tulpa_cpp_test_ar1_log_density`, phi, rho, tau)
+}
+
+cpp_test_temporal_log_prior <- function(phi, type_str, tau, rho, cyclic, n_groups = 1L, augment = FALSE, tvc = FALSE) {
+    .Call(`_tulpa_cpp_test_temporal_log_prior`, phi, type_str, tau, rho, cyclic, n_groups, augment, tvc)
+}
+
+cpp_test_ms_rw_log_lik <- function(phi, sigma2, order, cyclic, augment) {
+    .Call(`_tulpa_cpp_test_ms_rw_log_lik`, phi, sigma2, order, cyclic, augment)
+}
+
+cpp_test_vi_math <- function() {
+    .Call(`_tulpa_cpp_test_vi_math`)
+}
+
+cpp_temporal_gp_log_prior <- function(x, log_sigma2, logit_phi, temporal_params) {
+    .Call(`_tulpa_cpp_temporal_gp_log_prior`, x, log_sigma2, logit_phi, temporal_params)
+}
+
+cpp_temporal_gp_field <- function(x, log_sigma2, logit_phi, temporal_params) {
+    .Call(`_tulpa_cpp_temporal_gp_field`, x, log_sigma2, logit_phi, temporal_params)
+}
+
+cpp_test_st_ar1_constrained_prior <- function(rho, n_spatial, n_times, type = "II") {
+    .Call(`_tulpa_cpp_test_st_ar1_constrained_prior`, rho, n_spatial, n_times, type)
+}
+
 cpp_tgmrf_nuts_joint <- function(y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check, gradient_check_tol, fd_check_step) {
     .Call(`_tulpa_cpp_tgmrf_nuts_joint`, y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check, gradient_check_tol, fd_check_step)
 }

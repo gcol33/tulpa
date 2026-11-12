@@ -2996,6 +2996,260 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_integrator
+Rcpp::List cpp_test_integrator(Rcpp::NumericVector q, Rcpp::NumericVector p, double epsilon);
+RcppExport SEXP _tulpa_cpp_test_integrator(SEXP qSEXP, SEXP pSEXP, SEXP epsilonSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type q(qSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type p(pSEXP);
+    Rcpp::traits::input_parameter< double >::type epsilon(epsilonSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_integrator(q, p, epsilon));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_gradient_trajectory
+Rcpp::List cpp_test_gradient_trajectory(std::string type, std::string block, std::string mode, std::string path, int n, int steps, double epsilon);
+RcppExport SEXP _tulpa_cpp_test_gradient_trajectory(SEXP typeSEXP, SEXP blockSEXP, SEXP modeSEXP, SEXP pathSEXP, SEXP nSEXP, SEXP stepsSEXP, SEXP epsilonSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type type(typeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type block(blockSEXP);
+    Rcpp::traits::input_parameter< std::string >::type mode(modeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type path(pathSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< int >::type steps(stepsSEXP);
+    Rcpp::traits::input_parameter< double >::type epsilon(epsilonSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_gradient_trajectory(type, block, mode, path, n, steps, epsilon));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_metric_step
+Rcpp::List cpp_test_metric_step(std::string type, std::string block, int n, double epsilon, bool extreme);
+RcppExport SEXP _tulpa_cpp_test_metric_step(SEXP typeSEXP, SEXP blockSEXP, SEXP nSEXP, SEXP epsilonSEXP, SEXP extremeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type type(typeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type block(blockSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< double >::type epsilon(epsilonSEXP);
+    Rcpp::traits::input_parameter< bool >::type extreme(extremeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_metric_step(type, block, n, epsilon, extreme));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_metric_epsilon
+Rcpp::List cpp_test_metric_epsilon(std::string type, int n);
+RcppExport SEXP _tulpa_cpp_test_metric_epsilon(SEXP typeSEXP, SEXP nSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type type(typeSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_metric_epsilon(type, n));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_metric_geometry
+Rcpp::List cpp_test_metric_geometry(std::string type, std::string block, int n, int n_draws);
+RcppExport SEXP _tulpa_cpp_test_metric_geometry(SEXP typeSEXP, SEXP blockSEXP, SEXP nSEXP, SEXP n_drawsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type type(typeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type block(blockSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< int >::type n_draws(n_drawsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_metric_geometry(type, block, n, n_draws));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_multiscale_prior
+Rcpp::List cpp_test_multiscale_prior(std::string structure, Rcpp::NumericVector phi, double log_sigma2, double logit_rho);
+RcppExport SEXP _tulpa_cpp_test_multiscale_prior(SEXP structureSEXP, SEXP phiSEXP, SEXP log_sigma2SEXP, SEXP logit_rhoSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type structure(structureSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type log_sigma2(log_sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type logit_rho(logit_rhoSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_multiscale_prior(structure, phi, log_sigma2, logit_rho));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_gp_log_lik
+double cpp_test_st_gp_log_lik(NumericVector w, double sigma2, double phi_space, double phi_time, NumericMatrix coords, NumericVector time_values, int nn, IntegerVector nn_idx, NumericVector nn_dist_space, NumericVector nn_dist_time, IntegerVector nn_order, std::string nonsep_type, std::string cov_space, std::string cov_time);
+RcppExport SEXP _tulpa_cpp_test_st_gp_log_lik(SEXP wSEXP, SEXP sigma2SEXP, SEXP phi_spaceSEXP, SEXP phi_timeSEXP, SEXP coordsSEXP, SEXP time_valuesSEXP, SEXP nnSEXP, SEXP nn_idxSEXP, SEXP nn_dist_spaceSEXP, SEXP nn_dist_timeSEXP, SEXP nn_orderSEXP, SEXP nonsep_typeSEXP, SEXP cov_spaceSEXP, SEXP cov_timeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi_space(phi_spaceSEXP);
+    Rcpp::traits::input_parameter< double >::type phi_time(phi_timeSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type time_values(time_valuesSEXP);
+    Rcpp::traits::input_parameter< int >::type nn(nnSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type nn_dist_space(nn_dist_spaceSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type nn_dist_time(nn_dist_timeSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< std::string >::type nonsep_type(nonsep_typeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type cov_space(cov_spaceSEXP);
+    Rcpp::traits::input_parameter< std::string >::type cov_time(cov_timeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_gp_log_lik(w, sigma2, phi_space, phi_time, coords, time_values, nn, nn_idx, nn_dist_space, nn_dist_time, nn_order, nonsep_type, cov_space, cov_time));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_gp_margin_normalizer
+Rcpp::List cpp_test_st_gp_margin_normalizer(double tau, double phi_space, double phi_time, int n_spatial, int n_times, NumericMatrix coords, NumericVector time_values, int nn, IntegerVector nn_idx, NumericVector nn_dist_space, NumericVector nn_dist_time, IntegerVector nn_order, std::string nonsep_type);
+RcppExport SEXP _tulpa_cpp_test_st_gp_margin_normalizer(SEXP tauSEXP, SEXP phi_spaceSEXP, SEXP phi_timeSEXP, SEXP n_spatialSEXP, SEXP n_timesSEXP, SEXP coordsSEXP, SEXP time_valuesSEXP, SEXP nnSEXP, SEXP nn_idxSEXP, SEXP nn_dist_spaceSEXP, SEXP nn_dist_timeSEXP, SEXP nn_orderSEXP, SEXP nonsep_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type phi_space(phi_spaceSEXP);
+    Rcpp::traits::input_parameter< double >::type phi_time(phi_timeSEXP);
+    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
+    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type time_values(time_valuesSEXP);
+    Rcpp::traits::input_parameter< int >::type nn(nnSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type nn_dist_space(nn_dist_spaceSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type nn_dist_time(nn_dist_timeSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< std::string >::type nonsep_type(nonsep_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_gp_margin_normalizer(tau, phi_space, phi_time, n_spatial, n_times, coords, time_values, nn, nn_idx, nn_dist_space, nn_dist_time, nn_order, nonsep_type));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_rw1_quadratic_form
+double cpp_test_rw1_quadratic_form(NumericVector phi, bool cyclic);
+RcppExport SEXP _tulpa_cpp_test_rw1_quadratic_form(SEXP phiSEXP, SEXP cyclicSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_rw1_quadratic_form(phi, cyclic));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_rw2_quadratic_form
+double cpp_test_rw2_quadratic_form(NumericVector phi, bool cyclic);
+RcppExport SEXP _tulpa_cpp_test_rw2_quadratic_form(SEXP phiSEXP, SEXP cyclicSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_rw2_quadratic_form(phi, cyclic));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_ar1_log_density
+double cpp_test_ar1_log_density(NumericVector phi, double rho, double tau);
+RcppExport SEXP _tulpa_cpp_test_ar1_log_density(SEXP phiSEXP, SEXP rhoSEXP, SEXP tauSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type rho(rhoSEXP);
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_ar1_log_density(phi, rho, tau));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_temporal_log_prior
+double cpp_test_temporal_log_prior(NumericVector phi, std::string type_str, double tau, double rho, bool cyclic, int n_groups, bool augment, bool tvc);
+RcppExport SEXP _tulpa_cpp_test_temporal_log_prior(SEXP phiSEXP, SEXP type_strSEXP, SEXP tauSEXP, SEXP rhoSEXP, SEXP cyclicSEXP, SEXP n_groupsSEXP, SEXP augmentSEXP, SEXP tvcSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< std::string >::type type_str(type_strSEXP);
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< double >::type rho(rhoSEXP);
+    Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
+    Rcpp::traits::input_parameter< int >::type n_groups(n_groupsSEXP);
+    Rcpp::traits::input_parameter< bool >::type augment(augmentSEXP);
+    Rcpp::traits::input_parameter< bool >::type tvc(tvcSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_temporal_log_prior(phi, type_str, tau, rho, cyclic, n_groups, augment, tvc));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_ms_rw_log_lik
+double cpp_test_ms_rw_log_lik(NumericVector phi, double sigma2, int order, bool cyclic, bool augment);
+RcppExport SEXP _tulpa_cpp_test_ms_rw_log_lik(SEXP phiSEXP, SEXP sigma2SEXP, SEXP orderSEXP, SEXP cyclicSEXP, SEXP augmentSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< int >::type order(orderSEXP);
+    Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
+    Rcpp::traits::input_parameter< bool >::type augment(augmentSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_ms_rw_log_lik(phi, sigma2, order, cyclic, augment));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_vi_math
+Rcpp::NumericVector cpp_test_vi_math();
+RcppExport SEXP _tulpa_cpp_test_vi_math() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_test_vi_math());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_temporal_gp_log_prior
+Rcpp::List cpp_temporal_gp_log_prior(Rcpp::NumericVector x, double log_sigma2, double logit_phi, const Rcpp::List& temporal_params);
+RcppExport SEXP _tulpa_cpp_temporal_gp_log_prior(SEXP xSEXP, SEXP log_sigma2SEXP, SEXP logit_phiSEXP, SEXP temporal_paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< double >::type log_sigma2(log_sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type logit_phi(logit_phiSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List& >::type temporal_params(temporal_paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_temporal_gp_log_prior(x, log_sigma2, logit_phi, temporal_params));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_temporal_gp_field
+Rcpp::NumericMatrix cpp_temporal_gp_field(const Rcpp::NumericMatrix& x, const Rcpp::NumericVector& log_sigma2, const Rcpp::NumericVector& logit_phi, const Rcpp::List& temporal_params);
+RcppExport SEXP _tulpa_cpp_temporal_gp_field(SEXP xSEXP, SEXP log_sigma2SEXP, SEXP logit_phiSEXP, SEXP temporal_paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type x(xSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type log_sigma2(log_sigma2SEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type logit_phi(logit_phiSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List& >::type temporal_params(temporal_paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_temporal_gp_field(x, log_sigma2, logit_phi, temporal_params));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_ar1_constrained_prior
+Rcpp::NumericVector cpp_test_st_ar1_constrained_prior(double rho, int n_spatial, int n_times, std::string type);
+RcppExport SEXP _tulpa_cpp_test_st_ar1_constrained_prior(SEXP rhoSEXP, SEXP n_spatialSEXP, SEXP n_timesSEXP, SEXP typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type rho(rhoSEXP);
+    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
+    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
+    Rcpp::traits::input_parameter< std::string >::type type(typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_ar1_constrained_prior(rho, n_spatial, n_times, type));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tgmrf_nuts_joint
 Rcpp::List cpp_tgmrf_nuts_joint(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::IntegerVector obs_idx, std::string family, double phi, std::string cpp_id, int theta_dim, int n_latent, Rcpp::NumericVector beta_init, Rcpp::NumericVector z_init, Rcpp::NumericVector theta_init, Rcpp::NumericVector M_inv_diag, double epsilon0, int n_iter, int n_warmup, int max_depth, double target_accept, double fd_step, bool verbose, int seed, bool debug_gradient_check, double gradient_check_tol, double fd_check_step);
 RcppExport SEXP _tulpa_cpp_tgmrf_nuts_joint(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP obs_idxSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP cpp_idSEXP, SEXP theta_dimSEXP, SEXP n_latentSEXP, SEXP beta_initSEXP, SEXP z_initSEXP, SEXP theta_initSEXP, SEXP M_inv_diagSEXP, SEXP epsilon0SEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_depthSEXP, SEXP target_acceptSEXP, SEXP fd_stepSEXP, SEXP verboseSEXP, SEXP seedSEXP, SEXP debug_gradient_checkSEXP, SEXP gradient_check_tolSEXP, SEXP fd_check_stepSEXP) {
@@ -3818,6 +4072,23 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 42},
     {"_tulpa_cpp_spde_orphan_mass", (DL_FUNC) &_tulpa_cpp_spde_orphan_mass, 1},
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
+    {"_tulpa_cpp_test_integrator", (DL_FUNC) &_tulpa_cpp_test_integrator, 3},
+    {"_tulpa_cpp_test_gradient_trajectory", (DL_FUNC) &_tulpa_cpp_test_gradient_trajectory, 7},
+    {"_tulpa_cpp_test_metric_step", (DL_FUNC) &_tulpa_cpp_test_metric_step, 5},
+    {"_tulpa_cpp_test_metric_epsilon", (DL_FUNC) &_tulpa_cpp_test_metric_epsilon, 2},
+    {"_tulpa_cpp_test_metric_geometry", (DL_FUNC) &_tulpa_cpp_test_metric_geometry, 4},
+    {"_tulpa_cpp_test_multiscale_prior", (DL_FUNC) &_tulpa_cpp_test_multiscale_prior, 4},
+    {"_tulpa_cpp_test_st_gp_log_lik", (DL_FUNC) &_tulpa_cpp_test_st_gp_log_lik, 14},
+    {"_tulpa_cpp_test_st_gp_margin_normalizer", (DL_FUNC) &_tulpa_cpp_test_st_gp_margin_normalizer, 13},
+    {"_tulpa_cpp_test_rw1_quadratic_form", (DL_FUNC) &_tulpa_cpp_test_rw1_quadratic_form, 2},
+    {"_tulpa_cpp_test_rw2_quadratic_form", (DL_FUNC) &_tulpa_cpp_test_rw2_quadratic_form, 2},
+    {"_tulpa_cpp_test_ar1_log_density", (DL_FUNC) &_tulpa_cpp_test_ar1_log_density, 3},
+    {"_tulpa_cpp_test_temporal_log_prior", (DL_FUNC) &_tulpa_cpp_test_temporal_log_prior, 8},
+    {"_tulpa_cpp_test_ms_rw_log_lik", (DL_FUNC) &_tulpa_cpp_test_ms_rw_log_lik, 5},
+    {"_tulpa_cpp_test_vi_math", (DL_FUNC) &_tulpa_cpp_test_vi_math, 0},
+    {"_tulpa_cpp_temporal_gp_log_prior", (DL_FUNC) &_tulpa_cpp_temporal_gp_log_prior, 4},
+    {"_tulpa_cpp_temporal_gp_field", (DL_FUNC) &_tulpa_cpp_temporal_gp_field, 4},
+    {"_tulpa_cpp_test_st_ar1_constrained_prior", (DL_FUNC) &_tulpa_cpp_test_st_ar1_constrained_prior, 4},
     {"_tulpa_cpp_tgmrf_nuts_joint", (DL_FUNC) &_tulpa_cpp_tgmrf_nuts_joint, 24},
     {"_tulpa_cpp_tgmrf_registry_has", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_has, 1},
     {"_tulpa_cpp_tgmrf_registry_size", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_size, 0},

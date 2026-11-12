@@ -23,6 +23,8 @@
 #ifndef TULPA_SAMPLER_FIELD_STORE_H
 #define TULPA_SAMPLER_FIELD_STORE_H
 #include <tulpa/field_range.h>
+#include <tulpa/st_hsgp_kernel.h>
+#include "st_gp_kernel.h"
 
 #include "hmc_gp.h"
 #include "hmc_sampler.h"

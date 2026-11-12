@@ -9,23 +9,15 @@
 
 #include <R_ext/Rdynload.h>
 #include "model_data.h"
+#include "vi_variant.h"
 #include "param_layout.h"
 #include "nuts_api.h"  // check_abi_version
 
 namespace tulpa {
 
-// VI variant enum — mirrors src/vi_types.h's tulpa::vi::VIVariant.
-// Plain int storage so it's ABI-stable across DLLs.
-enum VIVariantCode : int {
-    VI_AUTO      = 0,
-    VI_MEANFIELD = 1,
-    VI_LOWRANK   = 2,
-    VI_FULLRANK  = 3
-};
-
 // POD config that the shim translates into the internal VIConfig.
 struct VIShimConfig {
-    int variant;            // VIVariantCode
+    vi::VIVariant variant;
     int max_iter;
     int mc_samples;
     double tol_grad;
@@ -51,7 +43,7 @@ struct VIShimConfig {
 //   d_diag:     [D] for low-rank, nullptr otherwise
 //   elbo_history: [iterations] (caller-owned)
 struct VIShimResult {
-    int variant_used;       // VIVariantCode
+    vi::VIVariant variant_used;
     int D;
     int rank_used;
     int iterations;
@@ -64,7 +56,11 @@ struct VIShimResult {
     double* d_diag;
     double* elbo_history;
 
+    int n_samples;
+    double* samples;
+
     void free_buffers() {
+        if (samples) { delete[] samples; samples = nullptr; }
         if (mu)           { delete[] mu;           mu = nullptr; }
         if (Sigma)        { delete[] Sigma;        Sigma = nullptr; }
         if (L_factor)     { delete[] L_factor;     L_factor = nullptr; }
@@ -96,7 +92,7 @@ inline VIFitFn get_vi_fit_fn() {
 // Fill a VIShimConfig with the same defaults the internal struct uses.
 inline VIShimConfig default_vi_config() {
     VIShimConfig c;
-    c.variant = VI_AUTO;
+    c.variant = vi::VIVariant::AUTO;
     c.max_iter = 10000;
     c.mc_samples = 10;
     c.tol_grad = 1e-4;
