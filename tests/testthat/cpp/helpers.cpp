@@ -822,21 +822,6 @@ List cpp_test_compute_linear_predictors(
 #include "hmc_temporal_multiscale.h"
 
 // [[Rcpp::export]]
-double cpp_test_rw1_quadratic_form(NumericVector phi, bool cyclic) {
-  return tulpa_temporal::rw1_quadratic_form(phi.begin(), phi.size(), cyclic);
-}
-
-// [[Rcpp::export]]
-double cpp_test_rw2_quadratic_form(NumericVector phi, bool cyclic) {
-  return tulpa_temporal::rw2_quadratic_form(phi.begin(), phi.size(), cyclic);
-}
-
-// [[Rcpp::export]]
-double cpp_test_ar1_log_density(NumericVector phi, double rho, double tau) {
-  return tulpa_temporal::ar1_log_density(phi.begin(), phi.size(), rho, tau);
-}
-
-// [[Rcpp::export]]
 double cpp_test_temporal_log_prior(
     NumericVector phi,
     std::string type_str,
