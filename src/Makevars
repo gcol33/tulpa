@@ -225,6 +225,7 @@ unity_glmm.o: \
   vi_lowrank.h \
   vi_fullrank.h \
   sampler_field_store.h \
+  hmc_spatial_marginal.h \
   hmc_hsgp.h \
   hmc_svc.h \
   hmc_temporal.h \

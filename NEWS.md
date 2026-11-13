@@ -31,6 +31,14 @@
   states and use warmup; `n_gibbs` counts all sweeps and defaults to 2000
   (Tanner and Wong 1987; Robert and Casella 1999, sections 7.3.2-7.3.3) (#1175).
 
+* Collapsed ICAR, BYM2 and GP sampling requires an explicitly Gaussian
+  spatial likelihood and exact curvature callbacks. Non-Gaussian requests
+  error with guidance to full-field NUTS. Gaussian NUTS/HMC fits report their
+  analytic marginal target and Tier 1, with row-aligned exact conditional
+  fields in the joint draws. An uncorrected Laplace spatial marginal is
+  classified as Tier 2 and refused. The C-ABI result carries the target and
+  tier. ABI 61 requires rebuilding tulpaRatio and tulpaObs (#1177).
+
 * `tulpa_tgmrf(mode = "imh")` uses pseudo-marginal independence MH against
   an unbiased importance estimate of the true marginal likelihood, with
   joint beta and latent draws retained on rejection. The shared IS estimator

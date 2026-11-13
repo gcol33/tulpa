@@ -8,6 +8,6 @@ result <- tryCatch(tulpa:::tulpa_dispatch("hmc", fitter_args = list(
   control = list(n_iter = 80L, warmup = 40L, n_chains = 1L,
                  seed = 1174L, max_treedepth = 3L))),
   error = function(e) conditionMessage(e))
-stopifnot(identical(result,
-  "Collapsed spatial inference requires double and arena likelihood weights and priors"))
+stopifnot(is.character(result), grepl("uncorrected Laplace marginal (Tier 2)",
+  result, fixed = TRUE), grepl("full-field NUTS", result, fixed = TRUE))
 print(result)

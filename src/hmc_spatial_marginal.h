@@ -3,6 +3,7 @@
 
 #include <tulpa/model_data.h>
 #include <tulpa/param_layout.h>
+#include <tulpa/sampling_target.h>
 #include <vector>
 #include <string>
 #include <random>
@@ -12,6 +13,11 @@ namespace tulpa_hmc {
 inline bool has_collapsed_spatial(const tulpa::ParamLayout& layout) {
     return layout.is_icar_collapsed || layout.is_bym2_collapsed || layout.is_gp_collapsed;
 }
+
+tulpa::SamplingTarget spatial_sampling_target(const tulpa::ModelData& data,
+    const tulpa::ParamLayout& layout);
+void require_gaussian_spatial_marginal(const tulpa::ModelData& data,
+    const tulpa::ParamLayout& layout);
 
 double compute_collapsed_spatial(const std::vector<double>& params, const tulpa::ModelData& data,
     const tulpa::ParamLayout& layout, bool prior_only = false);

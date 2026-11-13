@@ -23,8 +23,12 @@ namespace tulpa { void prepare_field_impl(ModelData*, FieldSetup); }
 static void fill_nuts_result_from_cpp(
     tulpa::NUTSResult* out,
     const tulpa_hmc::HMCResultCpp& hmc,
-    int n_params
+    int n_params,
+    const tulpa::ModelData& data,
+    const tulpa::ParamLayout& layout
 ) {
+    out->target = tulpa_hmc::spatial_sampling_target(data, layout);
+    out->inference_tier = tulpa::sampling_target_tier(out->target);
     out->n_params = n_params;
     out->epsilon = hmc.epsilon;
     std::strncpy(out->sampler, hmc.sampler.c_str(), 63);
@@ -155,7 +159,7 @@ static void tulpa_run_nuts_generic_impl(
         inv_metric_init, epsilon_init
     );
 
-    fill_nuts_result_from_cpp(result_out, hmc, n_params);
+    fill_nuts_result_from_cpp(result_out, hmc, n_params, *data, *layout);
     TULPA_SHIM_GUARD_END("tulpa_run_nuts_generic")
 }
 
@@ -220,7 +224,7 @@ static void tulpa_run_nuts_chains_impl(
                    static_cast<int>(chains.size()), n_chains);
     }
     for (int c = 0; c < n_chains; c++) {
-        fill_nuts_result_from_cpp(&results_out[c], chains[c], n_params);
+        fill_nuts_result_from_cpp(&results_out[c], chains[c], n_params, *data, *layout);
     }
     TULPA_SHIM_GUARD_END("tulpa_run_nuts_chains")
 }

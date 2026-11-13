@@ -23,6 +23,7 @@
 
 #include "hmc_sampler.h"
 #include "hmc_field_coordinates.h"
+#include "hmc_spatial_marginal.h"
 #include "hmc_chain_checkpoint.h"
 #include "omp_threads.h"
 
@@ -249,6 +250,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   GradientModeFitScope grad_mode_scope;
 
   auto validate_initial_positions = [&]() {
+    require_gaussian_spatial_marginal(data, layout);
     for (int c = 0; c < n_chains; ++c) {
       const auto coordinates = make_field_coordinates(q_init_per_chain[c], data, layout);
       std::vector<double> initial = q_init_per_chain[c];

@@ -244,6 +244,12 @@ struct LikelihoodSpec {
     // Optional fixed eta values for likelihood-based field coordinates.
     // An empty vector uses the predictors at zero parameter values.
     std::vector<double> working_eta;
+
+    // The log likelihood is quadratic in the spatial field, whose only
+    // likelihood dependence is through eta. Extra priors are field-independent.
+    // Both eta-weight callbacks supply the exact score and observed curvature.
+    // This contract permits analytic spatial integration and Gaussian draws.
+    bool gaussian_spatial_marginal = false;
 };
 
 } // namespace tulpa

@@ -65,6 +65,7 @@ HMCResultCpp run_hmc_chain_cpp(
   // what confines a fallback to this fit; nested inside a caller's own scope it
   // inherits the already-verified state and re-checks nothing.
   GradientModeFitScope grad_mode_scope;
+  require_gaussian_spatial_marginal(data, layout);
   const auto coordinates = make_field_coordinates(q_init, data, layout);
   std::vector<double> sampling_init = q_init;
   coordinates.inverse(sampling_init);

@@ -16,6 +16,9 @@
 #' @param shared Optional shared-effect handle (see model docs).
 #' @param parameterization `"auto"` scales field amplitudes using prior and
 #'   observation information; `"standard"` samples effects directly.
+#'   For ICAR and BYM2, `"collapsed"` analytically integrates Gaussian spatial effects under
+#'   NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+#'   collapsing is refused; use `"auto"` for full-field NUTS.
 #' @param prior_sigma Optional PC prior on the field's standard deviation,
 #'   `c(U, alpha)` with \eqn{P(\sigma > U) = \alpha}, read by the
 #'   nested-Laplace and sampler paths, carried to the precision for CAR and
@@ -45,17 +48,6 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
   # Check for group_var if level = "group"
   if (level == "group" && is.null(group_var)) {
     stop("`group_var` is required when level = 'group'", call. = FALSE)
-  }
-
-  # Collapsed parameterization is deprecated (archived 2026-03-10)
-  if (parameterization == "collapsed") {
-    warning(
-      "Collapsed parameterization is deprecated and will be removed in a future version.\n",
-      "Collapsed + HMC creates poor posterior geometry (88x slower than standard).\n",
-      "Use standard parameterization instead. A Gibbs backend for large spatial ",
-      "models is planned.",
-      call. = FALSE
-    )
   }
 
   # Collapsed not supported with proper CAR
@@ -392,17 +384,6 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
 
   if (level == "group" && is.null(group_var)) {
     stop("`group_var` is required when level = 'group'", call. = FALSE)
-  }
-
-  # Collapsed parameterization is deprecated (archived 2026-03-10)
-  if (parameterization == "collapsed") {
-    warning(
-      "Collapsed parameterization is deprecated and will be removed in a future version.\n",
-      "Collapsed + HMC creates poor posterior geometry (14x slower than standard).\n",
-      "Use standard parameterization instead. A Gibbs backend for large spatial ",
-      "models is planned.",
-      call. = FALSE
-    )
   }
 
   # Compute scale factor if not provided. Per connected component, with the

@@ -17,6 +17,7 @@
 #include "model_data.h"
 #include "param_layout.h"
 #include "walnuts_config.h"
+#include "sampling_target.h"
 
 namespace tulpa {
 
@@ -84,6 +85,9 @@ struct NUTSResult {
     int n_spatial_fields = 0;
     double* spatial_draws = nullptr;      // [n_sample * n_spatial_fields] row-major
     double* unstructured_draws = nullptr; // BYM2 conditional unstructured field
+
+    SamplingTarget target = SamplingTarget::JOINT_POSTERIOR;
+    int inference_tier = 1;
 
     void free_buffers() {
         if (samples)        { delete[] samples;         samples = nullptr; }

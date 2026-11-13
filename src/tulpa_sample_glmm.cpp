@@ -40,6 +40,7 @@
 #include "vi_fullrank.h"           // compute_fullrank_elbo_grad + entropy grad
 #include "sampler_log_prob.h"       // tulpa::sampler_log_prob_rows
 #include "sampler_field_store.h"    // tulpa::stored_draws, store_field_rows
+#include "hmc_spatial_marginal.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -116,6 +117,35 @@ Rcpp::NumericVector col_means(const Rcpp::NumericMatrix& draws) {
         for (int j = 0; j < p; j++) m[j] += draws(s, j) / (n > 0 ? n : 1);
     if (n > 0) m.names() = Rcpp::colnames(draws);
     return m;
+}
+
+Rcpp::NumericMatrix spatial_joint_draws(
+    const std::vector<tulpa_hmc::HMCResultCpp>& chains,
+    const tulpa_hmc::StackedChains& outer, const ParamLayout& layout,
+    const ParamLayout& joint) {
+    const int begin = layout.is_gp ? joint.gp_w_start : joint.spatial_start;
+    const int width = joint.total_params - layout.total_params;
+    Rcpp::NumericMatrix draws(outer.n_total, joint.total_params);
+    int row = 0;
+    for (const auto& chain : chains) {
+        const int units = layout.is_gp ? chain.n_gp_collapsed : chain.n_icar_collapsed;
+        const auto& fields = layout.is_gp ? chain.gp_w_star_flat : chain.icar_phi_star_flat;
+        const int count = tulpa_hmc::usable_chain_samples(chain, layout.total_params);
+        const size_t need = static_cast<size_t>(count) * units;
+        if (units < 1 || fields.size() < need ||
+            (layout.is_bym2 && chain.bym2_theta_star_flat.size() < need))
+            Rcpp::stop("Conditional spatial draws must match the retained outer rows");
+        for (int s = 0; s < count; ++s, ++row) {
+            for (int j = 0; j < layout.total_params; ++j)
+                draws(row, j < begin ? j : j + width) = outer.draws(row, j);
+            for (int j = 0; j < units; ++j) {
+                draws(row, begin + j) = fields[static_cast<size_t>(s) * units + j];
+                if (layout.is_bym2)
+                    draws(row, begin + units + j) = chain.bym2_theta_star_flat[static_cast<size_t>(s) * units + j];
+            }
+        }
+    }
+    return draws;
 }
 
 } // namespace
@@ -349,6 +379,10 @@ Rcpp::List cpp_tulpa_sample_glmm(
     // any other backend rather than drop it: silently sampling from the default
     // start would answer a different question than the caller asked.
     const bool is_nuts = (backend == "nuts" || backend == "hmc");
+    const bool collapsed = tulpa_hmc::has_collapsed_spatial(in.layout);
+    tulpa_hmc::require_gaussian_spatial_marginal(in.data, in.layout);
+    if (collapsed && !is_nuts)
+        Rcpp::stop("Collapsed Gaussian spatial inference is supported by NUTS/HMC. Use backend = 'hmc' or a full-field parameterization.");
     // The metric is the NUTS/HMC kernel's own knob. Parsed for every backend so
     // an unrecognised name is rejected wherever it is written, and refused on
     // the backends that have no metric rather than accepted and ignored.
@@ -432,6 +466,22 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("inv_metric") = st.inv_metric,
             Rcpp::Named("final_position") = st.final_position,
             Rcpp::Named("sampler") = "nuts");
+        const auto target = tulpa_hmc::spatial_sampling_target(in.data, in.layout);
+        out["target"] = tulpa::sampling_target_name(target);
+        out["inference_tier"] = tulpa::sampling_target_tier(target);
+        out["inference_mode"] = "exact";
+        if (collapsed) {
+            ModelData joint_data = in.data;
+            joint_data.icar_collapsed = joint_data.bym2_collapsed = joint_data.gp_collapsed = false;
+            const auto joint_layout = tulpa_hmc::compute_param_layout(joint_data);
+            auto draws = spatial_joint_draws(chains, st, in.layout, joint_layout);
+            Rcpp::colnames(draws) = tulpa::sampler_param_names(joint_data, joint_layout, fixed_names);
+            out["draws"] = draws;
+            out["means"] = col_means(draws);
+            out["n_params"] = joint_layout.total_params;
+            out["sampler_draws"] = st.draws;
+            out["spatial_collapsed"] = true;
+        }
         return out;
     }
 

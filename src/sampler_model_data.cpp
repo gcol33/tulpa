@@ -149,6 +149,10 @@ void build_sampler_model_inputs(
     if (builtin_family_has_ad(family)) {
         in.spec.ll_arena = &builtin_family_ll_ad<tulpa::arena::Var>;
     }
+    if (family == "gaussian") {
+        in.spec.gaussian_spatial_marginal = true;
+        in.spec.eta_weights_arena_fn = &builtin_gaussian_weights_arena;
+    }
 
     in.n_trials.assign(n_trials.begin(), n_trials.end());
     in.resp.y        = y.begin();
@@ -205,6 +209,7 @@ void build_sampler_model_inputs(
             // count family, so the family-specific tag only has to be non-NONE
             // for the layout to size beta_zi and the callback to see the logit.
             in.data.zi_type = ZIType::ZI_POISSON;
+            in.spec.gaussian_spatial_marginal = false;
         }
     }
 

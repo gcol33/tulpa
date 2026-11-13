@@ -51,6 +51,19 @@ inline bool builtin_family_has_ad(const std::string& family) {
     return ad_family_kind(family) != AdFamily::UNRESOLVED;
 }
 
+inline void builtin_gaussian_weights_arena(
+    int i, const arena::Var* eta, const arena::Var& logit_zi, const arena::Var& logit_oi,
+    const std::vector<arena::Var>&, const ModelData& data,
+    const ParamLayout& layout, const void* response,
+    arena::Var* score, arena::Var* weights) {
+    const double at = eta[0].val();
+    double s, h;
+    builtin_family_eta_weights(i, &at, logit_zi.val(), logit_oi.val(), {},
+        data, layout, response, &s, &h);
+    score[0] = s - h * (eta[0] - at);
+    weights[0] = arena::Var(h);
+}
+
 // Unweighted base log-density at an arbitrary response value, templated over
 // the AD type. Split out from builtin_family_ll_ad so the zero-inflation
 // mixture can evaluate the same density at both the realized y and at 0

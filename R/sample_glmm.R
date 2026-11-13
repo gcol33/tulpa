@@ -182,6 +182,10 @@
 #'   apply. An `"smc"` fit also carries `log_evidence` and its Monte Carlo
 #'   standard error `log_evidence_se`, or `NA` with `log_evidence_declined`
 #'   naming the normalizing constant the engine does not know.
+#'   Collapsed Gaussian NUTS/HMC fits carry `target`, `inference_tier`,
+#'   full joint `draws` including the conditional field, and `sampler_draws`
+#'   for the outer chain. `log_prob`, `final_position`, and `inv_metric`
+#'   describe the outer marginal chain and its coordinates.
 #' @noRd
 tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               phi2 = NULL,
@@ -354,6 +358,10 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     smc_bridge_end  = smc_bridge_end
   )
   if (is.null(res$tempered_draws)) res$tempered_beta <- NULL
+  if (isTRUE(res$spatial_collapsed)) {
+    spatial_spec$parameterization <- "standard"
+    spatial_spec$gp_parameterization <- 0L
+  }
 
   # The C++ kernel names every column of the full parameter vector (fixed effects
   # + latent effects + variance-component hyperparameters) via the ParamLayout,

@@ -315,6 +315,7 @@ Rcpp::List cpp_test_collapsed_spatial(Rcpp::NumericVector y, Rcpp::NumericMatrix
     in.spec.ll_arena = unit_gaussian_likelihood<tulpa::arena::Var>;
     in.spec.eta_weights_fn = unit_gaussian_weights<double>;
     in.spec.eta_weights_arena_fn = unit_gaussian_weights<tulpa::arena::Var>;
+    in.spec.gaussian_spatial_marginal = true;
     in.data.model_response_data = &response;
     const auto layout = tulpa_hmc::compute_param_layout(in.data);
     if (!tulpa_hmc::has_collapsed_spatial(layout) || layout.total_params != static_cast<int>(q.size()))
@@ -344,6 +345,8 @@ Rcpp::List cpp_test_collapsed_spatial(Rcpp::NumericVector y, Rcpp::NumericMatrix
         }
     }
     return Rcpp::List::create(Rcpp::Named("lp") = lp, Rcpp::Named("prior") = prior,
+        Rcpp::Named("target") = tulpa::sampling_target_name(tulpa_hmc::spatial_sampling_target(in.data, layout)),
+        Rcpp::Named("inference_tier") = tulpa::sampling_target_tier(tulpa_hmc::spatial_sampling_target(in.data, layout)),
         Rcpp::Named("gradient") = gradient, Rcpp::Named("numerical") = numerical,
         Rcpp::Named("prior_gradient") = prior_gradient, Rcpp::Named("numerical_prior") = numerical_prior,
         Rcpp::Named("verified") = verified,

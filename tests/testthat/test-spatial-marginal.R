@@ -27,6 +27,8 @@ test_that("collapsed areal targets and reconstructed fields match dense Gaussian
     point <- if (type == 'icar') c(.1, -.2, .4) else c(.1, -.2, .3, -.7)
     at <- function(q, draws = 0L) tulpa:::cpp_test_collapsed_spatial(y, X, sp, q, draws)
     r <- at(point, 20000L); zero <- at(numeric(length(point)))
+    expect_identical(r$inference_tier, 1L)
+    expect_match(r$target, "Analytic Gaussian spatial marginal", fixed = TRUE)
     residual <- y - X %*% point[1:2]
     if (type == 'icar') {
       precision <- exp(point[3]) * Q
@@ -84,6 +86,8 @@ test_that("collapsed GP integration and physical field draws match dense Gaussia
     point <- c(.1, -.2, -.3, -.4)
     at <- function(q, draws = 0L) tulpa:::cpp_test_collapsed_spatial(y, X, sp, q, draws)
     r <- at(point, 20000L)
+    expect_identical(r$inference_tier, 1L)
+    expect_match(r$target, "Analytic Gaussian spatial marginal", fixed = TRUE)
     z <- as.matrix(dist(sp$coords)) / exp(point[4]); variance <- exp(point[3])
     K <- switch(kernel, exponential = variance * exp(-z),
       matern52 = variance * (1 + sqrt(5) * z + 5 * z^2 / 3) * exp(-sqrt(5) * z),

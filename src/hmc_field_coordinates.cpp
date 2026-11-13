@@ -599,8 +599,9 @@ struct SpatialMarginal {
         : owner(&model), model_id(model.unique_id), data(model),
           n(outer.is_gp ? model.gp_data.n_obs : model.n_spatial_units),
           d(outer.is_bym2 ? 2 * n : n), outer_size(outer.total_params) {
+        require_gaussian_spatial_marginal(model, outer);
         const auto& spec = *static_cast<const tulpa::LikelihoodSpec*>(model.likelihood_spec);
-        if (!spec.ll_arena || !spec.eta_weights_fn || !spec.eta_weights_arena_fn ||
+        if (!spec.ll_double || !spec.ll_arena || !spec.eta_weights_fn || !spec.eta_weights_arena_fn ||
             (spec.extra_prior && !spec.extra_prior_arena))
             Rcpp::stop("Collapsed spatial inference requires double and arena likelihood weights and priors");
         data.icar_collapsed = data.bym2_collapsed = data.gp_collapsed = false;
@@ -812,13 +813,27 @@ template<class Map> static tulpa::FieldCoordinateOperator coordinate_operator(st
 static SpatialMarginal& marginal(const ModelData& data, const ParamLayout& layout) {
     static thread_local SpatialMarginal* cache = nullptr;
     if (!cache || cache->owner != &data || cache->model_id != data.unique_id) {
+        auto* replacement = new SpatialMarginal(data, layout);
         delete cache;
-        cache = new SpatialMarginal(data, layout);
+        cache = replacement;
     }
     return *cache;
 }
 
 } // namespace spatial_coordinates
+
+tulpa::SamplingTarget spatial_sampling_target(const ModelData& data, const ParamLayout& layout) {
+    if (!has_collapsed_spatial(layout)) return tulpa::SamplingTarget::JOINT_POSTERIOR;
+    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+    return spec && spec->gaussian_spatial_marginal
+        ? tulpa::SamplingTarget::GAUSSIAN_SPATIAL_MARGINAL
+        : tulpa::SamplingTarget::LAPLACE_SPATIAL_MARGINAL;
+}
+
+void require_gaussian_spatial_marginal(const ModelData& data, const ParamLayout& layout) {
+    if (spatial_sampling_target(data, layout) == tulpa::SamplingTarget::LAPLACE_SPATIAL_MARGINAL)
+        Rcpp::stop("Non-Gaussian collapsed spatial inference targets an uncorrected Laplace marginal (Tier 2) and is unavailable. Use full-field NUTS with parameterization = 'auto' (or 'standard' for ICAR/BYM2, 'noncentered' for GP). Custom Gaussian likelihoods must declare gaussian_spatial_marginal and supply exact likelihood weights.");
+}
 
 double compute_collapsed_spatial(const std::vector<double>& params, const ModelData& data,
     const ParamLayout& layout, bool prior_only) {

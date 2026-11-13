@@ -66,6 +66,9 @@
 #'   `"auto"` scales covariance-whitened coordinates using prior and observation
 #'   information. `"noncentered"` samples `z ~ N(0, I)` and reconstructs the
 #'   field as `w = f(z, sigma2, phi)`. `"centered"` samples field values.
+#'   `"collapsed"` analytically integrates a Gaussian-likelihood NNGP field
+#'   under NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+#'   collapsing is refused; use `"auto"` for full-field NUTS.
 #'
 #' @return A `tulpa_gp` object (also of class `tulpa_spatial`).
 #'
@@ -149,16 +152,6 @@ spatial_gp <- function(coords,
 
   approx <- match.arg(approx)
   parameterization <- match.arg(parameterization)
-
-  # Collapsed parameterization is deprecated (archived 2026-03-10)
-  if (parameterization == "collapsed") {
-    warning(
-      "Collapsed parameterization is deprecated and will be removed in a future version.\n",
-      "Collapsed + HMC creates poor posterior geometry.\n",
-      "Use 'centered' or 'noncentered' instead.",
-      call. = FALSE
-    )
-  }
 
   coord_vars <- .parse_coord_spec(coords, "gp()", allow_nd = TRUE)
 
