@@ -77,7 +77,10 @@ original coordinate units either way.}
 \item{parameterization}{Latent parameterization for the exact-NUTS field.
 \code{"auto"} scales covariance-whitened coordinates using prior and observation
 information. \code{"noncentered"} samples \code{z ~ N(0, I)} and reconstructs the
-field as \code{w = f(z, sigma2, phi)}. \code{"centered"} samples field values.}
+field as \code{w = f(z, sigma2, phi)}. \code{"centered"} samples field values.
+\code{"collapsed"} analytically integrates a Gaussian-likelihood NNGP field
+under NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+collapsing is refused; use \code{"auto"} for full-field NUTS.}
 
 \item{x}{A \code{tulpa_gp} or \code{tulpa_hsgp} specification.}
 

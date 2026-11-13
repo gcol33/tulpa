@@ -30,7 +30,10 @@ ICAR (\code{type = "car"}).}
 \item{shared}{Optional shared-effect handle (see model docs).}
 
 \item{parameterization}{\code{"auto"} scales field amplitudes using prior and
-observation information; \code{"standard"} samples effects directly.}
+observation information; \code{"standard"} samples effects directly.
+For ICAR and BYM2, \code{"collapsed"} analytically integrates Gaussian spatial effects under
+NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+collapsing is refused; use \code{"auto"} for full-field NUTS.}
 
 \item{prior_sigma}{Optional PC prior on the field's standard deviation,
 \code{c(U, alpha)} with \eqn{P(\sigma > U) = \alpha}, read by the

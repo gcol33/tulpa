@@ -32,7 +32,10 @@ ICAR fields. \code{NULL} uses the engine's default anchor
 \eqn{P(\sigma > 3) = 0.01}.}
 
 \item{parameterization}{\code{"auto"} scales field amplitudes using prior and
-observation information; \code{"standard"} samples effects directly.}
+observation information; \code{"standard"} samples effects directly.
+For ICAR and BYM2, \code{"collapsed"} analytically integrates Gaussian spatial effects under
+NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+collapsing is refused; use \code{"auto"} for full-field NUTS.}
 }
 \value{
 A \code{tulpa_spatial} object with \code{type = "car_proper"}.
