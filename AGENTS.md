@@ -49,7 +49,7 @@ debias, or outer integration), not as standalone alternatives.
 ## Key Design Principles
 
 1. **Tier system encodes correctness, not hot path.** Tier 1 (exact MCMC), Tier 2 (Laplace), Tier 3 (VI). Hot path is consumer-dependent — for Gaussian-latent hierarchical workloads the typical path is Tier 2 with optional Tier 1 debiasing. Auto mode never silently chooses Tier 3.
-2. **Gradient progression N→A→A_r→H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
+2. **Gradient progression N -> A_r -> H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
 3. **Runtime gradient verification**: Before NUTS sampling, verify active gradient against numerical.
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
 5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions. Conventions that keep this single-sourced: log-prior helpers are named `log_prior_*` (e.g. `log_prior_car_proper`, `log_prior_sigma2_pc`); the column-major Rcpp matrix builder `build_matrix_colmajor` is one template over the element type; the spatially-/temporally-varying-coefficient `print`/`summary` methods delegate to `.print_varying_coef` / `.summary_varying_coef` in `R/varying_coef.R`; and multi-block prior detection is the single `.is_multi_block_prior` predicate.
@@ -106,7 +106,7 @@ coverage). CRAN runs tier 1 only.
 
 **tulpa owns** (generic, model-agnostic):
 - Inference engines: Laplace, EM+Laplace, VI, ESS, NUTS, MI correction, Gibbs correction
-- Autodiff: arena, forward, tape
+- Autodiff: arena reverse-mode gradients; scalar directional derivatives
 - Latent structure: spatial, temporal, RE, SVC, TVC, ST, latent factors
 
 ### Temporal GP (irregularly-spaced times)
@@ -1554,7 +1554,7 @@ fit <- tulpa_fit(y ~ x + latent(custom), data = d, tier = "laplace")
 tulpa compiles via `Rcpp::sourceCpp` against `inst/include/tulpa/`,
 registers the block in the latent-structure registry, and inference
 layers pick it up automatically. Because the user code compiles with
-tulpa's templated AD types (`A`, `A_r`), the block works under **any
+tulpa's arena AD type (`arena::Var`), the block works under **any
 tier including NUTS** — no R callback, no broken gradient chain.
 
 Comparison:

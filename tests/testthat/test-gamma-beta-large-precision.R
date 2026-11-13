@@ -46,7 +46,7 @@ test_that("every gamma and beta density matches the exact density at every preci
       tulpa:::.FAMILY_DPHI2$gamma$dloglik2(r$eta,r$y,1,r$phi), dphi2, tolerance=1e-14)
     sp <- tulpa:::cpp_spde_density_terms(r$y,r$eta,log(r$phi),family)
     expect_lt(abs(sp[3L] - r$phi*r$cppdphi), 2e-13, label = paste(family,r$phi))
-    for (start in c(1L,4L,7L)) {
+    for (start in c(1L,4L)) {
       expect_lt(abs(sp[start] - r$cppexpected), 2e-13, label=paste(family,r$phi,start))
       expect_lt(abs(sp[start+1L]-r$cppgrad)/max(1,abs(r$cppgrad)),2e-13,
         label=paste(family,r$phi,start,"eta"))
@@ -70,14 +70,14 @@ test_that("autodiff primitives carry their exact unary chain rule", {
     r <- refs[i, ]
     val <- tulpa:::cpp_precision_ad_math(r$x, r$kind=="s")
     deriv <- if (r$kind=="s") tulpa:::.stirling_remainder(r$x,1L) else r$x/(1+r$x)
-    for (start in c(1L,4L,7L)) {
+    for (start in c(1L,4L)) {
       expect_equal(val[start],r$expected,tolerance=1e-14)
       expect_equal(val[start+1L],deriv,tolerance=1e-14)
     }
   }
   endpoint <- tulpa:::cpp_precision_ad_math(-1, FALSE)
-  expect_identical(endpoint[c(1,4,7)],rep(Inf,3))
-  expect_identical(endpoint[c(2,5,8)],rep(-Inf,3))
+  expect_identical(endpoint[c(1,4)],rep(Inf,2))
+  expect_identical(endpoint[c(2,5)],rep(-Inf,2))
 })
 
 test_that("joint beta arms carry raw grouped responses", {

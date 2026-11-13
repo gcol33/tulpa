@@ -19,7 +19,6 @@
 #include "log_post_impl.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
-#include "tulpa/autodiff_fwd.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -57,7 +56,7 @@ static T funnel_likelihood(
     const T v = params[off];
     const T xi = params[off + 1 + i];
 
-    using std::exp;  // ADL picks arena::exp / fwd::exp for the AD types
+    using std::exp;  // ADL selects arena::exp for the arena scalar.
     const T half = T(0.5);
     // log N(x_i | 0, exp(v/2)) = -v/2 - 0.5 * x_i^2 * exp(-v), or log N(x_i | 0, 1)
     T contrib = fd->neck

@@ -8,7 +8,6 @@
 #include "vi_types.h"
 #include "vi_optimizer.h"
 #include "hmc_sampler.h"
-#include "autodiff.h"
 #include <random>
 #include <cmath>
 

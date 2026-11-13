@@ -125,11 +125,12 @@ Rcpp::List cpp_test_temporal_gp_density(
   sigma2_out = std::exp(log_sigma2);
   phi_out = phi_lower + (phi_upper - phi_lower) / (1 + std::exp(-logit_phi));
   Rcpp::NumericVector gradient(params.size());
-  for (size_t k = 0; k < params.size(); ++k) {
-    std::vector<fwd::Dual> q(params.size()), field;
-    for (size_t j = 0; j < params.size(); ++j) q[j] = fwd::Dual(params[j], j == k ? 1.0 : 0.0);
-    gradient[k] = evaluate(q, field).grad;
-  }
+  tulpa::arena::ArenaScope scope;
+  std::vector<tulpa::arena::Var> q, field_ad;
+  for (double x : params) q.emplace_back(x);
+  auto result = evaluate(q, field_ad);
+  result.backward();
+  for (size_t k = 0; k < params.size(); ++k) gradient[k] = q[k].adj();
 
   return Rcpp::List::create(
       Rcpp::_["log_post"] = lp,

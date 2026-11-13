@@ -56,10 +56,7 @@
 //
 // Calling the macro:
 //   1. Emits explicit instantiations of build_Q<T> / build_mu<T> /
-//      log_prior_theta<T> at T = double, T = arena::Var, T = fwd::Dual so
-//      the same source compiles against every AD type tulpa uses. (Only
-//      `double` is currently exercised by inference; the AD slots are
-//      reserved.)
+//      log_prior_theta<T> at T = double for evaluation at outer-grid points.
 //   2. Defines a static initializer that registers the resulting
 //      `TgmrfSpec` under the provided id at DLL load time, by retrieving
 //      the `tulpa_register_tgmrf` C callable exported by libtulpa.
@@ -94,25 +91,12 @@
 
 #include "tulpa/model_data.h"          // TULPA_ABI_VERSION
 #include "tulpa/autodiff_arena.h"      // tulpa::arena::Var
-#include "tulpa/autodiff_fwd.h"        // ::fwd::Dual
 
 namespace tulpa {
 namespace tgmrf_backend {
 
 // ----------------------------------------------------------------------------
-// AD type aliases re-exported with stable names.
-//
-// Three instantiations are emitted by the registration macro:
-//   * T = double                   -> evaluated at outer-grid points
-//   * T = tulpa::arena::Var        -> reserved for future arena-AD gradient
-//   * T = ::fwd::Dual              -> reserved for future fwd-AD gradient
-//
-// Only `T = double` is exercised by the current inference layers. The
-// other two slots are reserved so that NUTS-over-theta (currently routed
-// through FD in R) can later switch to AD without breaking user DLLs.
-// ----------------------------------------------------------------------------
 using A    = tulpa::arena::Var;
-using A_fd = ::fwd::Dual;
 
 // ----------------------------------------------------------------------------
 // TgmrfSpec: POD registration structure carrying function pointers and
@@ -137,8 +121,7 @@ struct TgmrfSpec {
     // registration macro.
     int abi_version = TULPA_ABI_VERSION;
 
-    // Function pointers - instantiated for double, A (arena AD), A_fd
-    // (forward AD).
+    // Evaluation callbacks and optional arena-AD callbacks.
     TgmrfQFn<double>        Q_double          = nullptr;
     TgmrfMuFn<double>       mu_double         = nullptr;
     TgmrfLogPriorFn<double> log_prior_double  = nullptr;
@@ -147,9 +130,6 @@ struct TgmrfSpec {
     TgmrfMuFn<A>            mu_arena          = nullptr;
     TgmrfLogPriorFn<A>      log_prior_arena   = nullptr;
 
-    TgmrfQFn<A_fd>          Q_fwd             = nullptr;
-    TgmrfMuFn<A_fd>         mu_fwd            = nullptr;
-    TgmrfLogPriorFn<A_fd>   log_prior_fwd     = nullptr;
 };
 
 // ----------------------------------------------------------------------------
@@ -200,9 +180,6 @@ namespace {                                                                    \
         s.Q_arena          = nullptr;                                          \
         s.mu_arena         = nullptr;                                          \
         s.log_prior_arena  = nullptr;                                          \
-        s.Q_fwd            = nullptr;                                          \
-        s.mu_fwd           = nullptr;                                          \
-        s.log_prior_fwd    = nullptr;                                          \
         return s;                                                              \
     }                                                                          \
                                                                                \

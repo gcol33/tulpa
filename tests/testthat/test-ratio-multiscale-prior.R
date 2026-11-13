@@ -28,9 +28,9 @@ test_that("multiscale prior scores differentiate their dense densities at small 
       if (structure == "ar1") expected_value <- expected_value + log(1 - rho^2) / 2
       expected_score <- c(-drop(Q %*% phi) / sigma2,
         -rank / 2 + quad / (2 * sigma2) + (1 - lambda * sqrt(sigma2)) / 2)
-      expect_equal(unname(result$value), rep(expected_value, 3), tolerance = 1e-13)
+      expect_equal(unname(result$value), rep(expected_value, 2), tolerance = 1e-13)
       expect_equal(unname(result$gradient[seq_len(n + 1L), ]),
-        matrix(expected_score, n + 1L, 3), tolerance = 1e-12)
+        matrix(expected_score, n + 1L, 2), tolerance = 1e-12)
 
       parameters <- c(phi, x, logit_rho)
       for (j in seq_along(parameters)) {

@@ -139,18 +139,12 @@ public:
                     const std::vector<double>& Q_x,
                     int                        n);
 
-    // Fixed-mode forward / adjoint / tangent (no kappa/tau, no hyper grads).
+    // Fixed-mode forward / adjoint (no kappa/tau, no hyper grads).
     //   forward_fixed:               v   = L^{-T} z
     //   backward_fixed:              dz  = L^{-1} dv
-    //   forward_fixed_with_tangent:  v   = L^{-T} z, dv = L^{-T} dz
     Eigen::VectorXd forward_fixed(const Eigen::VectorXd& z) const;
     void backward_fixed(const Eigen::VectorXd& dv,
                         Eigen::VectorXd&       dz_out) const;
-    void forward_fixed_with_tangent(const Eigen::VectorXd& z,
-                                    const Eigen::VectorXd& dz,
-                                    Eigen::VectorXd&       v_out,
-                                    Eigen::VectorXd&       dv_out) const;
-
     bool is_rational() const { return !poles_.empty(); }
 
     // K(kappa) = kappa^2 C0 + G1. Equivalent to build_K_shifted(kappa^2, 0).
@@ -183,23 +177,6 @@ public:
         double&                dlog_tau_out
     ) const;
 
-    // Forward-mode tangent. Given a perturbation direction (dz, dlog_kappa,
-    // dlog_tau), fills w_out = L^{-T}(kappa, tau) z and
-    //   dw_out = L^{-T} (dz - Phi(M)^T z)
-    // where M = L^{-1} dQ L^{-T} and
-    //   dQ = dlog_kappa * (4 kappa^2 tau^2 K_for_logkappa)
-    //      + dlog_tau   * (2 Q).
-    // Caches K, Q, L just like forward(); a subsequent backward() call on
-    // the same transform sees the same factorization.
-    void forward_with_tangent(
-        const Eigen::VectorXd& z,
-        const Eigen::VectorXd& dz,
-        double                 kappa,
-        double                 dlog_kappa,
-        double                 tau,
-        double                 dlog_tau,
-        Eigen::VectorXd&       w_out,
-        Eigen::VectorXd&       dw_out);
 };
 
 // Arena hook. Registers a custom_backward block with inputs

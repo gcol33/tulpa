@@ -288,6 +288,11 @@ Rcpp::List cpp_vi_elbo_grad(
 }
 
 // [[Rcpp::export]]
+std::vector<std::string> cpp_gradient_mode_names() {
+    return tulpa::gradient_mode_names();
+}
+
+// [[Rcpp::export]]
 Rcpp::List cpp_tulpa_sample_glmm(
     Rcpp::NumericVector y,
     Rcpp::IntegerVector n_trials,
@@ -339,8 +344,12 @@ Rcpp::List cpp_tulpa_sample_glmm(
     int ess_joint_sigma_re = -1,
     double ess_joint_proposal_sd = 0.1,
     std::string checkpoint_path = "",
-    double smc_bridge_end = 1.0
+    double smc_bridge_end = 1.0,
+    std::string gradient_mode = "auto"
 ) {
+    const auto mode = tulpa::parse_gradient_mode(gradient_mode);
+    tulpa_hmc::GradientModeFitScope gradient_scope;
+    tulpa_hmc::set_gradient_mode(mode);
     const double sigma_beta_value =
         tulpa::read_sigma_beta(sigma_beta);
     // Argument groups (kept out of the signature so Rcpp::compileAttributes does

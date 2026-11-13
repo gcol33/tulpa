@@ -172,7 +172,18 @@ tulpa_check_control <- function(control, allowed, where) {
       "control knob(s) given more than once in %s(): %s. Set each once.",
       where, paste(sQuote(dup, q = FALSE), collapse = ", ")), call. = FALSE)
   }
+  if ("gradient_mode" %in% nm) .check_gradient_mode(control$gradient_mode)
   invisible(NULL)
+}
+
+.check_gradient_mode <- function(mode) {
+  valid <- cpp_gradient_mode_names()
+  if (!is.character(mode) || length(mode) != 1L || is.na(mode) ||
+      !(mode %in% valid)) {
+    stop("gradient_mode must be one of ",
+         paste(sQuote(valid, q = FALSE), collapse = ", "), ".", call. = FALSE)
+  }
+  mode
 }
 
 # Canonical per-fitter control keys. A fitter that forwards `control`
@@ -255,7 +266,7 @@ tulpa_check_control <- function(control, allowed, where) {
                   "seed", "verbose", "mass_matrix", "noncenter"),
     multinomial = c("max_iter", "tol", "n_draws", "seed"),
     ordinal = c("max_iter", "n_draws", "seed"),
-    sample_glmm = c("n_iter", "warmup", "n_chains", "seed", "verbose",
+    sample_glmm = c("gradient_mode", "n_iter", "warmup", "n_chains", "seed", "verbose",
                     "epsilon", "L", "adapt_delta", "max_treedepth",
                     "mass_matrix",
                     "n_draws", "alpha", "batch_size", "ess_threshold",

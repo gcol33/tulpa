@@ -271,31 +271,14 @@ static int tulpa_omp_max_threads_impl(int n) {
 #endif
 }
 
-// Set the global gradient mode from a string. Single source of truth: parses
-// via tulpa_hmc::parse_gradient_mode (the same function R-level entry points
-// hmc_rcpp_fit / vi_sampler use), then forwards to set_gradient_mode. Returns
-// 0 on a recognised mode, 1 if the string falls through to the AUTO default
-// (so a downstream caller can detect a typo and retry).
+// Set the process-global gradient source from the canonical mode registry.
 static int tulpa_set_gradient_mode_str_impl(const char* mode_str) {
     TULPA_SHIM_GUARD_BEGIN
-    if (mode_str == nullptr) {
-        tulpa_hmc::set_gradient_mode(tulpa::GradientMode::AUTO);
-        return 1;
-    }
-    std::string s(mode_str);
-    tulpa::GradientMode mode = tulpa_hmc::parse_gradient_mode(s);
+    const auto mode = tulpa::parse_gradient_mode(mode_str ? mode_str : "<null>");
     tulpa_hmc::set_gradient_mode(mode);
-
-    // parse_gradient_mode returns AUTO both for "auto" and for unrecognised
-    // input. Distinguish them so a typo does not silently revert the user's
-    // request to AUTO.
-    if (mode == tulpa::GradientMode::AUTO &&
-        s != "auto" && s != "AUTO") {
-        return 1;
-    }
     return 0;
     TULPA_SHIM_GUARD_END("tulpa_set_gradient_mode_str")
-    return 1;  // unreachable: the guard either returned or raised
+    return 1;
 }
 
 // Defined in tulpa_shims.cpp — registers laplace / pg / vi / ess shims.

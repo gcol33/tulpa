@@ -70,7 +70,7 @@ test_that("epsilon search uses one new score per trial with every metric", {
 test_that("all gradient modes retain reversible metric trajectories after an arena gradient", {
     skip_on_cran()
     invisible(tulpa:::cpp_test_gradient_trajectory("identity", "none", "A_r", "copy"))
-    for (n in c(5L, 17L)) for (mode in c("N", "A", "A_r", "H", "auto", "reallocate")) {
+    for (n in c(5L, 17L)) for (mode in c("N", "A_r", "H", "auto", "reallocate")) {
         for (type in c("identity", "diag", "dense", "block")) {
             for (block in c("none", "precision", "sparse", "kronecker")) {
                 paths <- c("copy", "inplace", "tree", "walnuts")

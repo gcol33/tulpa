@@ -131,16 +131,6 @@ namespace tulpa {
 // already use, anchored at each axis's declared lower bound. ModelData's
 // st_phi_space_prior_upper / st_phi_time_prior_upper are replaced by
 // st_phi_space_prior_alpha / st_phi_time_prior_alpha at the same slots.
-// 41 -> 42: LikelihoodSpec::ll_fwd is removed. It was assigned at six sites and
-// read at none -- resolve_gradient_fn dispatches on gradient_fn, then ll_arena,
-// then the numerical fallback, and AUTODIFF_FWD is an explicit alias for the
-// arena path -- so each assignment forced a fwd::Dual instantiation of a
-// likelihood kernel that never ran. An unexercised copy of a density is also
-// where a kernel silently falls out of step with its siblings. ModelData gained
-// hsgp_sigma2_prior_U / _alpha, st_hsgp_sigma2_prior_U / _alpha and
-// tvc_sigma_prior_U / _alpha (trailing doubles in their own sections),
-// defaulted to the (1, 0.01) anchors those three PC priors previously hardcoded
-//.
 // 42 -> 43: tulpa::CovType gained MATERN52 = 4, and every path that turns a
 // cov_type code into a covariance now reads the one dispatch in
 // tulpa/cov_kernel.h. The code a Matern nu = 2.5 request maps to therefore
@@ -208,7 +198,7 @@ namespace tulpa {
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 61;
+constexpr int TULPA_ABI_VERSION = 62;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 namespace tulpa {
@@ -118,11 +119,9 @@ enum class InferenceTier : int {
 // Gradient computation modes
 // ============================================================================
 enum class GradientMode : int {
-    AUTO = 0,              // Select best available: H > A_r > A > N
+    AUTO = 0,              // Select best available: H > A_r > N
     NUMERICAL = 1,         // N: Finite differences O(p*N)
-    AUTODIFF_TAPE = 2,     // A_t: Tape-based reverse-mode (slow, heap alloc)
     AUTODIFF_ARENA = 3,    // A_r: Arena reverse-mode O(N)
-    AUTODIFF_FWD = 4,      // A: Forward-mode dual numbers O(p*N)
     HANDCODED = 5          // H: Analytical hand-coded O(N)
 };
 
@@ -220,6 +219,30 @@ inline EnumT parse_enum(const std::string& str,
         if (str == table[i].name) return table[i].value;
     }
     return default_val;
+}
+
+inline constexpr EnumEntry<GradientMode> GRADIENT_MODE_NAMES[] = {
+    {"auto", GradientMode::AUTO},
+    {"N", GradientMode::NUMERICAL}, {"numerical", GradientMode::NUMERICAL},
+    {"A_r", GradientMode::AUTODIFF_ARENA}, {"arena", GradientMode::AUTODIFF_ARENA},
+    {"H", GradientMode::HANDCODED}, {"handcoded", GradientMode::HANDCODED}
+};
+
+inline std::vector<std::string> gradient_mode_names() {
+    std::vector<std::string> names;
+    for (const auto& entry : GRADIENT_MODE_NAMES) names.emplace_back(entry.name);
+    return names;
+}
+
+inline GradientMode parse_gradient_mode(const std::string& name) {
+    std::string valid;
+    for (const auto& entry : GRADIENT_MODE_NAMES) {
+        if (name == entry.name) return entry.value;
+        if (!valid.empty()) valid += ", ";
+        valid += "'" + std::string(entry.name) + "'";
+    }
+    throw std::invalid_argument("Unknown gradient mode '" + name +
+        "'. Expected one of " + valid + ".");
 }
 
 } // namespace tulpa

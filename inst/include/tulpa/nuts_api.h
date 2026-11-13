@@ -209,22 +209,14 @@ inline NUTSChainsFn get_nuts_chains_fn() {
 // ============================================================================
 // Set the global gradient mode used by the next NUTS run.
 //
-// Accepted strings (case-sensitive, matching parse_gradient_mode in tulpa):
-//   "auto", "AUTO"                          — let the dispatcher pick
-//   "N", "numerical"                        — finite differences
-//   "A_r", "arena", "autodiff_arena"        — arena reverse-mode AD
-//   "H", "handcoded", "analytical"          — hand-coded gradient
-//   "A", "autodiff", "forward"              — accepted; resolves to the arena
-//   "A_t", "autodiff_tape"                    reverse-mode AD path (no separate
-//                                             forward / tape kernel is shipped)
+// Accepted strings (case-sensitive):
+//   "auto"                  selects the available gradient source
+//   "N", "numerical"        finite differences
+//   "A_r", "arena"          arena reverse-mode AD
+//   "H", "handcoded"        hand-coded gradient
 //
-// The dispatcher exposes three distinct gradient sources -- numerical (N),
-// arena reverse-mode AD (A_r, the default AD path), and a model package's
-// hand-coded gradient (H). The forward (A) and tape (A_t) spellings are parsed
-// for API stability but currently alias A_r rather than selecting a separate
-// kernel; requesting them does not error.
-//
-// Returns 0 on success, non-zero on unrecognised mode (default "auto" stays).
+// Returns 0 on success. An invalid or null name raises an R error listing
+// the valid modes and leaves the active mode unchanged.
 //
 // Downstream packages call this immediately before tulpa_run_nuts_generic
 // when they need to pin the gradient mode (e.g. for benchmarks, for routing

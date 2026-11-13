@@ -1,14 +1,13 @@
 // autodiff_arena.h
 // Arena-based reverse-mode automatic differentiation
 //
-// Performance: ~10-30x faster than tape-based autodiff (ad::Var)
 // Key optimizations:
 //   - Structure-of-Arrays (SoA) layout for cache locality
 //   - Pre-computed partial derivatives (no std::function closures)
 //   - Single contiguous memory allocation (no per-operation heap alloc)
 //   - Tight backward pass loop (~5 memory accesses per node)
 //
-// Thread-safe via ArenaScope RAII (same pattern as TapeScope)
+// Thread-safe via ArenaScope RAII
 //
 // Usage:
 //   arena::ArenaScope scope;
@@ -370,7 +369,7 @@ public:
 // Var: lightweight autodiff variable (12 bytes: Arena* + int32_t)
 // ============================================================================
 //
-// Same interface as ad::Var for template compatibility:
+// Scalar interface:
 //   - val() returns double value
 //   - adj() returns double adjoint (gradient)
 //   - backward() triggers reverse-mode gradient computation

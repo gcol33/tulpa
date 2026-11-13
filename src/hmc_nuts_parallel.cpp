@@ -338,8 +338,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   }
   ActiveGridProgressScope progress_scope(shared_progress.get());
 
-  // Thread-safe autodiff: each chain creates its own tape via TapeScope (RAII),
-  // so all gradient modes (N, A, A_t, H) run in parallel.
+  // Each chain records reverse-mode derivatives in its own ArenaScope.
   //
   // This is the outermost region in a sampler run, so its team is the one that
   // has to respect the environment: OMP_NUM_THREADS / omp_set_num_threads()

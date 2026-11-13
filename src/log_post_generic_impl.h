@@ -84,13 +84,10 @@ struct GenericLogPostState {
 //
 // Each block ships one implementation per scalar type the generic log
 // posterior is instantiated with, and the choice is made at compile time. The
-// four blocks below (GP, multiscale GP, SPDE, SVC) differ only in which three
+// four blocks below (GP, multiscale GP, SPDE, SVC) differ only in which two
 // functions they name, so the ladder itself -- and the message an unsupported
 // type gets -- lives here rather than being copied once per block.
 //
-// `on_fwd` is null for a block with no forward-mode kernel: the generic path
-// samples via arena and verifies via numerical double, so most blocks need
-// none, and SPDE's closed-form tangent is the exception rather than the rule.
 template<typename T>
 static inline void dispatch_nc_transform(
     const char* block,
@@ -101,21 +98,12 @@ static inline void dispatch_nc_transform(
     void (*on_double)(const std::vector<double>&, const ModelData&,
                       const ParamLayout&, std::vector<double>&),
     void (*on_arena)(const std::vector<arena::Var>&, const ModelData&,
-                     const ParamLayout&, std::vector<arena::Var>&),
-    void (*on_fwd)(const std::vector< ::fwd::Dual>&, const ModelData&,
-                   const ParamLayout&, std::vector< ::fwd::Dual>&) = nullptr
+                     const ParamLayout&, std::vector<arena::Var>&)
 ) {
     if constexpr (std::is_same_v<T, double>) {
         on_double(params, data, layout, out);
     } else if constexpr (std::is_same_v<T, arena::Var>) {
         on_arena(params, data, layout, out);
-    } else if constexpr (std::is_same_v<T, ::fwd::Dual>) {
-        if (on_fwd == nullptr) {
-            Rcpp::stop("%s non-centered: forward-mode AD is not supported (the "
-                       "generic path samples via arena and verifies via "
-                       "numerical double).", block);
-        }
-        on_fwd(params, data, layout, out);
     } else {
         Rcpp::stop("%s non-centered: AD type not supported.", block);
     }
@@ -208,9 +196,6 @@ static T initialize_generic_state(
         // spatial map. Dispatch is statically resolved on the AD type:
         //   double     : forward-only.
         //   arena::Var : reverse-mode AD via custom_backward.
-        // The generic path samples via arena and verifies via numerical double
-        // (AUTODIFF_FWD aliases to arena -- no forward-mode kernel), so no
-        // fwd::Dual branch is needed.
         if (data.gp_parameterization == 1) {
             dispatch_nc_transform<T>("GP", params, data, layout, state.gp_w,
                                      &apply_gp_nc_transform_double,
@@ -260,16 +245,14 @@ static T initialize_generic_state(
         // Joint: the z->w Jacobian cancels log|Q(theta)|/2 through the
         // (a.ii) adjoint. Fixed-hyper: both are constant and dropped.
         //
-        // Dispatch is statically resolved on the AD type. Three flavours:
+        // Dispatch is statically resolved on the AD type:
         //   double      : forward-only.
         //   arena::Var  : reverse-mode AD via custom_backward.
-        //   fwd::Dual   : forward-mode AD via the closed-form tangent.
         if (data.spde_data.joint_hypers || data.spde_data.nc_fixed) {
             dispatch_nc_transform<T>("SPDE joint-NUTS", params, data, layout,
                                      state.spde_w,
                                      &apply_spde_nc_transform_double,
-                                     &apply_spde_nc_transform_arena,
-                                     &apply_spde_nc_transform_fwd);
+                                     &apply_spde_nc_transform_arena);
         }
     }
 

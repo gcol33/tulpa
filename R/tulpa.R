@@ -2128,7 +2128,9 @@
 #' @param control Optional list of backend tuning arguments. Each backend
 #'   accepts its own set, checked at the door: `n_iter` / `warmup` / `epsilon`
 #'   (`mala`), `n_draws` (`pathfinder`), `n_chains` / `max_treedepth` /
-#'   `adapt_delta` / `mass_matrix` (`hmc`), the outer-grid knobs
+#'   `adapt_delta` / `mass_matrix` (`hmc`), `gradient_mode` (`"auto"`,
+#'   `"N"` / `"numerical"`, `"A_r"` / `"arena"`, `"H"` / `"handcoded"` for
+#'   ModelData sampler kernels), the outer-grid knobs
 #'   `?tulpa_nested_laplace` documents (`prune`, `screen_iters`,
 #'   `adaptive_grid`, `diagnose_k`, `within_cell`, `checkpoint`, the
 #'   `progress*` family, ...), and `re_cov` (`"nested"` / `"gibbs"` /

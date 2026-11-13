@@ -69,7 +69,7 @@ inline std::string compiled_zi_supported_families() {
 }
 
 // ---------------------------------------------------------------------------
-// Templated pieces (double / arena::Var / fwd::Dual), used by the AD path.
+// Templated pieces for double evaluation and arena gradients.
 // ---------------------------------------------------------------------------
 
 // log(inv_logit(z)) and log(1 - inv_logit(z)), through the shared softplus,

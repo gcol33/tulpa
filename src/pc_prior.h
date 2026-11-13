@@ -24,9 +24,8 @@
 //   tau            1/sqrt(x)         -log(2) - 1.5*log(tau)
 //   log_tau        exp(-x/2)         -log(2) - 0.5*log_tau
 //
-// Templated over T so the double, tape (ad::Var), forward (fwd::Dual) and arena
-// (arena::Var) paths all share one implementation -- a double-only helper is
-// what forced the AD sites to hand-roll copies in the first place.
+// Templated over T for double evaluation, arena gradients and scalar
+// directional derivatives.
 
 #ifndef TULPA_PC_PRIOR_H
 #define TULPA_PC_PRIOR_H

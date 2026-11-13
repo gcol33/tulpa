@@ -1,6 +1,6 @@
 // hmc_gp_autodiff.h
 // Templated GP/NNGP functions for autodiff support
-// Works with both double (for evaluation) and ad::Var (for gradients)
+// Works with both double (for evaluation) and arena::Var (for gradients)
 
 #ifndef TULPA_HMC_GP_AUTODIFF_H
 #define TULPA_HMC_GP_AUTODIFF_H

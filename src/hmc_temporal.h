@@ -34,7 +34,7 @@ using tulpa::math::safe_log;
 // =====================================================================
 //
 // Templated over the scalar type: double for the plain sampler, the
-// autodiff types (ad::Var, fwd::Dual, arena::Var) for gradient modes.
+// autodiff types (arena::Var) for sampler gradients.
 // Pointer-based so strided per-group callers pass `phi + g * T_len`.
 
 // Sum of products of first differences of two series, a' Q_RW1 b. With

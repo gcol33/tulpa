@@ -12,7 +12,6 @@
 
 #include <cmath>
 #include "autodiff_arena.h"
-#include "autodiff_fwd.h"
 
 namespace tulpa {
 namespace priors {
@@ -21,11 +20,10 @@ namespace detail {
 
 // Branch-free "value getter" — the templated prior needs to inspect
 // |x - mean| > cap via a plain double, regardless of whether T is a
-// double, an arena::Var, or a fwd::Dual. Specialize per supported type.
+// double or an arena::Var. Specialize per supported type.
 
 inline double prior_val(double x) { return x; }
 inline double prior_val(const arena::Var& x) { return x.val(); }
-inline double prior_val(const fwd::Dual& x) { return x.val; }
 
 }  // namespace detail
 

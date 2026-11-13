@@ -3,7 +3,7 @@
 // Builds on existing RW1/RW2/AR1 infrastructure
 //
 // Templated over the scalar type: double for evaluation, the autodiff
-// types (ad::Var, fwd::Dual, arena::Var) for gradient modes.
+// types (arena::Var) for sampler gradients.
 
 #ifndef TULPA_HMC_TEMPORAL_MULTISCALE_H
 #define TULPA_HMC_TEMPORAL_MULTISCALE_H

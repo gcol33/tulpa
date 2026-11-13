@@ -1,5 +1,13 @@
 # tulpa 0.7.8
 
+* Removed the forward and tape gradient modes and their alias spellings.
+  Accepted names are `auto`, `N` / `numerical`, `A_r` / `arena`, and
+  `H` / `handcoded`; invalid names error and list the valid modes. Removed
+  the tape AD implementation, unused forward kernels and reserved forward
+  slots. Scalar dual numbers remain for directional derivative probes.
+  The exported gradient enum and custom GMRF header use ABI 62; consumers
+  must rebuild. `control$gradient_mode` selects a source on ModelData samplers.
+
 ## Models and inference
 
 * `control$subspace_debias = list(method = "exact")` uses full-latent

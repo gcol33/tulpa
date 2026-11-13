@@ -32,7 +32,6 @@
 #include "spde_nc_apply.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
-#include "tulpa/autodiff_fwd.h"
 #include "autodiff_utils.h"
 #include "density_probe.h"
 

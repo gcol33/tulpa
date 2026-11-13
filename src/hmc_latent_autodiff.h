@@ -1,6 +1,6 @@
 // hmc_latent_autodiff.h
 // Templated latent factor functions for autodiff (A_t mode)
-// Works with both double and ad::Var for automatic differentiation
+// Works with both double and arena::Var for automatic differentiation
 
 #ifndef TULPA_HMC_LATENT_AUTODIFF_H
 #define TULPA_HMC_LATENT_AUTODIFF_H

@@ -8,7 +8,6 @@
 #include <RcppEigen.h>
 
 #include "array_utils.cpp"
-#include "autodiff.cpp"
 #include "cholmod_stub_resolve.cpp"
 #include "cornish_fisher.cpp"
 #include "cov_kernel_export.cpp"

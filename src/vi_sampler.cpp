@@ -13,7 +13,6 @@
 #include "vi_meanfield.h"
 #include "vi_fullrank.h"
 #include "vi_lowrank.h"
-#include "autodiff.h"
 #include <Rcpp.h>
 
 using namespace Rcpp;

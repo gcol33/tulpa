@@ -35,7 +35,6 @@
 #include "hmc_sampler.h"
 #include "log_post_impl.h"
 #include "tulpa/autodiff_arena.h"
-#include "tulpa/autodiff_fwd.h"
 #include "tulpa/likelihood.h"
 #include "tulpa_priors_st.h"
 #include "st_fixture_parse.h"

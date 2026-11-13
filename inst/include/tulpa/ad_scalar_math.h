@@ -1,9 +1,7 @@
 // ad_scalar_math.h
 // The scalar math the exported prior helpers are written in, for the three
 // scalar types a downstream package evaluates a log-density with: double,
-// fwd::Dual and arena::Var. tulpa's src/autodiff_utils.h includes this header
-// and adds the tape (ad::Var) overloads, so the engine and a consumer
-// package evaluate one implementation.
+// fwd::Dual directional derivatives and arena::Var reverse-mode gradients.
 
 #ifndef TULPA_AD_SCALAR_MATH_H
 #define TULPA_AD_SCALAR_MATH_H
@@ -20,11 +18,8 @@ namespace tulpa {
 namespace math {
 
 // ============================================================================
-// Type traits to detect ad::Var (tape), fwd::Dual (forward), arena::Var (arena)
+// Scalar types for directional derivatives and arena reverse-mode AD
 // ============================================================================
-
-template<typename T>
-struct is_ad_var : std::false_type {};
 
 template<typename T>
 struct is_fwd_dual : std::false_type {};
@@ -41,7 +36,7 @@ struct is_arena_var<arena::Var> : std::true_type {};
 // Helper: is any autodiff type
 template<typename T>
 struct is_autodiff : std::integral_constant<bool,
-    is_ad_var<T>::value || is_fwd_dual<T>::value || is_arena_var<T>::value> {};
+    is_fwd_dual<T>::value || is_arena_var<T>::value> {};
 
 // exp - double version
 template<typename T>
@@ -71,7 +66,7 @@ safe_exp(const T& x) {
 // log posterior is a sum: one -infinity term takes the whole objective and
 // every gradient computed through it to -infinity or NaN, which leaves a
 // sampler no direction to step back along. A large finite penalty keeps the
-// objective ordered and the step recoverable. All four instantiations below
+// objective ordered and the step recoverable. All scalar instantiations
 // use the same sentinel, so the double instantiation the runtime gradient
 // check differences is the same function of its argument as the autodiff ones.
 template<typename T>
@@ -85,7 +80,7 @@ safe_log(T x) {
 template<typename T>
 inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
 safe_log(const T& x) {
-    // One rule for all four instantiations (see the double overload above):
+    // One rule for all scalar instantiations (see the double overload above):
     // value log(x) above zero and the constant -1e10 at or below it, partial
     // 1 / max(x, 1e-15) above zero and 0 at or below it. A clamped VALUE is
     // locally constant, so its derivative is 0; carrying 1/1e-15 there instead
@@ -116,7 +111,7 @@ template<typename T>
 inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
 safe_sqrt(const T& x) {
     // Zero is included: 0.5 / sqrt(0) is +Inf, where the double overload and
-    // both reverse-mode overloads give a finite 0.
+    // the arena overload gives a finite 0.
     if (x.val <= 0.0) return fwd::Dual(0.0, 0.0);
     double s = std::sqrt(x.val);
     return fwd::Dual(s, 0.5 * x.grad / s);

@@ -18,7 +18,7 @@ NULL
 # prepare_map_data_from_fit when mapping a ratio fit; `.phl_w` names the weights
 # column post_hoc_lm() attaches to the model frame so lm() resolves it. None is a
 # tulpa symbol; register them as globals for the non-standard-evaluation sites above.
-utils::globalVariables(c(".data", "ratio", ".phl_w", "cpp_spde_orphan_mass",
+utils::globalVariables(c("cpp_gradient_mode_names", ".data", "ratio", ".phl_w", "cpp_spde_orphan_mass",
                          "cpp_family_loglik_batch",
                          "cpp_hsgp_sum_projection", "cpp_outer_tensor_interpolate",
                          "cpp_outer_read_design", "cpp_outer_tensor_partition",

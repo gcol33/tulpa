@@ -8,7 +8,6 @@
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "tulpa/autodiff_arena.h"
-#include "tulpa/autodiff_fwd.h"
 
 namespace tulpa {
 
@@ -18,9 +17,8 @@ namespace tulpa {
 // Receives pre-computed linear predictor values (one per process) and returns
 // the log-likelihood contribution for observation i.
 //
-// Templated for double (evaluation), arena::Var (reverse AD), fwd::Dual
-// (forward AD). Model packages provide one implementation that works for all
-// three via C++ templates.
+// Templated for double (evaluation) and arena::Var (reverse AD).
+// Model packages provide one implementation for both scalar types.
 // ============================================================================
 template<typename T>
 using LikelihoodFn = T(*)(
@@ -182,10 +180,7 @@ struct LikelihoodSpec {
     int n_processes = 1;
     std::string name;
 
-    // Templated likelihood for each AD mode
-    // Two, not three. AUTODIFF_FWD resolves to the arena path
-    // (hmc_gradient_dispatch.h), so a forward-dual slot would be filled by
-    // every spec and read by none.
+    // Likelihood value and arena reverse-mode callbacks.
     LikelihoodFn<double> ll_double = nullptr;
     LikelihoodFn<arena::Var> ll_arena = nullptr;
 

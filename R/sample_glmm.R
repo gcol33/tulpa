@@ -67,7 +67,10 @@
 #'   `batch_size`, `alpha`, `n_particles`, `smc_min_moves`, `smc_max_moves`,
 #'   `ess_threshold`, `vi_variant`, `vi_mc_samples`, `vi_max_iter`,
 #'   `vi_max_grad_norm`, `vi_tol_grad`, `vi_tol_rel_elbo`, `vi_patience`,
-#'   `n_draws`, `verbose`, `mass_matrix`, `checkpoint`, `wbic`).
+#'   `n_draws`, `verbose`, `mass_matrix`, `gradient_mode`, `checkpoint`, `wbic`).
+#'   `gradient_mode` accepts `"auto"`, `"N"` / `"numerical"`, `"A_r"` / `"arena"`,
+#'   and `"H"` / `"handcoded"`. The default `"auto"` selects the available
+#'   hand-coded gradient, arena reverse-mode AD, or numerical differences.
 #'
 #'   The SMC kernel bridges a normalized reference distribution to the
 #'   posterior. The reference is fitted in two steps: single-path Pathfinder
@@ -300,6 +303,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     X          = X,
     family     = family,
     backend    = backend,
+    gradient_mode = control$gradient_mode %||% "auto",
     phi        = .phi_to_kernel(family, as.numeric(phi)),
     sigma_beta = as.numeric(sigma_beta),
     n_iter     = as.integer(n_iter),

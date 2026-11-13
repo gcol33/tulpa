@@ -320,7 +320,9 @@ level of the response as a string (default \code{NULL}, the last level). See
 \item{control}{Optional list of backend tuning arguments. Each backend
 accepts its own set, checked at the door: \code{n_iter} / \code{warmup} / \code{epsilon}
 (\code{mala}), \code{n_draws} (\code{pathfinder}), \code{n_chains} / \code{max_treedepth} /
-\code{adapt_delta} / \code{mass_matrix} (\code{hmc}), the outer-grid knobs
+\code{adapt_delta} / \code{mass_matrix} (\code{hmc}), \code{gradient_mode} (\code{"auto"},
+\code{"N"} / \code{"numerical"}, \code{"A_r"} / \code{"arena"}, \code{"H"} / \code{"handcoded"} for
+ModelData sampler kernels), the outer-grid knobs
 \code{?tulpa_nested_laplace} documents (\code{prune}, \code{screen_iters},
 \code{adaptive_grid}, \code{diagnose_k}, \code{within_cell}, \code{checkpoint}, the
 \verb{progress*} family, ...), and \code{re_cov} (\code{"nested"} / \code{"gibbs"} /

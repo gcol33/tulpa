@@ -26,7 +26,6 @@ all: $(SHLIB)
 unity_core.o: \
   unity_core.cpp \
   array_utils.cpp \
-  autodiff.cpp \
   cholmod_stub_resolve.cpp \
   cornish_fisher.cpp \
   cov_kernel_export.cpp \
@@ -43,7 +42,6 @@ unity_core.o: \
   tgmrf_registry.cpp \
   tulpa_init.cpp \
   array_utils.h \
-  autodiff.h \
   sparse_cholesky.h \
   cornish_fisher.h \
   crt_rng.h \
@@ -169,7 +167,6 @@ unity_exports.o: \
   subspace_debias.h \
   latent_block.h \
   omp_threads.h \
-  autodiff.h \
   glmm_family_elt.h \
   st_null_space.h \
   laplace_cholesky_dispatch.h \
@@ -277,7 +274,6 @@ unity_glmm.o: \
   mclmc.h \
   smc_sampler.h \
   vi_optimizer.h \
-  autodiff.h \
   st_gp_kernel.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
@@ -427,7 +423,6 @@ unity_hmc.o: \
   hmc_hsgp_kernels.h \
   hmc_mass_lowrank.h \
   glmm_oracle.h \
-  autodiff.h \
   tulpa_priors_gp.h \
   tulpa_priors_msgp.h \
   tulpa_priors_hsgp.h \
@@ -528,7 +523,6 @@ unity_laplace.o: \
   nl_cell_cache.h \
   linear_constraint_rows.h \
   fastmath.h \
-  autodiff.h \
   builtin_family_zi.h \
   curvature3_contract.h \
   hmc_svc.h \
@@ -700,7 +694,6 @@ unity_nl.o: \
   joint_pd_step.h \
   laplace_spec_curvature3.h \
   joint_inner_vcov.h \
-  autodiff.h \
   sobol_direction_numbers.h
 unity_nl_joint.o: \
   unity_nl_joint.cpp \
@@ -802,7 +795,6 @@ unity_nl_joint.o: \
   nngp_cond.h \
   rwmh.h \
   sobol_direction_numbers.h \
-  autodiff.h \
   gpu_cuda.h
 unity_pg.o: \
   unity_pg.cpp \
@@ -835,7 +827,6 @@ unity_pg.o: \
   autodiff_utils.h \
   laplace_likelihoods.h \
   laplace_core.h \
-  autodiff.h \
   fastmath.h
 unity_samplers.o: \
   unity_samplers.cpp \
@@ -881,7 +872,6 @@ unity_samplers.o: \
   vi_meanfield.h \
   vi_fullrank.h \
   vi_lowrank.h \
-  autodiff.h \
   test_prior_model.h \
   ess_sampler.h \
   hmc_mass_drift.h \
@@ -1006,7 +996,6 @@ unity_spatial.o: \
   hmc_gp_nc.h \
   omp_threads.h \
   hmc_hsgp_kernels.h \
-  autodiff.h \
   lkj_chol_helpers.h \
   inner_cila.h \
   laplace_builtin_family_spec.h \

@@ -26,17 +26,14 @@
 test_that("pow keeps a finite partial where p * x^(p-1) diverges", {
   load_cpp_fixture("helpers")
   r <- cpp_test_scalar_guard("pow", 0, 0.5)
-  expect_equal(r$value_tape, 0)
   expect_equal(r$value_arena, 0)
-  expect_true(is.finite(r$grad_tape))
   expect_true(is.finite(r$grad_arena))
   # p > 1 is finite unguarded and must be untouched.
   r2 <- cpp_test_scalar_guard("pow", 0, 3)
-  expect_equal(r2$grad_tape, 0)
   expect_equal(r2$grad_arena, 0)
 })
 
-test_that("tape values match the R closed forms", {
+test_that("arena values match the R closed forms", {
   load_cpp_fixture("helpers")
   expect_equal(cpp_test_autodiff_log(0.7)$value, log(0.7))
   expect_equal(cpp_test_autodiff_sqrt(0.7)$value, sqrt(0.7))
@@ -52,7 +49,7 @@ test_that("tape values match the R closed forms", {
                dnbinom(3, size = 4, mu = 2.5, log = TRUE) + lgamma(3 + 1))
 })
 
-test_that("tape gradients of a multivariate objective are exact", {
+test_that("arena gradients of a multivariate objective are exact", {
   load_cpp_fixture("helpers")
   x <- c(-1.5, 0.25, 3)
   g <- cpp_test_autodiff_gradient(x)
@@ -75,9 +72,7 @@ test_that("log at and below zero returns the finite sentinel on every type", {
   for (x in c(0, -2)) {
     r <- cpp_test_scalar_guard("log", x)
     expect_equal(r$value_double, -1e10)
-    expect_equal(r$value_tape,   -1e10)
     expect_equal(r$value_arena,  -1e10)
-    expect_true(is.finite(r$grad_tape))
     expect_true(is.finite(r$grad_arena))
   }
 })
@@ -87,18 +82,14 @@ test_that("logit is finite at the endpoints of the unit interval", {
   load_cpp_fixture("helpers")
   for (x in c(0, 1)) {
     r <- cpp_test_scalar_guard("logit", x)
-    expect_true(is.finite(r$value_tape),  info = paste("tape at", x))
     expect_true(is.finite(r$value_arena), info = paste("arena at", x))
-    expect_true(is.finite(r$grad_tape))
     expect_true(is.finite(r$grad_arena))
-    expect_equal(r$value_tape, r$value_arena, tolerance = 1e-12)
-    expect_equal(r$grad_tape,  r$grad_arena,  tolerance = 1e-12)
   }
 })
 
-# --- the tape primitives, each against its own closed-form derivative ---------
+# --- the arena primitives, each against its own closed-form derivative ---------
 
-test_that("tape reverse mode reproduces every elementary derivative", {
+test_that("arena reverse mode reproduces every elementary derivative", {
   skip_on_cran_budget()
   load_cpp_fixture("helpers")
   x <- 0.7
@@ -115,9 +106,17 @@ test_that("tape reverse mode reproduces every elementary derivative", {
   chk(cpp_test_autodiff_lgamma(2.3),  "lgamma")
   chk(cpp_test_autodiff_softplus(x),  "softplus")
   chk(cpp_test_autodiff_inv_logit(x), "inv_logit")
-  chk(cpp_test_autodiff_division(3.0, 1.5), "division")
-  chk(cpp_test_autodiff_log_sum_exp(1.2, -0.4), "log_sum_exp")
-  chk(cpp_test_autodiff_negbin_loglik(3L, 2.5, 4.0), "negbin loglik")
+  division <- cpp_test_autodiff_division(3.0, 1.5)
+  expect_equal(division$grad_a, division$expected_grad_a)
+  expect_equal(division$grad_b, division$expected_grad_b)
+  mixture <- cpp_test_autodiff_log_sum_exp(1.2, -0.4)
+  expect_equal(mixture$grad_a, mixture$expected_grad_a)
+  expect_equal(mixture$grad_b, mixture$expected_grad_b)
+  count <- cpp_test_autodiff_negbin_loglik(3L, 2.5, 4.0)
+  h <- 1e-5
+  density <- function(mu, phi) dnbinom(3, size = phi, mu = mu, log = TRUE)
+  expect_equal(count$gradient_mu, (density(2.5 + h, 4) - density(2.5 - h, 4)) / (2*h))
+  expect_equal(count$gradient_phi, (density(2.5, 4 + h) - density(2.5, 4 - h)) / (2*h))
 })
 
 skip_on_cran()
@@ -139,9 +138,7 @@ test_that("every scalar type evaluates the same primitive in the interior", {
     ref <- .prim_ref(cs$fn, cs$x, p)
     lbl <- sprintf("%s(%g)", cs$fn, cs$x)
     expect_equal(r$value_double, ref$v, tolerance = 1e-12, info = lbl)
-    expect_equal(r$value_tape,   ref$v, tolerance = 1e-12, info = lbl)
     expect_equal(r$value_arena,  ref$v, tolerance = 1e-12, info = lbl)
-    expect_equal(r$grad_tape,    ref$g, tolerance = 1e-10, info = lbl)
     expect_equal(r$grad_arena,   ref$g, tolerance = 1e-10, info = lbl)
     if (!is.na(r$grad_dual)) {
       expect_equal(r$value_dual, ref$v, tolerance = 1e-12, info = lbl)
@@ -159,12 +156,9 @@ test_that("exp is clamped on every scalar type, not only the value path", {
   for (x in c(800, 1e4, -800, -1e4)) {
     r <- cpp_test_scalar_guard("exp", x)
     expect_true(is.finite(r$value_double))
-    expect_true(is.finite(r$value_tape),  info = paste("tape at", x))
     expect_true(is.finite(r$value_arena), info = paste("arena at", x))
-    expect_true(is.finite(r$grad_tape))
     expect_true(is.finite(r$grad_arena))
     expect_equal(r$value_arena, r$value_double, tolerance = 1e-12)
-    expect_equal(r$value_tape,  r$value_double, tolerance = 1e-12)
   }
 })
 
@@ -178,9 +172,7 @@ test_that("sqrt at and below zero is finite in value and derivative everywhere",
   for (x in c(0, -1e-12, -3.5)) {
     r <- cpp_test_scalar_guard("sqrt", x)
     expect_equal(r$value_double, 0)
-    expect_equal(r$value_tape,   0)
     expect_equal(r$value_arena,  0)
-    expect_equal(r$grad_tape,    0)
     expect_equal(r$grad_arena,   0)
     expect_equal(r$grad_dual,    0)
     expect_equal(r$value_dual,   0)

@@ -10,18 +10,15 @@ test_that("safe_log reports one derivative in the clamped region", {
   load_cpp_fixture("helpers")
   for (x in c(-1, -1e-12, 0)) {
     g <- cpp_test_scalar_guard("log", x)
-    expect_equal(g$value_double, g$value_tape,  tolerance = 0)
     expect_equal(g$value_double, g$value_arena, tolerance = 0)
     expect_equal(g$value_double, g$value_dual,  tolerance = 0)
     expect_equal(g$grad_dual,  0, tolerance = 0, info = paste("x =", x))
-    expect_equal(g$grad_tape,  0, tolerance = 0, info = paste("x =", x))
     expect_equal(g$grad_arena, 0, tolerance = 0, info = paste("x =", x))
   }
   # Above the clamp the three still agree with each other and with 1/x.
   for (x in c(1e-13, 0.5, 3)) {
     g <- cpp_test_scalar_guard("log", x)
     expect_equal(g$grad_dual,  1 / x, tolerance = 1e-12)
-    expect_equal(g$grad_tape,  1 / x, tolerance = 1e-12)
     expect_equal(g$grad_arena, 1 / x, tolerance = 1e-12)
   }
 })
@@ -32,12 +29,9 @@ test_that("log_sum_exp returns -Inf, not NaN, when both components underflow", {
   g <- cpp_test_lse_guard(-Inf, -Inf)
   expect_equal(g$value_double, -Inf)
   expect_equal(g$value_dual,   -Inf)
-  expect_equal(g$value_tape,   -Inf)
   expect_equal(g$value_arena,  -Inf)
   # and no NaN reaches the adjoint buffer
   expect_false(is.nan(g$grad_a_dual))
-  expect_false(is.nan(g$grad_a_tape))
-  expect_false(is.nan(g$grad_b_tape))
   expect_false(is.nan(g$grad_a_arena))
   expect_false(is.nan(g$grad_b_arena))
 })
@@ -51,19 +45,17 @@ test_that("log_sum_exp agrees across types on ordinary arguments", {
     g <- cpp_test_lse_guard(a, b)
     expect_equal(g$value_double, ref, tolerance = 1e-12)
     expect_equal(g$value_dual,   ref, tolerance = 1e-12)
-    expect_equal(g$value_tape,   ref, tolerance = 1e-12)
     expect_equal(g$value_arena,  ref, tolerance = 1e-12)
     # softmax weights
     wa <- exp(a - ref)
     expect_equal(g$grad_a_dual,  wa, tolerance = 1e-10)
-    expect_equal(g$grad_a_tape,  wa, tolerance = 1e-10)
     expect_equal(g$grad_a_arena, wa, tolerance = 1e-10)
   }
 })
 
 skip_on_cran()
-# Value and derivative parity of the shared scalar primitives across the four
-# scalar types the templated log posterior is instantiated for (gcol33/tulpa#446).
+# Value and derivative parity of the shared scalar primitives for double values,
+# arena gradients and scalar directional derivatives (gcol33/tulpa#446).
 #
 # The runtime gradient check differences the double instantiation against a
 # reverse-mode one as though they were one function, so a primitive that
@@ -81,11 +73,9 @@ test_that("expm1 keeps its precision on every type, not just the double one", {
     ref <- expm1(x)
     expect_equal(g$value_double, ref, tolerance = 1e-15, info = paste("x =", x))
     expect_equal(g$value_dual,   ref, tolerance = 1e-15, info = paste("x =", x))
-    expect_equal(g$value_tape,   ref, tolerance = 1e-15, info = paste("x =", x))
     expect_equal(g$value_arena,  ref, tolerance = 1e-15, info = paste("x =", x))
     # d/dx expm1(x) = exp(x)
     expect_equal(g$grad_dual,  exp(x), tolerance = 1e-12)
-    expect_equal(g$grad_tape,  exp(x), tolerance = 1e-12)
     expect_equal(g$grad_arena, exp(x), tolerance = 1e-12)
   }
 })
@@ -100,12 +90,10 @@ test_that("log1m_exp agrees across types in the small-argument branch", {
     ref <- log(-expm1(-a))
     expect_equal(g$value_double, ref, tolerance = 1e-12, info = paste("a =", a))
     expect_equal(g$value_dual,   ref, tolerance = 1e-12, info = paste("a =", a))
-    expect_equal(g$value_tape,   ref, tolerance = 1e-12, info = paste("a =", a))
     expect_equal(g$value_arena,  ref, tolerance = 1e-12, info = paste("a =", a))
     # d/da log(1 - exp(-a)) = exp(-a) / (1 - exp(-a))
     d <- exp(-a) / (-expm1(-a))
     expect_equal(g$grad_dual,  d, tolerance = 1e-6, info = paste("a =", a))
-    expect_equal(g$grad_tape,  d, tolerance = 1e-6, info = paste("a =", a))
     expect_equal(g$grad_arena, d, tolerance = 1e-6, info = paste("a =", a))
   }
 })

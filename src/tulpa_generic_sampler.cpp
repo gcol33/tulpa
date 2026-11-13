@@ -13,7 +13,6 @@
 #include "linalg_fast.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
-#include "tulpa/autodiff_fwd.h"
 #include "tulpa/nuts_api.h"
 #include "sampler_model_data.h"
 #include <tulpa/field_setup_api.h>
@@ -467,7 +466,7 @@ T gaussian_likelihood(
     T half_resid_sq = T(0.5) * residual * residual;
     T neg_two_ls = neg_log_sigma + neg_log_sigma;
     // `exp` resolves through ADL: std::exp for T = double, tulpa::arena::exp
-    // for arena::Var, fwd::exp for fwd::Dual.
+    // for arena::Var.
     using std::exp;
     T precision = exp(neg_two_ls);
     return neg_log_sigma - half_resid_sq * precision;

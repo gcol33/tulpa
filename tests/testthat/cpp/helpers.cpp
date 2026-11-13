@@ -6,7 +6,6 @@
 #include <cmath>
 #include <vector>
 #include <random>
-#include "autodiff.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
 #include "autodiff_utils.h"
@@ -310,23 +309,22 @@ NumericVector cpp_test_matvec(NumericMatrix A, NumericVector x) {
 }
 
 // ---------------------------------------------------------------------------
-// Autodiff tests - test the actual autodiff.h implementation
+// Arena reverse-mode primitive tests
 // ---------------------------------------------------------------------------
 
-using namespace tulpa::ad;
+using namespace tulpa::arena;
 
 namespace {
 // Shared scaffolding for unary autodiff tests:
 // build a single-input Var, apply f, run backward, collect val/adj.
 template <class F>
 inline List unary_autodiff_test(double x_val, F&& f, double expected_grad) {
-  init_tape();
+  tulpa::arena::ArenaScope scope;
   Var x(x_val);
   Var result = f(x);
   result.backward();
   double value = result.val();
   double grad = x.adj();
-  clear_tape();
   return List::create(
     Named("value") = value,
     Named("gradient") = grad,
@@ -339,7 +337,7 @@ inline List unary_autodiff_test(double x_val, F&& f, double expected_grad) {
 List cpp_test_autodiff_gradient(NumericVector x_vals) {
   // Test gradient computation for f(x) = sum(x^2)
   // Gradient should be 2*x
-  init_tape();
+  tulpa::arena::ArenaScope scope;
 
   int n = x_vals.size();
   std::vector<Var> x(n);
@@ -365,7 +363,6 @@ List cpp_test_autodiff_gradient(NumericVector x_vals) {
   }
 
   double value = result.val();
-  clear_tape();
 
   return List::create(
     Named("value") = value,
@@ -377,7 +374,7 @@ List cpp_test_autodiff_gradient(NumericVector x_vals) {
 List cpp_test_autodiff_exp_chain(double x_val) {
   // Test chain rule: f(x) = exp(x^2), f'(x) = 2x * exp(x^2)
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::exp(x * x); },
+    [](Var x) { return tulpa::arena::exp(x * x); },
     2.0 * x_val * std::exp(x_val * x_val));
 }
 
@@ -386,7 +383,7 @@ List cpp_test_autodiff_log_likelihood(IntegerVector y, NumericVector eta) {
   // Test Poisson log-likelihood gradient w.r.t. linear predictor
   // ll = sum(y * eta - exp(eta))
   // dll/deta = y - exp(eta)
-  init_tape();
+  tulpa::arena::ArenaScope scope;
 
   int n = y.size();
   std::vector<Var> eta_ad(n);
@@ -397,7 +394,7 @@ List cpp_test_autodiff_log_likelihood(IntegerVector y, NumericVector eta) {
 
   Var ll = Var(0.0);
   for (int i = 0; i < n; i++) {
-    ll = ll + Var((double)y[i]) * eta_ad[i] - tulpa::ad::exp(eta_ad[i]);
+    ll = ll + Var((double)y[i]) * eta_ad[i] - tulpa::arena::exp(eta_ad[i]);
   }
 
   ll.backward();
@@ -410,7 +407,6 @@ List cpp_test_autodiff_log_likelihood(IntegerVector y, NumericVector eta) {
   }
 
   double value = ll.val();
-  clear_tape();
 
   return List::create(
     Named("value") = value,
@@ -423,7 +419,7 @@ List cpp_test_autodiff_log_likelihood(IntegerVector y, NumericVector eta) {
 List cpp_test_autodiff_division(double a_val, double b_val) {
   // Test division: f(a, b) = a / b
   // df/da = 1/b, df/db = -a/b^2
-  init_tape();
+  tulpa::arena::ArenaScope scope;
 
   Var a(a_val);
   Var b(b_val);
@@ -436,7 +432,6 @@ List cpp_test_autodiff_division(double a_val, double b_val) {
   double grad_a = a.adj();
   double grad_b = b.adj();
 
-  clear_tape();
 
   return List::create(
     Named("value") = value,
@@ -451,7 +446,7 @@ List cpp_test_autodiff_division(double a_val, double b_val) {
 List cpp_test_autodiff_lgamma(double x_val) {
   // d/dx lgamma(x) = digamma(x)
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::lgamma(x); },
+    [](Var x) { return tulpa::arena::lgamma(x); },
     R::digamma(x_val));
 }
 
@@ -459,7 +454,7 @@ List cpp_test_autodiff_lgamma(double x_val) {
 List cpp_test_autodiff_softplus(double x_val) {
   // f(x) = log(1+exp(x)), f'(x) = sigmoid(x)
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::softplus(x); },
+    [](Var x) { return tulpa::arena::softplus(x); },
     1.0 / (1.0 + std::exp(-x_val)));
 }
 
@@ -468,7 +463,7 @@ List cpp_test_autodiff_inv_logit(double x_val) {
   // f(x) = 1/(1+exp(-x)), f'(x) = f(x)*(1-f(x))
   double s = 1.0 / (1.0 + std::exp(-x_val));
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::inv_logit(x); },
+    [](Var x) { return tulpa::arena::inv_logit(x); },
     s * (1.0 - s));
 }
 
@@ -480,7 +475,7 @@ List cpp_test_autodiff_inv_logit(double x_val) {
 List cpp_test_autodiff_log(double x_val) {
   // f(x) = log(x), f'(x) = 1/x
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::log(x); },
+    [](Var x) { return tulpa::arena::log(x); },
     1.0 / x_val);
 }
 
@@ -488,7 +483,7 @@ List cpp_test_autodiff_log(double x_val) {
 List cpp_test_autodiff_sqrt(double x_val) {
   // f(x) = sqrt(x), f'(x) = 1/(2*sqrt(x))
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::sqrt(x); },
+    [](Var x) { return tulpa::arena::sqrt(x); },
     1.0 / (2.0 * std::sqrt(x_val)));
 }
 
@@ -496,7 +491,7 @@ List cpp_test_autodiff_sqrt(double x_val) {
 List cpp_test_autodiff_pow(double x_val, double p) {
   // f(x) = x^p, f'(x) = p * x^(p-1)
   return unary_autodiff_test(x_val,
-    [p](Var x) { return tulpa::ad::pow(x, p); },
+    [p](Var x) { return tulpa::arena::pow(x, p); },
     p * std::pow(x_val, p - 1.0));
 }
 
@@ -504,7 +499,7 @@ List cpp_test_autodiff_pow(double x_val, double p) {
 List cpp_test_autodiff_log1p(double x_val) {
   // f(x) = log(1+x), f'(x) = 1/(1+x)
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::log1p(x); },
+    [](Var x) { return tulpa::arena::log1p(x); },
     1.0 / (1.0 + x_val));
 }
 
@@ -513,11 +508,11 @@ List cpp_test_autodiff_log_sum_exp(double a_val, double b_val) {
   // Test log_sum_exp: f(a,b) = log(exp(a) + exp(b))
   // df/da = exp(a) / (exp(a) + exp(b)) = softmax(a)
   // df/db = exp(b) / (exp(a) + exp(b)) = softmax(b)
-  init_tape();
+  tulpa::arena::ArenaScope scope;
 
   Var a(a_val);
   Var b(b_val);
-  Var result = tulpa::ad::log_sum_exp(a, b);
+  Var result = tulpa::arena::log_sum_exp(a, b);
 
   result.backward();
 
@@ -531,7 +526,6 @@ List cpp_test_autodiff_log_sum_exp(double a_val, double b_val) {
   double expected_a = std::exp(a_val - max_val) / sum_exp;
   double expected_b = std::exp(b_val - max_val) / sum_exp;
 
-  clear_tape();
 
   return List::create(
     Named("value") = value,
@@ -546,7 +540,7 @@ List cpp_test_autodiff_log_sum_exp(double a_val, double b_val) {
 List cpp_test_autodiff_logit(double x_val) {
   // f(x) = log(x/(1-x)), f'(x) = 1/(x*(1-x))
   return unary_autodiff_test(x_val,
-    [](Var x) { return tulpa::ad::logit(x); },
+    [](Var x) { return tulpa::arena::logit(x); },
     1.0 / (x_val * (1.0 - x_val)));
 }
 
@@ -559,7 +553,7 @@ List cpp_test_autodiff_negbin_loglik(IntegerVector y, NumericVector mu, double p
   // Test negative binomial log-likelihood gradient
   // ll = sum( lgamma(y + phi) - lgamma(phi) - lgamma(y + 1)
   //           + phi * log(phi/(phi+mu)) + y * log(mu/(phi+mu)) )
-  init_tape();
+  tulpa::arena::ArenaScope scope;
 
   int n = y.size();
   std::vector<Var> mu_ad(n);
@@ -571,13 +565,13 @@ List cpp_test_autodiff_negbin_loglik(IntegerVector y, NumericVector mu, double p
   Var ll = Var(0.0);
   for (int i = 0; i < n; i++) {
     // lgamma terms (y and phi are treated as constants for gradient purposes)
-    ll = ll + tulpa::ad::lgamma(Var((double)y[i]) + phi_ad);
-    ll = ll - tulpa::ad::lgamma(phi_ad);
+    ll = ll + tulpa::arena::lgamma(Var((double)y[i]) + phi_ad);
+    ll = ll - tulpa::arena::lgamma(phi_ad);
 
     // phi * log(phi/(phi+mu)) + y * log(mu/(phi+mu))
     Var rate = phi_ad + mu_ad[i];
-    ll = ll + phi_ad * tulpa::ad::log(phi_ad / rate);
-    ll = ll + Var((double)y[i]) * tulpa::ad::log(mu_ad[i] / rate);
+    ll = ll + phi_ad * tulpa::arena::log(phi_ad / rate);
+    ll = ll + Var((double)y[i]) * tulpa::arena::log(mu_ad[i] / rate);
   }
 
   ll.backward();
@@ -589,7 +583,6 @@ List cpp_test_autodiff_negbin_loglik(IntegerVector y, NumericVector mu, double p
   double grad_phi = phi_ad.adj();
   double value = ll.val();
 
-  clear_tape();
 
   return List::create(
     Named("value") = value,
@@ -1365,115 +1358,6 @@ List cpp_test_spde_nc_transform_grad(
 }
 
 // ---------------------------------------------------------------------------
-// SPDE non-centered transform: forward-mode tangent vs central differences
-// ---------------------------------------------------------------------------
-//
-// Validates SpdeNcTransform::forward_with_tangent, the kernel powering the
-// fwd::Dual instantiation of compute_log_post_generic for joint-NUTS SPDE.
-// For each scalar input axis (z[0]..z[n-1], log_kappa, log_tau) we seed a
-// unit tangent, run forward_with_tangent, and compare the resulting dw
-// against central differences of forward() along the same axis.
-// [[Rcpp::export]]
-List cpp_test_spde_nc_transform_fwd(
-    Rcpp::NumericVector C0_diag,
-    Rcpp::NumericVector G1_x,
-    Rcpp::IntegerVector G1_i,
-    Rcpp::IntegerVector G1_p,
-    Rcpp::NumericVector z_init,
-    double log_kappa_val,
-    double log_tau_val,
-    double fd_eps = 1e-5,
-    Rcpp::Nullable<Rcpp::NumericVector> poles_nullable   = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
-) {
-  using tulpa::SpdeNcTransform;
-  const int n = z_init.size();
-
-  std::vector<double> C0_d(C0_diag.begin(), C0_diag.end());
-  std::vector<double> G1_xv(G1_x.begin(), G1_x.end());
-  std::vector<int>    G1_iv(G1_i.begin(), G1_i.end());
-  std::vector<int>    G1_pv(G1_p.begin(), G1_p.end());
-
-  std::vector<double> poles_v, weights_v;
-  if (poles_nullable.isNotNull() && weights_nullable.isNotNull()) {
-    poles_v   = Rcpp::as<std::vector<double>>(poles_nullable);
-    weights_v = Rcpp::as<std::vector<double>>(weights_nullable);
-  }
-
-  const double kappa = std::exp(log_kappa_val);
-  const double tau   = std::exp(log_tau_val);
-
-  Eigen::VectorXd z(n);
-  for (int i = 0; i < n; i++) z[i] = z_init[i];
-
-  Eigen::VectorXd w_baseline;
-  {
-    SpdeNcTransform tx;
-    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
-    w_baseline = tx.forward(z, kappa, tau);
-  }
-
-  auto forward_at = [&](const Eigen::VectorXd& z_pt,
-                        double log_k, double log_t) -> Eigen::VectorXd {
-    SpdeNcTransform tx;
-    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
-    return tx.forward(z_pt, std::exp(log_k), std::exp(log_t));
-  };
-
-  Rcpp::NumericMatrix dw_fwd(n, n + 2);
-  Rcpp::NumericMatrix dw_fd (n, n + 2);
-
-  for (int i = 0; i < n; i++) {
-    SpdeNcTransform tx;
-    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
-    Eigen::VectorXd dz = Eigen::VectorXd::Zero(n);
-    dz[i] = 1.0;
-    Eigen::VectorXd w_v, dw_v;
-    tx.forward_with_tangent(z, dz, kappa, 0.0, tau, 0.0, w_v, dw_v);
-    for (int k = 0; k < n; k++) dw_fwd(k, i) = dw_v[k];
-
-    Eigen::VectorXd z_pt = z;
-    z_pt[i] += fd_eps;
-    Eigen::VectorXd wp = forward_at(z_pt, log_kappa_val, log_tau_val);
-    z_pt[i] -= 2 * fd_eps;
-    Eigen::VectorXd wm = forward_at(z_pt, log_kappa_val, log_tau_val);
-    for (int k = 0; k < n; k++) dw_fd(k, i) = (wp[k] - wm[k]) / (2 * fd_eps);
-  }
-
-  {
-    SpdeNcTransform tx;
-    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
-    Eigen::VectorXd dz0 = Eigen::VectorXd::Zero(n);
-    Eigen::VectorXd w_v, dw_v;
-    tx.forward_with_tangent(z, dz0, kappa, 1.0, tau, 0.0, w_v, dw_v);
-    for (int k = 0; k < n; k++) dw_fwd(k, n) = dw_v[k];
-
-    Eigen::VectorXd wp = forward_at(z, log_kappa_val + fd_eps, log_tau_val);
-    Eigen::VectorXd wm = forward_at(z, log_kappa_val - fd_eps, log_tau_val);
-    for (int k = 0; k < n; k++) dw_fd(k, n) = (wp[k] - wm[k]) / (2 * fd_eps);
-  }
-
-  {
-    SpdeNcTransform tx;
-    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
-    Eigen::VectorXd dz0 = Eigen::VectorXd::Zero(n);
-    Eigen::VectorXd w_v, dw_v;
-    tx.forward_with_tangent(z, dz0, kappa, 0.0, tau, 1.0, w_v, dw_v);
-    for (int k = 0; k < n; k++) dw_fwd(k, n + 1) = dw_v[k];
-
-    Eigen::VectorXd wp = forward_at(z, log_kappa_val, log_tau_val + fd_eps);
-    Eigen::VectorXd wm = forward_at(z, log_kappa_val, log_tau_val - fd_eps);
-    for (int k = 0; k < n; k++) dw_fd(k, n + 1) = (wp[k] - wm[k]) / (2 * fd_eps);
-  }
-
-  return List::create(
-    _["w"]      = NumericVector(w_baseline.data(), w_baseline.data() + n),
-    _["dw_fwd"] = dw_fwd,
-    _["dw_fd"]  = dw_fd
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Sum-to-zero block-Schur log-determinant + Newton step
 // ---------------------------------------------------------------------------
 //
@@ -2099,15 +1983,6 @@ List cpp_test_lse_guard(double a, double b) {
   fwd::Dual ad_(a, 1.0), bd(b, 0.0);
   fwd::Dual rd = fwd::log_sum_exp(ad_, bd);
 
-  double v_tape = 0.0, ga_tape = 0.0, gb_tape = 0.0;
-  {
-    tulpa::ad::TapeScope scope;
-    tulpa::ad::Var av(scope.tape, a), bv(scope.tape, b);
-    tulpa::ad::Var rv = tulpa::ad::log_sum_exp(av, bv);
-    rv.backward();
-    v_tape = rv.val(); ga_tape = av.adj(); gb_tape = bv.adj();
-  }
-
   double v_arena = 0.0, ga_arena = 0.0, gb_arena = 0.0;
   {
     tulpa::arena::ArenaScope scope;
@@ -2122,9 +1997,6 @@ List cpp_test_lse_guard(double a, double b) {
     Named("value_double") = v_double,
     Named("value_dual")   = rd.val,
     Named("grad_a_dual")  = rd.grad,
-    Named("value_tape")   = v_tape,
-    Named("grad_a_tape")  = ga_tape,
-    Named("grad_b_tape")  = gb_tape,
     Named("value_arena")  = v_arena,
     Named("grad_a_arena") = ga_arena,
     Named("grad_b_arena") = gb_arena
@@ -2136,10 +2008,10 @@ List cpp_test_lse_guard(double a, double b) {
 // ---------------------------------------------------------------------------
 //
 // compute_log_post is instantiated for double (the value path, which the
-// numerical gradient finite-differences) and for the two reverse-mode Var types
+// numerical gradient finite-differences) and for the arena reverse-mode type
 // (the live gradient). The runtime check compares those two evaluations as
 // though they were one function, so each primitive has to agree in value and in
-// derivative across all four types -- including at the guard boundaries, where
+// derivative across the scalar types -- including at the guard boundaries, where
 // an unguarded overload returns Inf or NaN and its guarded twin returns a
 // finite number.
 //
@@ -2187,23 +2059,6 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
     g_dual = rd.grad;
   }
 
-  // Tape reverse mode.
-  double v_tape = 0.0, g_tape = 0.0;
-  {
-    tulpa::ad::TapeScope scope;
-    tulpa::ad::Var xv(scope.tape, x);
-    tulpa::ad::Var rv = is_exp   ? tulpa::ad::exp(xv)
-                      : is_log   ? tulpa::ad::log(xv)
-                      : is_sqrt  ? tulpa::ad::sqrt(xv)
-                      : is_pow   ? tulpa::ad::pow(xv, p)
-                      : is_expm1 ? tulpa::math::expm1_fn(xv)
-                      : is_l1me  ? tulpa::math::log1m_exp_fn(xv)
-                                 : tulpa::ad::logit(xv);
-    rv.backward();
-    v_tape = rv.val();
-    g_tape = xv.adj();
-  }
-
   // Arena reverse mode.
   double v_arena = 0.0, g_arena = 0.0;
   {
@@ -2226,8 +2081,6 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
     Named("value_double") = v_double,
     Named("value_dual")   = v_dual,
     Named("grad_dual")    = g_dual,
-    Named("value_tape")   = v_tape,
-    Named("grad_tape")    = g_tape,
     Named("value_arena")  = v_arena,
     Named("grad_arena")   = g_arena
   );

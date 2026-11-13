@@ -301,4 +301,5 @@ instead -- e.g. tulpaObs's marginalized single-season occupancy likelihood
 `sparse_solver_api.h`, `spde_api.h`, `tgmrf.h`. Latent-structure data structs:
 `gp_data.h`, `hsgp_data.h`, `st_data.h`, `svc_data.h`, `tvc_data.h`,
 `temporal_data.h`, `spde_model_data.h`. Autodiff: `autodiff_arena.h`,
-`autodiff_fwd.h`. Shared: `types.h`, `portable_math.h`, `priors_capped.h`.
+`autodiff_fwd.h` (scalar directional derivatives). Gradient names are `auto`,
+`N` / `numerical`, `A_r` / `arena`, `H` / `handcoded` (`types.h`). Shared: `types.h`, `portable_math.h`, `priors_capped.h`.

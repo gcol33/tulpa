@@ -52,7 +52,7 @@ debias, or outer integration), not as standalone alternatives.
 ## Key Design Principles
 
 1. **Tier system encodes correctness, not hot path.** Tier 1 (exact MCMC), Tier 2 (Laplace), Tier 3 (VI). Hot path is consumer-dependent — for Gaussian-latent hierarchical workloads the typical path is Tier 2 with optional Tier 1 debiasing. Auto mode never silently chooses Tier 3.
-2. **Gradient progression N→A→A_r→H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
+2. **Gradient progression N -> A_r -> H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
 3. **Runtime gradient verification**: Before NUTS sampling, verify active
    gradient against numerical. The gate is `ensure_gradient_verified()` inside
    `run_hmc_chain_cpp` -- the one function every NUTS entry reaches, so no door
@@ -85,19 +85,15 @@ debias, or outer integration), not as standalone alternatives.
 - Model packages use `LinkingTo: tulpa` in DESCRIPTION
 - Key types: `ModelData`, `ParamLayout`, `LikelihoodSpec`, `LikelihoodFn<T>`, `ResidualFn`
 - **ABI version**: `TULPA_ABI_VERSION` in `model_data.h`. Bump when any exported struct layout
-  changes. Model packages auto-check on first NUTS call — mismatch gives a clear error instead
+  or an exported enum changes. Model packages auto-check on first NUTS call — mismatch gives a clear error instead
   of segfault. Registered via `R_RegisterCCallable("tulpa", "tulpa_get_abi_version", ...)`.
 - **Layout rule**: `ModelData` requires `n_processes > 0` and a `LikelihoodSpec`
   (ratio models live in tulpaRatio via that interface). New fields go in the
   stable sections — never insert before existing fields.
 - **Two AD slots on `LikelihoodSpec`, not three** (gcol33/tulpa#493, ABI 42).
   `ll_double` and `ll_arena` only. `resolve_gradient_fn` dispatches on
-  `gradient_fn`, then `ll_arena`, then the numerical fallback, and
-  `AUTODIFF_FWD` resolves to the arena path, so a forward-dual slot was filled
-  by every spec and read by none — six `fwd::Dual` instantiations of likelihood
-  kernels that never ran, and an unexercised copy of a density is where a kernel
-  falls silently out of step with its siblings. Do not reintroduce one; route
-  the mode instead if forward mode is ever wanted.
+  `gradient_fn`, then `ll_arena`, then numerical differences.
+  Every likelihood supplies its value and arena callbacks from one template.
 
 ## Prior anchors, and where a bad one is caught
 
@@ -440,7 +436,7 @@ one alias, not because the other was breaking.
 
 **tulpa owns** (generic, model-agnostic):
 - Inference engines: Laplace, EM+Laplace, VI, ESS, NUTS, MI correction, Gibbs correction
-- Autodiff: arena, forward, tape
+- Autodiff: arena reverse-mode gradients; scalar directional derivatives
 - Latent structure: spatial, temporal, RE, SVC, TVC, ST, latent factors
 
 ### Temporal GP (irregularly-spaced times)
@@ -740,7 +736,7 @@ fit <- tulpa_fit(y ~ x + latent(custom), data = d, tier = "laplace")
 tulpa compiles via `Rcpp::sourceCpp` against `inst/include/tulpa/`,
 registers the block in the latent-structure registry, and inference
 layers pick it up automatically. Because the user code compiles with
-tulpa's templated AD types (`A`, `A_r`), the block works under **any
+tulpa's arena AD type (`arena::Var`), the block works under **any
 tier including NUTS** — no R callback, no broken gradient chain.
 
 Comparison:

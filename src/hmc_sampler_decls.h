@@ -52,26 +52,11 @@ using tulpa::HSGPData;
 using tulpa::TVCData;
 using tulpa::SpatialType;
 using tulpa::GradientMode;
+using tulpa::parse_gradient_mode;
 using tulpa::MassMatrixType;
 using tulpa::GPSolverConfig;
 using tulpa::GPSolver;
 using tulpa::MSGPSampler;
-
-// Parse gradient mode from string
-inline GradientMode parse_gradient_mode(const std::string& mode_str) {
-    static const tulpa::EnumEntry<GradientMode> table[] = {
-        {"auto", GradientMode::AUTO}, {"AUTO", GradientMode::AUTO},
-        {"N", GradientMode::NUMERICAL}, {"numerical", GradientMode::NUMERICAL},
-        {"A_t", GradientMode::AUTODIFF_TAPE}, {"autodiff_tape", GradientMode::AUTODIFF_TAPE},
-        {"A_r", GradientMode::AUTODIFF_ARENA}, {"arena", GradientMode::AUTODIFF_ARENA},
-        {"autodiff_arena", GradientMode::AUTODIFF_ARENA},
-        {"A", GradientMode::AUTODIFF_FWD}, {"autodiff", GradientMode::AUTODIFF_FWD},
-        {"forward", GradientMode::AUTODIFF_FWD},
-        {"H", GradientMode::HANDCODED}, {"handcoded", GradientMode::HANDCODED},
-        {"analytical", GradientMode::HANDCODED}
-    };
-    return tulpa::parse_enum(mode_str, table, GradientMode::AUTO);
-}
 
 // Human-readable metric name for verbose logging
 inline const char* metric_name(MassMatrixType t) {

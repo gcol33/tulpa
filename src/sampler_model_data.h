@@ -29,7 +29,6 @@
 #include "tulpa/field_coordinates.h"
 #include "tulpa/types.h"
 #include "tulpa/autodiff_arena.h"
-#include "tulpa/autodiff_fwd.h"
 #include "laplace_builtin_family_spec.h"  // builtin_family_spec / BuiltinFamilyResponse
 #include "builtin_family_ll_ad.h"         // builtin_family_ll_ad / builtin_family_has_ad
 #include "re_structure.h"                 // populate_re_structure

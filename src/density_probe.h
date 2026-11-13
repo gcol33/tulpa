@@ -11,12 +11,8 @@ inline Rcpp::NumericVector density_callback_terms(double eta, double log_phi, co
     tulpa::arena::Var ae(eta), ap(log_phi);
     auto a = fn(ae, ap);
     a.backward();
-    tulpa::ad::TapeScope tape;
-    tulpa::ad::Var te(eta), tp(log_phi);
-    auto t = fn(te, tp);
-    t.backward();
     return Rcpp::NumericVector::create(e.val, e.grad, p.grad,
-        a.val(), ae.adj(), ap.adj(), t.val(), te.adj(), tp.adj());
+        a.val(), ae.adj(), ap.adj());
 }
 
 #endif

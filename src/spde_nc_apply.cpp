@@ -93,63 +93,6 @@ void apply_spde_nc_transform_double(
     }
 }
 
-void apply_spde_nc_transform_fwd(
-    const std::vector<::fwd::Dual>& params,
-    const ModelData&                data,
-    const ParamLayout&              layout,
-    std::vector<::fwd::Dual>&       spde_w_out)
-{
-    const int n_mesh = data.spde_data.n_mesh;
-    const int w0     = layout.spde_w_start;
-
-    SpdeNcTransform& tx = ensure_transform(data);
-
-    Eigen::VectorXd z(n_mesh), dz(n_mesh);
-    for (int j = 0; j < n_mesh; j++) {
-        z [j] = params[w0 + j].val;
-        dz[j] = params[w0 + j].grad;
-    }
-
-    spde_w_out.resize(n_mesh);
-
-    if (data.spde_data.nc_fixed) {
-        // Fixed-hyper non-centering: v = L^{-T} z, dv = L^{-T} dz.
-        Eigen::VectorXd v, dv;
-        tx.forward_fixed_with_tangent(z, dz, v, dv);
-        for (int j = 0; j < n_mesh; j++) {
-            spde_w_out[j] = ::fwd::Dual(v[j], dv[j]);
-        }
-        return;
-    }
-
-    const double log_kappa  = params[layout.log_kappa_spde_idx].val;
-    const double log_tau    = params[layout.log_tau_spde_idx ].val;
-    const double dlog_kappa = params[layout.log_kappa_spde_idx].grad;
-    const double dlog_tau   = params[layout.log_tau_spde_idx ].grad;
-    const double kappa      = std::exp(log_kappa);
-    const double tau        = std::exp(log_tau);
-
-    try {
-        Eigen::VectorXd w, dw;
-        tx.forward_with_tangent(z, dz, kappa, dlog_kappa, tau, dlog_tau,
-                                w, dw);
-        for (int j = 0; j < n_mesh; j++) {
-            spde_w_out[j] = ::fwd::Dual(w[j], dw[j]);
-        }
-    } catch (const std::runtime_error&) {
-        // Cholesky failure during the forward (Q not PD at extreme hypers
-        // during warmup adaptation; zero-mass mesh nodes are ridged at init,
-        // so a structurally singular Q does not reach here). Emit NaN dual for
-        // both .val and .grad
-        // so the downstream eta accumulator propagates NaN to log_post;
-        // NUTS treats NaN as -Inf and rejects the trajectory cleanly.
-        const double nan_v = std::numeric_limits<double>::quiet_NaN();
-        for (int j = 0; j < n_mesh; j++) {
-            spde_w_out[j] = ::fwd::Dual(nan_v, nan_v);
-        }
-    }
-}
-
 void apply_spde_nc_transform_arena(
     const std::vector<arena::Var>& params,
     const ModelData&               data,

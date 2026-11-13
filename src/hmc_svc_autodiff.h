@@ -1,6 +1,6 @@
 // hmc_svc_autodiff.h
 // Templated SVC (Spatially-Varying Coefficients) with NNGP approximation
-// Works with both double and ad::Var for automatic differentiation
+// Works with both double and arena::Var for automatic differentiation
 
 #ifndef TULPA_HMC_SVC_AUTODIFF_H
 #define TULPA_HMC_SVC_AUTODIFF_H

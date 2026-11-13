@@ -174,24 +174,6 @@ void SpdeNcTransform::backward_fixed(const Eigen::VectorXd& dv,
     dz_out = L.template triangularView<Eigen::Lower>().solve(dv);
 }
 
-void SpdeNcTransform::forward_fixed_with_tangent(
-    const Eigen::VectorXd& z,
-    const Eigen::VectorXd& dz,
-    Eigen::VectorXd&       v_out,
-    Eigen::VectorXd&       dv_out) const
-{
-    if (!factored) {
-        throw std::runtime_error("SpdeNcTransform::forward_fixed_with_tangent "
-                                 "without init_fixed");
-    }
-    // Fixed (kappa, tau): the map is the constant linear v = L^{-T} z, so the
-    // tangent is dv = L^{-T} dz (no M = L^{-1} dQ L^{-T} term).
-    SpMat L = llt.matrixL();
-    auto U = L.transpose().template triangularView<Eigen::Upper>();
-    v_out  = U.solve(z);
-    dv_out = U.solve(dz);
-}
-
 SpdeNcTransform::SpMat SpdeNcTransform::build_K(double kappa) const {
     return build_K_shifted(kappa * kappa);
 }
@@ -220,7 +202,7 @@ SpdeNcTransform::SpMat SpdeNcTransform::build_Q(double k2_eff, double tau) const
     // It also makes the hyper derivatives exact rather than approximately so:
     // d(k2^2)/dlog_kappa = 4 k2^2 and d(2 k2)/dlog_kappa = 4 k2 give
     // dQ/dlog_kappa = 4 kappa^2 tau^2 K with no appeal to C D = I, which is
-    // the closed form backward() and forward_with_tangent() already apply and
+    // the closed form backward() applies and
     // the one implicit_diff.h uses on the Laplace side.
     //
     // G diag(1/C0) G carries no kappa, so init() builds it once.
@@ -369,82 +351,6 @@ void SpdeNcTransform::backward(
     // on a mesh that carries one.
     dlog_tau_out = -z.dot(y);
     if (has_orphans) dlog_tau_out -= 2.0 * trace_term(orphan_ridge);
-}
-
-void SpdeNcTransform::forward_with_tangent(
-    const Eigen::VectorXd& z,
-    const Eigen::VectorXd& dz,
-    double                 kappa,
-    double                 dlog_kappa,
-    double                 tau,
-    double                 dlog_tau,
-    Eigen::VectorXd&       w_out,
-    Eigen::VectorXd&       dw_out)
-{
-    // Value pass. Populates llt, last_K[_sum], last_Q, last_kappa, last_tau.
-    w_out = forward(z, kappa, tau);
-    const int n = n_mesh;
-
-    SpMat L  = llt.matrixL();
-    SpMat LT = L.transpose();
-
-    // dQ = dlog_kappa * (4 kappa^2 tau^2) K_for_logkappa + dlog_tau * 2 Q.
-    // dQ is symmetric and sparse (same pattern as Q). Avoid forming it as
-    // a single matrix when the prefactors are trivial — we'll apply dQ via
-    // matvec, and matvec on (a*A + b*B) splits cleanly.
-    const SpMat& K_for_logkappa = is_rational() ? last_K_sum : last_K;
-    const double c_logkappa     = 4.0 * kappa * kappa * tau * tau * dlog_kappa;
-    const double c_logtau       = 2.0 * dlog_tau;
-
-    auto dQ_matvec = [&](const Eigen::VectorXd& v) -> Eigen::VectorXd {
-        // (c_logkappa * K + c_logtau * (Q - R)) * v, computed without
-        // materializing the linear combination. R is the theta-independent
-        // orphan ridge, which does not scale with tau.
-        Eigen::VectorXd out = c_logkappa * (K_for_logkappa * v);
-        if (c_logtau != 0.0) {
-            out.noalias() += c_logtau * (last_Q * v);
-            if (has_orphans) {
-                out -= c_logtau * orphan_diag.cwiseProduct(v);
-            }
-        }
-        return out;
-    };
-
-    // Cheap: M z = L^{-1} (dQ (L^{-T} z)) = L^{-1} (dQ w).
-    Eigen::VectorXd Mz = dQ_matvec(w_out);
-    L.template triangularView<Eigen::Lower>().solveInPlace(Mz);
-
-    // Expensive but matches the adjoint trace: Phi(M) z by streaming.
-    //   (Phi(M) z)[i] = sum_{j<i} M[i,j] z[j] + 0.5 M[i,i] z[i]
-    // Per column j, M[:, j] = L^{-1} (dQ (L^{-T} e_j)) contributes
-    //   c_j[i] * z[j]   to PhiMz[i] for i > j,
-    //   0.5 * c_j[j] * z[j]  to PhiMz[j].
-    Eigen::VectorXd PhiMz = Eigen::VectorXd::Zero(n);
-    Eigen::VectorXd e_j   = Eigen::VectorXd::Zero(n);
-    for (int j = 0; j < n; ++j) {
-        e_j[j] = 1.0;
-        Eigen::VectorXd v_j =
-            LT.template triangularView<Eigen::Upper>().solve(e_j);
-        e_j[j] = 0.0;
-
-        Eigen::VectorXd c_j = dQ_matvec(v_j);
-        L.template triangularView<Eigen::Lower>().solveInPlace(c_j);
-
-        const double zj = z[j];
-        if (zj != 0.0) {
-            // Strict lower: i > j.
-            PhiMz.tail(n - j - 1).noalias() += zj * c_j.tail(n - j - 1);
-            // Halved diagonal: i = j.
-            PhiMz[j] += 0.5 * zj * c_j[j];
-        }
-    }
-
-    // Phi(M)^T z = M z - Phi(M) z (symmetric M).
-    Eigen::VectorXd rhs = dz;
-    rhs.noalias() -= (Mz - PhiMz);
-
-    // dw = L^{-T} (dz - Phi(M)^T z).
-    dw_out = LT.template triangularView<Eigen::Upper>().solve(rhs);
 }
 
 std::vector<arena::Var> spde_nc_transform_arena(

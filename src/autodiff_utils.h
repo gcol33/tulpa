@@ -1,6 +1,6 @@
 // autodiff_utils.h
-// Templated math functions that work with double, ad::Var (tape), fwd::Dual (forward),
-// and arena::Var (arena reverse-mode)
+// Shared scalar and density math for double, arena reverse-mode AD,
+// and directional derivatives with fwd::Dual.
 // Enables single implementation of compute_log_post for both evaluation and gradient
 
 #ifndef TULPA_AUTODIFF_UTILS_H
@@ -11,7 +11,6 @@
 #include <tulpa/scalar_priors.h>
 #include <vector>
 #include <Rcpp.h>
-#include "autodiff.h"
 #include "tulpa/autodiff_fwd.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/ad_scalar_math.h"
@@ -20,97 +19,6 @@
 
 namespace tulpa {
 namespace math {
-
-template<> struct PrecisionUnary<ad::Var> {
-    static ad::Var apply(const ad::Var& x, double value, double derivative) {
-        ad::Var out(x.tape, value);
-        const size_t input = x.idx, result = out.idx;
-        x.tape->nodes[result].backward = [input, result, derivative](ad::Tape* tape) {
-            const double adj = tape->nodes[result].adjoint;
-            if (adj != 0) tape->nodes[input].adjoint += adj*derivative;
-        };
-        return out;
-    }
-};
-
-// The tape type is src-only, so its trait specialisation and its overloads
-// of the functions in tulpa/ad_scalar_math.h live here.
-template<>
-struct is_ad_var<ad::Var> : std::true_type {};
-
-// Portable math functions are in portable_math.h (included by autodiff headers)
-
-// ============================================================================
-// Basic math functions - dispatch to std:: or ad::
-// ============================================================================
-
-// exp - ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-safe_exp(const T& x) {
-    return ad::exp(x);
-}
-
-// log - ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-safe_log(const T& x) {
-    return ad::log(x);
-}
-
-// sqrt - ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-safe_sqrt(const T& x) {
-    return ad::sqrt(x);
-}
-
-// max - ad::Var (tape) version
-// Note: for tape autodiff, max is non-differentiable at a==b,
-// but we use subgradient (gradient of the active branch)
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-safe_max(const T& a, const T& b) {
-    if (a.val() >= b.val()) {
-        return a;
-    } else {
-        return b;
-    }
-}
-
-// lgamma (log of gamma function) - double version
-
-
-// lgamma - ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-lgamma_fn(const T& x) {
-    return ad::lgamma(x);
-}
-
-// lgamma - fwd::Dual version
-
-
-// lgamma - arena::Var version
-
-
-// digamma (derivative of lgamma) - double version
-
-
-// digamma - fwd::Dual version
-
-
-// For ad::Var, digamma is handled internally by lgamma's backward pass
-
-// digamma - arena::Var version
-
-
-// inv_logit - ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-inv_logit(const T& x) {
-    return ad::inv_logit(x);
-}
 
 // Bounded parameterization for a hyperparameter confined to (lower, upper).
 //
@@ -140,34 +48,11 @@ inline double log_prior_uniform_log_normalizer(double lower, double upper) {
     return -std::log(upper - lower);
 }
 
-// log1p - double version
-
-
-// log1p - ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-log1p_fn(const T& x) {
-    return ad::log1p(x);
-}
-
-// log1p - fwd::Dual version
-
-
-// log1p - arena::Var version
-
-
 // expm1 - double version
 template<typename T>
 inline typename std::enable_if<!is_autodiff<T>::value, T>::type
 expm1_fn(T x) {
     return std::expm1(x);
-}
-
-// expm1 - ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, T>::type
-expm1_fn(const T& x) {
-    return ad::expm1(x);
 }
 
 // expm1 - fwd::Dual version
@@ -228,26 +113,6 @@ inline T inv_logit_pos(const T& x) {
     if (s > T(700.0)) s = T(700.0);
     return safe_exp(T(0.0) - s);
 }
-
-// ============================================================================
-// Value extraction (for getting double from T)
-// ============================================================================
-
-// double version
-
-
-// ad::Var (tape) version
-template<typename T>
-inline typename std::enable_if<is_ad_var<T>::value, double>::type
-get_value(const T& x) {
-    return x.val();
-}
-
-// fwd::Dual version
-
-
-// arena::Var version
-
 
 // log(exp(a) + exp(b)), shifted by the larger argument so neither exponent
 // overflows. Both arguments -inf -- two mixture components that both underflow

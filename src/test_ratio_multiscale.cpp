@@ -29,9 +29,9 @@ Rcpp::List cpp_test_multiscale_prior(std::string structure, Rcpp::NumericVector 
     std::vector<double> p(phi.begin(), phi.end());
     p.push_back(log_sigma2);
     p.push_back(logit_rho);
-    Rcpp::NumericMatrix gradient(n + 2, 3);
-    Rcpp::colnames(gradient) = Rcpp::CharacterVector::create("handcoded", "forward", "arena");
-    Rcpp::NumericVector value(3);
+    Rcpp::NumericMatrix gradient(n + 2, 2);
+    Rcpp::colnames(gradient) = Rcpp::CharacterVector::create("handcoded", "arena");
+    Rcpp::NumericVector value(2);
     value[0] = multiscale_prior_value(structure, p);
     const double sigma2 = std::exp(log_sigma2);
     const double rho = 2 * tulpa::math::inv_logit(logit_rho) - 1;
@@ -55,20 +55,13 @@ Rcpp::List cpp_test_multiscale_prior(std::string structure, Rcpp::NumericVector 
         iid_grad_phi(phi.begin(), n, sigma2, &gradient(0, 0));
         gradient(n, 0) = iid_grad_log_sigma2(phi.begin(), n, sigma2);
     }
-    gradient(n, 0) += tulpa::log_prior_log_sigma2_pc(fwd::Dual(log_sigma2,1),1,.01).grad;
-    for (int j = 0; j < n + 2; ++j) {
-        std::vector<fwd::Dual> dual;
-        for (int k = 0; k < n + 2; ++k) dual.emplace_back(p[k], j == k ? 1 : 0);
-        auto result = multiscale_prior_value(structure, dual);
-        value[1] = result.val;
-        gradient(j, 1) = result.grad;
-    }
+    gradient(n, 0) += 0.5 * (1 - (-std::log(.01)) * std::exp(log_sigma2 / 2));
     tulpa::arena::ArenaScope scope;
     std::vector<tulpa::arena::Var> arena;
     for (double x : p) arena.emplace_back(x);
     auto result = multiscale_prior_value(structure, arena);
     result.backward();
-    value[2] = result.val();
-    for (int j = 0; j < n + 2; ++j) gradient(j, 2) = arena[j].adj();
+    value[1] = result.val();
+    for (int j = 0; j < n + 2; ++j) gradient(j, 1) = arena[j].adj();
     return Rcpp::List::create(Rcpp::_["value"] = value, Rcpp::_["gradient"] = gradient);
 }
