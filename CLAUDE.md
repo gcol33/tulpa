@@ -39,7 +39,10 @@ Positioning:
 - tulpa: the synthesis.
 
 Canonical compositions:
-- IMH-Laplace = Laplace body + MH bias correction
+- IMH-Laplace = Laplace proposal + MH correction against the true density,
+  or a nonnegative unbiased estimate of it with the estimate retained on
+  rejection (pseudo-marginal MH). MH against a Laplace marginal targets that
+  approximation and leaves its Laplace error intact.
 - Pathfinder = L-BFGS mode + Gaussian fit + ELBO scoring
 - nested_laplace + CCD = inner Laplace + outer hyperparameter integration
 

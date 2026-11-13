@@ -4,24 +4,34 @@ partition (via the fit's stored tulpa() call), and accumulates the held-out
 fold's pointwise log predictive density
 \(\log \frac{1}{S}\sum_s p(y_i \mid \eta_i^{(s)})\) over the training
 posterior draws. The summed elpd_kfold is directly comparable to the
-elpd_loo from tulpa_criteria() – the exact refit counterpart to the
+elpd_loo from tulpa_criteria() – the refit counterpart to the
 PSIS-LOO approximation, for when the Pareto k-hat gate flags LOO as
 unreliable.
 Fixed-effect / GLMM fits only: subsetting the observations breaks a spatial or
 temporal field, so those fits are rejected (use PSIS-LOO via
-tulpa_criteria()). Held-out random-effect groups contribute at their prior
-mean (population-level held-out prediction), matching stats::predict()."><meta property="og:description" content="Splits the data into K folds, refits the model on each K - 1 training
+tulpa_criteria()). A held-out row of a random-effect group the training
+rows saw is scored at that group's effect, and one of a group they did not
+see integrates a new effect over the term's covariance, as
+posterior_predict() does at new data. The held-out density is the
+training refit's own response process, at the dispersion each draw was taken
+at, and a y | cens(lower, upper) / y | trunc(lb, ub) response is scored
+through each held-out row's bounds."><meta property="og:description" content="Splits the data into K folds, refits the model on each K - 1 training
 partition (via the fit's stored tulpa() call), and accumulates the held-out
 fold's pointwise log predictive density
 \(\log \frac{1}{S}\sum_s p(y_i \mid \eta_i^{(s)})\) over the training
 posterior draws. The summed elpd_kfold is directly comparable to the
-elpd_loo from tulpa_criteria() – the exact refit counterpart to the
+elpd_loo from tulpa_criteria() – the refit counterpart to the
 PSIS-LOO approximation, for when the Pareto k-hat gate flags LOO as
 unreliable.
 Fixed-effect / GLMM fits only: subsetting the observations breaks a spatial or
 temporal field, so those fits are rejected (use PSIS-LOO via
-tulpa_criteria()). Held-out random-effect groups contribute at their prior
-mean (population-level held-out prediction), matching stats::predict()."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
+tulpa_criteria()). A held-out row of a random-effect group the training
+rows saw is scored at that group's effect, and one of a group they did not
+see integrates a new effect over the term's covariance, as
+posterior_predict() does at new data. The held-out density is the
+training refit's own response process, at the dispersion each draw was taken
+at, and a y | cens(lower, upper) / y | trunc(lb, ub) response is scored
+through each held-out row's bounds."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
 (function () {
   var D = String.fromCharCode(36);
   window.MathJax = {
@@ -42,7 +52,7 @@ mean (population-level held-out prediction), matching stats::predict()."><meta p
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -55,21 +65,40 @@ mean (population-level held-out prediction), matching stats::predict()."><meta p
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -93,13 +122,18 @@ partition (via the fit's stored <code><a href="tulpa.html">tulpa()</a></code> ca
 fold's pointwise log predictive density
 \(\log \frac{1}{S}\sum_s p(y_i \mid \eta_i^{(s)})\) over the training
 posterior draws. The summed <code>elpd_kfold</code> is directly comparable to the
-<code>elpd_loo</code> from <code><a href="tulpa_criteria.html">tulpa_criteria()</a></code> – the exact refit counterpart to the
+<code>elpd_loo</code> from <code><a href="tulpa_criteria.html">tulpa_criteria()</a></code> – the refit counterpart to the
 PSIS-LOO approximation, for when the Pareto k-hat gate flags LOO as
 unreliable.</p>
 <p>Fixed-effect / GLMM fits only: subsetting the observations breaks a spatial or
 temporal field, so those fits are rejected (use PSIS-LOO via
-<code><a href="tulpa_criteria.html">tulpa_criteria()</a></code>). Held-out random-effect groups contribute at their prior
-mean (population-level held-out prediction), matching <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">stats::predict()</a></code>.</p>
+<code><a href="tulpa_criteria.html">tulpa_criteria()</a></code>). A held-out row of a random-effect group the training
+rows saw is scored at that group's effect, and one of a group they did not
+see integrates a new effect over the term's covariance, as
+<code><a href="posterior_predict.html">posterior_predict()</a></code> does at new data. The held-out density is the
+training refit's own response process, at the dispersion each draw was taken
+at, and a <code>y | cens(lower, upper)</code> / <code>y | trunc(lb, ub)</code> response is scored
+through each held-out row's bounds.</p>
     </div>
 
     <div class="section level2">
@@ -152,16 +186,14 @@ standard error), <code>pointwise</code> (per-observation held-out elpd), <code>f
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">120</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">d</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">120</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.4</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">d</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">cv</span>  <span class="op">&lt;-</span> <span class="fu">tulpa_kfold</span><span class="op">(</span><span class="va">fit</span>, data <span class="op">=</span> <span class="va">d</span>, K <span class="op">=</span> <span class="fl">5</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">cv</span><span class="op">$</span><span class="va">elpd_kfold</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [1] -186.7639</span>
-<span class="r-in"><span><span class="co"># }</span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">120</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">d</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">120</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.4</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">d</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
+<span><span class="va">cv</span>  <span class="op">&lt;-</span> <span class="fu">tulpa_kfold</span><span class="op">(</span><span class="va">fit</span>, data <span class="op">=</span> <span class="va">d</span>, K <span class="op">=</span> <span class="fl">5</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">cv</span><span class="op">$</span><span class="va">elpd_kfold</span></span>
+<span><span class="co"># }</span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

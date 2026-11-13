@@ -8,15 +8,20 @@ and accumulates the held-out fold's pointwise log predictive density
 posterior draws. The summed `elpd_kfold` is directly comparable to the
 `elpd_loo` from
 [`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md)
-– the exact refit counterpart to the PSIS-LOO approximation, for when
-the Pareto k-hat gate flags LOO as unreliable.
+– the refit counterpart to the PSIS-LOO approximation, for when the
+Pareto k-hat gate flags LOO as unreliable.
 
 Fixed-effect / GLMM fits only: subsetting the observations breaks a
 spatial or temporal field, so those fits are rejected (use PSIS-LOO via
 [`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md)).
-Held-out random-effect groups contribute at their prior mean
-(population-level held-out prediction), matching
-[`stats::predict()`](https://rdrr.io/r/stats/predict.html).
+A held-out row of a random-effect group the training rows saw is scored
+at that group's effect, and one of a group they did not see integrates a
+new effect over the term's covariance, as
+[`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+does at new data. The held-out density is the training refit's own
+response process, at the dispersion each draw was taken at, and a
+`y | cens(lower, upper)` / `y | trunc(lb, ub)` response is scored
+through each held-out row's bounds.
 
 ## Usage
 
@@ -77,6 +82,5 @@ d$y <- rpois(120, exp(0.4 + 0.6 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 cv  <- tulpa_kfold(fit, data = d, K = 5, seed = 1)
 cv$elpd_kfold
-#> [1] -186.7639
 # }
 ```

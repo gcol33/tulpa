@@ -74,13 +74,33 @@ tulpa_nested_laplace_joint(
 
   - `family` – one of `"binomial"`, `"gaussian"`, `"poisson"`,
     `"neg_binomial_2"`, `"beta"`, `"lognormal"`, `"gamma"`,
-    `"inverse_gaussian"`. For `"lognormal"`, `y` is on the natural scale
-    and the linear predictor `eta = E[log y]` (identity link on the log
-    scale); the `-log(y)` Jacobian is included in the kernel's
-    `log_lik`.
+    `"inverse_gaussian"`, `"interval_gaussian"`, `"truncated_gaussian"`.
+    For `"lognormal"`, `y` is on the natural scale and the linear
+    predictor `eta = E[log y]` (identity link on the log scale); the
+    `-log(y)` Jacobian is included in the kernel's `log_lik`.
+    `"interval_gaussian"` is an interval-censored Gaussian latent: row
+    `i` records only that a `Normal(eta_i, phi)` value fell in
+    `(lower[i], upper[i]]`, and contributes that probability; equal
+    finite bounds record the value itself, and the row contributes its
+    density. `"truncated_gaussian"` is a Gaussian `Normal(eta_i, phi)`
+    response conditioned on `trunc_lower[i] <= y[i] <= trunc_upper[i]`.
 
-  - `phi` – numeric dispersion (gaussian/lognormal residual SD, negbin
-    size, beta precision); default `1`.
+  - `lower`, `upper` – numeric `[N_arm]`, the interval bounds of an
+    `"interval_gaussian"` arm on the linear-predictor scale, read in
+    place of `y`; `-Inf` / `Inf` are the open outer classes, each
+    `lower` lies at or below its `upper`, and equal bounds are finite.
+    Supplied together.
+
+  - `trunc_lower`, `trunc_upper` – numeric `[N_arm]`, the truncation
+    points of a `"truncated_gaussian"` arm on the scale of `y`, either
+    one alone; an absent side or an infinite entry leaves that side of a
+    row untruncated.
+
+  - `phi` – numeric dispersion, default `1`: the residual VARIANCE for
+    `"gaussian"`, `"lognormal"` (on the log scale),
+    `"interval_gaussian"` and `"truncated_gaussian"` – the last two are
+    the gaussian read through a bound, and keep its convention – the
+    size for `"neg_binomial_2"`, the precision for `"beta"`.
 
   - `field_coef` – optional per-arm field coefficient controlling this
     arm's multiplier on the shared latent field's amplitude. One of: \*
@@ -159,6 +179,112 @@ tulpa_nested_laplace_joint(
   changes the estimand to the marginal association (see
   [`spatial_rsr()`](https://gillescolling.com/tulpa/reference/spatial_rsr.md)).
 
+  On the list-of-blocks path an `lf` block is one latent factor:
+  `n_latent` units and `obs_idx`, a list of `n_arms` integer vectors
+  mapping each observation of an arm to its unit (`0` = the row does not
+  see the factor); optional `sigma_lambda` (prior SD of the loadings,
+  default `1`). Arm `k`'s predictor receives `lambda_k u_l`, with scores
+  `u_l ~ N(0, 1)` – so the loadings carry the factor's scale – and
+  loadings `lambda_k ~ N(0, sigma_lambda^2)`. The f-th `lf` block of
+  `prior` is factor f: it does not load on arms `1, ..., f - 1`, and its
+  loading on arm `f` is positive (a half-normal prior), which fixes the
+  rotation and the sign of the factors; order `responses` so that arm f
+  is one the factor is known to load on. Every `lf` block of one prior
+  reads the same units. The scores are integrated out unit by unit by a
+  Laplace approximation inside the inner solve, so the loadings and
+  every other latent coordinate sit at the mode of their posterior with
+  the scores marginalised; the scores' conditional posterior is the
+  Gaussian at that mode. The joint mode over scores and loadings is not
+  used: it shrinks the scores and inflates the loadings by an amount
+  that does not fall as units are added.
+
+  On the list-of-blocks path an `hsgp` block is a Hilbert-space GP field
+  on one shared spectrum, over the outer axes `(sigma2, lengthscale)`.
+  It is given either by its basis (`phi`, a list of `n_arms`
+  `N_k x m_total` matrices, with `eigenvalues`, `m_total` and
+  `n_obs_per_arm`) or by its coordinates: `coords`, a list of `n_arms`
+  `N_k x 2` coordinate matrices (`NULL` for an arm the field does not
+  reach), `m` basis functions per dimension, the boundary factor `c` and
+  the kernel the basis approximates as `cov` / `nu` (read as
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  reads them; Matern 3/2 when unset). Either of `m` and `c` left unset
+  is chosen from the data by the rule and the refit loop
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  describes, over the pooled coordinates and the block's lengthscale
+  posterior; the fit records the bases it went through as `hsgp_basis`
+  (one such block). Given by its coordinates, the basis is built on the
+  domain the pooled coordinates imply (the rule of
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)'s
+  `approx = "hsgp"`) and the fit keeps that builder, so
+  [`stats::predict()`](https://rdrr.io/r/stats/predict.html) rebuilds
+  the basis at new coordinates on the same domain. `svc_column` (a
+  column index into every arm's `X`) makes the field a spatially varying
+  coefficient on that column: arm `k`'s predictor receives
+  `X_k[i, svc_column] f(s_i)`. A fit with a builder block retains, per
+  outer-grid cell, the posterior covariance of the fixed effects and the
+  builder blocks' coefficients as `basis_block_cov` (`idx`, the latent
+  indices; `cov`, one matrix per cell), extracted in the cell's own
+  inner solve. A basis wider than the pooled training rows is integrated
+  in observation coordinates using a QR factorization. New-location
+  predictions include the conditional Gaussian covariance of the
+  integrated coefficients.
+
+  On the list-of-blocks path an `mcar` block is `n_fields` areal fields
+  on one graph whose joint prior is \\\Sigma \otimes Q^{-}\\: `Q` the
+  ICAR structure of the graph (`n_spatial_units`, `adj_row_ptr`,
+  `adj_col_idx`, `n_neighbors`, as for `icar`) and \\\Sigma\\ a free
+  `n_fields x n_fields` covariance across the fields. An `miid` block is
+  the same with `Q = I`: `n_fields` coefficients per group, the
+  correlated random effect `(1 + x | g)`, over `n_groups` groups. Their
+  fields:
+
+  - `n_fields` – the number of coupled fields `p`.
+
+  - `spatial_idx` (`mcar`) / `obs_idx` (`miid`) – a list of `n_arms`
+    integer vectors, arm `k`'s mapping each of its observations to its
+    1-based unit or group; every field reads the same index.
+
+  - `field_weight` – a list of `n_fields` entries, each a list of
+    `n_arms` numeric vectors: entry `[[a]][[k]]` is the per-row weight
+    with which field `a` enters arm `k`, so arm `k`'s row `i` receives
+    \\\sum_a w\_{a,k,i} u_a(s_i)\\. All-ones is a field on the
+    intercept, a covariate column a varying slope on it, and zeros an
+    arm the field does not reach.
+
+  - `logchol_grid` – optional outer grid over \\\Sigma = L L^\top\\, a
+    matrix with one column per entry of the lower-triangular `L`, column
+    by column (`L11, L21, ..., Lp1, L22, ...`): \\\log L\_{ii}\\ on the
+    diagonal and the raw \\L\_{ij}\\ below it. Each row is one cell.
+    Left `NULL`, the engine starts from its default grid (for two
+    fields, four values of each \\\sigma_i\\ crossed with six of
+    \\\rho\\) and the placement pass lays the axes at the outer
+    posterior mode, as a tensor in the log-Cholesky columns, and refits;
+    a grid marked with
+    [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
+    is treated the same way. A grid the caller supplies unmarked is
+    integrated as given, and is refined by added levels only when it is
+    a tensor in the log-Cholesky columns.
+
+  - `field_beta_offset` (`mcar`, optional) – integer `n_fields`: the
+    0-based fixed-effect column field `a`'s level is aliased with (`0`,
+    the intercept, for an all-ones field), `-1` for none.
+
+  - `n_components` (`mcar`, optional) – the number of equal-size
+    components the graph is made of, one replicate of the fields on
+    each.
+
+  The fit reports the log-Cholesky axes (`b<k>.L11`, ...) and, after
+  them, each field's standard deviation `b<k>.sigma_i`, each correlation
+  `b<k>.rho_ij` and each covariance `b<k>.Sigma_ij`, computed per cell
+  and summarized over the cell weights, in the hyperparameter table of
+  [`summary()`](https://rdrr.io/r/base/summary.html).
+
+  A block type the single-block path does not list above (`iid`, `mcar`,
+  `miid`, `lf`, `hsgp`, ...) is read on the list-of-blocks path only, so
+  a single such block is passed as a one-block list,
+  `prior = list(list(type = "iid", n_units = , obs_idx = ))`; passed
+  unwrapped it is read as a single-block prior and refused.
+
   An empty `prior = list()` is a list of zero blocks: the model carries
   no latent field, each arm's predictor is its fixed effects, and the
   outer grid is spanned by the per-arm dispersion axes of `phi_grid`
@@ -211,6 +337,9 @@ tulpa_nested_laplace_joint(
   - `gaussian` – residual VARIANCE, the one engine convention (the SD is
     `sqrt(phi)`). Use `phi_grid` to estimate it as a hyperparameter
     instead of pinning it pre-fit.
+
+  - `interval_gaussian`, `truncated_gaussian` – residual VARIANCE of the
+    latent Gaussian, as for `gaussian`.
 
   - `lognormal` – residual variance on the log scale; identical kernel
     parameterization as `gaussian` plus the `-log(y)` Jacobian.
@@ -319,7 +448,7 @@ tulpa_nested_laplace_joint(
 
   Optional regularizing hyperprior on the per-arm dispersion axes
   declared through `phi_grid` (e.g. a Beta precision on a cover arm, a
-  negbin dispersion, a Gaussian residual SD). Same families as
+  negbin dispersion, a Gaussian residual variance). Same families as
   `prior_sigma` – `NULL` (default: the axis carries what `hyperprior`
   gives it), `list("pc.prec", c(U, alpha))`, or
   `list("half_normal", scale)`. A single spec re-weights every
@@ -425,7 +554,7 @@ tulpa_nested_laplace_joint(
     / `n_threads_outer <= 1L`. `FALSE` recovers the pre-tiling behaviour
     (e.g. regression testing).
 
-  - `prune` (`TRUE`), `prune_tol` (`1e-3`) – cheap-pass screening. The
+  - `prune` (`TRUE`), `prune_tol` (`1e-4`) – cheap-pass screening. The
     driver sweeps the outer lattice running a short inner Newton per
     cell, each warm-started from the previous screened cell's quasi-mode
     (lattice-adjacent), computes a screening Laplace log-marginal,
@@ -494,11 +623,17 @@ tulpa_nested_laplace_joint(
     integrator for a multi-block prior in one line at selection time
     (see `integration`), and report each CCD decline reason.
 
-  - `store_Q` (`FALSE`) – also return the per-grid joint precision Q
-    (lower triangle, CSC) as `Q_csc_p_per_grid`, `Q_csc_i_per_grid`,
-    `Q_csc_x_per_grid`, `Q_csc_n`, letting callers compute INLA-style
-    total-variance posterior moments (`Var-of-means + Mean-of-Var`) on
-    inner latent coordinates such as fixed-effect betas.
+  - `store_Q` (`TRUE` when `prior` carries a block or an arm carries
+    random intercepts, else `FALSE`) – also return the per-grid joint
+    precision Q (lower triangle, CSC) as `Q_csc_p_per_grid`,
+    `Q_csc_i_per_grid`, `Q_csc_x_per_grid`, `Q_csc_n`.
+    [`predict()`](https://rdrr.io/r/stats/predict.html) reads it for the
+    uncertainty of a new row's linear predictor, and callers can compute
+    INLA-style total-variance posterior moments
+    (`Var-of-means + Mean-of-Var`) on inner latent coordinates such as
+    fixed-effect betas. `FALSE` keeps the fit smaller and leaves
+    predict() the point prediction only (or the fixed-effect and
+    basis-builder blocks it keeps per cell).
 
   - `keep_grid_hessians` (`TRUE`) – retain the per-grid-point
     fixed-effect mode and marginal precision as `$grid_modes` /
@@ -581,38 +716,39 @@ tulpa_nested_laplace_joint(
     hyperparameter posterior on `1 + 2d + 2^d` nodes oriented by the
     Cholesky of the posterior covariance at the joint hyperparameter
     mode – far fewer inner solves than the `d`-dimensional tensor
-    product (`25` vs `81` at `d = 4`). `"auto"` (the default) uses the
-    CCD only at `>= 4` transformable axes, where the tensor product's
-    `k^d` blow-up bites hardest, and keeps the cheaper, more
-    ridge-robust tensor grid at `<= 3` axes; `"ccd"` lowers the CCD
-    threshold to `>= 3` axes; `"grid"` always forces the full tensor
-    product. `"grid_adaptive"` is the low-dimensional companion to the
-    CCD: it seeds a coarse subsample of the SAME tensor lattice (latent
-    block axes and phi axes together), floods outward from the posterior
-    mode on the fine lattice, and evaluates only the cells within a
-    log-density cutoff of the peak – a strict, uniform-weight subset of
-    the dense tensor, so its posterior matches the dense grid to that
-    cutoff at fewer inner solves when the hyperparameter posterior
-    concentrates (a sharply-identified field SD / precision). It
-    declines back to the dense tensor on a diffuse posterior (kept
-    region would rival the tensor) or a degenerate lattice, so it never
-    costs accuracy; tune it with `adaptive_grid_cutoff` /
-    `adaptive_grid_stride` / `adaptive_grid_max_frac`. The CCD
-    auto-falls back to the tensor grid for an axis whose support is not
-    safely transformable (a CAR_proper `rho_car` or a non-BYM2 `rho`),
-    or a flat / ridged / degenerate outer mode-find or Hessian; an
-    active `phi_grid` rides as a tensor axis crossed on top of the CCD.
-    Single-block joint priors always use the tensor grid. The CCD
-    mode-find runs cheap warm-started inner solves and does not write to
-    the checkpoint file. Under `verbose = TRUE` the engaged integrator
-    is announced in one line at selection time (e.g.
+    product (`25` vs `81` at `d = 4`). `"auto"` (the default) keeps the
+    tensor grid – placed from the outer mode and refined by the passes
+    that add levels – at `<= 3` transformable axes, and at `>= 4` while
+    the declared tensor stays within 2048 cells; past that, where the
+    tensor product's `k^d` blow-up bites, it uses the CCD. On a
+    four-axis BYM2-copy + IID fit the CCD read the BYM2 mixing weight's
+    97.5\\ tensor within 8\\ product. `"grid_adaptive"` is the
+    low-dimensional companion to the CCD: it seeds a coarse subsample of
+    the SAME tensor lattice (latent block axes and phi axes together),
+    floods outward from the posterior mode on the fine lattice, and
+    evaluates only the cells within a log-density cutoff of the peak – a
+    strict, uniform-weight subset of the dense tensor, so its posterior
+    matches the dense grid to that cutoff at fewer inner solves when the
+    hyperparameter posterior concentrates (a sharply-identified field SD
+    / precision). It declines back to the dense tensor on a diffuse
+    posterior (kept region would rival the tensor) or a degenerate
+    lattice, so it never costs accuracy; tune it with
+    `adaptive_grid_cutoff` / `adaptive_grid_stride` /
+    `adaptive_grid_max_frac`. The CCD auto-falls back to the tensor grid
+    for an axis whose support is not safely transformable (a CAR_proper
+    `rho_car` or a non-BYM2 `rho`), or a flat / ridged / degenerate
+    outer mode-find or Hessian; an active `phi_grid` rides as a tensor
+    axis crossed on top of the CCD. Single-block joint priors always use
+    the tensor grid. The CCD mode-find runs cheap warm-started inner
+    solves and does not write to the checkpoint file. Under
+    `verbose = TRUE` the engaged integrator is announced in one line at
+    selection time (e.g.
     `outer integration: CCD (4 latent axes, 25 nodes)` or
     `tensor grid (72 cells)`, or `CCD declined -> tensor grid`), so the
-    auto switch to the CCD at `>= 4` axes is never silent. The resolved
-    integrator is also returned on the joint result as `$integration`,
-    alongside `$integration_requested` and `$integration_declined` (see
-    Value), so a fallback is on the fit itself and not only in a verbose
-    message.
+    auto switch to the CCD is never silent. The resolved integrator is
+    also returned on the joint result as `$integration`, alongside
+    `$integration_requested` and `$integration_declined` (see Value), so
+    a fallback is on the fit itself and not only in a verbose message.
 
   - `ccd_budget` (`1`) – ceiling on what PLACING a CCD may spend, as a
     multiple of the tensor grid the design replaces. Every mode-find
@@ -906,10 +1042,12 @@ tulpa_nested_laplace_joint(
     for the measurement behind the default.
 
   - `subspace_debias` (`FALSE`) – correct only the latent directions the
-    inner-layer diagnostics flagged, by exact Metropolis along the
-    Gaussian-conditional-mean surface through each cell's mode, and
-    leave the rest at their Gaussian conditional. Settings and semantics
-    are the ones documented on
+    inner-layer diagnostics flagged, by Metropolis on the true joint
+    density along the Gaussian-conditional-mean surface through each
+    cell's mode, and leave the rest at their Gaussian conditional. That
+    nuisance carry and the Laplace outer weights remain approximations,
+    so this remains Tier 2. Settings and semantics are the ones
+    documented on
     [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md).
     On a fully coupled fit `gamma_3` is `NaN` for every arm, so the
     selector rests on the derivative-free inner Pareto-k-hat; where that
@@ -922,31 +1060,29 @@ tulpa_nested_laplace_joint(
 
   - `cila` (`FALSE`) – corrected integrated Laplace, the second
     inner-layer debias (after Lai, Margossian and Sheldon,
-    arXiv:2605.20345). Where `subspace_debias` selects coordinates and
-    runs exact Metropolis on them, this selects nothing: at every outer
-    cell it draws `n_points` points from the whole inner Gaussian,
-    weights each by the exact joint density it came from, and reports
-    the weighted particles. The cell marginals and the latent posterior
-    both converge to the exact ones as the effort grows, so `n_points`
-    is the only dial. `TRUE` takes the defaults; a list overrides
-    `n_points` (`1024L`), `variant` (`"qmc"`, a Sobol net; `"is"` for
-    iid draws, `"rqmc"` for the net under `n_shift` random shifts),
-    `n_shift` (`8L`), `n_draws` (the reported draw count) and `seed`
-    (the auxiliary stream, engine-owned so requesting the correction
-    leaves every other posterior draw unchanged). Below 512 points a
-    cell's particle set is too coarse to be a marginal at all and the
-    request is refused. The correction reports DRAWS, so every
-    coefficient-facing method reads them instead of the grid's Gaussian
-    mixture, and the corrected per-cell masses become the fit's own
-    `weights` / `log_marginal` with `weights_source` reporting `"cila"`;
-    the pre-correction pair is kept as `$cila$laplace` and
-    `$cila$retained_mass` is the original share of the cells that
-    produced a usable particle set. `$cila` also carries the variant
-    actually run and the PSIS grade (`pareto_k`, `rel_ess`) of the
-    correction's own weights. A cell whose inner solve factorized
-    SPARSELY draws through the CHOLMOD factor's own triangular and
-    permutation solves; an LDL' factor carries no square root to draw
-    with and is declined with `"sparse_factor_not_ll"`.
+    arXiv:2605.20345). At every outer cell it draws `n_points` points
+    from the whole inner Gaussian, weights each by the exact joint
+    density it came from, and reports the weighted particles. The
+    conditional latent integrals converge as particle effort grows.
+    Finite outer-grid error remains, so this remains Tier 2. `TRUE`
+    takes the defaults; a list overrides `n_points` (`1024L`), `variant`
+    (`"qmc"`, a Sobol net; `"is"` for iid draws, `"rqmc"` for the net
+    under `n_shift` random shifts), `n_shift` (`8L`), `n_draws` (the
+    reported draw count) and `seed` (the auxiliary stream, engine-owned
+    so requesting the correction leaves every other posterior draw
+    unchanged). Below 512 points a cell's particle set is too coarse to
+    be a marginal at all and the request is refused. The correction
+    reports DRAWS, so every coefficient-facing method reads them instead
+    of the grid's Gaussian mixture, and the corrected per-cell masses
+    become the fit's own `weights` / `log_marginal` with
+    `weights_source` reporting `"cila"`; the pre-correction pair is kept
+    as `$cila$laplace` and `$cila$retained_mass` is the original share
+    of the cells that produced a usable particle set. `$cila` also
+    carries the variant actually run and the PSIS grade (`pareto_k`,
+    `rel_ess`) of the correction's own weights. A cell whose inner solve
+    factorized SPARSELY draws through the CHOLMOD factor's own
+    triangular and permutation solves; an LDL' factor carries no square
+    root to draw with and is declined with `"sparse_factor_not_ll"`.
 
   - `auto_recenter` (`TRUE`) – re-centre a default outer grid axis on
     its posterior mode and refit when the fit rails against a boundary
@@ -1035,7 +1171,10 @@ A list of class
   integration weights (sum to 1).
 
 - `theta_mean`, `theta_sd` – posterior moments per hyperparameter,
-  including `alpha` when `copy` is set.
+  including `alpha` when `copy` is set. Divergent physical range moments
+  are `Inf`; `moment_existence` records the prior tail, likelihood
+  boundary decay and the reason. `theta_log_mean` and `theta_log_sd`
+  retain finite log-range moments.
 
 - `theta_median`, `theta_ci_lo`, `theta_ci_hi` – weighted-quantile
   median and 2.5/97.5 empirical CI per hyperparameter axis (same names
@@ -1049,7 +1188,7 @@ A list of class
   `"stencil"` (a parabola at the modal node) or `"within_cell"` (the
   modal node's mass spread over its cell, the read the interval of an
   unresolved axis comes from). `theta_sd_stencil_declined` says why a
-  parabola was not formed.
+  parabola was not formed. `"nonexistent"` identifies a divergent SD.
 
 - `modes` – `[n_grid x n_x]` matrix of inner modes.
 
@@ -1365,7 +1504,10 @@ A list of class
   `"single_node"`, `"boxes_do_not_tile"`, `"no_usable_node"`). A
   `"log_quadratic"` request falls back to `"box_uniform"` first, with
   `"unresolved"` (no row resolves its own conditional),
-  `"not_a_grid_axis"` or `"no_node_density"` as the reason.
+  `"not_a_grid_axis"`, `"no_node_density"` or `"floor_cell"` (a copy
+  scale whose lowest continuum cell runs down to its point mass at zero,
+  which has no finite width on the log coordinate the interpolation is
+  taken on) as the reason.
 
 - `theta_cell_edge_coord`, `theta_cell_edge_declined` – per axis, the
   COORDINATE that axis's outer cell edges were mirrored in, and why the
@@ -1507,13 +1649,6 @@ prior <- list(type = "icar", n_spatial_units = S,
 fit <- tulpa_nested_laplace_joint(
   responses = list(occ = mk_arm(200L, "binomial"), pos = mk_arm(200L, "gaussian")),
   prior = prior)
-#> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
-#> [outer placement] round 1/30 | 11 evals | |step| 0.181 | logpost -345.9097 | elapsed 0s | 0s/eval
-#> [outer placement] round 2/30 | 14 evals | Newton step 0.00545 sd | logpost -345.9097 | elapsed 0s | 0s/eval
-#> [outer placement] mode-find done | 14 evals | logpost -345.9097 | elapsed 0s | 0s/eval
 fit$theta_mean        # shared field amplitude, integrated across both arms
-#>     sigma 
-#> 0.3064725 
 # }
 ```

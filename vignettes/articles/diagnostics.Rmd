@@ -487,7 +487,7 @@ plot_diagnostics(fit_hmc)
 A nested-Laplace fit has no chains, and `diagnostics()` returns a different
 table for it: whether the integration over the field precision $\tau$ worked.
 The headline is a Pareto-smoothed importance sampling (PSIS) shape $\hat k$
-that scores the integration grid against the exact marginal posterior of
+that scores the integration grid against the Laplace-approximate marginal posterior of
 $\tau$; below 0.5 is good, 0.5 to 0.7 usable, 0.7 or more unreliable. The
 table also reports how many grid cells carry the weight.
 

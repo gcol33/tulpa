@@ -31,7 +31,7 @@ engine only needs, per group, the value / gradient / Hessian of
 \\\ell_g\\ in \\b_g\\ (for the mode) and \\\ell_g\\ at the quadrature
 nodes (for the sum). The fixed parameters `theta` and the log-Cholesky
 coordinates of \\\Sigma\\ are optimized jointly on \\\sum_g \log M_g\\;
-standard errors come from the exact-marginal Hessian.
+standard errors come from the quadrature-marginal Hessian.
 
 Two callback forms select the structure (supply exactly one):
 
@@ -298,6 +298,5 @@ fit <- tulpa_re_aghq(theta0 = c(0, 0),
                      Sigma0 = list(matrix(0.25, 1, 1)),
                      make_site = make_binom_site(X, y, nt), n_obs = n, n_quad = 5L)
 sqrt(fit$Sigma_list[[1]][1, 1])     # adaptive-GHQ RE standard deviation
-#> [1] 0.796036
 # }
 ```

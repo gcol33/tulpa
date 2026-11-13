@@ -22,7 +22,8 @@ tgmrf(
   graph = NULL,
   bounds = NULL,
   obs_idx = NULL,
-  name = NULL
+  name = NULL,
+  n_grid = NULL
 )
 
 # S3 method for class 'tgmrf'
@@ -68,7 +69,8 @@ summary(object, ...)
 
   Optional list with components `lower` and `upper`, each a numeric
   vector of length `length(init)`. Used by `nested_laplace + CCD` to
-  build the outer grid; unused by NUTS / VI.
+  build the outer grid and sampler pilot. VI also uses them as an
+  optimisation wall. IMH and NUTS use the support of `prior(theta)`.
 
 - obs_idx:
 
@@ -82,6 +84,14 @@ summary(object, ...)
   Optional character; cosmetic label used by
   [`print()`](https://rdrr.io/r/base/print.html) /
   [`summary()`](https://rdrr.io/r/base/summary.html).
+
+- n_grid:
+
+  Optional integer: the number of equispaced outer-grid nodes per theta
+  axis on the nested-Laplace path (length 1, recycled, or
+  `length(init)`), each at least 2. `NULL` (default) takes the engine's
+  default node count. The axis spans `bounds` where supplied, else
+  `init` plus or minus a fixed half-width. Unused by NUTS / VI.
 
 - x:
 
@@ -125,10 +135,13 @@ For a Gaussian latent block `z ~ N(mu(theta), Q(theta)^{-1})`:
 
 the gradient `-Q(z - mu)` and Hessian `-Q` wrt `z` are closed form, so
 the user never writes gradient code. The Laplace inner step needs only
-`Q(theta)` and `mu(theta)` at numeric `theta`. NUTS and VI additionally
-use a forward finite-difference gradient on theta, costing `dim(theta)`
-extra `Q` calls per outer step – cheap for the typical
-`dim(theta) <= 5`.
+`Q(theta)` and `mu(theta)` at numeric `theta`. Marginal NUTS and VI use
+finite differences of the inner Laplace marginal; every additional
+target evaluation costs an inner mode solve. Pseudo-marginal IMH
+corrects that approximation through unbiased importance integration.
+Marginal NUTS uses a PSIS correction gate;
+[`tulpa_tgmrf()`](https://gillescolling.com/tulpa/reference/tulpa_tgmrf.md)
+records each fit's target.
 
 ## See also
 
@@ -162,10 +175,4 @@ periodic_ar1 <- function(n) {
 
 blk <- periodic_ar1(20)
 print(blk)
-#> <tgmrf> "periodic_ar1"
-#>   n_latent : 20
-#>   theta    : 2 dim (log_sigma, atanh_rho)
-#>   init     : 0, 0
-#>   Q nnz    : 20 (5% of dense)
-#>   backend  : r
 ```

@@ -15,7 +15,7 @@ draws provenance and returns the diagnostic that applies:
 - i.i.d. approximation draws:
 
   the approximation-reliability table – the PSIS tail-shape `pareto_k`
-  scored against the exact inner-Laplace marginal and the outer-grid
+  scored against the Laplace-approximate marginal and the outer-grid
   quadrature effective sample size (the OUTER hyperparameter-grid
   integration layer), the inner-Laplace skewness diagnostic `gamma_3`
   when computed (the INNER Gaussian approximation to the latent field, a
@@ -52,7 +52,7 @@ diagnostics(
 # S3 method for class 'laplace_diagnostics'
 print(x, ...)
 
-# S3 method for class 'sbc'
+# S3 method for class 'tulpa_sbc'
 diagnostics(fit, ...)
 ```
 
@@ -124,10 +124,12 @@ many simulated data sets by
 disagree in both directions – a fit whose reliability band is clean on
 both layers can still fail calibration, and one whose outer k-hat is
 well past the escalation threshold can pass. So the band is a screen,
-not a verdict. Pass an `sbc` result as `sbc =` and the calibration
-verdict is attached to the table and printed underneath it;
-`diagnostics()` called on the `sbc` result itself returns its report
-table.
+not a verdict. Pass an
+[`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md) result as
+`sbc =` and the calibration verdict is attached to the table and printed
+underneath it; `diagnostics()` called on the
+[`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md) result
+itself returns its report table.
 
 ## Approximation reliability (i.i.d. draws)
 
@@ -141,9 +143,9 @@ mix".
 
 The headline is a Pareto-smoothed importance-sampling (PSIS) reliability
 diagnostic for the OUTER hyperparameter-grid integration. The nested
-integrator scores its hyperparameter grid against the exact
-inner-Laplace marginal posterior with a generalized-Pareto fit to the
-upper tail of the importance ratios
+integrator scores its hyperparameter grid against the
+Laplace-approximate marginal posterior with a generalized-Pareto fit to
+the upper tail of the importance ratios
 `log p_target(theta) - log q_proposal(theta)` (see
 [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md));
 the resulting tail-shape `pareto_k` is the "did the outer integration
@@ -152,6 +154,12 @@ work" number – `k-hat < 0.5` good, `0.5-0.7` usable, `>= 0.7` unreliable
 read back here; a fit that did not run the diagnostic, or whose grid
 proposal degenerated, reports it as `NA` and is assessed on the grid
 quadrature reliability instead.
+
+A corrected tgmrf NUTS fit instead reports PSIS ratios from the sampled
+Laplace marginal to unbiased estimates of the true marginal. Its
+`pareto_k_scope` and correction status identify that target. Passing
+this gate applies a finite importance correction; it supplies no MCMC
+exactness label for the resampled rows.
 
 `pareto_k` scores the outer integration only. A high `pareto_k` on a fit
 whose grid quadrature is healthy (`ess_grid` well above 1, largest cell
@@ -219,11 +227,10 @@ such as a plain Laplace fit with no outer grid to score.
 
 The PSIS `pareto_k` diagnoses the OUTER (hyperparameter) integration:
 whether the Gaussian-proposal-over-grid approximation of the marginal
-hyperparameter posterior `p(theta | data)` can be importance-corrected
-to the exact inner marginal. This is the dominant approximation in
-nested Laplace and the one with an exactly evaluable target. A full
-latent-space PSIS against the exact joint posterior `pi(x)` is not
-computed: the latent prior marginal
+hyperparameter posterior can be importance-corrected to the inner
+Laplace marginal. This assesses outer integration error; the inner
+approximation remains. A full latent-space PSIS against the exact joint
+posterior `pi(x)` is not computed: the latent prior marginal
 `p(x) = integral p(x | theta) p(theta) dtheta` has no closed form, and
 for the marginalized-occupancy / cover-hurdle likelihoods the exact
 joint density is evaluable only inside the C++ kernel, so a stored fit
@@ -233,16 +240,17 @@ complementary stored-fit number.
 The inner layer carries a SECOND score, `inner_pareto_k`, which needs no
 likelihood derivative at all and therefore answers where `inner_skew`
 declines. The inner Gaussian at the fitted hyperparameter is an
-importance proposal for the exact conditional posterior, and the joint
-density is the target, so PSIS on that ratio scores the inner
-approximation directly. It is computed on the same probed indices along
-the same conditional-mean curve, one dimension per index, since
-importance sampling degrades with dimension and a k-hat over the whole
-latent field would report `n_x` rather than the approximation. A Pareto
-shape index is scale-free, so it is banded only on indices whose
-realized importance efficiency shows a correction worth describing;
-`inner_pareto_k_uniform` records that none did, which is what a
-well-approximated inner layer looks like.
+importance proposal along a Gaussian-conditional-mean curve, and the
+true joint density evaluated on that curve supplies the target. This
+assesses that probed approximation; nuisance directions retain their
+Gaussian carry. It is computed on the same probed indices along the same
+conditional-mean curve, one dimension per index, since importance
+sampling degrades with dimension and a k-hat over the whole latent field
+would report `n_x` rather than the approximation. A Pareto shape index
+is scale-free, so it is banded only on indices whose realized importance
+efficiency shows a correction worth describing; `inner_pareto_k_uniform`
+records that none did, which is what a well-approximated inner layer
+looks like.
 
 `inner_skew` diagnoses the INNER (latent-field) Laplace: whether the
 Gaussian approximation to `pi(x_i | theta, y)` is itself a good fit, at
@@ -473,8 +481,8 @@ i.i.d.-fit table in full,
 [`tulpa_draws_array()`](https://gillescolling.com/tulpa/reference/tulpa_draws_array.md),
 [`tulpa_posterior_draws()`](https://gillescolling.com/tulpa/reference/tulpa_posterior_draws.md),
 [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md),
-[`plot_rhat()`](https://gillescolling.com/tulpa/reference/plot_rhat.md),
-[`plot_ess()`](https://gillescolling.com/tulpa/reference/plot_ess.md),
+[`plot_rhat()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md),
+[`plot_ess()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md),
 [`diagnostic_summary()`](https://gillescolling.com/tulpa/reference/diagnostic_summary.md),
 [`check_diagnostics()`](https://gillescolling.com/tulpa/reference/check_diagnostics.md)
 
@@ -491,23 +499,9 @@ hmc <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 diagnostics(hmc)
-#>     parameter     rhat ess_bulk ess_tail
-#> 1 (Intercept) 1.019236 235.0473 194.7569
-#> 2           x 1.015787 169.8574 145.9035
 
 # deterministic fit -> PSIS approximation reliability
 smc <- tulpa(y ~ x, data = df, family = "poisson", mode = "smc")
 diagnostics(smc)
-#> Sequential Monte Carlo approximation reliability (i.i.d. draws)
-#>   scope: the draws are the particle population after the final tempering
-#>     stage, resampled to equal weights and moved by MCMC mutation steps; no
-#>     pareto_k or other reliability quantity is computed for this backend.
-#>   2 parameters, 1000 draws; mcse_mean below is the i.i.d.
-#>   Monte-Carlo error of each reported mean (not chain mixing:
-#>   Rhat and ESS are not defined for these draws).
-#> 
-#>     parameter      mean        sd n_draws   mcse_mean moment_source
-#> 1 (Intercept) 0.5307693 0.1040623    1000 0.003290738         draws
-#> 2           x 0.3061802 0.1214444    1000 0.003840409         draws
 # }
 ```

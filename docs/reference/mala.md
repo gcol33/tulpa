@@ -123,9 +123,11 @@ A list with class `tulpa_fit` carrying:
 
 ## Tier
 
-Tier 1 (Exact). The MH step makes the chain asymptotically correct.
-Mixing depends on whether the gradient gives useful local geometry –
-poor for posteriors with very different scales across dimensions (use a
+Tier 1 (Exact) for the supplied `log_posterior`. The MH ratio must use
+the true density for posterior exactness. A Laplace, EP or VI density
+supplied here remains an approximate target after the MH step. Mixing
+depends on whether the gradient gives useful local geometry – poor for
+posteriors with very different scales across dimensions (use a
 preconditioner or HMC instead).
 
 ## References
@@ -144,7 +146,5 @@ log_post <- function(t) -0.5 * sum((t - c(1, 2))^2)
 grad <- function(t) -(t - c(1, 2))
 fit <- mala(log_post, grad, init = c(0, 0), n_iter = 1000)
 colMeans(fit$draws)  # near c(1, 2)
-#> [1] 1.112830 1.965615
 fit$mean_accept      # should adapt toward 0.574
-#> [1] 0.61
 ```

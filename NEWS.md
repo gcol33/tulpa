@@ -2,6 +2,38 @@
 
 ## Models and inference
 
+* `tulpa_tgmrf(mode = "imh")` uses pseudo-marginal independence MH against
+  an unbiased importance estimate of the true marginal likelihood, with
+  joint beta and latent draws retained on rejection. The shared IS estimator
+  uses the inner Laplace mode and precision for its t proposal. Independent
+  pilot batches calibrate a fixed particle count against a target
+  log-estimate SD of 1.2; fits report that SD, particle count and evaluation
+  cost. Each proposal costs one inner solve and M exact density evaluations
+  (Andrieu and Roberts 2009, doi:10.1214/07-AOS574; Doucet, Pitt,
+  Deligiannidis and Kohn 2015, doi:10.1093/biomet/asu075) (#1174).
+
+* `tulpa_tgmrf(mode = "nuts")` samples the Laplace theta marginal and applies
+  PSIS correction using the same unbiased IS estimator, costing one inner
+  solve and M density evaluations per retained theta plus the PSIS tail fit
+  (Vehtari et al. 2024, JMLR 25(72):1-58). Fits report k-hat and correction
+  status; a declined gate returns explicitly uncorrected Laplace draws.
+  This finite importance approximation stays Tier 2. `mode = "nuts_joint"`
+  uses the engine Gaussian beta prior and the R family's dispersion
+  convention, so the joint reference and corrected modes share a target.
+  A sampler against a Laplace marginal retains its deterministic error,
+  as in MCMC with INLA (Gomez-Rubio and Rue 2018,
+  doi:10.1007/s11222-017-9778-y); the inner approximation follows Rue,
+  Martino and Chopin (2009, doi:10.1111/j.1467-9868.2008.00700.x).
+  Pilot bounds locate the initial grid; the stated prior defines the
+  adapters' theta support, including VI finite-difference optimisation.
+
+* The exactness audit clarifies the targets of generic MH/MALA, subspace
+  corrections, corrected integrated Laplace and predictive refits. Monte
+  Carlo EM reports Tier 2: increasing its E-step budget retains the
+  complete-data Laplace and Rubin-pooling approximations. Full posterior
+  corrections for Monte Carlo EM and the Gaussian-conditioned subspace are
+  tracked in #1175 and #1176.
+
 * GP time-varying coefficients use non-centred field coordinates by default.
   `temporal_tvc(parameterization = "centered")` selects direct field sampling.
   Additive temporal GPs and GP coefficients share their covariance factor,

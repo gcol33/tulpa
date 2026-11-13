@@ -41,6 +41,7 @@ tulpa_nested_laplace(
   offset = NULL,
   likelihood = NULL,
   hyperprior = c("proper", "flat"),
+  beta_prior = NULL,
   control = list()
 )
 ```
@@ -162,16 +163,25 @@ tulpa_nested_laplace(
 - phi:
 
   Dispersion passed to the family, held fixed. One convention at every
-  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
-  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
-  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
-  it. The compiled kernels parameterize the two variance families by the
-  residual SD and are handed `sqrt(phi)` at the boundary.
+  door: for `gaussian` / `lognormal`, and for a censored or truncated
+  gaussian response (`y | cens()`, `y | trunc()` in
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)), this
+  is the residual VARIANCE (the SD is `sqrt(phi)`), for `neg_binomial_2`
+  the size, `gamma` the shape, `beta` the precision, `t` the scale;
+  `binomial` and `poisson` ignore it. The compiled kernels parameterize
+  the variance families by the residual SD and are handed `sqrt(phi)` at
+  the boundary.
 
-  Defaulted, it conditions at 1 and says so with a warning, since for a
-  family that reads a dispersion that is a modelling choice rather than
-  a neutral value. `fit$phi_estimated` records whether the value on the
-  fit was estimated or conditioned on.
+  Left out of a
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) call
+  whose `phi` is a gaussian residual variance, on `mode = "auto"`,
+  `"structured"` or a nested-Laplace mode, it is integrated as an
+  outer-grid axis rather than set (see
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)).
+  Defaulted anywhere else, it conditions at 1 and says so with a
+  warning, since for a family that reads a dispersion that is a
+  modelling choice rather than a neutral value. `fit$phi_estimated`
+  records whether the value on the fit was estimated or conditioned on.
 
 - offset:
 
@@ -217,6 +227,17 @@ tulpa_nested_laplace(
   [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)
   and
   [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md).
+
+- beta_prior:
+
+  Optional Gaussian prior on the fixed effects, `list(mean = , sd = )`
+  (or
+  [`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)),
+  each scalar or of length `ncol(X)`; `sd = Inf` leaves a coefficient
+  unpenalized. Every grid cell is solved under it. `NULL` (default)
+  takes the engine default `N(0, 2.5^2)`, as in
+  [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+  and [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md).
 
 - control:
 
@@ -350,9 +371,11 @@ tulpa_nested_laplace(
     the bit.
 
   - `subspace_debias` (`FALSE`) – correct only the latent directions the
-    inner-layer diagnostics flagged, by exact Metropolis, and leave the
-    rest at their Gaussian conditional. `TRUE` takes every default; a
-    list overrides `band` (the inner-reliability floor a coordinate is
+    inner-layer diagnostics flagged, by Metropolis on the true joint
+    density evaluated along the Gaussian-conditional-mean surface. The
+    Gaussian nuisance carry and Laplace outer weights remain
+    approximations, so this remains Tier 2. `TRUE` takes every default;
+    a list overrides `band` (the inner-reliability floor a coordinate is
     selected at, default `"ok"`), `idx` (pin the corrected set
     explicitly, skipping the selector), `closure` / `closure_max` (grow
     the set by strongly coupled precision-graph neighbours: a coordinate
@@ -374,11 +397,13 @@ tulpa_nested_laplace(
 
   - `cila` (`FALSE`) – corrected integrated Laplace, the second
     inner-layer debias (after Lai, Margossian and Sheldon,
-    arXiv:2605.20345). Where `subspace_debias` selects coordinates and
-    runs exact Metropolis on them, this selects nothing: at every outer
+    arXiv:2605.20345). Where `subspace_debias` samples a selected
+    Gaussian-conditioned subspace, this selects nothing: at every outer
     cell it draws `n_points` points from the whole inner Gaussian,
     weights each by the exact joint density it came from, and reports
-    the weighted particles. `TRUE` takes the defaults; a list overrides
+    the weighted particles. Increasing particle effort corrects
+    integration within each fixed cell; finite outer-grid error remains.
+    This fit remains Tier 2. `TRUE` takes the defaults; a list overrides
     `n_points` (`1024L`), `variant` (`"qmc"`, a Sobol net; `"is"` for
     iid draws, `"rqmc"` for the net under `n_shift` random shifts),
     `n_shift` (`8L`), `n_draws` and `seed`. Below 512 points a cell's
@@ -421,12 +446,12 @@ tulpa_nested_laplace(
     takes 50% coverage to 0.135 against a nominal 0.5.
 
     Which families carry movable axes is `.NL_REGISTRY_AXIS_FIELD`:
-    icar, rw1, rw2, iid, bym2, nngp, hsgp and spde. car_proper, ar1 and
-    hsgp_mo each carry a correlation axis with no guessable coordinate,
-    and mcar / miid / tgmrf hold their axes in one matrix field; a fit
-    of any of them records which through `outer_grid_recenter_declined`
-    rather than passing in silence. The per-axis policy names are the
-    standalone registry path only –
+    icar, rw1, rw2, ar1, iid, st_interaction, bym2, nngp, hsgp and spde.
+    car_proper and hsgp_mo each carry a correlation axis with no
+    guessable coordinate, and mcar / miid / tgmrf hold their axes in one
+    matrix field; a fit of any of them records which through
+    `outer_grid_recenter_declined` rather than passing in silence. The
+    per-axis policy names are the standalone registry path only –
     [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
     and
     [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)
@@ -449,7 +474,7 @@ tulpa_nested_laplace(
     the outer-grid progress reporter: whether to print, how often (in
     cells), where to, and the minimum seconds between lines.
 
-  - `prune` (`TRUE`), `prune_tol` (`1e-3`), `screen_iters`
+  - `prune` (`TRUE`), `prune_tol` (`1e-4`), `screen_iters`
     (`.NL_SCREEN$iters`, 2 – the depth gcol33/tulpa#640 measured the
     screen down to) – cheap-pass screening of the outer grid. The driver
     first sweeps the lattice running a `screen_iters`-step inner Newton
@@ -459,15 +484,18 @@ tulpa_nested_laplace(
     whose screened weight is below `prune_tol`. The neighbour warm-start
     keeps each cheap mode near its cell's own mode, so the cheap ranking
     tracks the full-solve ranking even where the latent mode moves
-    across the grid. Pruned cells get `log_marginal = -Inf`,
-    `n_iter = 0` and inherit the pilot mode; the pilot cell is never
-    pruned, and at least `prune_min_keep` cells (5) are solved in full
-    whatever the tolerance says – the highest-ranked dropped cells are
-    restored up to that floor, because the outer grid placement pass
-    reads a finite-difference curvature off the cells that were SOLVED
-    and a kept set of one carries none. After the full pass the
-    posterior mass the dropped cells may carry is bounded by lifting
-    each by the worst screening error measured on a kept cell
+    across the grid. Cell-dependent basis loadings use the full
+    `max_iter` budget and the fit's ordinary inner convergence
+    tolerance, since their warm-start coordinates change between cells.
+    Pruned cells get `log_marginal = -Inf`, `n_iter = 0` and inherit the
+    pilot mode; the pilot cell is never pruned, and at least
+    `prune_min_keep` cells (5) are solved in full whatever the tolerance
+    says – the highest-ranked dropped cells are restored up to that
+    floor, because the outer grid placement pass reads a
+    finite-difference curvature off the cells that were SOLVED and a
+    kept set of one carries none. After the full pass the posterior mass
+    the dropped cells may carry is bounded by lifting each by the worst
+    screening error measured on a kept cell
     (`prune_dropped_mass_bound`); past 1% the driver solves the dropped
     cells that contribute most to it until it is under 1%
     (`prune_n_repaired`), and a safety gate falls back to the full grid
@@ -520,6 +548,100 @@ tulpa_nested_laplace(
     `adaptive_grid_max_passes` (`1L`) – the opt-in boundary / interior
     pass, on the same axes.
 
+  - `integration` (`"aghq"` for a local/regional HSGP field, `"qmc"` for
+    a local/regional NNGP field, `"grid"` otherwise) – `"aghq"` uses
+    nested Genz-Keister quadrature in jointly standardized coordinates.
+    A smooth logit shift centres the regional prior-CDF coordinates at
+    their placement posterior medians. A normal quantile transform maps
+    their endpoints to infinity. A joint affine map uses the placement
+    posterior mean and covariance in these coordinates.
+    Observation-space HSGP sums use separable regional prior-CDF
+    coordinates and nested Patterson rules, preserving repeated spectral
+    projections. Additional HSGP and independent Gaussian blocks use
+    mode-scaled log coordinates. Every varying axis must freely extend.
+    With `"aghq"`, grids seed placement and integration covers the
+    positive prior support. The local mode and covariance use the
+    regional marginal evaluated with a five-point regional rule.
+    Posterior contours two log-density units below that mode set a
+    smooth per-side scale on each whitened coordinate. The transport
+    includes its Jacobian and preserves both infinite tails.
+    Dimension-adaptive Smolyak refinement reuses every solved node. Its
+    combination of tensor cubic splines interpolates the log posterior
+    ratio. Exponentiating that interpolant supplies positive posterior
+    mass. Positive recombination fits conditional Gaussian CDFs,
+    fixed-effect moments and hyperparameter moments to the interpolated
+    posterior. Matrix scaling couples these conditional-cell masses to
+    the continuous hyperparameter read. Hyperparameter draws condition
+    on this positive coupling. `quad_max_level` (`5L`, between three and
+    five) bounds nested refinement. Normal-rule sizes are 1, 3, 9, 19
+    and 35; bounded-rule sizes are 1, 3, 7, 15 and 31. `quad_read_nodes`
+    (`65536L`, divisible by eight) starts inexpensive shifted Sobol
+    reads of the log spline through a seven-degree Student proposal on
+    the Gaussian axes, with twice the fitted covariance. A stalled read
+    refits its proposal once per grid; independent shifts check the
+    refit. Each doubling tests whether uncertainty decreases at the
+    sampling rate. `quad_read_max_nodes` (`524288L`, divisible by eight)
+    bounds each read. The sampling-rate forecast at that bound directs
+    refinement when a larger read cannot close the remaining error
+    budget. A stalled read directs work to grid refinement. Reads use no
+    inner solves. A coarse read fits the proposal moments; independent
+    full reads check its precision once the quantile interpolation
+    budget is resolved, independently of the evidence target. Read
+    uncertainty uses a simultaneous delete-scramble quantile envelope.
+    `quad_tol` (`0.05` posterior SD) and `quad_evidence_tol` (`0.02`
+    nats) control refinement. The quantity with the largest error
+    relative to its target directs both read allocation and grid
+    refinement. Two attained evidence budgets give a log Bayes factor
+    budget of 0.04 nats. Quantile indicators include changes in
+    posterior CDFs from active subspaces, conditional-mixture resolution
+    and shifted-read uncertainty. Evidence is the positive interpolant
+    integral. Its indicator combines active differential integrals,
+    their discrepancy from that integral, and shifted-read uncertainty.
+    Three refinements precede a finite estimate. `outer_quadrature`
+    records the estimates, unique solve count, index set and refinement
+    history.
+
+    `"user"` uses `outer_design = list(points =, weights =)`. `points`
+    is a finite numeric matrix with the fitted outer-axis column names;
+    columns may be reordered. Values use the kernel's physical
+    coordinates. Weights are finite, nonnegative integration masses in
+    the axes' integration coordinates (log coordinates for positive
+    scale axes). They multiply the stored joint density including its
+    hyperprior. They need not sum to one. Supplying `outer_design`
+    selects `"user"` when `integration` is omitted. Evidence, summaries
+    and predictions use these same weighted cells.
+
+    `"qmc"` integrates continuous hyperparameters with quasi Monte Carlo
+    importance quadrature in transformed coordinates. Each free
+    covariance block uses its declared grid coordinates for the
+    proposal. A mixture of diagonal product Student distributions is
+    fitted to the placement grid and is adapted in two pilot rounds. The
+    final points carry inverse-proposal-density weights. `qmc_nodes`
+    (`65536L`) bounds the final proposal count; each pilot proposes at
+    most `1024L` points. Independent scrambled sequences grow in blocks
+    until the estimated error in log evidence (nats) and every reported
+    hyperparameter and fixed-effect quantile (posterior SD units) is
+    below `qmc_tol` (`0.05`). Hyperparameter errors use the proposal
+    coordinates, so unbounded range axes use their finite log-coordinate
+    SD. This design follows separate variance arms without crossing each
+    new axis level with every other axis. Axes whose nodes the caller
+    supplied retain their integration bounds; points outside those
+    bounds carry zero mass and are discarded. The reported `outer_qmc`
+    contains the proposal, evaluation count, effective sample size,
+    error estimates, stopping history and convergence flag. A
+    simultaneous 95% Student-t critical value calibrates the endpoint
+    family and evidence. Scramble residuals of pooled CDFs supply
+    simultaneous probability bands. Empirical CDF bands include every
+    knot. Inverting each band gives endpoint uncertainty on the
+    corresponding parameter's scale. The relative normalizer uncertainty
+    is transformed through the logarithm to bound evidence uncertainty.
+    A stopping candidate and the point ceiling receive the complete
+    fixed-effect check. Earlier history entries record `complete = 0`
+    and `error = Inf` when a failed hyperparameter or evidence criterion
+    makes that check unnecessary; `hyper_error` retains the
+    hyperparameter result. The importance points receive full inner
+    solves. The placement grid uses the pruning controls.
+
   - `axis_refine` (`NULL`) – per-axis override of how far those axes may
     be moved, named by the grid's axes (`"tau"`; `"b1.tau"` on a
     multi-block prior): `"none"`, `"densify"` (inside the declared span)
@@ -537,7 +659,12 @@ A list with:
 
 - `weights`: integration weights normalising to sum 1.
 
-- `theta_mean`, `theta_sd`: posterior moments per hyperparameter.
+- `theta_mean`, `theta_sd`: posterior moments per hyperparameter. A
+  physical range moment that diverges is `Inf`. `moment_existence`
+  records each range's prior tail, likelihood boundary decay, fixed or
+  bounded support, and the reason for its moment-existence result.
+  `theta_log_mean` and `theta_log_sd` retain the finite log-range
+  moments.
 
 - `n_iter`: inner Newton iterations per grid point.
 
@@ -564,6 +691,11 @@ A list with:
 - `timing`: named numeric of wall-clock seconds (`total`, `setup`,
   `grid`, `postproc`, `diagnostics`); the `grid` phase is the inner
   Laplace pass that scales with grid size. Surfaced one-line in `print`.
+
+- `checkpoint_n_loaded`: present when `control$checkpoint` is set – the
+  number of outer-grid cells this fit read back from the checkpoint file
+  instead of solving, over every grid it solved (a recentred refit and
+  refinement rounds included). `0` on a fresh run.
 
 - `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
   `prune_tol`: present when the grid was screened and the safety gate
@@ -622,6 +754,5 @@ prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
 fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             family = "binomial")
 fit$theta_mean        # marginalized ICAR precision
-#> [1] 5.597209
 # }
 ```

@@ -100,7 +100,8 @@ from the exact posterior – same epistemic class as
 [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md).
 Pair with
 [`imh_laplace()`](https://gillescolling.com/tulpa/reference/imh_laplace.md)
-for an exact-tier upgrade.
+for an exact-tier upgrade when its acceptance ratio evaluates the true
+density.
 
 ## References
 
@@ -126,7 +127,5 @@ log_post <- function(t) {
 }
 pf <- pathfinder(log_post, init = c(0, 0), n_draws = 2000)
 pf$mode      # near c(0.45, -0.64)
-#> [1]  0.4545455 -0.6363636
 pf$elbo
-#> [1] -4.269409
 ```

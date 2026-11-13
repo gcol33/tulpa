@@ -36,7 +36,7 @@ headline summary should be the marginalized median, not the mode.'><meta propert
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -49,21 +49,40 @@ headline summary should be the marginalized median, not the mode.'><meta propert
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -173,7 +192,7 @@ prior density on the full stacked parameter vector, overriding
 <dt id="arg-beta-prior">beta_prior<a class="anchor" aria-label="anchor" href="#arg-beta-prior"></a></dt>
 <dd><p>Optional Gaussian prior on the fixed effects, threaded into
 every inner <code><a href="tulpa_laplace.html">tulpa_laplace()</a></code> solve (<code>list(mean, sd)</code>).
-<code>NULL</code> (default) keeps the weak built-in prior.</p></dd>
+<code>NULL</code> (default) takes the engine default <code>N(0, 2.5^2)</code>.</p></dd>
 
 
 <dt id="arg-offset">offset<a class="anchor" aria-label="anchor" href="#arg-offset"></a></dt>
@@ -223,13 +242,19 @@ Ignored when <code>X_zi</code> is <code>NULL</code>.</p></dd>
 
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
 <dd><p>A named list of numerical / tuning knobs (statistical
-arguments stay in the signature above). Recognized entries:</p><ul><li><p><code>integration</code>: node layout, <code>"ccd"</code> (default, central-composite
-design, scales to larger total parameter count) or <code>"grid"</code> (full
-tensor product).</p></li>
+arguments stay in the signature above). Recognized entries:</p><ul><li><p><code>integration</code>: node layout, <code>"auto"</code> (the default: the tensor
+grid for one to three covariance parameters, the CCD above), <code>"grid"</code>
+(full tensor product) or <code>"ccd"</code> (central-composite design).</p></li>
 <li><p><code>n_per_axis</code>: points per parameter axis in the tensor grid
-(default 5); used only when <code>integration = "grid"</code>.</p></li>
+(default 61 for one parameter, 21 for two, 9 for three, 5 above);
+grid only.</p></li>
 <li><p><code>span</code>: half-width of the tensor grid in posterior standard
-deviations per whitened axis (default 3); grid only.</p></li>
+deviations per whitened axis (default 8 for one parameter, 6 for two,
+4.5 for three, 3 above); grid only. Where the outermost level of an
+axis still carries more than 0.1\<!-- % of its marginal, the tensor gains -->
+a level past it, laid in the rows of the other axes that hold that
+level's mass, until no end does: the left tail of a log-scale
+posterior runs past the span of the Gaussian at the mode.</p></li>
 <li><p><code>n_draws</code>: posterior draws of the fixed effects synthesized from the
 node mixture (default 2000), exposed as <code>draws</code> for the generic
 <code>tulpa_fit</code> methods. The <code>Sigma</code> posterior is summarized directly from
@@ -273,6 +298,16 @@ Each completed CCD / grid node (one inner Laplace solve) is cached to
 only the rest. <code>resume = FALSE</code> starts fresh. A file written for
 different data, layout, or grid is rejected (fingerprint mismatch).
 Default <code>NULL</code> (off).</p></li>
+<li><p><code>skew_correct</code>: <code>TRUE</code> (default) centres each integration node's
+joint Gaussian over the fixed and random effects at the leading-order
+posterior mean, <code>mode + Sigma A' (l''' * s) / 2</code> (the simplified-Laplace
+location term of Rue, Martino &amp; Chopin 2009, Sec 3.2.3), instead of at
+the mode. A log-link count or a logit with few observations per group
+has a skewed latent conditional whose mean sits off its mode, and the
+fixed effects, <code><a href="ranef.html">ranef()</a></code>, <code><a href="posterior_predict.html">posterior_predict()</a></code> and the WAIC / LOO
+criteria all read the node centres. <code>FALSE</code> keeps the mode. Off at
+<code>n_quad &gt; 1</code> and whenever the subspace debias runs. Which nodes were
+centred is recorded in <code>mean_shift</code> on the returned fit.</p></li>
 <li><p><code>subspace_debias</code>: subspace debias, <code>FALSE</code> by
 default. <code>TRUE</code> takes every default; a list overrides <code>band</code> (the
 inner-reliability floor a coordinate is selected at, default <code>"ok"</code>),
@@ -282,11 +317,12 @@ inner-reliability floor a coordinate is selected at, default <code>"ok"</code>),
 the set by the precision-graph neighbours it is strongly coupled to),
 <code>closure_max</code>, and the sampler budget <code>n_iter</code> / <code>warmup</code> / <code>thin</code>.
 When the selected set is non-empty, each integration node reports the
-selected fixed-effect coordinates from a Metropolis sample of the exact
-conditional along the Gaussian-conditional-mean surface, and the rest
+selected fixed-effect coordinates from Metropolis on the true density
+along the Gaussian-conditional-mean surface, and the rest
 from the Gaussian conditional given them; an EMPTY set leaves the fit
 bit-for-bit identical to the plain path. What was selected is recorded
-in <code>subspace_debias</code> on the returned fit.</p></li>
+in <code>subspace_debias</code> on the returned fit. The Gaussian nuisance carry
+and approximate outer integration remain; the fit stays Tier 2.</p></li>
 </ul></dd>
 
 </dl></div>
@@ -314,8 +350,21 @@ coordinates on the node mixture the fixed-effect draws use, and their
 positions within the random-effect block. <code><a href="ranef.html">ranef()</a></code> reports those rows
 empirically and the rest from the Gaussian mixture, recording which in
 its <code>source</code> column.</p></li>
+<li><p><code>latent_nodes</code>, <code>draw_nodes</code>: each integration node's joint Gaussian
+over the fixed and random effects (<code>mode</code>, observed-curvature precision
+<code>H</code>), and the node each row of <code>draws</code> was taken from.
+<code><a href="posterior_predict.html">posterior_predict()</a></code> and the WAIC / LOO criteria draw each row's random
+effects from that node's conditional given the row's fixed effects.
+<code>NULL</code> at <code>n_quad &gt; 1</code>.</p></li>
+<li><p><code>mean_shift</code>: per node, <code>"applied"</code> where <code>control$skew_correct</code>
+centred the node at the leading-order mean, otherwise the reason it
+stayed at the mode. <code>NULL</code> when the centring was not requested.</p></li>
 <li><p><code>theta_hat</code>, <code>theta_grid</code>, <code>weights</code>, <code>log_marginal</code>, <code>n_grid</code>, <code>layout</code>,
 <code>n_blocks</code>, <code>n_coefs</code> (vector of per-block <code>c</code>).</p></li>
+<li><p><code>placement</code>: the coordinates the nodes were laid in (<code>coordinate</code>,
+<code>"log_cholesky"</code> or <code>"sd_partial_correlation"</code>) and the Gaussian there
+(<code>center</code>, <code>cov</code>).</p></li>
+<li><p><code>tensor_extended</code>: the rounds in which the tensor grew past its ends.</p></li>
 <li><p><code>subspace_debias</code>: present only when <code>control$subspace_debias</code> was set.
 <code>idx</code> are the corrected latent coordinates, <code>bands</code> the per-probed-index
 reliability table they were read from, <code>closure_added</code> what the coupling
@@ -335,13 +384,26 @@ model is the length-1 case.</p>
 <p>Integration nodes live in the whitened stacked-parameter space, centred at
 the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
 mode's posterior covariance (<code>solve(Hessian)</code>), so points track the posterior
-ridge. Two node layouts are available via <code>integration</code>:</p><ul><li><p><code>"ccd"</code> (default): a central-composite design (<code><a href="ccd_grid.html">ccd_grid()</a></code>) of
+ridge. When a correlated block is present the nodes are laid in a second set
+of coordinates for that block, the log marginal SDs and the <code>atanh</code> of the
+canonical partial correlations, from a mode-find and a curvature read there,
+and mapped back to the log-Cholesky coordinates with the Jacobian of the map
+in each node's weight. In log-Cholesky coordinates a slope SD the data hold
+weakly makes a funnel: the joint mode runs to <code>log L_22</code> near <code>-10</code>, where
+the curvature along it is close to zero, and a Gaussian laid there spans
+hundreds of units on that axis and a few thousandths on <code>L_21</code>, away from
+the posterior mass. In the marginal-SD coordinates the mode is interior.
+<code>theta_hat</code> stays the log-Cholesky mode, the estimate <code><a href="tulpa_eb.html">tulpa_eb()</a></code> reports.
+Two node layouts are available via <code>integration</code>:</p><ul><li><p><code>"ccd"</code> (default above three parameters): a central-composite design (<code><a href="ccd_grid.html">ccd_grid()</a></code>) of
 <code>1 + 2k + 2^(k-q)</code> points for the total <code>k = sum_blocks</code> parameters, with
-the corrected R-INLA design weights (<code><a href="ccd_weights.html">ccd_weights()</a></code>). Scales polynomially
+the corrected R-INLA design weights (<code><a href="ccd_grid.html">ccd_weights()</a></code>). Scales polynomially
 in <code>k</code>, where the tensor grid is exponential.</p></li>
-<li><p><code>"grid"</code>: the full <code>n_per_axis^k</code> tensor product with uniform cell
-weights – denser and more robust to a non-Gaussian whitened posterior,
-but only tractable for small <code>k</code>.</p></li>
+<li><p><code>"grid"</code> (default for one to three parameters): the full
+<code>n_per_axis^k</code> tensor product with uniform cell weights – denser and
+more robust to a non-Gaussian whitened posterior, but only tractable for
+small <code>k</code>. A scale's posterior on its log coordinate reaches several
+standard deviations of the mode's Gaussian into its left tail, which a
+three-, nine- or fifteen-node CCD does not place a node in.</p></li>
 </ul><p>Each node <code>k</code> contributes integration weight proportional to
 <code>Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))</code>, following
 the INLA convention <code>int ~ sum_k Delta_k pi(theta_k)</code>.</p>
@@ -393,23 +455,19 @@ hyperparameters.</p></div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">12L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span></span>
-<span class="r-in"><span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.7</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span>     <span class="co"># random intercept + slope</span></span></span>
-<span class="r-in"><span><span class="va">eta</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">x</span></span></span>
-<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">2L</span>, Z <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>                correlated <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_re_cov_nested</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>,</span></span>
-<span class="r-in"><span>                           family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">Sigma_mean</span>        <span class="co"># marginalized RE covariance</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>             [,1]        [,2]</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [1,]  0.45590235 -0.04201789</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [2,] -0.04201789  0.25672716</span>
-<span class="r-in"><span><span class="co"># }</span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">12L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span>
+<span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
+<span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.7</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span>     <span class="co"># random intercept + slope</span></span>
+<span><span class="va">eta</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">x</span></span>
+<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">2L</span>, Z <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>,</span>
+<span>                correlated <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_re_cov_nested</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>,</span>
+<span>                           family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">Sigma_mean</span>        <span class="co"># marginalized RE covariance</span></span>
+<span><span class="co"># }</span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

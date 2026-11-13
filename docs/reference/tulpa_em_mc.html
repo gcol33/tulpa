@@ -5,27 +5,13 @@ fits each block via tulpa_laplace(). The difference is the E-step:
 instead of computing closed-form weights, an e_step_sample
 callback returns n_mc weight draws per iteration. Each draw is
 run through the M-step independently and the resulting parameter
-estimates are pooled via rubins_pool().
-Convergence criterion is the max relative change in pooled M-step
-parameter estimates between iterations. To increase Monte-Carlo
-accuracy as iterations progress (Booth-Hobert ascent-based MCEM),
-set n_mc_growth &amp;gt; 1.
-This is an engine block, not a front door: model packages call it
-programmatically, so its tuning knobs (max_iter, tol, n_mc)
-sit in the signature rather than in a control list."><meta property="og:description" content="Same M-step plumbing as tulpa_em_laplace(): every iteration calls
+estimates are pooled via rubins_pool()."><meta property="og:description" content="Same M-step plumbing as tulpa_em_laplace(): every iteration calls
 m_step_encode(weights, ...) to assemble per-submodel blocks and
 fits each block via tulpa_laplace(). The difference is the E-step:
 instead of computing closed-form weights, an e_step_sample
 callback returns n_mc weight draws per iteration. Each draw is
 run through the M-step independently and the resulting parameter
-estimates are pooled via rubins_pool().
-Convergence criterion is the max relative change in pooled M-step
-parameter estimates between iterations. To increase Monte-Carlo
-accuracy as iterations progress (Booth-Hobert ascent-based MCEM),
-set n_mc_growth &amp;gt; 1.
-This is an engine block, not a front door: model packages call it
-programmatically, so its tuning knobs (max_iter, tol, n_mc)
-sit in the signature rather than in a control list."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
+estimates are pooled via rubins_pool()."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
 (function () {
   var D = String.fromCharCode(36);
   window.MathJax = {
@@ -46,7 +32,7 @@ sit in the signature rather than in a control list."><meta property="og:image" c
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,21 +45,40 @@ sit in the signature rather than in a control list."><meta property="og:image" c
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -99,13 +104,6 @@ instead of computing closed-form weights, an <code>e_step_sample</code>
 callback returns <code>n_mc</code> weight draws per iteration. Each draw is
 run through the M-step independently and the resulting parameter
 estimates are pooled via <code><a href="rubins_pool.html">rubins_pool()</a></code>.</p>
-<p>Convergence criterion is the max relative change in <em>pooled</em> M-step
-parameter estimates between iterations. To increase Monte-Carlo
-accuracy as iterations progress (Booth-Hobert ascent-based MCEM),
-set <code>n_mc_growth &gt; 1</code>.</p>
-<p>This is an engine block, not a front door: model packages call it
-programmatically, so its tuning knobs (<code>max_iter</code>, <code>tol</code>, <code>n_mc</code>)
-sit in the signature rather than in a <code>control</code> list.</p>
     </div>
 
     <div class="section level2">
@@ -114,10 +112,12 @@ sit in the signature rather than in a <code>control</code> list.</p>
 <span>  <span class="va">e_step_sample</span>,</span>
 <span>  <span class="va">m_step_encode</span>,</span>
 <span>  n_mc <span class="op">=</span> <span class="fl">10L</span>,</span>
-<span>  n_mc_growth <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>  n_mc_growth <span class="op">=</span> <span class="fl">4</span><span class="op">/</span><span class="fl">3</span>,</span>
 <span>  n_mc_max <span class="op">=</span> <span class="fl">200L</span>,</span>
 <span>  max_iter <span class="op">=</span> <span class="fl">30L</span>,</span>
-<span>  tol <span class="op">=</span> <span class="fl">0.001</span>,</span>
+<span>  tol <span class="op">=</span> <span class="fl">0.1</span>,</span>
+<span>  alpha <span class="op">=</span> <span class="fl">0.25</span>,</span>
+<span>  n_consecutive <span class="op">=</span> <span class="fl">3L</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  <span class="va">...</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -132,8 +132,12 @@ sit in the signature rather than in a <code>control</code> list.</p>
 Must return a list of length <code>n_mc</code>, each element a weights
 object of the same shape <code>m_step_encode</code> consumes (typically a
 numeric vector of length <code>n_obs</code>, or a matrix <code>n_obs x K</code> for
-K-class latent variables). On the first iteration <code>fits</code> is
-<code><a href="https://rdrr.io/r/base/list.html" class="external-link">list()</a></code> – the callback should return draws from the prior.</p></dd>
+K-class latent variables). <code>fits</code> has the shape the <code>e_step</code> of
+<code><a href="tulpa_em_laplace.html">tulpa_em_laplace()</a></code> receives: a named list with one entry per
+submodel, each carrying <code>mode</code> (the mean of the per-draw mode vectors of
+the previous M-step), <code>beta</code> and <code>se</code> (the pooled fixed effects and their
+standard errors). On the first iteration <code>fits</code> is <code><a href="https://rdrr.io/r/base/list.html" class="external-link">list()</a></code> – the
+callback should return draws from the prior or a starting guess.</p></dd>
 
 
 <dt id="arg-m-step-encode">m_step_encode<a class="anchor" aria-label="anchor" href="#arg-m-step-encode"></a></dt>
@@ -141,7 +145,8 @@ K-class latent variables). On the first iteration <code>fits</code> is
 Identical to the contract used by <code><a href="tulpa_em_laplace.html">tulpa_em_laplace()</a></code>: each
 block is a list with required fields <code>y</code>, <code>X</code>, <code>family</code>, and
 optional <code>n_trials</code>, <code>offset</code>, <code>phi</code>, <code>re_list</code>, <code>spatial</code>,
-<code>weights</code>. See <code><a href="tulpa_em_laplace.html">?tulpa_em_laplace</a></code> for the full spec.</p></dd>
+<code>weights</code>. See <code><a href="tulpa_em_laplace.html">?tulpa_em_laplace</a></code> for the full spec. A submodel has to
+keep one latent layout (the length of its mode vector) across draws.</p></dd>
 
 
 <dt id="arg-n-mc">n_mc<a class="anchor" aria-label="anchor" href="#arg-n-mc"></a></dt>
@@ -150,9 +155,9 @@ optional <code>n_trials</code>, <code>offset</code>, <code>phi</code>, <code>re_
 
 
 <dt id="arg-n-mc-growth">n_mc_growth<a class="anchor" aria-label="anchor" href="#arg-n-mc-growth"></a></dt>
-<dd><p>Multiplicative growth of <code>n_mc</code> per iteration
-(default <code>1.0</code> = constant). Set <code>&gt; 1</code> for ascent-based MCEM
-that ramps up MC accuracy near convergence.</p></dd>
+<dd><p>Factor by which <code>n_mc</code> grows after an iteration whose
+step is swamped by Monte Carlo error (default <code>4 / 3</code>, Booth and
+Hobert's <code>1 + 1/r</code> with <code>r</code> set to 3). <code>1</code> keeps <code>n_mc</code> constant.</p></dd>
 
 
 <dt id="arg-n-mc-max">n_mc_max<a class="anchor" aria-label="anchor" href="#arg-n-mc-max"></a></dt>
@@ -164,9 +169,19 @@ that ramps up MC accuracy near convergence.</p></dd>
 
 
 <dt id="arg-tol">tol<a class="anchor" aria-label="anchor" href="#arg-tol"></a></dt>
-<dd><p>Convergence tolerance on max relative change in pooled
-parameter estimates (default <code>1e-3</code>). Looser than <code>tulpa_em_laplace</code>
-default because Monte-Carlo noise floors the achievable precision.</p></dd>
+<dd><p>Convergence tolerance on the largest change between iterations
+in units of each coefficient's pooled standard error (default <code>0.1</code>).</p></dd>
+
+
+<dt id="arg-alpha">alpha<a class="anchor" aria-label="anchor" href="#arg-alpha"></a></dt>
+<dd><p>Level of the confidence ellipsoid that decides whether a step
+is swamped by Monte Carlo error (default <code>0.25</code>, Booth and Hobert's
+choice).</p></dd>
+
+
+<dt id="arg-n-consecutive">n_consecutive<a class="anchor" aria-label="anchor" href="#arg-n-consecutive"></a></dt>
+<dd><p>Number of consecutive iterations <code>delta &lt; tol</code> has to
+hold for (default <code>3L</code>).</p></dd>
 
 
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
@@ -182,21 +197,62 @@ default because Monte-Carlo noise floors the achievable precision.</p></dd>
     <p>A list with:</p><ul><li><p><code>pooled</code> – named list of pooled per-submodel summaries
 (<code>mean</code>, <code>se</code>, <code>V_within</code>, <code>V_between</code>, <code>V_total</code>); see
 <code><a href="rubins_pool.html">rubins_pool()</a></code>.</p></li>
-<li><p><code>fits</code> – list of per-MC-draw fit lists from the <em>final</em>
+<li><p><code>fits</code> – the point estimate in the shape <code>e_step_sample</code> receives:
+per submodel, <code>mode</code>, <code>beta</code>, <code>se</code>.</p></li>
+<li><p><code>draws</code> – list of per-MC-draw fit lists from the <em>final</em>
 iteration, each indexed by submodel name.</p></li>
 <li><p><code>n_iter</code> – iterations actually run.</p></li>
-<li><p><code>n_mc_final</code> – <code>n_mc</code> value used in the last iteration.</p></li>
+<li><p><code>n_mc_final</code> – <code>n_mc</code> used in the last iteration.</p></li>
 <li><p><code>converged</code> – logical.</p></li>
-<li><p><code>history</code> – <code>data.frame(iter, n_mc, delta)</code>.</p></li>
+<li><p><code>inference_mode</code>, <code>inference_tier</code>, <code>target</code> – <code>"structured"</code>, <code>2L</code>,
+and <code>"Rubin-pooled complete-data Laplace estimates"</code>.</p></li>
+<li><p><code>history</code> – <code>data.frame(iter, n_mc, delta, mcse, swamped)</code>: <code>delta</code>
+the standardized step, <code>mcse</code> the largest Monte Carlo standard error
+as a fraction of the pooled standard error, <code>swamped</code> whether the step
+lay inside the Monte Carlo confidence ellipsoid.</p></li>
 </ul></div>
+    <div class="section level2">
+    <h2 id="convergence-and-the-monte-carlo-sample-size">Convergence and the Monte Carlo sample size<a class="anchor" aria-label="anchor" href="#convergence-and-the-monte-carlo-sample-size"></a></h2>
+
+
+<p>An MCEM update carries Monte Carlo error, so a rule on the raw change
+between iterations stalls at the noise floor of the draws however long it
+runs, and a change relative to <code>|theta|</code> asks for unbounded precision on a
+coefficient near zero. The rule here follows Booth and Hobert (1999):</p><ul><li><p><strong>Step against noise.</strong> The Monte Carlo standard error of the pooled
+update is <code>mcse_j = sqrt(V_between_j / n_mc)</code>. When the previous
+estimate lies inside the <code>1 - alpha</code> confidence ellipsoid of the update,
+<code>sum_j (theta_j - theta_prev_j)^2 / mcse_j^2 &lt; qchisq(1 - alpha, P)</code>,
+the EM step is swamped by Monte Carlo error and the next iteration
+draws <code>n_mc * n_mc_growth</code> (capped at <code>n_mc_max</code>). A step clearly
+larger than the noise keeps the draw count.</p></li>
+<li><p><strong>Stopping on the posterior scale.</strong> The change is measured against
+the pooled standard error <code>se_j</code> of each coefficient,
+<code>delta = max_j |theta_j - theta_prev_j| / se_j</code>, and the fit stops once
+<code>delta &lt; tol</code> on <code>n_consecutive</code> consecutive iterations. A step of
+<code>tol</code> posterior SDs is small whatever the coefficient's magnitude.</p></li>
+</ul><p>The noise in <code>delta</code> is about <code>sqrt(2) mcse_j / se_j</code>, so <code>tol</code> is also
+the precision the draws have to reach; <code>history$mcse</code> reports
+<code>max_j mcse_j / se_j</code> per iteration. A run that ends with <code>n_mc</code> at
+<code>n_mc_max</code> and <code>delta</code> still at that noise level warns: the cap, not the
+EM, is what stopped it.</p>
+<p>Each M-step fits every draw on its own and averages the per-draw
+estimates. The fixed point is therefore the mean of the complete-data
+estimators under <code>p(z | y, theta)</code>, which agrees with the EM fixed point
+(the maximizer of the averaged complete-data log-likelihood) to first
+order in <code>1/n</code>.</p>
+<p>This is an engine block, not a front door: model packages call it
+programmatically, so its tuning knobs (<code>max_iter</code>, <code>tol</code>, <code>n_mc</code>)
+sit in the signature rather than in a <code>control</code> list.</p>
+    </div>
     <div class="section level2">
     <h2 id="tier">Tier<a class="anchor" aria-label="anchor" href="#tier"></a></h2>
 
 
-<p>Inherits the tier of the inner M-step (Laplace =&gt; Tier 2). The
-Monte-Carlo E-step <em>itself</em> is exact in the limit <code>n_mc -&gt; infinity</code>,
-so as a <em>full pipeline</em> MCEM is asymptotically Tier 1 if
-<code>e_step_sample</code> is exact.</p>
+<p>Tier 2 (structured): complete-data Laplace fits pooled over latent draws.
+Increasing <code>n_mc</code> reduces Monte Carlo error in the E-step. The fitted
+modes, Gaussian conditional approximations and Rubin pooling remain the
+inferential approximation. An exact E-step sampler alone supplies no
+posterior correction for those approximations.</p>
     </div>
     <div class="section level2">
     <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>
@@ -206,6 +262,8 @@ of the EM algorithm and the poor man's data augmentation algorithms.
 <p>Booth, J. G., &amp; Hobert, J. P. (1999). Maximizing generalized linear
 mixed model likelihoods with an automated Monte Carlo EM algorithm.
 <em>JRSS B</em>, 61(1), 265-285.</p>
+<p>Caffo, B. S., Jank, W., &amp; Jones, G. L. (2005). Ascent-based Monte Carlo
+expectation-maximization. <em>JRSS B</em>, 67(2), 235-251.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -215,46 +273,36 @@ mixed model likelihoods with an automated Monte Carlo EM algorithm.
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="co"># Two-component Gaussian mixture with unit variances: the latent class z is</span></span></span>
-<span class="r-in"><span><span class="co"># sampled in the E-step, and each class mean is an intercept-only Gaussian</span></span></span>
-<span class="r-in"><span><span class="co"># block in the M-step.</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">z</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fl">1</span>, <span class="fl">0.4</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">z</span> <span class="op">==</span> <span class="fl">0</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">100</span>, <span class="op">-</span><span class="fl">1</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="va">e_step_sample</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fits</span>, <span class="va">n_mc</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>  <span class="va">p1</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">fits</span><span class="op">)</span> <span class="op">==</span> <span class="fl">0L</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>    <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">y</span> <span class="op">&gt;</span> <span class="fu"><a href="https://rdrr.io/r/stats/median.html" class="external-link">median</a></span><span class="op">(</span><span class="va">y</span><span class="op">)</span>, <span class="fl">0.8</span>, <span class="fl">0.2</span><span class="op">)</span></span></span>
-<span class="r-in"><span>  <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>    <span class="va">mu0</span> <span class="op">&lt;-</span> <span class="va">fits</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">comp0</span><span class="op">$</span><span class="va">mode</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span></span></span>
-<span class="r-in"><span>    <span class="va">mu1</span> <span class="op">&lt;-</span> <span class="va">fits</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">comp1</span><span class="op">$</span><span class="va">mode</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span></span></span>
-<span class="r-in"><span>    <span class="va">l0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">y</span>, <span class="va">mu0</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.6</span><span class="op">)</span></span></span>
-<span class="r-in"><span>    <span class="va">l1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">y</span>, <span class="va">mu1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.4</span><span class="op">)</span></span></span>
-<span class="r-in"><span>    <span class="fl">1</span> <span class="op">/</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">l0</span> <span class="op">-</span> <span class="va">l1</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span>  <span class="op">}</span></span></span>
-<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_mc</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">y</span><span class="op">)</span>, <span class="fl">1</span>, <span class="va">p1</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">}</span></span></span>
-<span class="r-in"><span><span class="va">m_step_encode</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">weights</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>comp0 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span><span class="op">[</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">0</span><span class="op">]</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">0</span><span class="op">)</span>, <span class="fl">1</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>                    family <span class="op">=</span> <span class="st">"gaussian"</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>       comp1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span><span class="op">[</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">1</span><span class="op">]</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">1</span><span class="op">)</span>, <span class="fl">1</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>                    family <span class="op">=</span> <span class="st">"gaussian"</span><span class="op">)</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">}</span></span></span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_em_mc</span><span class="op">(</span><span class="va">e_step_sample</span>, <span class="va">m_step_encode</span>, n_mc <span class="op">=</span> <span class="fl">5L</span>, max_iter <span class="op">=</span> <span class="fl">5L</span>,</span></span>
-<span class="r-in"><span>                   tol <span class="op">=</span> <span class="fl">5e-3</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pooled</span>, <span class="kw">function</span><span class="op">(</span><span class="va">p</span><span class="op">)</span> <span class="va">p</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>     comp0     comp1 </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> -1.062815  1.984884 </span>
-<span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">history</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   iter n_mc       delta</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1    1    5         Inf</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2    2    5 0.633027460</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3    3    5 0.201654017</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4    4    5 0.003172351</span>
-<span class="r-in"><span><span class="co"># }</span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
+<span><span class="co"># Two-component Gaussian mixture with unit variances: the latent class z is</span></span>
+<span><span class="co"># sampled in the E-step, and each class mean is an intercept-only Gaussian</span></span>
+<span><span class="co"># block in the M-step.</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="va">z</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fl">1</span>, <span class="fl">0.4</span><span class="op">)</span></span>
+<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">z</span> <span class="op">==</span> <span class="fl">0</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">100</span>, <span class="op">-</span><span class="fl">1</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">e_step_sample</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fits</span>, <span class="va">n_mc</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">p1</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">fits</span><span class="op">)</span> <span class="op">==</span> <span class="fl">0L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">y</span> <span class="op">&gt;</span> <span class="fu"><a href="https://rdrr.io/r/stats/median.html" class="external-link">median</a></span><span class="op">(</span><span class="va">y</span><span class="op">)</span>, <span class="fl">0.8</span>, <span class="fl">0.2</span><span class="op">)</span></span>
+<span>  <span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
+<span>    <span class="va">l0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">y</span>, <span class="va">fits</span><span class="op">$</span><span class="va">comp0</span><span class="op">$</span><span class="va">mode</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.6</span><span class="op">)</span></span>
+<span>    <span class="va">l1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">y</span>, <span class="va">fits</span><span class="op">$</span><span class="va">comp1</span><span class="op">$</span><span class="va">mode</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fl">0.4</span><span class="op">)</span></span>
+<span>    <span class="fl">1</span> <span class="op">/</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">l0</span> <span class="op">-</span> <span class="va">l1</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">}</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_mc</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">y</span><span class="op">)</span>, <span class="fl">1</span>, <span class="va">p1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">m_step_encode</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">weights</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>comp0 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span><span class="op">[</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">0</span><span class="op">]</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">0</span><span class="op">)</span>, <span class="fl">1</span><span class="op">)</span>,</span>
+<span>                    family <span class="op">=</span> <span class="st">"gaussian"</span><span class="op">)</span>,</span>
+<span>       comp1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span><span class="op">[</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">1</span><span class="op">]</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">weights</span> <span class="op">==</span> <span class="fl">1</span><span class="op">)</span>, <span class="fl">1</span><span class="op">)</span>,</span>
+<span>                    family <span class="op">=</span> <span class="st">"gaussian"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_em_mc</span><span class="op">(</span><span class="va">e_step_sample</span>, <span class="va">m_step_encode</span>, n_mc <span class="op">=</span> <span class="fl">5L</span>, max_iter <span class="op">=</span> <span class="fl">8L</span>,</span>
+<span>                   verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pooled</span>, <span class="kw">function</span><span class="op">(</span><span class="va">p</span><span class="op">)</span> <span class="va">p</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span></span>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">history</span></span>
+<span><span class="co"># }</span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

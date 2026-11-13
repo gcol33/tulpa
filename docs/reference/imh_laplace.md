@@ -1,11 +1,16 @@
 # Independence Metropolis-Hastings with Laplace proposal
 
 Sample from a posterior using independence Metropolis-Hastings with a
-multivariate-normal proposal centred at the Laplace mode and scaled by
-the inverse Hessian. For posteriors that are well- approximated by a
-Gaussian near the mode this is dramatically cheaper than HMC: each
-iteration is one log-posterior evaluation plus one accept/reject step.
-Embarrassingly parallel across chains.
+multivariate-t proposal centred at the Laplace mode, with the inverse
+Hessian as its scale matrix. The t's polynomial tails dominate any
+target whose tails are no heavier than its own, which is the condition
+under which an independence sampler is uniformly ergodic; a Gaussian
+proposal lighter-tailed than the target under-visits the target's tails
+and the chain sticks there. The degrees of freedom are one package
+setting. For posteriors that are well- approximated by a Gaussian near
+the mode this is dramatically cheaper than HMC: each iteration is one
+log-posterior evaluation plus one accept/reject step. Embarrassingly
+parallel across chains.
 
 Use cases:
 
@@ -63,9 +68,8 @@ imh_laplace(
 
 - scale:
 
-  Optional inflation factor on the proposal covariance (default 1.0).
-  Values slightly \> 1 (e.g., 1.5) give heavier-tailed proposals that
-  improve mixing when Laplace underestimates posterior spread.
+  Optional inflation factor on the proposal scale matrix (default 1.0);
+  the scale matrix is `scale^2 * hessian^{-1}`.
 
 - init:
 
@@ -105,11 +109,16 @@ A list with class `tulpa_fit` carrying:
 
 - `backend`: `"imh_laplace"`.
 
+- `proposal`: `list(mode, cov, scale, df)`, the proposal's location,
+  scale matrix, inflation and degrees of freedom.
+
 ## Tier
 
 Tier 1 (Exact). The MH accept/reject step makes the chain asymptotically
-correct under the standard MH conditions. Tier status does not depend on
-Laplace's quality – only its quality affects efficiency.
+correct for the supplied `log_posterior` under the standard MH
+conditions. Posterior exactness requires that function to evaluate the
+true density. Supplying a Laplace, EP or VI target leaves that target's
+approximation error intact. The proposal affects efficiency.
 
 ## See also
 
@@ -141,7 +150,5 @@ log_post <- function(beta) {
 fit <- imh_laplace(log_post, mode = lap$mode[1:2],
                    hessian = lap$H_beta, n_iter = 1000)
 fit$mean_accept
-#> [1] 0.898
 colMeans(fit$draws)
-#> [1] 0.4232243 1.2244703
 ```

@@ -238,20 +238,23 @@ posterior and importance-samples it to compute the outer
 Pareto-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>k</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat{k}</annotation></semantics></math>
 (<code>$pareto_k</code>); see the convergence section.</li>
 </ol>
-<p>The adapters change only step 1’s exploration of <code>theta</code>.
-IMH localises the grid argmax, builds a finite-difference Hessian there,
-and proposes
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>θ</mi><mo>′</mo></msup><mo>∼</mo><mi>N</mi><mo stretchy="false" form="prefix">(</mo><mtext mathvariant="normal">mode</mtext><mo>,</mo><msup><mtext mathvariant="normal">scale</mtext><mn>2</mn></msup><msup><mi>H</mi><mrow><mi>−</mi><mn>1</mn></mrow></msup><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\theta' \sim N(\text{mode}, \text{scale}^2 H^{-1})</annotation></semantics></math>
-with an exact Metropolis accept/reject against
-<code>log_marginal(theta) + prior(theta)</code>. VI runs L-BFGS on
-<code>log_marginal(theta)</code> and fits a Gaussian at the optimum.
-NUTS runs leapfrog integration on the same target with a
-finite-difference gradient. Every one of them calls the same inner
-Laplace solve to evaluate a candidate <code>theta</code>. The inner
-solve is the shared kernel, the outer loop is the only thing that
-varies. That is why a block written once reaches all four tiers without
-modification: the closures describe the latent prior, and the engine
-owns everything from the Newton system up.</p>
+<p>The adapters reuse the inner mode and precision as a proposal. VI
+fits a Gaussian to the Laplace theta marginal. NUTS samples that
+deterministic marginal using finite-difference gradients, then computes
+an importance correction. IMH uses a t proposal over theta and accepts
+against an unbiased importance-sampling estimate of the true marginal
+likelihood, multiplied by <code>prior(theta)</code>. The
+<code>log_marginal</code> returned by the inner solver already includes
+that prior. Each importance particle is scored against the exact
+observation likelihood and the Gaussian priors on beta and the latent
+block. The beta prior is the engine default,
+<code>N(0, 2.5^2)</code>.</p>
+<p>For IMH, the likelihood estimate and selected joint particle are
+retained on rejection. For NUTS, the ratios of the estimated true
+marginal to its Laplace approximation are Pareto-smoothed by
+<code><a href="../reference/tulpa_psis.html">tulpa_psis()</a></code>. Whole joint rows are resampled only when
+k-hat passes the reliability gate. Each fit records its actual target in
+<code>$target</code>.</p>
 </div>
 <div class="section level2">
 <h2 id="a-worked-example-periodic-ar1">A worked example: periodic AR1<a class="anchor" aria-label="anchor" href="#a-worked-example-periodic-ar1"></a>
@@ -287,11 +290,12 @@ Q_{ij} \;=\; -\,\tfrac{\rho}{\sigma^2}\;\text{ for } |i-j| = 1 \;(\mathrm{mod}\,
 <span>    name   <span class="op">=</span> <span class="st">"periodic_ar1"</span></span>
 <span>  <span class="op">)</span></span>
 <span><span class="op">}</span></span></code></pre></div>
-<p>The optional <code>bounds</code> argument sets the outer grid for
-nested-Laplace and the hard-wall region for IMH and NUTS. The
-<code>prior</code> closure is a log-density on <code>theta</code>. If
-you don’t have prior beliefs, <code>function(theta) 0</code> is fine;
-it’s a flat prior on the unconstrained scale.</p>
+<p>The optional <code>bounds</code> argument places the outer grid and
+sampler pilot. IMH and NUTS explore the support of
+<code>prior(theta)</code>. The <code>prior</code> closure is a
+log-density on theta; a proper prior such as the one above makes the
+scale posterior well defined even with sparse observations per latent
+node.</p>
 <p>The closure shape is the contract. <code>Q</code> takes one numeric
 vector <code>theta</code> and returns a square symmetric sparse matrix;
 <code>prior</code> takes the same <code>theta</code> and returns one
@@ -343,7 +347,7 @@ propagate through every fit as the reported parameter names.</p>
 <div class="section level3">
 <h3 id="tier-2-structured-pathfinder-vi">Tier 2 (structured): Pathfinder VI<a class="anchor" aria-label="anchor" href="#tier-2-structured-pathfinder-vi"></a>
 </h3>
-<p><code>tulpa_tgmrf_vi()</code> runs L-BFGS on
+<p><code>tulpa_tgmrf(mode = "vi")</code> runs L-BFGS on
 <code>log_marginal(theta)</code> and fits a Gaussian at the optimum.
 Same tier as the nested-Laplace posterior but gives you a full
 covariance matrix rather than a discrete grid.</p>
@@ -357,14 +361,19 @@ covariance matrix rather than a discrete grid.</p>
 <span><span class="co">#&gt;     beta_1  log_sigma  atanh_rho </span></span>
 <span><span class="co">#&gt;  0.4572538 -0.2380514  0.6164617</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_vi</span><span class="op">)</span><span class="op">$</span><span class="va">reliability</span><span class="op">$</span><span class="va">elbo</span></span>
-<span><span class="co">#&gt; [1] -80.35663</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] -80.36344</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="tier-1-exact-imh-laplace">Tier 1 (exact): IMH-Laplace<a class="anchor" aria-label="anchor" href="#tier-1-exact-imh-laplace"></a>
 </h3>
-<p>The Tier-1 upgrade composes the Laplace body with an independence-MH
-bias correction. Its proposal is a multivariate t centred on the outer
-mode, with the inverse curvature there as its scale matrix.</p>
+<p>Pseudo-marginal independence MH targets the true joint posterior. Its
+outer proposal is a multivariate t centred on the Laplace mode, with the
+inverse curvature there as its scale matrix. One inner mode/precision
+solve and <code>fit$is_particles</code> exact joint-density evaluations
+give an unbiased marginal-likelihood estimate at each proposed theta.
+Repeated estimates at the outer mode calibrate the particle count before
+the chain starts. <code>fit$log_estimate_sd</code> reports the measured
+log-estimate SD.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_imh</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_tgmrf.html">tulpa_tgmrf</a></span><span class="op">(</span></span>
 <span>  y <span class="op">=</span> <span class="va">y</span>, n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, X <span class="op">=</span> <span class="va">X</span>, block <span class="op">=</span> <span class="va">blk</span>,</span>
@@ -372,18 +381,43 @@ mode, with the inverse curvature there as its scale matrix.</p>
 <span>  n_iter <span class="op">=</span> <span class="fl">1200L</span>, warmup <span class="op">=</span> <span class="fl">400L</span></span>
 <span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="../reference/posterior_sample.html">posterior_sample</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;     beta_1  log_sigma  atanh_rho </span></span>
-<span><span class="co">#&gt;  0.4367009 -0.2769934  0.7036382</span></span>
+<span><span class="co">#&gt;      beta_1         z_1         z_2         z_3         z_4         z_5 </span></span>
+<span><span class="co">#&gt;  0.36907372 -0.24628268 -0.60706944 -1.08465777 -1.17986637 -1.01350588 </span></span>
+<span><span class="co">#&gt;         z_6         z_7         z_8         z_9        z_10        z_11 </span></span>
+<span><span class="co">#&gt; -0.55074092 -0.44639650  0.94831742  1.56391760  0.89597353  0.28026772 </span></span>
+<span><span class="co">#&gt;        z_12        z_13        z_14        z_15        z_16        z_17 </span></span>
+<span><span class="co">#&gt; -0.25451376  0.73761169  1.34549188  1.32358467  0.17766541  0.24707901 </span></span>
+<span><span class="co">#&gt;        z_18        z_19        z_20        z_21        z_22        z_23 </span></span>
+<span><span class="co">#&gt; -0.32605650 -0.77635273 -0.76390265  0.02271382  0.31796305 -0.03789370 </span></span>
+<span><span class="co">#&gt;        z_24        z_25        z_26        z_27        z_28        z_29 </span></span>
+<span><span class="co">#&gt; -0.61352013 -0.27974327  0.08323175  0.55872247 -0.16814210 -0.24309193 </span></span>
+<span><span class="co">#&gt;        z_30        z_31        z_32        z_33        z_34        z_35 </span></span>
+<span><span class="co">#&gt;  0.07382831  0.05106142 -0.39853762  0.28647538  0.06387648  0.87466874 </span></span>
+<span><span class="co">#&gt;        z_36        z_37        z_38        z_39        z_40   log_sigma </span></span>
+<span><span class="co">#&gt;  0.81215073 -0.57601222 -1.11609392 -1.14849347 -0.92178565 -0.22751687 </span></span>
+<span><span class="co">#&gt;   atanh_rho </span></span>
+<span><span class="co">#&gt;  0.74805165</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span><span class="op">$</span><span class="va">reliability</span><span class="op">$</span><span class="va">mean_accept</span></span>
-<span><span class="co">#&gt; [1] 0.8025</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 0.57625</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="tier-1-exact-nuts-over-theta">Tier 1 (exact): NUTS over <code>theta</code><a class="anchor" aria-label="anchor" href="#tier-1-exact-nuts-over-theta"></a>
+<h3 id="tier-2-nuts-with-joint-importance-correction">Tier 2: NUTS with joint importance correction<a class="anchor" aria-label="anchor" href="#tier-2-nuts-with-joint-importance-correction"></a>
 </h3>
-<p>For higher-dim <code>theta</code> (5+), the gradient-based sibling
-<code>tulpa_tgmrf_nuts()</code> mixes better than independence-MH. For
-<code>theta_dim = 2</code> IMH is generally faster; NUTS is the right
-call when the posterior is multi-modal or strongly non-Gaussian.</p>
+<p><code>tulpa_tgmrf(mode = "nuts")</code> samples the Laplace theta
+marginal and then computes a PSIS correction using an unbiased
+likelihood estimate at each retained theta. <code>$pareto_k</code>,
+<code>$pareto_k_is_ess</code>, <code>$correction_applied</code> and
+<code>$correction_declined</code> report whether this correction passed
+its gate. The gate uses the existing
+<code>min(1 - 1 / log10(S), 0.7)</code> rule, where S is the number of
+retained theta draws. A high or unavailable k returns the uncorrected
+Laplace chain. <code>control$is_correction = FALSE</code> selects that
+approximation explicitly. A corrected fit is a finite importance
+approximation, labelled Tier 2 with
+<code>correction = "psis"</code>.</p>
+<p>For a C++ block, <code>mode = "nuts_joint"</code> samples the true
+density over <code>(beta, z, theta)</code> directly and provides a Tier
+1 reference.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_nuts</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_tgmrf.html">tulpa_tgmrf</a></span><span class="op">(</span></span>
 <span>  y <span class="op">=</span> <span class="va">y</span>, n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, X <span class="op">=</span> <span class="va">X</span>, block <span class="op">=</span> <span class="va">blk</span>,</span>
@@ -397,8 +431,9 @@ call when the posterior is multi-modal or strongly non-Gaussian.</p>
 <div class="section level2">
 <h2 id="comparing-posteriors">Comparing posteriors<a class="anchor" aria-label="anchor" href="#comparing-posteriors"></a>
 </h2>
-<p>The three estimators target the same posterior
-<code>p(theta | y)</code>:</p>
+<p>Nested Laplace and VI approximate the Laplace theta marginal.
+Pseudo-marginal IMH targets the true joint posterior and reports its
+theta marginal:</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  parameter <span class="op">=</span> <span class="va">blk</span><span class="op">$</span><span class="va">theta_names</span>,</span>
@@ -408,11 +443,13 @@ call when the posterior is multi-modal or strongly non-Gaussian.</p>
 <span>  imh_mean  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="fu"><a href="../reference/posterior_sample.html">posterior_sample</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span><span class="op">)</span><span class="op">[</span><span class="va">blk</span><span class="op">$</span><span class="va">theta_names</span><span class="op">]</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;   parameter       true    laplace    vi_mean   imh_mean</span></span>
-<span><span class="co">#&gt; 1 log_sigma -0.2231436 -0.2638947 -0.2380514 -0.2769934</span></span>
-<span><span class="co">#&gt; 2 atanh_rho  0.6931472  0.7060776  0.6164617  0.7036382</span></span></code></pre></div>
-<p>Laplace and VI agree to within grid resolution / Gaussian-fit
-curvature; IMH lifts the structured-tier bias at the cost of
-<code>n_iter</code> inner Laplace solves.</p>
+<span><span class="co">#&gt; 1 log_sigma -0.2231436 -0.2638947 -0.2380514 -0.2275169</span></span>
+<span><span class="co">#&gt; 2 atanh_rho  0.6931472  0.7060776  0.6164617  0.7480516</span></span></code></pre></div>
+<p>Grid resolution and the Gaussian theta fit affect nested Laplace and
+VI. IMH corrects the inner Laplace error by estimating the true marginal
+likelihood, and reports jointly corrected beta and z draws. Its cost is
+one inner solve and the calibrated number of density evaluations per
+iteration.</p>
 <p>The means hide the spread. The figure puts each fit’s 95% interval
 for both hyperparameters next to the value the data were simulated at:
 the grid’s weighted quantiles for nested Laplace, the draw quantiles for
@@ -436,12 +473,9 @@ VI and IMH.</p>
 <p><img src="tgmrf_files/figure-html/compare-plot-1.png" class="r-plt" alt="Two panels, one per hyperparameter (log_sigma and atanh_rho). Each shows the 95% interval and mean from nested Laplace, VI and IMH as horizontal segments, with a vertical line at the simulated value." width="672"></p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/par.html" class="external-link">par</a></span><span class="op">(</span><span class="va">op</span><span class="op">)</span></span></code></pre></div>
-<p>On both axes all three intervals cover the simulated value (orange
-line). On <code>log_sigma</code> they nearly coincide. On
-<code>atanh_rho</code> the grid and IMH intervals agree with each other,
-while the VI interval is narrower and sits lower: the Gaussian fitted at
-the optimum trims the right tail that the exact sampler keeps. The
-intercept
+<p>The orange line marks the simulated value. The three sets of
+intervals include their respective integration, approximation and Monte
+Carlo errors. The intercept
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>0</mn></msub><annotation encoding="application/x-tex">\beta_0</annotation></semantics></math>
 is left out of the figure; the <code><a href="../reference/tulpa_tgmrf.html">tulpa_tgmrf()</a></code> adapters
 report its draws in the columns before <code>theta</code>.</p>
@@ -599,10 +633,9 @@ Laplace approximation to the marginal is
 </annotation></semantics></math> with
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>w</mi></msub><mo>=</mo><mi>p</mi><mo>+</mo><msub><mi>n</mi><mrow><mi mathvariant="normal">l</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">d_w = p + n_{\mathrm{lat}}</annotation></semantics></math>
 the joint dimension. The engine adds your <code>prior(theta)</code> to
-this to form <code>log_marginal(theta) + prior(theta)</code>, which is
-the unnormalised log posterior of
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>
-that every outer layer targets. The sparsity pattern captured at
+this; the returned <code>log_marginal(theta)</code> therefore already
+contains the prior. VI and the NUTS proposal chain use this
+Laplace-approximate theta density. The sparsity pattern captured at
 registration is what makes the
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">log</mi><mo>⁡</mo></mrow><mo stretchy="false" form="prefix">|</mo><mi>H</mi><mo stretchy="false" form="prefix">|</mo></mrow><annotation encoding="application/x-tex">\log|H|</annotation></semantics></math>
 and the linear solve cheap: a sparse Cholesky on a pattern that does not
@@ -632,12 +665,11 @@ such as the natural-scale
 or
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi><mo>=</mo><mrow><mi mathvariant="normal">tanh</mi><mo>⁡</mo></mrow><mo stretchy="false" form="prefix">(</mo><msub><mi>θ</mi><mn>2</mn></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\rho = \tanh(\theta_2)</annotation></semantics></math>
 are summarised by evaluating the transform at each grid cell and taking
-weighted quantiles, not by transforming the mean. The IMH, VI, and NUTS
-layers replace the fixed grid by an adaptive exploration of the same
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo stretchy="false" form="prefix">(</mo><mi>θ</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">L(\theta)</annotation></semantics></math>
-surface but integrate against the identical inner Laplace solve. Every
-symbol here is something your two closures and the family definition
-fully determine.</p>
+weighted quantiles, with the transform applied per draw or node. VI and
+the NUTS proposal chain explore the Laplace surface. The IMH acceptance
+ratio uses an unbiased importance estimate of the true marginal
+likelihood. NUTS uses the ratio of that estimate to the Laplace marginal
+for its PSIS correction.</p>
 </div>
 </div>
 <div class="section level2">
@@ -670,173 +702,101 @@ adapters add an eager check: they evaluate the inner solve at the pilot
 grid argmax before sampling and stop with a specific message if it is
 non-finite, because a failure there is a bug in the closures rather than
 numerical infeasibility at the edge.</p>
-<p>For the outer approximation on a structured-tier fit, the relevant
-number is the
-Pareto-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>k</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat{k}</annotation></semantics></math>,
-the iid-fit counterpart of Rhat. The nested-Laplace fit reports
-<code>$pareto_k</code> and <code>$pareto_k_is_ess</code>: the integrator
-fits a Gaussian proposal to the hyperparameter posterior,
-importance-samples it (<code>control$k_samples</code>, default
-<code>500L</code>, each one extra inner solve), and fits a generalised
-Pareto tail to the importance ratios. A
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>k</mi><mo accent="true">̂</mo></mover><mo>&lt;</mo><mn>0.7</mn></mrow><annotation encoding="application/x-tex">\hat{k} &lt; 0.7</annotation></semantics></math>
-means the Gaussian grid characterises the hyperparameter posterior well
-and the nested integration is reliable. A
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>k</mi><mo accent="true">̂</mo></mover><mo>≥</mo><mn>0.7</mn></mrow><annotation encoding="application/x-tex">\hat{k} \geq 0.7</annotation></semantics></math>
-means the posterior is too skewed or heavy-tailed for the Gaussian grid,
-and you should escalate to the exact tier
-(<code>tulpa_tgmrf_imh()</code> or <code>tulpa_tgmrf_nuts()</code>). The
-diagnostic is computed for a single-block, single positive-scale-axis
-grid and left <code>NA</code> (with the grid’s quadrature effective
-sample size as the fallback) for multi-axis or bounded grids.
-<code>diagnostic_summary(fit)</code> surfaces this for any non-chain
-fit, and <code><a href="../reference/tulpa_psis.html">tulpa_psis()</a></code> is the underlying PSIS core if you
-want to compute it on your own importance ratios.</p>
-<p>For the exact-tier MCMC fits the diagnostics are the standard sampler
-ones. The IMH fit reports <code>$mean_accept</code>, the post-warmup
-acceptance rate; a rate in a healthy band (the proposal is fitted at the
-outer mode, so a near-Gaussian posterior sees high acceptance) means the
-proposal matches the target. A collapsed acceptance rate is the signal
-to switch to NUTS. The NUTS fit reports <code>$mean_accept</code> plus
-<code>$tree_depth</code> per draw and the adapted <code>$epsilon</code>;
-draws repeatedly hitting <code>max_depth</code> indicate a step size
-that is too small for the posterior geometry. Both produce a
-<code>$draws</code> matrix you can feed to <code>diagnostics(fit)</code>
-for Rhat and effective sample size, or to
-<code>check_diagnostics(fit)</code> for a pass/fail summary. The
-cleanest single check is to run the structured-tier fit, read its
-Pareto-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>k</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat{k}</annotation></semantics></math>,
-and only reach for the MCMC tiers when the diagnostic says the Gaussian
-approximation is biased.</p>
+<p>The outer Pareto-k on a nested-Laplace fit compares an outer proposal
+to the Laplace marginal. It measures outer integration reliability.
+Inner Laplace error requires its own assessment. For NUTS correction,
+<code>$pareto_k</code> instead scores the estimated true marginal
+against the sampled Laplace marginal. These diagnostics assess different
+approximation layers.</p>
+<p>IMH reports <code>$mean_accept</code>, <code>$is_particles</code>,
+<code>$log_estimate_sd</code>, <code>$is_likelihood_evaluations</code>
+and <code>$inner_solves</code>. Its selected latent particle remains
+part of the Markov state on rejection. Chain diagnostics apply to its
+joint draws. Corrected NUTS retains the source theta chain and
+resampling indices. Its resampled output is tagged
+<code>draws_kind = "iid"</code>, and chain diagnostics are withheld for
+those rows; source-chain convergence and importance ESS both remain
+relevant. <code>$source_sampler_diagnostics</code> retains the source
+NUTS diagnostics.</p>
 </div>
 <div class="section level2">
 <h2 id="tuning">Tuning<a class="anchor" aria-label="anchor" href="#tuning"></a>
 </h2>
-<p>The split between statistical arguments and tuning knobs follows the
-engine convention. <code><a href="../reference/tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code> carries
-statistical arguments (<code>y</code>, <code>n_trials</code>,
-<code>X</code>, <code>prior</code>, <code>family</code>,
-<code>phi</code>) at the top level and puts every numerical or
-performance knob in a single <code>control = list()</code>. The
-<code>tgmrf</code> adapters expose their tuning as named arguments
-because each adapter has a small, specific set.</p>
-<p>The first decision is the tier. Start with
-<code><a href="../reference/tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code> for a fast structured fit and read
-its <code>$pareto_k</code>. If the diagnostic is below 0.7 the
-structured posterior is trustworthy and you are done; if it is above
-0.7, escalate. <code>tulpa_tgmrf_imh()</code> is the cheapest exact tier
-and the right default escalation for low <code>theta_dim</code> (2-4)
-with a roughly Gaussian posterior, since its proposal is fitted at the
-outer mode, so acceptance stays high. <code>tulpa_tgmrf_nuts()</code> is
-for higher <code>theta_dim</code> (5+) or a strongly non-Gaussian or
-multi-modal posterior, where independence-MH acceptance collapses and
-gradient information pays for itself.</p>
-<p>Inside the structured fit, the knobs that matter are the inner Newton
-budget and the diagnostic cost. <code>control$max_iter</code> (default
-<code>50L</code>) and <code>control$tol</code> (default
-<code>1e-6</code>) govern the inner solve; raise <code>max_iter</code>
-only if cells fail to converge. <code>control$n_threads</code> (default
-<code>1L</code>) sets OpenMP threads inside each inner solve, useful
-when <code>n_latent</code> is large. <code>control$diagnose_k</code>
-(default <code>TRUE</code>) and <code>control$k_samples</code> (default
-<code>500L</code>) control the
-Pareto-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>k</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat{k}</annotation></semantics></math>
-computation; set <code>diagnose_k = FALSE</code> to skip the extra inner
-solves when you do not need the accuracy gate. The <code>bounds</code>
-you set on the block itself define the grid extent, and VI and NUTS
-treat them as a hard wall: a
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>
-outside them has log posterior
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mi>∞</mi></mrow><annotation encoding="application/x-tex">-\infty</annotation></semantics></math>.
-IMH samples the unbounded posterior over
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>;
-for it the bounds only lay the pilot grid, and a
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>
-where the inner solve fails is rejected as a proposal with log posterior
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mi>∞</mi></mrow><annotation encoding="application/x-tex">-\infty</annotation></semantics></math>.
-Set them generously enough to contain the posterior mass but tight
-enough to exclude
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>
-where
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Q</mi><annotation encoding="application/x-tex">Q</annotation></semantics></math>
-goes singular.</p>
-<p>The adapters share <code>pilot_axis_points</code> (default
-<code>5L</code>), the per-axis resolution of the pilot grid that
-initialises every adapter and feeds the mode and Hessian estimates.
-Raise it when the default grid is too coarse to locate the mode.
-<code>tulpa_tgmrf_imh()</code> adds <code>n_iter</code> (default
-<code>2000L</code>), <code>warmup</code> (default
-<code>n_iter %/% 2L</code>), <code>thin</code>, <code>scale</code> (the
-proposal scale multiplier, default <code>1.0</code>, lower it if
-acceptance is too high, raise it if too low); its proposal is a
-multivariate t centred on the outer mode found from the pilot’s best
-cell and scaled by the curvature there. <code>tulpa_tgmrf_vi()</code>
-adds <code>n_draws</code> (default <code>1000L</code>, the variational
-draws returned), <code>max_lbfgs</code> (default <code>100L</code>), and
-<code>lbfgs_tol</code> (default <code>1e-6</code>).
-<code>tulpa_tgmrf_nuts()</code> adds <code>epsilon</code> (default
-<code>0.2 / sqrt(theta_dim)</code>, the initial leapfrog step),
-<code>max_depth</code> (default <code>6L</code>, the tree-depth cap so
-each draw is at most
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mn>6</mn></msup><annotation encoding="application/x-tex">2^6</annotation></semantics></math>
-leapfrog steps), <code>target_accept</code> (default <code>0.65</code>
-for the warmup step-size adaptation), and <code>fd_gradient_step</code>
-(default <code>0.02</code>, the central-difference step for the
-gradient). The defaults are tuned for the common
-<code>theta_dim &lt;= 5</code> case; reach for the knobs when the
-diagnostics in the previous section flag a specific failure, not
-pre-emptively.</p>
+<p>Use <code>control = list(...)</code> for numerical settings. Shared
+controls are <code>pilot_axis_points</code>, <code>max_iter</code>,
+<code>tol</code>, <code>n_threads</code> and <code>verbose</code>. IMH
+adds <code>n_iter</code>, <code>warmup</code>, <code>thin</code> and
+<code>scale</code>. NUTS adds <code>epsilon</code>,
+<code>max_depth</code>, <code>target_accept</code>,
+<code>fd_gradient_step</code> and <code>is_correction</code>. VI adds
+<code>n_draws</code>, <code>max_lbfgs</code> and
+<code>lbfgs_tol</code>.</p>
+<p>The package setting <code>.TGMRF_IS</code> calibrates the number of
+importance particles at the outer mode. It starts with 16 particles,
+measures log-estimate SD over 16 independent batches, and increases the
+count until the measured SD is at most 1.2. The ceiling is 65536
+particles; a failed calibration stops the fit. The joint proposal is a
+multivariate t with 7 degrees of freedom and the inner Laplace
+precision. This pilot cost is paid once. The budget is then fixed for
+the sampler or correction pass.</p>
+<p>The block’s bounds place the grid and pilot. IMH and NUTS use the
+support specified by the theta prior. VI uses the bounds as an
+optimisation wall. An explicit prior support restriction belongs in
+<code>prior(theta)</code>.</p>
 </div>
 <div class="section level2">
 <h2 id="which-tier-when">Which tier when<a class="anchor" aria-label="anchor" href="#which-tier-when"></a>
 </h2>
 <table class="table">
 <colgroup>
-<col width="7%">
-<col width="30%">
-<col width="37%">
-<col width="24%">
+<col width="14%">
+<col width="14%">
+<col width="19%">
+<col width="52%">
 </colgroup>
 <thead><tr class="header">
 <th>Tier</th>
-<th>Function</th>
-<th>Cost</th>
-<th>When to reach for it</th>
+<th>Mode</th>
+<th>Target</th>
+<th>Cost after the pilot</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td>2 (structured)</td>
-<td><code><a href="../reference/tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code></td>
-<td>
-<code>n_grid</code> inner Laplace solves</td>
-<td>Quick fit, diagnostic, debias-target</td>
+<td>2</td>
+<td>nested Laplace</td>
+<td>Laplace marginal and Gaussian conditionals</td>
+<td>One inner solve per grid cell</td>
 </tr>
 <tr class="even">
-<td>2 (structured)</td>
-<td><code>tulpa_tgmrf_vi()</code></td>
-<td>L-BFGS + <code>n_draws</code> extra evals</td>
-<td>Want covariance instead of grid; IMH proposal</td>
+<td>2</td>
+<td><code>"vi"</code></td>
+<td>Gaussian fit to the Laplace theta marginal</td>
+<td>Optimisation and conditional solves</td>
 </tr>
 <tr class="odd">
-<td>1 (exact)</td>
-<td><code>tulpa_tgmrf_imh()</code></td>
-<td>
-<code>n_iter</code> Laplace solves</td>
-<td>Low theta dim, near-Gaussian posterior</td>
+<td>1</td>
+<td><code>"imh"</code></td>
+<td>True joint posterior through pseudo-marginal MH</td>
+<td>One inner solve and M joint-density evaluations per proposal</td>
 </tr>
 <tr class="even">
-<td>1 (exact)</td>
-<td><code>tulpa_tgmrf_nuts()</code></td>
-<td>
-<code>n_iter * 2^depth * 2 * theta_dim</code> Laplace solves</td>
-<td>High theta dim or non-Gaussian</td>
+<td>2</td>
+<td><code>"nuts"</code></td>
+<td>Laplace chain, with PSIS joint correction when k passes</td>
+<td>Finite-difference leapfrog solves plus one solve and M evaluations
+per retained theta</td>
+</tr>
+<tr class="odd">
+<td>1</td>
+<td><code>"nuts_joint"</code></td>
+<td>True joint posterior, C++ block</td>
+<td>Joint-density and gradient evaluations per leapfrog step</td>
 </tr>
 </tbody>
 </table>
-<p>The general rule: start with <code><a href="../reference/tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code> for
-a sanity check, run <code>tulpa_tgmrf_imh()</code> for exact-tier
-posterior moments, and reach for <code>tulpa_tgmrf_nuts()</code> only
-when IMH acceptance collapses.</p>
+<p>M is <code>$is_particles</code>. Each fit’s <code>$target</code>,
+<code>$inference_tier</code> and correction fields describe the
+posterior representation it returns.</p>
 </div>
 <div class="section level2">
 <h2 id="how-this-compares-to-other-latent-block-interfaces">How this compares to other latent-block interfaces<a class="anchor" aria-label="anchor" href="#how-this-compares-to-other-latent-block-interfaces"></a>
@@ -844,39 +804,19 @@ when IMH acceptance collapses.</p>
 <p>Several frameworks let a user inject a custom latent structure, and
 they trade off along the same axis: how much of the structure you write
 versus which inference tiers you reach.</p>
-<p>INLA’s <code>rgeneric</code> interface lets you define a GMRF in R by
-supplying functions for the precision and a few related quantities. The
-callback runs in R and there is no autodiff, so the block is restricted
-to INLA’s Laplace machinery: the structured tier only, with no path to
-exact MCMC and no debias step on a non-Gaussian residual.
-<code><a href="../reference/tgmrf.html">tgmrf()</a></code> matches the ergonomics (two R closures, no
-compilation) but the same block reaches every tulpa tier, including the
-exact IMH and NUTS samplers, because the outer layers all drive the same
-inner Laplace solve.</p>
-<p>INLA’s <code>cgeneric</code> interface moves the precision factory to
-a C function, which is faster than <code>rgeneric</code> but still has
-no autodiff and still supports the Laplace tier only: there is no
-exact-MCMC support for a <code>cgeneric</code> block. The
-<code><a href="../reference/tgmrf_cpp.html">tgmrf_cpp()</a></code> constructor (noted below) is the closer analog
-on the speed axis, and it keeps the full-tier reach that
-<code>cgeneric</code> lacks.</p>
-<p>Stan takes the opposite approach: you write the entire model in its
-DSL, which is then parsed and compiled to autodiffable C++. That gives
-exact HMC over everything, but it asks you to specify the whole model:
-there is no notion of plugging one latent block into an engine that owns
-the rest, and you pay full HMC cost on every block including the
-Gaussian-latent ones a Laplace approximation would handle cheaply.</p>
-<p>TMB is the closest analog: you write a templated C++ snippet and get
-autodiff through CppAD, with a Laplace approximation over the random
-effects. The <code><a href="../reference/tgmrf.html">tgmrf()</a></code> R path is lighter (no C++, closed-form
-latent score from
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Q</mi><annotation encoding="application/x-tex">Q</annotation></semantics></math>
-rather than autodiff) and the <code><a href="../reference/tgmrf_cpp.html">tgmrf_cpp()</a></code> path is the
-direct counterpart for hot inner loops. The distinguishing move across
-all four comparisons is tulpa’s nested-approximation-plus-debias design:
-the structured tier gives a cheap Laplace answer, and the same block
-escalates to an exact-tier correction when the diagnostic says the
-approximation is biased, without rewriting anything.</p>
+<p>INLA’s <code>rgeneric</code> supplies a GMRF through R callbacks and
+<code>cgeneric</code> supplies compiled C callbacks. Both feed INLA’s
+nested Laplace approximations. MCMC with an INLA marginal also retains
+that approximation error (Gomez-Rubio and Rue, 2018). The
+<code><a href="../reference/tgmrf.html">tgmrf()</a></code> interface supplies a precision and prior for the
+same latent Gaussian model class. Its IMH path adds unbiased importance
+integration and pseudo-marginal MH. Its marginal NUTS path adds a
+diagnostic-gated PSIS correction. <code><a href="../reference/tgmrf_cpp.html">tgmrf_cpp()</a></code> additionally
+supports joint NUTS on the true density.</p>
+<p>Stan samples a model’s joint density with HMC after compiling its
+model description. TMB uses templated C++ and autodiff with Laplace
+integration over random effects. The inferential target depends on which
+density a sampler evaluates and which corrections it applies.</p>
 </div>
 <div class="section level2">
 <h2 id="what-tgmrf-does-not-require">What <code>tgmrf()</code> does not require<a class="anchor" aria-label="anchor" href="#what-tgmrf-does-not-require"></a>
@@ -911,10 +851,35 @@ identically.</p>
 contract.</p></li>
 <li><p><code><a href="../reference/tulpa_nested_laplace.html">?tulpa_nested_laplace</a></code>: Tier-2 grid
 integrator.</p></li>
-<li><p><code>?tulpa_tgmrf_imh</code>, <code>?tulpa_tgmrf_nuts</code>,
-<code>?tulpa_tgmrf_vi</code>: adapter family.</p></li>
+<li><p><code><a href="../reference/tulpa_tgmrf.html">?tulpa_tgmrf</a></code>: inference modes and target
+diagnostics.</p></li>
 <li><p><code>inst/examples/tgmrf_periodic_ar1.R</code>: runnable script
 form of this vignette.</p></li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
+</h2>
+<ul>
+<li>Andrieu and Roberts (2009), <a href="https://doi.org/10.1214/07-AOS574" class="external-link">The pseudo-marginal approach
+for efficient Monte Carlo computations</a>. An unbiased inner estimate
+costs M joint-density evaluations per MH proposal; retaining the
+estimate on rejection preserves the target.</li>
+<li>Doucet, Pitt, Deligiannidis and Kohn (2015), <a href="https://doi.org/10.1093/biomet/asu075" class="external-link">Efficient implementation of
+Markov chain Monte Carlo when using an unbiased likelihood
+estimator</a>. Calibration balances estimator variability and particle
+cost. Their Gaussian-noise analysis suggests log-estimate SD around 1.0
+to 1.7; the package uses 1.2 as its pilot target.</li>
+<li>Vehtari, Simpson, Gelman, Yao and Gabry (2024), <a href="https://www.jmlr.org/papers/v25/19-556.html" class="external-link">Pareto smoothed
+importance sampling</a>. PSIS costs an IS estimate per source draw and a
+tail fit; k-hat gates the correction’s reliability.</li>
+<li>Gomez-Rubio and Rue (2018), <a href="https://doi.org/10.1007/s11222-017-9778-y" class="external-link">Markov chain Monte
+Carlo with the integrated nested Laplace approximation</a>. Repeated
+conditional INLA fits supply an approximate MCMC target.</li>
+<li>Rue, Martino and Chopin (2009), <a href="https://doi.org/10.1111/j.1467-9868.2008.00700.x" class="external-link">Approximate
+Bayesian inference for latent Gaussian models by using integrated nested
+Laplace approximations</a>. Sparse inner mode and precision solves
+supply the Gaussian approximation used by each outer evaluation.</li>
 </ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

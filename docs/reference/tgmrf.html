@@ -36,7 +36,7 @@ single latent block."><meta property="og:image" content="https://gillescolling.c
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -49,21 +49,40 @@ single latent block."><meta property="og:image" content="https://gillescolling.c
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -103,7 +122,8 @@ single latent block.</p>
 <span>  graph <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  bounds <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  obs_idx <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  name <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  name <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  n_grid <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'tgmrf'</span></span>
@@ -148,7 +168,8 @@ the nonzero pattern of <code>Q(init)</code> is a subset.</p></dd>
 <dt id="arg-bounds">bounds<a class="anchor" aria-label="anchor" href="#arg-bounds"></a></dt>
 <dd><p>Optional list with components <code>lower</code> and <code>upper</code>, each a
 numeric vector of length <code>length(init)</code>. Used by <code>nested_laplace + CCD</code>
-to build the outer grid; unused by NUTS / VI.</p></dd>
+to build the outer grid and sampler pilot. VI also uses them as an
+optimisation wall. IMH and NUTS use the support of <code>prior(theta)</code>.</p></dd>
 
 
 <dt id="arg-obs-idx">obs_idx<a class="anchor" aria-label="anchor" href="#arg-obs-idx"></a></dt>
@@ -161,6 +182,14 @@ observation per latent slot, in row order.</p></dd>
 <dt id="arg-name">name<a class="anchor" aria-label="anchor" href="#arg-name"></a></dt>
 <dd><p>Optional character; cosmetic label used by <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> /
 <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>.</p></dd>
+
+
+<dt id="arg-n-grid">n_grid<a class="anchor" aria-label="anchor" href="#arg-n-grid"></a></dt>
+<dd><p>Optional integer: the number of equispaced outer-grid nodes
+per theta axis on the nested-Laplace path (length 1, recycled, or
+<code>length(init)</code>), each at least 2. <code>NULL</code> (default) takes the engine's
+default node count. The axis spans <code>bounds</code> where supplied, else
+<code>init</code> plus or minus a fixed half-width. Unused by NUTS / VI.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
@@ -193,9 +222,11 @@ and returns <code>object</code> invisibly.</p>
 <p>$$\log p(z\mid\theta) = \tfrac{1}{2}\log\det Q(\theta) - \tfrac{1}{2}(z - \mu(\theta))^\top Q(\theta)(z - \mu(\theta)) + \mathrm{const}$$</p>
 <p>the gradient <code>-Q(z - mu)</code> and Hessian <code>-Q</code> wrt <code>z</code> are closed form, so the
 user never writes gradient code. The Laplace inner step needs only
-<code>Q(theta)</code> and <code>mu(theta)</code> at numeric <code>theta</code>. NUTS and VI additionally
-use a forward finite-difference gradient on theta, costing <code>dim(theta)</code>
-extra <code>Q</code> calls per outer step – cheap for the typical <code>dim(theta) &lt;= 5</code>.</p>
+<code>Q(theta)</code> and <code>mu(theta)</code> at numeric <code>theta</code>. Marginal NUTS and VI use
+finite differences of the inner Laplace marginal; every additional target
+evaluation costs an inner mode solve. Pseudo-marginal IMH corrects that
+approximation through unbiased importance integration. Marginal NUTS uses
+a PSIS correction gate; <code><a href="tulpa_tgmrf.html">tulpa_tgmrf()</a></code> records each fit's target.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -204,38 +235,31 @@ extra <code>Q</code> calls per outer step – cheap for the typical <code>dim(th
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Periodic AR(1) block, wrap-around tridiagonal precision.</span></span></span>
-<span class="r-in"><span><span class="va">periodic_ar1</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">n</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>  <span class="fu">tgmrf</span><span class="op">(</span></span></span>
-<span class="r-in"><span>    Q <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>      <span class="va">sigma</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">)</span>; <span class="va">rho</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Hyperbolic.html" class="external-link">tanh</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span><span class="op">)</span></span></span>
-<span class="r-in"><span>      <span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">rho</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span> <span class="op">/</span> <span class="va">sigma</span><span class="op">^</span><span class="fl">2</span>, <span class="va">n</span><span class="op">)</span></span></span>
-<span class="r-in"><span>      <span class="va">o</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="op">-</span><span class="va">rho</span> <span class="op">/</span> <span class="va">sigma</span><span class="op">^</span><span class="fl">2</span>, <span class="va">n</span><span class="op">)</span></span></span>
-<span class="r-in"><span>      <span class="va">M</span> <span class="op">&lt;-</span> <span class="fu">Matrix</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/bandSparse.html" class="external-link">bandSparse</a></span><span class="op">(</span></span></span>
-<span class="r-in"><span>        <span class="va">n</span>, k <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>, diagonals <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">o</span>, <span class="va">d</span>, <span class="va">o</span><span class="op">)</span></span></span>
-<span class="r-in"><span>      <span class="op">)</span></span></span>
-<span class="r-in"><span>      <span class="va">M</span><span class="op">[</span><span class="fl">1</span>, <span class="va">n</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">M</span><span class="op">[</span><span class="va">n</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="va">rho</span> <span class="op">/</span> <span class="va">sigma</span><span class="op">^</span><span class="fl">2</span></span></span>
-<span class="r-in"><span>      <span class="fu">methods</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/methods/as.html" class="external-link">as</a></span><span class="op">(</span><span class="va">M</span>, <span class="st">"CsparseMatrix"</span><span class="op">)</span></span></span>
-<span class="r-in"><span>    <span class="op">}</span>,</span></span>
-<span class="r-in"><span>    prior <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="op">{</span></span></span>
-<span class="r-in"><span>      <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="fl">0</span>, <span class="fl">1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span></span></span>
-<span class="r-in"><span>        <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span>, <span class="fl">0</span>, <span class="fl">1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
-<span class="r-in"><span>    <span class="op">}</span>,</span></span>
-<span class="r-in"><span>    init <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>log_sigma <span class="op">=</span> <span class="fl">0</span>, atanh_rho <span class="op">=</span> <span class="fl">0</span><span class="op">)</span>,</span></span>
-<span class="r-in"><span>    name <span class="op">=</span> <span class="st">"periodic_ar1"</span></span></span>
-<span class="r-in"><span>  <span class="op">)</span></span></span>
-<span class="r-in"><span><span class="op">}</span></span></span>
-<span class="r-in"><span></span></span>
-<span class="r-in"><span><span class="va">blk</span> <span class="op">&lt;-</span> <span class="fu">periodic_ar1</span><span class="op">(</span><span class="fl">20</span><span class="op">)</span></span></span>
-<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">blk</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;tgmrf&gt; "periodic_ar1"</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   n_latent : 20</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   theta    : 2 dim (log_sigma, atanh_rho)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   init     : 0, 0</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Q nnz    : 20 (5% of dense)</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   backend  : r</span>
-<span class="r-in"><span></span></span>
-</code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Periodic AR(1) block, wrap-around tridiagonal precision.</span></span>
+<span><span class="va">periodic_ar1</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">n</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu">tgmrf</span><span class="op">(</span></span>
+<span>    Q <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="op">{</span></span>
+<span>      <span class="va">sigma</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">)</span>; <span class="va">rho</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Hyperbolic.html" class="external-link">tanh</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span><span class="op">)</span></span>
+<span>      <span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">rho</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span> <span class="op">/</span> <span class="va">sigma</span><span class="op">^</span><span class="fl">2</span>, <span class="va">n</span><span class="op">)</span></span>
+<span>      <span class="va">o</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="op">-</span><span class="va">rho</span> <span class="op">/</span> <span class="va">sigma</span><span class="op">^</span><span class="fl">2</span>, <span class="va">n</span><span class="op">)</span></span>
+<span>      <span class="va">M</span> <span class="op">&lt;-</span> <span class="fu">Matrix</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/bandSparse.html" class="external-link">bandSparse</a></span><span class="op">(</span></span>
+<span>        <span class="va">n</span>, k <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">1</span>, <span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>, diagonals <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">o</span>, <span class="va">d</span>, <span class="va">o</span><span class="op">)</span></span>
+<span>      <span class="op">)</span></span>
+<span>      <span class="va">M</span><span class="op">[</span><span class="fl">1</span>, <span class="va">n</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">M</span><span class="op">[</span><span class="va">n</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="va">rho</span> <span class="op">/</span> <span class="va">sigma</span><span class="op">^</span><span class="fl">2</span></span>
+<span>      <span class="fu">methods</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/methods/as.html" class="external-link">as</a></span><span class="op">(</span><span class="va">M</span>, <span class="st">"CsparseMatrix"</span><span class="op">)</span></span>
+<span>    <span class="op">}</span>,</span>
+<span>    prior <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="op">{</span></span>
+<span>      <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="fl">0</span>, <span class="fl">1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">+</span></span>
+<span>        <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">dnorm</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span>, <span class="fl">0</span>, <span class="fl">1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>    <span class="op">}</span>,</span>
+<span>    init <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>log_sigma <span class="op">=</span> <span class="fl">0</span>, atanh_rho <span class="op">=</span> <span class="fl">0</span><span class="op">)</span>,</span>
+<span>    name <span class="op">=</span> <span class="st">"periodic_ar1"</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">blk</span> <span class="op">&lt;-</span> <span class="fu">periodic_ar1</span><span class="op">(</span><span class="fl">20</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">blk</span><span class="op">)</span></span>
+<span></span></code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

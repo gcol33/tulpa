@@ -1,20 +1,21 @@
 # Selective refit of high-Pareto-k observations (reloo)
 
-PSIS-LOO with exact refits where the importance sampling is unreliable:
+PSIS-LOO with refits where the importance sampling is unreliable:
 observations whose Pareto k-hat exceeds `k_threshold` are re-scored by
 refitting the model without that observation (through the fit's stored
 [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) call, as
 in
 [`tulpa_kfold()`](https://gillescolling.com/tulpa/reference/tulpa_kfold.md))
-and evaluating the exact held-out log predictive density. All other
-observations keep their PSIS-LOO value, so the cost is one refit per
-flagged observation rather than per fold.
+and estimating the held-out log predictive density from that fit's
+posterior draws. The refit retains its backend's inference target and
+approximation error. All other observations keep their PSIS-LOO value,
+so the cost is one refit per flagged observation rather than per fold.
 
 The same restrictions as
 [`tulpa_kfold()`](https://gillescolling.com/tulpa/reference/tulpa_kfold.md)
 apply: fixed-effect / GLMM fits only (subsetting breaks a spatial /
-temporal field), and held-out random-effect groups contribute at their
-prior mean.
+temporal field), and a held-out row is scored at its group's effect as
+there.
 
 ## Usage
 
@@ -58,8 +59,8 @@ tulpa_reloo(
 ## Value
 
 A list with `elpd_loo` (corrected), `se_elpd_loo`, `looic`, `pointwise`
-(per-observation elpd, exact at the refit observations), `reloo_idx`
-(indices refit), `pareto_k` (the original k-hat values), and
+(per-observation elpd, recomputed at the refit observations),
+`reloo_idx` (indices refit), `pareto_k` (the original k-hat values), and
 `k_threshold`.
 
 ## See also
@@ -79,6 +80,5 @@ d$y <- rpois(120, exp(0.4 + 0.6 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 rl  <- tulpa_reloo(fit, data = d)
 rl$elpd_loo
-#> [1] -187.7525
 # }
 ```

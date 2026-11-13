@@ -97,8 +97,8 @@ tulpa_re_cov_nested(
   Optional Gaussian prior on the fixed effects, threaded into every
   inner
   [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
-  solve (`list(mean, sd)`). `NULL` (default) keeps the weak built-in
-  prior.
+  solve (`list(mean, sd)`). `NULL` (default) takes the engine default
+  `N(0, 2.5^2)`.
 
 - offset:
 
@@ -157,15 +157,20 @@ tulpa_re_cov_nested(
   A named list of numerical / tuning knobs (statistical arguments stay
   in the signature above). Recognized entries:
 
-  - `integration`: node layout, `"ccd"` (default, central-composite
-    design, scales to larger total parameter count) or `"grid"` (full
-    tensor product).
+  - `integration`: node layout, `"auto"` (the default: the tensor grid
+    for one to three covariance parameters, the CCD above), `"grid"`
+    (full tensor product) or `"ccd"` (central-composite design).
 
   - `n_per_axis`: points per parameter axis in the tensor grid (default
-    5); used only when `integration = "grid"`.
+    61 for one parameter, 21 for two, 9 for three, 5 above); grid only.
 
   - `span`: half-width of the tensor grid in posterior standard
-    deviations per whitened axis (default 3); grid only.
+    deviations per whitened axis (default 8 for one parameter, 6 for
+    two, 4.5 for three, 3 above); grid only. Where the outermost level
+    of an axis still carries more than 0.1\\ a level past it, laid in
+    the rows of the other axes that hold that level's mass, until no end
+    does: the left tail of a log-scale posterior runs past the span of
+    the Gaussian at the mode.
 
   - `n_draws`: posterior draws of the fixed effects synthesized from the
     node mixture (default 2000), exposed as `draws` for the generic
@@ -220,6 +225,20 @@ tulpa_re_cov_nested(
     layout, or grid is rejected (fingerprint mismatch). Default `NULL`
     (off).
 
+  - `skew_correct`: `TRUE` (default) centres each integration node's
+    joint Gaussian over the fixed and random effects at the
+    leading-order posterior mean, `mode + Sigma A' (l''' * s) / 2` (the
+    simplified-Laplace location term of Rue, Martino & Chopin 2009, Sec
+    3.2.3), instead of at the mode. A log-link count or a logit with few
+    observations per group has a skewed latent conditional whose mean
+    sits off its mode, and the fixed effects,
+    [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md),
+    [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+    and the WAIC / LOO criteria all read the node centres. `FALSE` keeps
+    the mode. Off at `n_quad > 1` and whenever the subspace debias runs.
+    Which nodes were centred is recorded in `mean_shift` on the returned
+    fit.
+
   - `subspace_debias`: subspace debias, `FALSE` by default. `TRUE` takes
     every default; a list overrides `band` (the inner-reliability floor
     a coordinate is selected at, default `"ok"`), `idx` (pin the
@@ -229,11 +248,13 @@ tulpa_re_cov_nested(
     by the precision-graph neighbours it is strongly coupled to),
     `closure_max`, and the sampler budget `n_iter` / `warmup` / `thin`.
     When the selected set is non-empty, each integration node reports
-    the selected fixed-effect coordinates from a Metropolis sample of
-    the exact conditional along the Gaussian-conditional-mean surface,
-    and the rest from the Gaussian conditional given them; an EMPTY set
-    leaves the fit bit-for-bit identical to the plain path. What was
-    selected is recorded in `subspace_debias` on the returned fit.
+    the selected fixed-effect coordinates from Metropolis on the true
+    density along the Gaussian-conditional-mean surface, and the rest
+    from the Gaussian conditional given them; an EMPTY set leaves the
+    fit bit-for-bit identical to the plain path. What was selected is
+    recorded in `subspace_debias` on the returned fit. The Gaussian
+    nuisance carry and approximate outer integration remain; the fit
+    stays Tier 2.
 
 ## Value
 
@@ -271,8 +292,26 @@ A list with:
   reports those rows empirically and the rest from the Gaussian mixture,
   recording which in its `source` column.
 
+- `latent_nodes`, `draw_nodes`: each integration node's joint Gaussian
+  over the fixed and random effects (`mode`, observed-curvature
+  precision `H`), and the node each row of `draws` was taken from.
+  [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+  and the WAIC / LOO criteria draw each row's random effects from that
+  node's conditional given the row's fixed effects. `NULL` at
+  `n_quad > 1`.
+
+- `mean_shift`: per node, `"applied"` where `control$skew_correct`
+  centred the node at the leading-order mean, otherwise the reason it
+  stayed at the mode. `NULL` when the centring was not requested.
+
 - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`,
   `layout`, `n_blocks`, `n_coefs` (vector of per-block `c`).
+
+- `placement`: the coordinates the nodes were laid in (`coordinate`,
+  `"log_cholesky"` or `"sd_partial_correlation"`) and the Gaussian there
+  (`center`, `cov`).
+
+- `tensor_extended`: the rounds in which the tensor grew past its ends.
 
 - `subspace_debias`: present only when `control$subspace_debias` was
   set. `idx` are the corrected latent coordinates, `bands` the
@@ -295,18 +334,33 @@ integration vector; a single-term model is the length-1 case.
 Integration nodes live in the whitened stacked-parameter space, centred
 at the joint marginal-likelihood mode and rotated/scaled by the Cholesky
 of the mode's posterior covariance (`solve(Hessian)`), so points track
-the posterior ridge. Two node layouts are available via `integration`:
+the posterior ridge. When a correlated block is present the nodes are
+laid in a second set of coordinates for that block, the log marginal SDs
+and the `atanh` of the canonical partial correlations, from a mode-find
+and a curvature read there, and mapped back to the log-Cholesky
+coordinates with the Jacobian of the map in each node's weight. In
+log-Cholesky coordinates a slope SD the data hold weakly makes a funnel:
+the joint mode runs to `log L_22` near `-10`, where the curvature along
+it is close to zero, and a Gaussian laid there spans hundreds of units
+on that axis and a few thousandths on `L_21`, away from the posterior
+mass. In the marginal-SD coordinates the mode is interior. `theta_hat`
+stays the log-Cholesky mode, the estimate
+[`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)
+reports. Two node layouts are available via `integration`:
 
-- `"ccd"` (default): a central-composite design
+- `"ccd"` (default above three parameters): a central-composite design
   ([`ccd_grid()`](https://gillescolling.com/tulpa/reference/ccd_grid.md))
   of `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks`
   parameters, with the corrected R-INLA design weights
-  ([`ccd_weights()`](https://gillescolling.com/tulpa/reference/ccd_weights.md)).
+  ([`ccd_weights()`](https://gillescolling.com/tulpa/reference/ccd_grid.md)).
   Scales polynomially in `k`, where the tensor grid is exponential.
 
-- `"grid"`: the full `n_per_axis^k` tensor product with uniform cell
-  weights – denser and more robust to a non-Gaussian whitened posterior,
-  but only tractable for small `k`.
+- `"grid"` (default for one to three parameters): the full
+  `n_per_axis^k` tensor product with uniform cell weights – denser and
+  more robust to a non-Gaussian whitened posterior, but only tractable
+  for small `k`. A scale's posterior on its log coordinate reaches
+  several standard deviations of the mode's Gaussian into its left tail,
+  which a three-, nine- or fifteen-node CCD does not place a node in.
 
 Each node `k` contributes integration weight proportional to
 `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`,
@@ -380,8 +434,5 @@ re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
 fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
                            family = "binomial")
 fit$Sigma_mean        # marginalized RE covariance
-#>             [,1]        [,2]
-#> [1,]  0.45590235 -0.04201789
-#> [2,] -0.04201789  0.25672716
 # }
 ```
