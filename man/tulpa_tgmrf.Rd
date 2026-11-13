@@ -45,27 +45,46 @@ name inside \code{control}).}
 \value{
 A \code{tulpa_fit} object; \verb{$backend} and \verb{$mode} record
 the engine used. Every mode reports the fixed effects: \verb{$draws} holds the
-\code{beta} columns first, then \code{theta} (\code{"nuts_joint"} also the latent \code{z}), so
+\code{beta} columns first, any retained random effects and latent \code{z}, then \code{theta}, so
 \code{coef()}, \code{summary()} and \code{posterior_sample()} read them as on any other
-fit. Under \code{"imh"}, \code{"nuts"} and \code{"vi"}, which sample \code{theta} alone, each
-\code{beta} row is one draw from the Laplace body's conditional
-\code{N(beta_hat(theta), V(theta))} at that row's \code{theta}, so the \code{beta} columns
-are its marginal posterior. \verb{$draws_beta} / \verb{$draws_theta} split the draws
-by block.
+fit. \code{"imh"} returns the selected IS particle retained by pseudo-marginal
+MH; \code{"nuts_joint"} samples the full joint density. Corrected \code{"nuts"}
+resamples whole joint rows with PSIS weights; \verb{$correction_applied},
+\verb{$correction_declined}, \verb{$pareto_k}, \verb{$pareto_k_is_ess} and \verb{$target}
+describe the result. With \code{control$is_correction = FALSE}, too few draws,
+or a k above the gate, NUTS returns its uncorrected Laplace theta chain
+with Gaussian conditional beta draws, \code{inference_mode = "structured"},
+\code{inference_tier = 2L}. Corrected NUTS also remains Tier 2 and carries
+\code{correction = "psis"}; its resampled rows have \code{draws_kind = "iid"} and
+their dependence through the source chain is recorded in \verb{$source_index}
+and \verb{$source_theta_draws}. \code{"vi"} returns a Gaussian theta approximation
+and conditional Gaussian beta draws. \verb{$draws_beta}, \verb{$draws_z} (when
+available) and \verb{$draws_theta} split the joint rows by block.
+
+The inner IS budget is calibrated at the outer Laplace mode, using
+repeated independent likelihood estimates. The package setting
+\code{.TGMRF_IS} sets the target log-estimate SD (1.2), initial budget (16),
+calibration batches (16), ceiling (65536), and t proposal df (7).
+\verb{$is_particles} and \verb{$log_estimate_sd} report the chosen budget and measured
+SD. Each estimate costs that many exact joint-density evaluations plus
+one inner mode/precision solve. \verb{$inner_solves} counts adapter evaluations
+after the pilot; \verb{$is_likelihood_evaluations} also includes calibration.
 }
 \description{
 One front door for inference over a user-defined \code{\link[=tgmrf]{tgmrf()}} latent block's
-hyperparameter vector \code{theta}. \code{mode} selects the inference engine, all of
-which share the same Laplace body for \verb{(beta, z) | theta}:
+hyperparameter vector \code{theta}. \code{mode} selects the inference target and
+correction:
 \itemize{
-\item \code{"imh"} (default) -- Tier-1 exact MCMC: the Laplace body plus an
-independence-Metropolis bias correction over \code{theta} (the
-"Laplace + MH debias" composition).
-\item \code{"nuts"} -- Tier-1 exact MCMC: NUTS over the marginal \code{theta} posterior.
+\item \code{"imh"} (default) -- Tier-1 pseudo-marginal MCMC against an unbiased
+importance estimate of \code{p(y | theta)}, with jointly resampled latent draws.
+\item \code{"nuts"} -- NUTS on the Laplace-approximate theta marginal, followed by
+PSIS importance correction to the joint posterior. Tier 2: finite weighted
+approximation. The correction is applied only when its Pareto-k passes
+the sample-size-dependent reliability threshold.
 \item \code{"vi"} -- Tier-2 structured: a single-path Pathfinder Gaussian fit of the
-\code{theta} posterior (no bias correction).
+Laplace-approximate theta marginal.
 \item \code{"nuts_joint"} -- Tier-1 exact MCMC sampling the FULL joint
-\verb{(beta, z, theta)} rather than the Laplace-marginalized \code{theta} (requires a
+\verb{(beta, z, theta)} against its true density (requires a
 C++-backend block, see \code{\link[=tgmrf_cpp]{tgmrf_cpp()}}).
 }
 
@@ -88,6 +107,31 @@ fit <- tulpa_tgmrf(y, rep(1L, n), cbind(1, x), block = blk,
                    control = list(n_iter = 300L, warmup = 150L))
 mean(exp(fit$draws[, "log_sigma"]))   # posterior mean group SD
 }
+}
+\references{
+Andrieu and Roberts (2009), The pseudo-marginal approach for efficient
+Monte Carlo computations, Annals of Statistics 37:697-725,
+\doi{10.1214/07-AOS574}. Each MH proposal pays for an unbiased inner
+estimate and retains that estimate on rejection.
+
+Doucet, Pitt, Deligiannidis and Kohn (2015), Efficient implementation of
+Markov chain Monte Carlo when using an unbiased likelihood estimator,
+Biometrika 102:295-313, \doi{10.1093/biomet/asu075}. Repeated pilot
+estimates calibrate the particle budget against log-estimate variability.
+
+Vehtari, Simpson, Gelman, Yao and Gabry (2024), Pareto smoothed importance
+sampling, JMLR 25(72):1-58, \url{https://www.jmlr.org/papers/v25/19-556.html}.
+NUTS correction pays one IS estimate per retained theta and a tail fit.
+
+Gomez-Rubio and Rue (2018), Markov chain Monte Carlo with the integrated
+nested Laplace approximation, Statistics and Computing 28:1033-1051,
+\doi{10.1007/s11222-017-9778-y}.
+MCMC with an INLA marginal retains its deterministic approximation error.
+
+Rue, Martino and Chopin (2009), Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations,
+JRSS B 71:319-392, \doi{10.1111/j.1467-9868.2008.00700.x}.
+The inner mode and sparse precision solve build the proposal at each theta.
 }
 \seealso{
 \code{\link[=tgmrf]{tgmrf()}} for the block, \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} for the compiled-block form.

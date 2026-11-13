@@ -180,11 +180,12 @@ inner-reliability floor a coordinate is selected at, default \code{"ok"}),
 the set by the precision-graph neighbours it is strongly coupled to),
 \code{closure_max}, and the sampler budget \code{n_iter} / \code{warmup} / \code{thin}.
 When the selected set is non-empty, each integration node reports the
-selected fixed-effect coordinates from a Metropolis sample of the exact
-conditional along the Gaussian-conditional-mean surface, and the rest
+selected fixed-effect coordinates from Metropolis on the true density
+along the Gaussian-conditional-mean surface, and the rest
 from the Gaussian conditional given them; an EMPTY set leaves the fit
 bit-for-bit identical to the plain path. What was selected is recorded
-in \code{subspace_debias} on the returned fit.
+in \code{subspace_debias} on the returned fit. The Gaussian nuisance carry
+and approximate outer integration remain; the fit stays Tier 2.
 }}
 }
 \value{

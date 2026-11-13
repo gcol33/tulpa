@@ -265,8 +265,10 @@ inside the acceptance the shipped gates use. A fit the correction cannot
 help -- a coupled one, whose location term is unreachable -- reports what
 it reported before, to the bit.
 \item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
-inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
-at their Gaussian conditional. \code{TRUE} takes every default; a list
+inner-layer diagnostics flagged, by Metropolis on the true joint density
+evaluated along the Gaussian-conditional-mean surface. The Gaussian
+nuisance carry and Laplace outer weights remain approximations, so this
+remains Tier 2. \code{TRUE} takes every default; a list
 overrides \code{band}
 (the inner-reliability floor a coordinate is selected at, default
 \code{"ok"}), \code{idx} (pin the corrected set explicitly, skipping the selector),
@@ -289,10 +291,12 @@ those per-cell pieces.
 \item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
 debias (after Lai, Margossian and Sheldon,
 arXiv:2605.20345). Where
-\code{subspace_debias} selects coordinates and runs exact Metropolis on them,
+\code{subspace_debias} samples a selected Gaussian-conditioned subspace,
 this selects nothing: at every outer cell it draws \code{n_points} points from
 the whole inner Gaussian, weights each by the exact joint density it came
-from, and reports the weighted particles. \code{TRUE} takes the defaults; a
+from, and reports the weighted particles. Increasing particle effort
+corrects integration within each fixed cell; finite outer-grid error
+remains. This fit remains Tier 2. \code{TRUE} takes the defaults; a
 list overrides \code{n_points} (\code{1024L}), \code{variant} (\code{"qmc"}, a Sobol net;
 \code{"is"} for iid draws, \code{"rqmc"} for the net under \code{n_shift} random
 shifts), \code{n_shift} (\code{8L}), \code{n_draws} and \code{seed}. Below 512 points a

@@ -33,6 +33,34 @@
 #include "builtin_family_ll_ad.h"
 #include "density_probe.h"
 
+// Log likelihood at each column of a matrix of observation predictors.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_loglik_batch(Rcpp::NumericVector y,
+                                           Rcpp::IntegerVector n_trials,
+                                           Rcpp::NumericMatrix eta,
+                                           std::string family, double phi) {
+    const int n = eta.nrow();
+    if (y.size() != n || (n_trials.size() != 1 && n_trials.size() != n)) {
+        Rcpp::stop("y and n_trials must match the rows of eta (n_trials may be scalar).");
+    }
+    const auto fam = tulpa::resolve_family(family);
+    std::vector<double> constants(n);
+    for (int i = 0; i < n; ++i) {
+        const int nt = n_trials[n_trials.size() == 1 ? 0 : i];
+        constants[i] = tulpa::log_lik_const_for_kind(y[i], nt, fam.kind);
+    }
+    Rcpp::NumericVector out(eta.ncol());
+    for (int s = 0; s < eta.ncol(); ++s) {
+        if (s % 256 == 0) Rcpp::checkUserInterrupt();
+        for (int i = 0; i < n; ++i) {
+            const int nt = n_trials[n_trials.size() == 1 ? 0 : i];
+            out[s] += tulpa::log_lik_for_family(y[i], nt, eta(i, s), fam,
+                                               phi, NA_REAL, constants[i]);
+        }
+    }
+    return out;
+}
+
 // Unary primitive value and derivative on each autodiff scalar.
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_precision_ad_math(double x, bool remainder) {

@@ -1,58 +1,27 @@
-# Shared `log_marginal(theta)` builder for the tgmrf hyperparameter adapters
-# (tulpa_tgmrf(mode = "imh" / "vi" / "nuts")).
-#
-# All three integrate the same Laplace body for (beta, z) | theta and differ
-# only in how they explore theta-space (FD Hessian + IMH, Pathfinder L-BFGS,
-# NUTS). The per-theta evaluation is identical: pack theta into a one-row
-# grid, run one inner nested-Laplace solve, read its scalar log-marginal. It
-# lives here once so the inner-call argument contract has a single source of
-# truth. (It used to be copy-pasted into all three; the Phase-2 migration of
-# the nested-Laplace knobs into `control = list()` then desynced two copies,
-# which silently caught the resulting "unused argument" error and returned
-# -Inf -- the init guards in vi/nuts fired with a cryptic "not finite".)
-#
-# Returns `list(eval, raw, fixed)`:
-#   * `raw(theta)`  one inner solve, NO error swallowing. A failure here is a
-#                   structural bug (e.g. an engine-API drift), not numerical
-#                   infeasibility, so it surfaces with its real message. Use
-#                   for the eager check at the feasible pilot mode.
-#   * `eval(theta)` the optimizer/sampler-facing closure: optional hard-wall
-#                   bounds, then `raw` with errors/warnings from an infeasible
-#                   theta mapped to -Inf so the caller retreats from the
-#                   infeasible region.
-#   * `fixed(theta_mat)` the conditional fixed-effect posterior
-#                   `beta | theta, y ~ N(mean_k, cov_k)` of the same Laplace
-#                   body at every row of `theta_mat`, from one grid solve.
-#
-# `bounds_lo` / `bounds_hi` NULL  -> no wall (local FD use in mode = "imh",
-# whose +/- fd_step steps stay near the interior mode).
+# Laplace marginal, joint Gaussian proposal, and fixed-effect conditionals
+# from the same per-theta inner solve. The marginal includes the theta prior.
 .tgmrf_make_log_marginal <- function(y, n_trials, X, block, obs_idx,
                                      re_idx, n_re_groups, sigma_re,
                                      family, phi,
-                                     max_iter, tol, n_threads,
-                                     bounds_lo = NULL, bounds_hi = NULL) {
+                                     max_iter, tol, n_threads) {
+  n_solves <- 0L
+  blk <- block
+  blk$obs_idx <- obs_idx
+  nt <- as.integer(n_trials %||% 1L)
+  if (length(nt) == 1L) nt <- rep(nt, length(y))
+  ri <- .validate_re_idx(re_idx %||% rep(0L, length(y)), n_re_groups,
+                         length(y), "tulpa_tgmrf")
+  cargs <- .nl_kernel_args(y, nt, X, NULL, ri, n_re_groups,
+                           sigma_re, family, phi, max_iter, tol, n_threads,
+                           fitted_var = FALSE)
   solve_grid <- function(theta_mat, keep_fixed) {
-    blk <- block
-    blk$obs_idx <- obs_idx
-    blk$theta_grid_built <- matrix(theta_mat,
+    theta_mat <- matrix(theta_mat,
                                    ncol = length(block$theta_names),
                                    dimnames = list(NULL, block$theta_names))
-    # One solve made on the sampler's behalf: its outer-grid progress line
-    # would print once per theta evaluation, whatever the caller's `verbose`
-    # (gcol33/tulpa#890).
-    ctrl <- list(max_iter = max_iter, tol = tol, n_threads = n_threads,
-                 progress = FALSE)
-    if (keep_fixed) {
-      # The rows are the sampler's theta draws, each one a point the fixed
-      # effects are read at: no row may be screened out and none added.
-      ctrl <- c(ctrl, list(keep_grid_hessians = TRUE, prune = FALSE,
-                           axis_refine = "none"))
-    }
-    tulpa_nested_laplace(
-      y = y, n_trials = n_trials, X = X, prior = blk,
-      re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
-      family = family, phi = phi, control = ctrl
-    )
+    args <- cargs
+    args$store_Q <- keep_fixed
+    n_solves <<- n_solves + nrow(theta_mat)
+    .nl_dispatch_multi(args, list(blk), theta_grid_override = theta_mat)
   }
 
   raw <- function(theta_vec) {
@@ -61,10 +30,6 @@
   }
 
   eval <- function(theta_vec) {
-    if (!is.null(bounds_lo) &&
-        (any(theta_vec < bounds_lo) || any(theta_vec > bounds_hi))) {
-      return(-Inf)
-    }
     lm <- tryCatch(suppressWarnings(raw(theta_vec)),
                    error = function(e) NA_real_,
                    warning = function(w) NA_real_)
@@ -76,6 +41,7 @@
     theta_mat <- matrix(theta_mat, ncol = length(block$theta_names))
     out <- solve_grid(theta_mat, keep_fixed = TRUE)
     p <- ncol(X)
+    out <- .nl_attach_grid_hessians(out, p)
     grid <- matrix(out$theta_grid, ncol = ncol(theta_mat))
     if (nrow(grid) != nrow(theta_mat) ||
         !isTRUE(all.equal(unname(grid), unname(theta_mat))) ||
@@ -91,7 +57,17 @@
     list(mean = mean, cov = cov)
   }
 
-  list(eval = eval, raw = raw, fixed = fixed)
+  conditional <- function(theta) {
+    out <- solve_grid(matrix(theta, nrow = 1L), keep_fixed = TRUE)
+    H <- .nl_modal_joint_precision(out)
+    if (is.null(H) || !is.finite(out$log_marginal[1L])) {
+      stop("No finite joint Laplace proposal at theta.", call. = FALSE)
+    }
+    list(mean = as.numeric(out$modes[1L, ]), precision = H,
+         log_marginal = as.numeric(out$log_marginal[1L]))
+  }
+  list(eval = eval, raw = raw, fixed = fixed, conditional = conditional,
+       inner_solves = function() n_solves)
 }
 
 

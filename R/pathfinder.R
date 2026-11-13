@@ -17,7 +17,7 @@
 #' Tier 2 (Structured). The output is a Gaussian approximation, not
 #' samples from the exact posterior -- same epistemic class as
 #' [tulpa_laplace()]. Pair with [imh_laplace()] for an exact-tier
-#' upgrade.
+#' upgrade when its acceptance ratio evaluates the true density.
 #'
 #' @param log_posterior Function `function(theta) -> numeric` returning
 #'   the *unnormalized* log posterior at `theta`.

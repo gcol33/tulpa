@@ -45,7 +45,7 @@
 #' cc$nodes
 #' @export
 tulpa_ccd_outer_grid <- function(eval_logm, axes, f0_mult = 1.1,
-                                 diagnose_k = TRUE, k_samples = 40L,
+                                 diagnose_k = TRUE, k_samples = .nl_diag("ccd_k_samples"),
                                  max_modefind = 40L) {
   decline <- function(why) list(ok = FALSE, reason = why)
   k <- length(axes)

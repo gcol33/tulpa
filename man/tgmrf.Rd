@@ -43,7 +43,8 @@ the nonzero pattern of \code{Q(init)} is a subset.}
 
 \item{bounds}{Optional list with components \code{lower} and \code{upper}, each a
 numeric vector of length \code{length(init)}. Used by \code{nested_laplace + CCD}
-to build the outer grid; unused by NUTS / VI.}
+to build the outer grid and sampler pilot. VI also uses them as an
+optimisation wall. IMH and NUTS use the support of \code{prior(theta)}.}
 
 \item{obs_idx}{Optional integer vector mapping each observation to a
 latent slot in \verb{[1, n_latent]}. If \code{NULL} (default), the fit-time
@@ -99,9 +100,11 @@ For a Gaussian latent block \code{z ~ N(mu(theta), Q(theta)^{-1})}:
 
 the gradient \code{-Q(z - mu)} and Hessian \code{-Q} wrt \code{z} are closed form, so the
 user never writes gradient code. The Laplace inner step needs only
-\code{Q(theta)} and \code{mu(theta)} at numeric \code{theta}. NUTS and VI additionally
-use a forward finite-difference gradient on theta, costing \code{dim(theta)}
-extra \code{Q} calls per outer step -- cheap for the typical \code{dim(theta) <= 5}.
+\code{Q(theta)} and \code{mu(theta)} at numeric \code{theta}. Marginal NUTS and VI use
+finite differences of the inner Laplace marginal; every additional target
+evaluation costs an inner mode solve. Pseudo-marginal IMH corrects that
+approximation through unbiased importance integration. Marginal NUTS uses
+a PSIS correction gate; \code{\link[=tulpa_tgmrf]{tulpa_tgmrf()}} records each fit's target.
 }
 \examples{
 # Periodic AR(1) block, wrap-around tridiagonal precision.

@@ -870,9 +870,11 @@
 #'     the bit -- a declined coefficient keeps the grid-mixture read. See
 #'     [tulpa_nested_laplace()] for the measurement behind the default.
 #'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
-#'     inner-layer diagnostics flagged, by exact Metropolis along the
+#'     inner-layer diagnostics flagged, by Metropolis on the true joint density along the
 #'     Gaussian-conditional-mean surface through each cell's mode, and leave the
-#'     rest at their Gaussian conditional. Settings and semantics are the ones
+#'     rest at their Gaussian conditional. That nuisance carry and the Laplace
+#'     outer weights remain approximations, so this remains Tier 2.
+#'     Settings and semantics are the ones
 #'     documented on [tulpa_nested_laplace()]. On a fully coupled fit `gamma_3`
 #'     is `NaN` for every arm, so the selector rests on the derivative-free
 #'     inner Pareto-k-hat; where that also bands the
@@ -883,12 +885,11 @@
 #'     two paths `diagnose_skew` declines on.
 #'   * `cila` (`FALSE`) -- corrected integrated Laplace, the second inner-layer
 #'     debias (after Lai, Margossian and Sheldon,
-#'     arXiv:2605.20345). Where `subspace_debias` selects coordinates and runs
-#'     exact Metropolis on them, this selects nothing: at every outer cell it
+#'     arXiv:2605.20345). At every outer cell it
 #'     draws `n_points` points from the whole inner Gaussian, weights each by the
 #'     exact joint density it came from, and reports the weighted particles. The
-#'     cell marginals and the latent posterior both converge to the exact ones as
-#'     the effort grows, so `n_points` is the only dial. `TRUE` takes the
+#'     conditional latent integrals converge as particle effort grows. Finite
+#'     outer-grid error remains, so this remains Tier 2. `TRUE` takes the
 #'     defaults; a list overrides `n_points` (`1024L`), `variant`
 #'     (`"qmc"`, a Sobol net; `"is"` for iid draws, `"rqmc"` for the net under
 #'     `n_shift` random shifts), `n_shift` (`8L`), `n_draws` (the reported draw

@@ -72,7 +72,7 @@ version is what most users want as a Laplace-equivalent diagnostic.
 Tier 2 (Structured). The output is a Gaussian approximation, not
 samples from the exact posterior -- same epistemic class as
 \code{\link[=tulpa_laplace]{tulpa_laplace()}}. Pair with \code{\link[=imh_laplace]{imh_laplace()}} for an exact-tier
-upgrade.
+upgrade when its acceptance ratio evaluates the true density.
 }
 
 \examples{

@@ -23,9 +23,10 @@
 #'
 #' @section Tier:
 #' Tier 1 (Exact). The MH accept/reject step makes the chain
-#' asymptotically correct under the standard MH conditions. Tier
-#' status does not depend on Laplace's quality -- only its quality
-#' affects efficiency.
+#' asymptotically correct for the supplied `log_posterior` under the
+#' standard MH conditions. Posterior exactness requires that function to
+#' evaluate the true density. Supplying a Laplace, EP or VI target leaves
+#' that target's approximation error intact. The proposal affects efficiency.
 #'
 #' @param log_posterior Function `function(theta) -> numeric` returning
 #'   the *unnormalized* log posterior at a single parameter vector.
@@ -110,6 +111,28 @@ imh_laplace <- function(log_posterior,
   .check_run_length(n_iter, warmup, "imh_laplace")
   if (scale <= 0) stop("`scale` must be positive.", call. = FALSE)
 
+  fit <- .imh_laplace_chain(
+    evaluate = function(theta) list(log_prob = log_posterior(theta)),
+    mode = mode, hessian = hessian, n_iter = n_iter, warmup = warmup,
+    scale = scale, init = init, thin = thin, verbose = verbose)
+  fit$states <- NULL
+  .finalize_fit(fit, param_names = names(mode))
+}
+
+# Independence MH on an extended state. The target value and auxiliary state
+# are retained together on rejection, including for a random likelihood estimate.
+.imh_laplace_chain <- function(evaluate, mode, hessian, n_iter, warmup,
+                                scale = 1, init = NULL, thin = 1L,
+                                verbose = FALSE) {
+  d <- length(mode)
+  .check_run_length(n_iter, warmup, "imh_laplace")
+  if (length(thin) != 1L || !is.finite(thin) || thin < 1 || thin != floor(thin)) {
+    stop("`thin` must be a positive whole number.", call. = FALSE)
+  }
+  if (length(scale) != 1L || !is.finite(scale) || scale <= 0) {
+    stop("`scale` must be positive and finite.", call. = FALSE)
+  }
+
   # Proposal: theta ~ t_df(mode, scale^2 * H^{-1}), a multivariate t with
   # location `mode` and scale matrix `scale^2 * H^{-1}`.
   df <- .imh_proposal("df")
@@ -138,7 +161,8 @@ imh_laplace <- function(log_posterior,
   # Initial state.
   if (is.null(init)) init <- mode
   theta <- as.numeric(init)
-  log_p_curr <- log_posterior(theta)
+  state_curr <- evaluate(theta)
+  log_p_curr <- state_curr$log_prob
   log_q_curr <- log_prop(theta)
   if (!is.finite(log_p_curr)) {
     stop("`log_posterior(init)` is not finite; pick a different init.",
@@ -149,6 +173,9 @@ imh_laplace <- function(log_posterior,
   draws_all <- matrix(NA_real_, nrow = n_iter, ncol = d)
   log_prob_all <- numeric(n_iter)
   accept_all <- logical(n_iter)
+  keep_idx <- seq.int(warmup + 1L, n_iter, by = thin)
+  states <- vector("list", length(keep_idx))
+  kept <- 0L
 
   # Pre-draw all proposals: a t draw is a standard normal divided by
   # sqrt(W / df), W ~ chi^2_df, mapped through the scale matrix's factor.
@@ -157,7 +184,8 @@ imh_laplace <- function(log_posterior,
 
   for (t in seq_len(n_iter)) {
     prop <- mode + as.numeric(z_all[t, ] %*% R)
-    log_p_prop <- log_posterior(prop)
+    state_prop <- evaluate(prop)
+    log_p_prop <- state_prop$log_prob
     log_q_prop <- log_prop(prop)
 
     # IMH acceptance: alpha = (p(prop)/q(prop)) / (p(curr)/q(curr))
@@ -167,10 +195,15 @@ imh_laplace <- function(log_posterior,
       theta <- prop
       log_p_curr <- log_p_prop
       log_q_curr <- log_q_prop
+      state_curr <- state_prop
       accept_all[t] <- TRUE
     }
     draws_all[t, ] <- theta
     log_prob_all[t] <- log_p_curr
+    if (t > warmup && (t - warmup - 1L) %% thin == 0L) {
+      kept <- kept + 1L
+      states[[kept]] <- state_curr
+    }
   }
 
   keep_idx <- seq.int(warmup + 1L, n_iter, by = thin)
@@ -201,5 +234,6 @@ imh_laplace <- function(log_posterior,
     backend = "imh_laplace",
     proposal = list(mode = mode, cov = prop_cov, scale = scale, df = df)
   )
-  .finalize_fit(fit, param_names = names(mode))
+  fit$states <- states
+  fit
 }

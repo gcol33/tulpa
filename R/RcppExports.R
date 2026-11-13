@@ -77,6 +77,10 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
+cpp_family_loglik_batch <- function(y, n_trials, eta, family, phi) {
+    .Call(`_tulpa_cpp_family_loglik_batch`, y, n_trials, eta, family, phi)
+}
+
 cpp_precision_ad_math <- function(x, remainder) {
     .Call(`_tulpa_cpp_precision_ad_math`, x, remainder)
 }

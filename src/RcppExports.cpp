@@ -284,6 +284,21 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_family_loglik_batch
+Rcpp::NumericVector cpp_family_loglik_batch(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix eta, std::string family, double phi);
+RcppExport SEXP _tulpa_cpp_family_loglik_batch(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_loglik_batch(y, n_trials, eta, family, phi));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_precision_ad_math
 Rcpp::NumericVector cpp_precision_ad_math(double x, bool remainder);
 RcppExport SEXP _tulpa_cpp_precision_ad_math(SEXP xSEXP, SEXP remainderSEXP) {
@@ -3950,6 +3965,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},
+    {"_tulpa_cpp_family_loglik_batch", (DL_FUNC) &_tulpa_cpp_family_loglik_batch, 5},
     {"_tulpa_cpp_precision_ad_math", (DL_FUNC) &_tulpa_cpp_precision_ad_math, 2},
     {"_tulpa_cpp_beta_grouped_terms", (DL_FUNC) &_tulpa_cpp_beta_grouped_terms, 3},
     {"_tulpa_cpp_precision_density_paths", (DL_FUNC) &_tulpa_cpp_precision_density_paths, 4},

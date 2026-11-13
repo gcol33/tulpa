@@ -1,52 +1,13 @@
-#' NUTS over a tgmrf block's hyperparameters
+#' NUTS on a tgmrf Laplace marginal with joint importance correction
 #'
-#' @description
-#' No-U-Turn Sampler (Hoffman & Gelman 2014) over the user-defined
-#' hyperparameter vector `theta` of a [tgmrf()] block, with a finite-
-#' difference gradient on `log_marginal(theta)`. Same Tier 1
-#' (MCMC-corrected) composition as tulpa_tgmrf_imh() but the proposal
-#' uses gradient information through leapfrog integration, so mixing
-#' degrades more gracefully with `theta_dim` than independence-MH does.
+#' The deterministic NUTS target is the Laplace-approximate theta marginal.
+#' Each finite-difference gradient costs two inner solves per theta axis.
+#' After warmup, an unbiased IS likelihood estimate at each theta supplies
+#' the joint correction ratio. The shared PSIS core smooths these ratios;
+#' a finite k below its reliability gate permits resampling joint rows.
+#' A declined correction returns the Laplace theta chain and Gaussian beta
+#' conditionals. Both representations carry Tier 2 and an explicit target.
 #'
-#' Each leapfrog step evaluates the gradient via `2 * theta_dim` extra
-#' inner Laplace solves (central FD on `log_marginal`); a NUTS tree of
-#' depth `j` integrates `2^j` leapfrog steps. The implementation is the
-#' textbook Hoffman & Gelman (2014) Algorithm 3 (NUTS *without* dual
-#' averaging): pilot Laplace gives the initial step size and mass-matrix
-#' diagonal; warmup performs a simple Robbins-Monro adaptation toward
-#' the target acceptance.
-#'
-#' @inheritParams.tgmrf_fit_imh
-#' @param epsilon Initial leapfrog step size. Default is `0.2 / sqrt(theta_dim)`.
-#' @param max_depth Maximum NUTS tree depth (`2^max_depth` leapfrog steps
-#'   per draw at the limit). Default 6.
-#' @param target_accept Target acceptance for the warmup step-size
-#'   adaptation. Default 0.65.
-#' @param fd_gradient_step Finite-difference step for `d/dtheta_j
-#'   log_marginal`. Default 0.02.
-#' @param n_iter Total number of NUTS iterations (including warmup). Default
-#'   `500L`.
-#' @param warmup Number of warmup iterations used for step-size adaptation and
-#'   then discarded. Must satisfy `1 <= warmup < n_iter`. Default `n_iter %/% 2L`.
-#'
-#' @return A list with class `c("tulpa_tgmrf_nuts", "tulpa_fit")`:
-#'   * `draws`, `means`, `sds` -- posterior draws of `(beta, theta)`, fixed
-#'     effects first, and their moments. Each `beta` row is one draw from the
-#'     Laplace body's conditional `N(beta_hat(theta), V(theta))` at that row's
-#'     `theta`; `draws_beta` / `draws_theta` (with `means_*` / `sds_*`) split
-#'     them by block.
-#'   * `mean_accept` -- mean Metropolis acceptance probability across the
-#'     post-warmup tree expansion steps.
-#'   * `tree_depth` -- depth of the NUTS tree at each iteration.
-#'   * `epsilon` -- final step size after warmup adaptation.
-#'   * `pilot`, `mode_theta`, `hessian_theta` -- pilot diagnostics (same as
-#'     tulpa_tgmrf_imh()).
-#'   * `inference_mode`, `inference_tier`, `backend` --
-#'     `"exact"`, `1L`, `"tgmrf_nuts"`.
-#'
-#' @references Hoffman & Gelman (2014). The No-U-Turn Sampler. JMLR
-#'   15:1593-1623.
-#' @seealso tulpa_tgmrf_imh() for the independence-MH counterpart.
 #' @noRd
 .tgmrf_fit_nuts <- function(y, n_trials, X, block,
                              family = "binomial",
@@ -60,6 +21,7 @@
                              fd_gradient_step = 0.02,
                              max_iter = 50L, tol = 1e-7,
                              n_threads = 1L,
+                             is_correction = TRUE,
                              verbose = FALSE) {
 
   if (!inherits(block, "tgmrf")) {
@@ -96,19 +58,13 @@
   if (is.null(epsilon)) epsilon <- 0.2 / sqrt(d)
 
   # --- Closures: log_post and FD gradient on log_marginal -----------------
-  # Shared builder (see .tgmrf_make_log_marginal): hard-wall bounds when the
-  # user supplied them -- a leapfrog step that overshoots into the infeasible
-  # region returns -Inf and NUTS rejects via the slice variable. This stops
-  # the chain from wandering to numerically-divergent theta where Q goes
-  # singular and log|Q| has wide swings that the FD gradient can't track.
-  bounds_lo <- if (!is.null(block$bounds)) block$bounds$lower else NULL
-  bounds_hi <- if (!is.null(block$bounds)) block$bounds$upper else NULL
+  # Block bounds place the pilot grid. The chain has the support of the
+  # user prior, so the proposal can cover the posterior for correction.
   .lm <- .tgmrf_make_log_marginal(
     y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
     family = family, phi = phi,
-    max_iter = max_iter, tol = tol, n_threads = n_threads,
-    bounds_lo = bounds_lo, bounds_hi = bounds_hi
+    max_iter = max_iter, tol = tol, n_threads = n_threads
   )
   log_marginal_at <- .lm$eval
 
@@ -320,12 +276,14 @@
     pilot         = pilot,
     mode_theta    = theta_init,
     mass_diag     = mass_diag,
-    inference_mode = "exact",
-    inference_tier = 1L,
+    inference_mode = "structured",
+    inference_tier = 2L,
     backend        = "tgmrf_nuts"
   )
-  fit <- .tgmrf_with_fixed(fit, draws, .lm, X)
-  .finalize_fit(fit, draws_kind = "chain",
+  fit <- .tgmrf_correct_nuts(fit, draws, .lm, pl, block, X,
+                              y, n_trials, obs_idx, re_idx, n_re_groups,
+                              sigma_re, family, phi, is_correction)
+  .finalize_fit(fit, draws_kind = fit$draws_kind,
                n_fixed = fit$n_fixed, fixed_names = fit$fixed_names,
                param_names = fit$param_names,
                data = list(y = y, n_trials = n_trials, model_matrix = X,

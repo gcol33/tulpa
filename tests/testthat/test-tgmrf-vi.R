@@ -1,15 +1,5 @@
-# ---------------------------------------------------------------------------
-# tgmrf P5 -- Pathfinder VI over the block's hyperparameter vector.
-#
-# tulpa_tgmrf_vi() is the structured-tier sibling of the Tier-1 MCMC
-# adapters (tulpa_tgmrf_imh, tulpa_tgmrf_nuts). Same Laplace body for
-# (beta, z) | theta; the outer integration is an L-BFGS Gaussian fit on
-# log_marginal(theta). No bias correction -- the Gaussian fit IS the
-# approximation.
-#
-# These tests check (a) plumbing, (b) that VI lands in the same band as
-# the Tier-1 samplers up to the structured approximation gap.
-# ---------------------------------------------------------------------------
+# VI fits a Gaussian to the Laplace theta marginal. Comparisons with
+# pseudo-marginal IMH allow the structured approximation gap.
 
 make_vi_ar1_block <- function(n) {
   tgmrf(
@@ -21,7 +11,7 @@ make_vi_ar1_block <- function(n) {
                               diagonals = list(o, d, o))
       methods::as(methods::as(M, "generalMatrix"), "CsparseMatrix")
     },
-    prior = function(theta) 0,
+    prior = function(theta) sum(stats::dnorm(theta, 0, 1, log = TRUE)),
     init = c(log_tau = 0, atanh_rho = atanh(0.5)),
     bounds = list(lower = c(log(0.3), atanh(0)),
                   upper = c(log(3),   atanh(0.95))),

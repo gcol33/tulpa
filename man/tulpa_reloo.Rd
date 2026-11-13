@@ -28,16 +28,17 @@ defaults to the trials stored on the fit, else 1.}
 }
 \value{
 A list with \code{elpd_loo} (corrected), \code{se_elpd_loo}, \code{looic},
-\code{pointwise} (per-observation elpd, exact at the refit observations),
+\code{pointwise} (per-observation elpd, recomputed at the refit observations),
 \code{reloo_idx} (indices refit), \code{pareto_k} (the original k-hat values), and
 \code{k_threshold}.
 }
 \description{
-PSIS-LOO with exact refits where the importance sampling is unreliable:
+PSIS-LOO with refits where the importance sampling is unreliable:
 observations whose Pareto k-hat exceeds \code{k_threshold} are re-scored by
 refitting the model without that observation (through the fit's stored
-\code{\link[=tulpa]{tulpa()}} call, as in \code{\link[=tulpa_kfold]{tulpa_kfold()}}) and evaluating the exact held-out
-log predictive density. All other observations keep their PSIS-LOO value,
+\code{\link[=tulpa]{tulpa()}} call, as in \code{\link[=tulpa_kfold]{tulpa_kfold()}}) and estimating the held-out
+log predictive density from that fit's posterior draws. The refit retains
+its backend's inference target and approximation error. All other observations keep their PSIS-LOO value,
 so the cost is one refit per flagged observation rather than per fold.
 
 The same restrictions as \code{\link[=tulpa_kfold]{tulpa_kfold()}} apply: fixed-effect / GLMM fits

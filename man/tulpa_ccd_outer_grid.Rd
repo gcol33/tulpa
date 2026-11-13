@@ -9,7 +9,7 @@ tulpa_ccd_outer_grid(
   axes,
   f0_mult = 1.1,
   diagnose_k = TRUE,
-  k_samples = 40L,
+  k_samples = .nl_diag("ccd_k_samples"),
   max_modefind = 40L
 )
 }

@@ -12,8 +12,8 @@
 #' fitters: same Laplace body for `(beta, z) | theta`, but the outer
 #' integration over `theta` is the L-BFGS Gaussian fit rather than MH or
 #' NUTS. No bias correction -- the Gaussian fit *is* the approximation.
-#' Pair with the tgmrf IMH fitter for a Tier-1 upgrade (the VI fit is a
-#' perfect IMH proposal).
+#' The tgmrf IMH fitter adds an unbiased likelihood estimator and samples
+#' the true posterior through pseudo-marginal MH.
 #'
 #' The implementation simply composes:
 #'
@@ -45,7 +45,7 @@
 #'
 #' @references Zhang, Carpenter, Gelman, Vehtari (2022). Pathfinder:
 #'   parallel quasi-Newton variational inference. JMLR 23(306):1-49.
-#' @seealso the tgmrf IMH (Tier 1 MH) and NUTS (Tier 1 NUTS) fitters, and
+#' @seealso the tgmrf pseudo-marginal IMH and PSIS-corrected NUTS fitters, and
 #'   [pathfinder()] (underlying VI engine).
 #' @noRd
 .tgmrf_fit_vi <- function(y, n_trials, X, block,
@@ -81,17 +81,12 @@
   theta_init <- pl$theta_init
 
   # --- 2. log_marginal(theta) closure -------------------------------------
-  # Shared builder (see .tgmrf_make_log_marginal): hard-wall bounds, suppress
-  # CHOLMOD non-PD warnings inside the L-BFGS line search, return -Inf on any
-  # failure so L-BFGS-B retreats from the infeasible region.
-  bounds_lo <- if (!is.null(block$bounds)) block$bounds$lower else NULL
-  bounds_hi <- if (!is.null(block$bounds)) block$bounds$upper else NULL
+  # The prior defines support; block bounds place the pilot grid.
   .lm <- .tgmrf_make_log_marginal(
     y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
     family = family, phi = phi,
-    max_iter = max_iter, tol = tol, n_threads = n_threads,
-    bounds_lo = bounds_lo, bounds_hi = bounds_hi
+    max_iter = max_iter, tol = tol, n_threads = n_threads
   )
   log_marginal_at <- .lm$eval
 

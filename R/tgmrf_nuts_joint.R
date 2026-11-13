@@ -2,10 +2,8 @@
 #'
 #' @description
 #' No-U-Turn Sampler (Hoffman & Gelman 2014) running directly on the full
-#' joint vector \eqn{(\beta, z, \theta)} in C++. Unlike
-#' tulpa_tgmrf_nuts(), which targets the marginal posterior
-#' \eqn{p(\theta\mid y)} via a finite-difference gradient on the inner
-#' Laplace log-marginal, this sampler integrates the joint posterior in one
+#' joint vector \eqn{(\beta, z, \theta)} in C++. This sampler evaluates
+#' the full joint density in one
 #' Hamiltonian system using closed-form gradients for \eqn{(\beta, z)} and a
 #' central finite-difference gradient on \eqn{(Q, \mu, \log p(\theta))} with
 #' respect to \eqn{\theta}.
@@ -14,19 +12,23 @@
 #' created via [tgmrf_cpp()]). Calling R for `Q(theta)` at every leapfrog
 #' step would dwarf any compute-time advantage the joint sampler has over
 #' the marginal-theta path. Users with R-closure blocks already have
-#' tulpa_tgmrf_imh() (independence-MH over theta) and
-#' tulpa_tgmrf_nuts() (outer-theta NUTS) as exact-MCMC options.
+#' `tulpa_tgmrf(mode = "imh")` for exact pseudo-marginal MCMC and
+#' `mode = "nuts"` for Laplace-marginal NUTS with a PSIS correction gate.
 #'
 #' @details
 #' Math (mirroring `src/tgmrf_nuts.cpp`):
 #'
 #' \deqn{\log p(\beta, z, \theta \mid y) = \sum_i \log p(y_i \mid \eta_i)
 #'   + \tfrac{1}{2}\log\det Q(\theta) - \tfrac{1}{2}(z - \mu)^\top Q(\theta)(z - \mu)
-#'   - \tfrac{n_{\mathrm{lat}}}{2}\log(2\pi) + \log p(\theta).}
+#'   - \tfrac{n_{\mathrm{lat}}}{2}\log(2\pi) + \log p(\theta)
+#'   + \log p(\beta).}
+#'
+#' The fixed effects have the engine's default Gaussian prior. `phi` is
+#' converted from the R family convention to the likelihood kernel convention.
 #'
 #' Gradients used by the leapfrog:
 #' \itemize{
-#'   \item \eqn{\partial / \partial \beta_k = \sum_i X_{ik} s_i} with
+#'   \item \eqn{\partial / \partial \beta_k = \sum_i X_{ik} s_i - \beta_k / \sigma_\beta^2} with
 #'     \eqn{s_i = d\log p(y_i\mid\eta_i)/d\eta_i};
 #'   \item \eqn{\partial / \partial z_j = s_{i(j)} - (Q(z-\mu))_j};
 #'   \item \eqn{\partial / \partial \theta_m = \tfrac{1}{2}\mathrm{tr}(Q^{-1}\partial_mQ)
@@ -225,7 +227,7 @@
     X           = as.matrix(X),
     obs_idx     = as.integer(obs_idx),
     family      = as.character(family),
-    phi         = as.numeric(phi),
+    phi         = .phi_to_kernel(family, as.numeric(phi)),
     cpp_id      = block$cpp_id,
     theta_dim   = as.integer(d),
     n_latent    = as.integer(n_lat),

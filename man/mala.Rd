@@ -95,7 +95,9 @@ for high-dimensional Gaussians).
 }
 \section{Tier}{
 
-Tier 1 (Exact). The MH step makes the chain asymptotically correct.
+Tier 1 (Exact) for the supplied \code{log_posterior}. The MH ratio must use
+the true density for posterior exactness. A Laplace, EP or VI density
+supplied here remains an approximate target after the MH step.
 Mixing depends on whether the gradient gives useful local geometry --
 poor for posteriors with very different scales across dimensions
 (use a preconditioner or HMC instead).

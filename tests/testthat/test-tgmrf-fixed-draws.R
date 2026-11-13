@@ -1,8 +1,5 @@
-# The theta-sampling tgmrf adapters (mode = "imh" / "vi" / "nuts") report the
-# fixed effects: one conditional draw beta | theta per theta draw, so the beta
-# columns are the mixture over the sampled theta. Checked against a dense
-# tensor quadrature over theta of the same Laplace body.
-
+# The Gaussian beta mixture over the Laplace theta target, compared with
+# dense quadrature. The generic IMH sampler receives that target explicitly.
 .tgfd_block <- function(n) {
   tgmrf(
     Q = function(theta) {
@@ -26,7 +23,25 @@
   rpois(n, exp(0.3 + z))
 }
 
-test_that("tgmrf vi / imh report fixed-effect draws matching dense quadrature", {
+.tgfd_marginal_imh <- function(y, X, blk, n_iter, warmup) {
+  obs <- tulpa:::.tgmrf_obs_idx(blk, length(y))
+  lm <- tulpa:::.tgmrf_make_log_marginal(y, rep(1L, length(y)), X, blk, obs,
+    NULL, 0L, 1, "poisson", 1, 50L, 1e-7, 1L)
+  pilot <- tulpa:::.tgmrf_pilot(y, rep(1L, length(y)), X, blk, obs,
+                                 family = "poisson")
+  om <- tulpa:::.tgmrf_outer_mode(pilot, lm, blk)
+  fit <- imh_laplace(lm$eval, om$mode, tulpa:::.spd_inverse(om$cov),
+                     n_iter = n_iter, warmup = warmup)
+  th <- fit$draws
+  colnames(th) <- blk$theta_names
+  fit$mode_theta <- om$mode
+  fit$mode_status <- om$status
+  fit$inference_mode <- "structured"
+  fit$inference_tier <- 2L
+  tulpa:::.tgmrf_with_fixed(fit, th, lm, X)
+}
+
+test_that("VI and explicit Laplace-target IMH match the Gaussian beta mixture", {
   skip_on_cran()
   skip_if_not_installed("Matrix")
   n <- 40L; blk <- .tgfd_block(n); y <- .tgfd_data(blk, n, 20260518L)
@@ -46,9 +61,7 @@ test_that("tgmrf vi / imh report fixed-effect draws matching dense quadrature", 
   fv <- tulpa_tgmrf(y = y, n_trials = rep(1L, n), X = X, block = blk,
                     family = "poisson", mode = "vi", n_draws = 800L)
   set.seed(2)
-  fi <- tulpa_tgmrf(y = y, n_trials = rep(1L, n), X = X, block = blk,
-                    family = "poisson", mode = "imh", n_iter = 3000L,
-                    warmup = 500L)
+  fi <- .tgfd_marginal_imh(y, X, blk, n_iter = 3000L, warmup = 500L)
   # The IMH proposal is centred on the outer mode, not on a pilot node: it
   # sits within one spacing of the dense grid's best cell on either axis.
   expect_identical(fi$mode_status, "ok")
@@ -80,7 +93,7 @@ test_that("tgmrf vi / imh report fixed-effect draws matching dense quadrature", 
 })
 
 
-test_that("tgmrf imh reaches the rho -> 1 tail of the unbounded theta posterior", {
+test_that("Laplace-target IMH reaches the rho -> 1 tail of its theta target", {
   # Outside the block's box the posterior keeps 6% of its mass toward
   # rho -> 1, where the level is weakly identified and the fixed effect's
   # conditional spread grows; the unbounded fixed-effect SD is 0.548 by dense
@@ -104,8 +117,6 @@ test_that("tgmrf imh reaches the rho -> 1 tail of the unbounded theta posterior"
   ref_sd <- sqrt(.nested_fixed_moments(wide)$cov[1, 1])
 
   set.seed(1)
-  fi <- tulpa_tgmrf(y = y, n_trials = rep(1L, n), X = X, block = blk,
-                    family = "poisson", mode = "imh", n_iter = 10000L,
-                    warmup = 500L)
+  fi <- .tgfd_marginal_imh(y, X, blk, n_iter = 10000L, warmup = 500L)
   expect_lt(abs(stats::sd(fi$draws_beta[, 1]) / ref_sd - 1), 0.06)
 })

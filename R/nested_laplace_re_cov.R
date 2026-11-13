@@ -2009,11 +2009,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'       the set by the precision-graph neighbours it is strongly coupled to),
 #'       `closure_max`, and the sampler budget `n_iter` / `warmup` / `thin`.
 #'       When the selected set is non-empty, each integration node reports the
-#'       selected fixed-effect coordinates from a Metropolis sample of the exact
-#'       conditional along the Gaussian-conditional-mean surface, and the rest
+#'       selected fixed-effect coordinates from Metropolis on the true density
+#'       along the Gaussian-conditional-mean surface, and the rest
 #'       from the Gaussian conditional given them; an EMPTY set leaves the fit
 #'       bit-for-bit identical to the plain path. What was selected is recorded
-#'       in `subspace_debias` on the returned fit.
+#'       in `subspace_debias` on the returned fit. The Gaussian nuisance carry
+#'       and approximate outer integration remain; the fit stays Tier 2.
 #'   }
 #'
 #' @return A list with:

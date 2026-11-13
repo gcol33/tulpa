@@ -87,9 +87,10 @@ means the posterior is far from Gaussian and Laplace is biased.
 \section{Tier}{
 
 Tier 1 (Exact). The MH accept/reject step makes the chain
-asymptotically correct under the standard MH conditions. Tier
-status does not depend on Laplace's quality -- only its quality
-affects efficiency.
+asymptotically correct for the supplied \code{log_posterior} under the
+standard MH conditions. Posterior exactness requires that function to
+evaluate the true density. Supplying a Laplace, EP or VI target leaves
+that target's approximation error intact. The proposal affects efficiency.
 }
 
 \examples{

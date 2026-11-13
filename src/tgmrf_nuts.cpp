@@ -31,11 +31,12 @@
 //                             - 0.5 (z - mu)' Q(theta) (z - mu)
 //                             - 0.5 n_lat log(2 pi)
 //                             + log p(theta)        # user prior
-//                             # log p(beta) = const (flat)  [P3 v1]
+//                             + sum_k log N(beta_k; 0, DEFAULT_SIGMA_BETA^2)
 //
 // Gradients used by the leapfrog:
 //
-//   d / d beta_k     = sum_i X[i, k] * s_i                    s_i := d log p(y_i | eta_i) / d eta_i
+//   d / d beta_k     = sum_i X[i, k] * s_i - beta_k / DEFAULT_SIGMA_BETA^2
+//                     s_i := d log p(y_i | eta_i) / d eta_i
 //   d / d z_j        = s_{i_of(j)}                            if z_j is touched by exactly one obs
 //                      (general: sum over obs with obs_idx[i] == j+1)
 //                      - (Q (z - mu))_j
@@ -77,6 +78,7 @@
 #include <vector>
 
 #include "tulpa/tgmrf.h"
+#include "tulpa/model_data.h"
 #include "tgmrf_registry.h"
 #include "laplace_family_link.h"
 
@@ -277,7 +279,11 @@ double log_post_and_grad(const JointState& st,
     double log_prior_z = 0.5 * logdet_Q - 0.5 * quad - 0.5 * n_lat * LOG2PI;
     double log_prior_theta = eval_log_prior(st, theta);
 
-    double log_post = log_lik + log_prior_z + log_prior_theta;
+    double log_prior_beta = 0.0;
+    for (int k = 0; k < p; ++k) {
+        log_prior_beta += R::dnorm(beta[k], 0.0, tulpa::DEFAULT_SIGMA_BETA, true);
+    }
+    double log_post = log_lik + log_prior_z + log_prior_theta + log_prior_beta;
     if (!std::isfinite(log_post)) {
         ok = false;
         return -std::numeric_limits<double>::infinity();
@@ -296,6 +302,9 @@ double log_post_and_grad(const JointState& st,
         for (int k = 0; k < p; ++k) {
             gbeta[k] += st.X(i, k) * si;
         }
+    }
+    for (int k = 0; k < p; ++k) {
+        gbeta[k] -= beta[k] / (tulpa::DEFAULT_SIGMA_BETA * tulpa::DEFAULT_SIGMA_BETA);
     }
 
     // ---- grad_z = (sum of s_i over obs touching this slot) - Q (z - mu) -----

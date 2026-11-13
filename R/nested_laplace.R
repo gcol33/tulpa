@@ -179,8 +179,10 @@
 #'     help -- a coupled one, whose location term is unreachable -- reports what
 #'     it reported before, to the bit.
 #'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
-#'     inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
-#'     at their Gaussian conditional. `TRUE` takes every default; a list
+#'     inner-layer diagnostics flagged, by Metropolis on the true joint density
+#'     evaluated along the Gaussian-conditional-mean surface. The Gaussian
+#'     nuisance carry and Laplace outer weights remain approximations, so this
+#'     remains Tier 2. `TRUE` takes every default; a list
 #'     overrides `band`
 #'     (the inner-reliability floor a coordinate is selected at, default
 #'     `"ok"`), `idx` (pin the corrected set explicitly, skipping the selector),
@@ -203,10 +205,12 @@
 #'   * `cila` (`FALSE`) -- corrected integrated Laplace, the second inner-layer
 #'     debias (after Lai, Margossian and Sheldon,
 #'     arXiv:2605.20345). Where
-#'     `subspace_debias` selects coordinates and runs exact Metropolis on them,
+#'     `subspace_debias` samples a selected Gaussian-conditioned subspace,
 #'     this selects nothing: at every outer cell it draws `n_points` points from
 #'     the whole inner Gaussian, weights each by the exact joint density it came
-#'     from, and reports the weighted particles. `TRUE` takes the defaults; a
+#'     from, and reports the weighted particles. Increasing particle effort
+#'     corrects integration within each fixed cell; finite outer-grid error
+#'     remains. This fit remains Tier 2. `TRUE` takes the defaults; a
 #'     list overrides `n_points` (`1024L`), `variant` (`"qmc"`, a Sobol net;
 #'     `"is"` for iid draws, `"rqmc"` for the net under `n_shift` random
 #'     shifts), `n_shift` (`8L`), `n_draws` and `seed`. Below 512 points a

@@ -157,6 +157,6 @@ closure (below). With a Gaussian conditional and \code{theta} entering the linea
 predictor, the two rules reach the same \code{theta}.
 }
 \seealso{
-\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} for the exact-marginal (adaptive Gauss-Hermite)
+\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} for adaptive Gauss-Hermite marginal
 fit on the same oracle.
 }

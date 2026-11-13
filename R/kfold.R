@@ -17,7 +17,7 @@
 #' fold's pointwise log predictive density
 #' \eqn{\log \frac{1}{S}\sum_s p(y_i \mid \eta_i^{(s)})} over the training
 #' posterior draws. The summed `elpd_kfold` is directly comparable to the
-#' `elpd_loo` from [tulpa_criteria()] -- the exact refit counterpart to the
+#' `elpd_loo` from [tulpa_criteria()] -- the refit counterpart to the
 #' PSIS-LOO approximation, for when the Pareto k-hat gate flags LOO as
 #' unreliable.
 #'
@@ -223,11 +223,12 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 #' Selective refit of high-Pareto-k observations (reloo)
 #'
 #' @description
-#' PSIS-LOO with exact refits where the importance sampling is unreliable:
+#' PSIS-LOO with refits where the importance sampling is unreliable:
 #' observations whose Pareto k-hat exceeds `k_threshold` are re-scored by
 #' refitting the model without that observation (through the fit's stored
-#' [tulpa()] call, as in [tulpa_kfold()]) and evaluating the exact held-out
-#' log predictive density. All other observations keep their PSIS-LOO value,
+#' [tulpa()] call, as in [tulpa_kfold()]) and estimating the held-out
+#' log predictive density from that fit's posterior draws. The refit retains
+#' its backend's inference target and approximation error. All other observations keep their PSIS-LOO value,
 #' so the cost is one refit per flagged observation rather than per fold.
 #'
 #' The same restrictions as [tulpa_kfold()] apply: fixed-effect / GLMM fits
@@ -244,7 +245,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 #'   (defaults to all stored draws, or 400 on the draw-free Laplace tier).
 #'
 #' @return A list with `elpd_loo` (corrected), `se_elpd_loo`, `looic`,
-#'   `pointwise` (per-observation elpd, exact at the refit observations),
+#'   `pointwise` (per-observation elpd, recomputed at the refit observations),
 #'   `reloo_idx` (indices refit), `pareto_k` (the original k-hat values), and
 #'   `k_threshold`.
 #'

@@ -204,7 +204,7 @@ only needs, per group, the value / gradient / Hessian of \eqn{\ell_g} in
 \eqn{b_g} (for the mode) and \eqn{\ell_g} at the quadrature nodes (for the
 sum). The fixed parameters \code{theta} and the log-Cholesky coordinates of
 \eqn{\Sigma} are optimized jointly on \eqn{\sum_g \log M_g}; standard errors
-come from the exact-marginal Hessian.
+come from the quadrature-marginal Hessian.
 
 Two callback forms select the structure (supply exactly one):
 \itemize{

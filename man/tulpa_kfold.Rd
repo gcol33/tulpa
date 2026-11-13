@@ -34,7 +34,7 @@ partition (via the fit's stored \code{tulpa()} call), and accumulates the held-o
 fold's pointwise log predictive density
 \eqn{\log \frac{1}{S}\sum_s p(y_i \mid \eta_i^{(s)})} over the training
 posterior draws. The summed \code{elpd_kfold} is directly comparable to the
-\code{elpd_loo} from \code{\link[=tulpa_criteria]{tulpa_criteria()}} -- the exact refit counterpart to the
+\code{elpd_loo} from \code{\link[=tulpa_criteria]{tulpa_criteria()}} -- the refit counterpart to the
 PSIS-LOO approximation, for when the Pareto k-hat gate flags LOO as
 unreliable.
 

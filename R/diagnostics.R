@@ -64,7 +64,7 @@
 #'     Vehtari et al. (2021). Split-Rhat is defined for a single chain, so a
 #'     result is produced for any number of chains.}
 #'   \item{i.i.d. approximation draws}{the approximation-reliability table --
-#'     the PSIS tail-shape `pareto_k` scored against the exact inner-Laplace
+#'     the PSIS tail-shape `pareto_k` scored against the Laplace-approximate
 #'     marginal and the outer-grid quadrature effective sample size (the
 #'     OUTER hyperparameter-grid integration layer), the inner-Laplace
 #'     skewness diagnostic `gamma_3` when computed (the INNER Gaussian
@@ -142,7 +142,7 @@
 #'
 #' The headline is a Pareto-smoothed importance-sampling (PSIS) reliability
 #' diagnostic for the OUTER hyperparameter-grid integration. The nested
-#' integrator scores its hyperparameter grid against the exact inner-Laplace
+#' integrator scores its hyperparameter grid against the Laplace-approximate
 #' marginal posterior with a generalized-Pareto fit to the upper tail of the
 #' importance ratios `log p_target(theta) - log q_proposal(theta)`
 #' (see [tulpa_psis()]); the resulting tail-shape `pareto_k` is the "did the
@@ -151,6 +151,12 @@
 #' fit time and read back here; a fit that did not run the diagnostic, or whose
 #' grid proposal degenerated, reports it as `NA` and is assessed on the grid
 #' quadrature reliability instead.
+#'
+#' A corrected tgmrf NUTS fit instead reports PSIS ratios from the sampled
+#' Laplace marginal to unbiased estimates of the true marginal. Its
+#' `pareto_k_scope` and correction status identify that target. Passing this
+#' gate applies a finite importance correction; it supplies no MCMC exactness
+#' label for the resampled rows.
 #'
 #' `pareto_k` scores the outer integration only. A high `pareto_k` on a fit
 #' whose grid quadrature is healthy (`ess_grid` well above 1, largest cell
@@ -214,9 +220,9 @@
 #' @section Approximation-reliability scope:
 #' The PSIS `pareto_k` diagnoses the OUTER (hyperparameter) integration: whether
 #' the Gaussian-proposal-over-grid approximation of the marginal hyperparameter
-#' posterior `p(theta | data)` can be importance-corrected to the exact inner
-#' marginal. This is the dominant approximation in nested Laplace and the one
-#' with an exactly evaluable target. A full latent-space PSIS against the exact
+#' posterior can be importance-corrected to the inner Laplace marginal.
+#' This assesses outer integration error; the inner approximation remains.
+#' A full latent-space PSIS against the exact
 #' joint posterior `pi(x)` is not computed: the latent prior marginal
 #' `p(x) = integral p(x | theta) p(theta) dtheta` has no closed form, and for
 #' the marginalized-occupancy / cover-hurdle likelihoods the exact joint density
@@ -226,8 +232,9 @@
 #' The inner layer carries a SECOND score, `inner_pareto_k`, which needs no
 #' likelihood derivative at all and therefore answers where `inner_skew`
 #' declines. The inner Gaussian at the fitted hyperparameter is an importance
-#' proposal for the exact conditional posterior, and the joint density is the
-#' target, so PSIS on that ratio scores the inner approximation directly. It is
+#' proposal along a Gaussian-conditional-mean curve, and the true joint density
+#' evaluated on that curve supplies the target. This assesses that probed
+#' approximation; nuisance directions retain their Gaussian carry. It is
 #' computed on the same probed indices along the same conditional-mean curve,
 #' one dimension per index, since importance sampling degrades with dimension
 #' and a k-hat over the whole latent field would report `n_x` rather than the

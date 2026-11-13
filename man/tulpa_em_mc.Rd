@@ -75,6 +75,8 @@ iteration, each indexed by submodel name.
 \item \code{n_iter} -- iterations actually run.
 \item \code{n_mc_final} -- \code{n_mc} used in the last iteration.
 \item \code{converged} -- logical.
+\item \code{inference_mode}, \code{inference_tier}, \code{target} -- \code{"structured"}, \code{2L},
+and \code{"Rubin-pooled complete-data Laplace estimates"}.
 \item \code{history} -- \code{data.frame(iter, n_mc, delta, mcse, swamped)}: \code{delta}
 the standardized step, \code{mcse} the largest Monte Carlo standard error
 as a fraction of the pooled standard error, \code{swamped} whether the step
@@ -130,10 +132,11 @@ sit in the signature rather than in a \code{control} list.
 
 \section{Tier}{
 
-Inherits the tier of the inner M-step (Laplace => Tier 2). The
-Monte-Carlo E-step \emph{itself} is exact in the limit \code{n_mc -> infinity},
-so as a \emph{full pipeline} MCEM is asymptotically Tier 1 if
-\code{e_step_sample} is exact.
+Tier 2 (structured): complete-data Laplace fits pooled over latent draws.
+Increasing \code{n_mc} reduces Monte Carlo error in the E-step. The fitted
+modes, Gaussian conditional approximations and Rubin pooling remain the
+inferential approximation. An exact E-step sampler alone supplies no
+posterior correction for those approximations.
 }
 
 \examples{

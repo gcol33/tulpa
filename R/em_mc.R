@@ -65,10 +65,11 @@
 #' sit in the signature rather than in a `control` list.
 #'
 #' @section Tier:
-#' Inherits the tier of the inner M-step (Laplace => Tier 2). The
-#' Monte-Carlo E-step *itself* is exact in the limit `n_mc -> infinity`,
-#' so as a *full pipeline* MCEM is asymptotically Tier 1 if
-#' `e_step_sample` is exact.
+#' Tier 2 (structured): complete-data Laplace fits pooled over latent draws.
+#' Increasing `n_mc` reduces Monte Carlo error in the E-step. The fitted
+#' modes, Gaussian conditional approximations and Rubin pooling remain the
+#' inferential approximation. An exact E-step sampler alone supplies no
+#' posterior correction for those approximations.
 #'
 #' @param e_step_sample Function `function(fits, n_mc, ...) -> list`.
 #'   Must return a list of length `n_mc`, each element a weights
@@ -114,6 +115,8 @@
 #'   * `n_iter` -- iterations actually run.
 #'   * `n_mc_final` -- `n_mc` used in the last iteration.
 #'   * `converged` -- logical.
+#'   * `inference_mode`, `inference_tier`, `target` -- `"structured"`, `2L`,
+#'     and `"Rubin-pooled complete-data Laplace estimates"`.
 #'   * `history` -- `data.frame(iter, n_mc, delta, mcse, swamped)`: `delta`
 #'     the standardized step, `mcse` the largest Monte Carlo standard error
 #'     as a fraction of the pooled standard error, `swamped` whether the step
@@ -294,6 +297,9 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
     n_iter = iter,
     n_mc_final = as.integer(n_mc_curr),
     converged = converged,
+    inference_mode = "structured",
+    inference_tier = 2L,
+    target = "Rubin-pooled complete-data Laplace estimates",
     history = history
   )
 }

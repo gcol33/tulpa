@@ -889,9 +889,11 @@ Such a fit therefore reports what it reported before the default moved, to
 the bit -- a declined coefficient keeps the grid-mixture read. See
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement behind the default.
 \item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
-inner-layer diagnostics flagged, by exact Metropolis along the
+inner-layer diagnostics flagged, by Metropolis on the true joint density along the
 Gaussian-conditional-mean surface through each cell's mode, and leave the
-rest at their Gaussian conditional. Settings and semantics are the ones
+rest at their Gaussian conditional. That nuisance carry and the Laplace
+outer weights remain approximations, so this remains Tier 2.
+Settings and semantics are the ones
 documented on \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}. On a fully coupled fit \code{gamma_3}
 is \code{NaN} for every arm, so the selector rests on the derivative-free
 inner Pareto-k-hat; where that also bands the
@@ -902,12 +904,11 @@ usable factor to build the surface from and is left uncorrected, the same
 two paths \code{diagnose_skew} declines on.
 \item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
 debias (after Lai, Margossian and Sheldon,
-arXiv:2605.20345). Where \code{subspace_debias} selects coordinates and runs
-exact Metropolis on them, this selects nothing: at every outer cell it
+arXiv:2605.20345). At every outer cell it
 draws \code{n_points} points from the whole inner Gaussian, weights each by the
 exact joint density it came from, and reports the weighted particles. The
-cell marginals and the latent posterior both converge to the exact ones as
-the effort grows, so \code{n_points} is the only dial. \code{TRUE} takes the
+conditional latent integrals converge as particle effort grows. Finite
+outer-grid error remains, so this remains Tier 2. \code{TRUE} takes the
 defaults; a list overrides \code{n_points} (\code{1024L}), \code{variant}
 (\code{"qmc"}, a Sobol net; \code{"is"} for iid draws, \code{"rqmc"} for the net under
 \code{n_shift} random shifts), \code{n_shift} (\code{8L}), \code{n_draws} (the reported draw

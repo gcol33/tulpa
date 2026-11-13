@@ -1533,6 +1533,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     single_node_mass     = 0.99,
     k_usable             = 0.7,
     k_samples            = 500L,
+    ccd_k_samples        = 40L,
     k_samples_ok         = 800L,
     k_samples_good       = 2000L,
     k_bootstrap          = 1000L,
@@ -1903,6 +1904,16 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     }
     .IMH_PROPOSAL[[par]]
 }
+
+# Inner importance sampling for tgmrf marginal correction. Pilot batches at
+# the outer mode set a fixed particle count before sampling (Doucet et al. 2015).
+.TGMRF_IS <- list(
+    df = 7,
+    initial_particles = 16L,
+    pilot_batches = 16L,
+    target_log_sd = 1.2,
+    max_particles = 65536L
+)
 
 # Default outer design of every door that lays its hyperparameter nodes from the
 # outer mode and the Cholesky factor of the mode Hessian's inverse

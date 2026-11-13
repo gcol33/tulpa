@@ -78,7 +78,7 @@
 #'   `FALSE`), `aghq_debiased` (whether the `aghq_debias` step ran; it leaves
 #'   the Laplace fit in place when a factorization or quadrature sum fails);
 #'   `NULL` with a warning when the per-group solve fails at the start.
-#' @seealso [tulpa_re_aghq()] for the exact-marginal (adaptive Gauss-Hermite)
+#' @seealso [tulpa_re_aghq()] for adaptive Gauss-Hermite marginal
 #'   fit on the same oracle.
 #' @export
 tulpa_re_em <- function(theta0, re_terms, Sigma0,

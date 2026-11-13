@@ -110,6 +110,9 @@ test_that("tulpa_em_mc recovers mixture means on toy", {
   expect_lt(abs(mu0 - (-1)), 0.4)
   expect_lt(abs(mu1 - 2), 0.4)
   expect_gt(res$n_iter, 1L)
+  expect_identical(res$inference_mode, "structured")
+  expect_identical(res$inference_tier, 2L)
+  expect_identical(res$target, "Rubin-pooled complete-data Laplace estimates")
 })
 
 

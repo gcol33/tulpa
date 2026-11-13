@@ -161,16 +161,18 @@ test_that("tulpa_parse_formula() prints latent-block summary", {
 })
 
 test_that("tgmrf inner nested-Laplace solves run with progress off (#890)", {
-  # The adapters call tulpa_nested_laplace() once for the pilot and once per
-  # theta evaluation; each call's outer-grid progress line printed whatever
-  # the caller's `verbose`, thousands of times over a default fit.
+  # The pilot and every per-theta cell suppress outer-grid progress.
   seen <- list()
-  fake_nl <- function(..., control = list()) {
-    seen[[length(seen) + 1L]] <<- control
+  record <- function(progress) {
+    seen[[length(seen) + 1L]] <<- progress
     list(log_marginal = 0, theta_grid = matrix(0, 1, 2))
   }
+  fake_nl <- function(..., control = list()) record(control)
+  fake_cell <- function(..., progress = .nl_progress_args(list(progress = FALSE))) {
+    record(progress)
+  }
   testthat::local_mocked_bindings(tulpa_nested_laplace = fake_nl,
-                                  .package = "tulpa")
+    .nl_dispatch_multi = fake_cell, .package = "tulpa")
   blk <- make_periodic_ar1(4)
   y <- c(0L, 1L, 2L, 1L)
   X <- matrix(1, 4, 1)
