@@ -17,8 +17,8 @@
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
 <meta property="og:title" content="EM + Laplace">
-<meta name="description" content="Fit a model with a discrete latent variable by writing two callbacks for the EM + Laplace driver, then correct its standard errors by multiple imputation or Gibbs sampling.">
-<meta property="og:description" content="Fit a model with a discrete latent variable by writing two callbacks for the EM + Laplace driver, then correct its standard errors by multiple imputation or Gibbs sampling.">
+<meta name="description" content="Fit a model with a discrete latent variable through EM + Laplace, pool multiple imputations, or sample its joint posterior with true-density MH-within-Gibbs.">
+<meta property="og:description" content="Fit a model with a discrete latent variable through EM + Laplace, pool multiple imputations, or sample its joint posterior with true-density MH-within-Gibbs.">
 <meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg">
 <script>
 (function () {
@@ -131,12 +131,12 @@ only through two callbacks, which supply the latent-variable posterior
 and the GLM blocks it implies, and the driver fits each block with
 <code><a href="../reference/tulpa_laplace.html">tulpa_laplace()</a></code> and iterates to convergence. This article
 writes both callbacks for a zero-inflated Poisson model with a known
-truth, runs the driver, corrects its standard errors with the two
-post-EM corrections, and checks all of them against the exact
-maximum-likelihood fit and against the truth over 100 simulated
-datasets. Model packages such as tulpaObs build their occupancy and
-N-mixture fitters on this driver; the callbacks below are the whole
-contract.</p>
+truth, runs the driver, pools multiple imputations, and samples the
+joint posterior with Metropolis-Hastings (MH) within Gibbs. The EM and
+imputation intervals are also compared with maximum likelihood over 100
+simulated datasets. Model packages such as tulpaObs build their
+occupancy and N-mixture fitters on this driver; the callbacks below are
+the whole contract.</p>
 <ol style="list-style-type: decimal">
 <li>
 <strong>Simulate</strong> counts with known abundance and
@@ -148,8 +148,9 @@ zero-inflation coefficients.</li>
 <strong>Fit</strong> with <code><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace()</a></code> and read
 convergence and estimates.</li>
 <li>
-<strong>Correct</strong> the standard errors with
-<code>correction = "mi"</code> and <code>"gibbs"</code>.</li>
+<strong>Pool</strong> imputations with
+<code>correction = "mi"</code> or sample the joint posterior with
+<code>correction = "gibbs"</code>.</li>
 <li>
 <strong>Compare</strong> intervals against the exact fit and the
 truth.</li>
@@ -282,9 +283,10 @@ replication further down.</p>
 <span>  <span class="va">y</span> <span class="op">&lt;-</span> <span class="va">d</span><span class="op">$</span><span class="va">y</span>; <span class="va">X</span> <span class="op">&lt;-</span> <span class="va">d</span><span class="op">$</span><span class="va">X</span>; <span class="va">Z</span> <span class="op">&lt;-</span> <span class="va">d</span><span class="op">$</span><span class="va">Z</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">y</span><span class="op">)</span></span>
 <span>  <span class="va">e_step</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fits</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
 <span>    <span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">fits</span><span class="op">)</span><span class="op">)</span> <span class="kw"><a href="https://rdrr.io/r/base/function.html" class="external-link">return</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>weights <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">y</span> <span class="op">&gt;</span> <span class="fl">0</span>, <span class="fl">1</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span>    <span class="va">psi</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/drop.html" class="external-link">drop</a></span><span class="op">(</span><span class="va">Z</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">fits</span><span class="op">$</span><span class="va">occ</span><span class="op">$</span><span class="va">mode</span><span class="op">)</span><span class="op">)</span></span>
-<span>    <span class="va">p0</span>  <span class="op">&lt;-</span> <span class="va">psi</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="op">-</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/drop.html" class="external-link">drop</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">fits</span><span class="op">$</span><span class="va">abund</span><span class="op">$</span><span class="va">mode</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>weights <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">y</span> <span class="op">&gt;</span> <span class="fl">0</span>, <span class="fl">1</span>, <span class="va">p0</span> <span class="op">/</span> <span class="op">(</span><span class="va">p0</span> <span class="op">+</span> <span class="fl">1</span> <span class="op">-</span> <span class="va">psi</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="va">eta</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/drop.html" class="external-link">drop</a></span><span class="op">(</span><span class="va">Z</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">fits</span><span class="op">$</span><span class="va">occ</span><span class="op">$</span><span class="va">mode</span><span class="op">)</span></span>
+<span>    <span class="va">log_p0</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span>, log.p <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/drop.html" class="external-link">drop</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">fits</span><span class="op">$</span><span class="va">abund</span><span class="op">$</span><span class="va">mode</span><span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>weights <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">y</span> <span class="op">&gt;</span> <span class="fl">0</span>, <span class="fl">1</span>,</span>
+<span>                         <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">log_p0</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="va">eta</span>, log.p <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span>  <span class="op">}</span></span>
 <span>  <span class="va">m_step_encode</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">weights</span>, <span class="va">...</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>    occ   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">0</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">n</span><span class="op">)</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span><span class="va">Z</span>, <span class="va">Z</span><span class="op">)</span>,</span>
@@ -389,40 +391,46 @@ from them.</p>
 <div class="section level2">
 <h2 id="correcting-the-standard-errors">Correcting the standard errors<a class="anchor" aria-label="anchor" href="#correcting-the-standard-errors"></a>
 </h2>
-<p>Two corrections put that uncertainty back. Both draw hard labels
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mi>i</mi></msub><mo>∼</mo><mrow><mi mathvariant="normal">B</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">u</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi></mrow><mo stretchy="false" form="prefix">(</mo><msub><mi>ω</mi><mi>i</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">z_i \sim \mathrm{Bernoulli}(\omega_i)</annotation></semantics></math>,
-refit every block on each draw, and pool the draws by Rubin’s rules
-(<code><a href="../reference/rubins_pool.html">rubins_pool()</a></code>): the pooled variance is the mean
-within-draw variance plus
+<p><code>correction = "mi"</code> draws independent hard labels
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mi>i</mi></msub><mo>∼</mo><mrow><mi mathvariant="normal">B</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">r</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">u</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi></mrow><mo stretchy="false" form="prefix">(</mo><msub><mi>ω</mi><mi>i</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">z_i \sim \mathrm{Bernoulli}(\omega_i)</annotation></semantics></math>
+at the converged estimate and refits every block. Rubin’s rules
+(<code><a href="../reference/rubins_pool.html">rubins_pool()</a></code>) add the mean within-imputation variance to
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mn>1</mn><mo>+</mo><mn>1</mn><mi>/</mi><mi>K</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(1 + 1/K)</annotation></semantics></math>
-times the variance of the estimates between the
+times the variance between the
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
-draws.</p>
-<ul>
-<li>
-<code>correction = "mi"</code> draws <code>n_imputations</code>
-(default 20) independent label sets from the converged weights.</li>
-<li>
-<code>correction = "gibbs"</code> runs a chain of
-<code>n_gibbs</code> steps from the EM fit, each step an E-step on the
-current fit followed by a draw and a refit. The steps are
-autocorrelated, so the chain here is run for 50 steps instead of the
-default 10.</li>
-</ul>
-<p>Both rerun EM first and return the EM fit in <code>$fits</code> as
-before; the pooled result is in <code>$pooled</code>, one entry per
-block with <code>mean</code>, <code>se</code> and the two variance
-components.</p>
+estimates. The result in <code>$pooled</code> is a Tier 2 approximation
+from complete-data Laplace fits.</p>
+<p><code>correction = "gibbs"</code> alternates a label draw at the
+current sampled coefficients with an MH update of those coefficients.
+The complete-data Laplace mode and full precision define a
+multivariate-t proposal. The acceptance ratio uses the true
+complete-data likelihood and normalized Gaussian priors, together with
+the proposal density at both states. This composition has invariant
+posterior
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo stretchy="false" form="prefix">(</mo><mi>θ</mi><mo>,</mo><mi>Z</mi><mo>∣</mo><mi>y</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">p(\theta, Z \mid y)</annotation></semantics></math>,
+conditional on fixed block dispersion and random-effect covariance. It
+is Tier 1.</p>
+<p>Both modes retain the EM initialization in <code>$fits</code>. Gibbs
+returns a parameter matrix in <code>$draws</code> and a paired
+latent-state list in <code>$latent_draws</code>. Its E-step reads
+sampled parameter values from each block’s <code>mode</code> and
+<code>beta</code>. The chain needs warmup and enough iterations to
+estimate its Monte Carlo error.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">fit_mi</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span><span class="va">cb</span><span class="op">$</span><span class="va">e_step</span>, <span class="va">cb</span><span class="op">$</span><span class="va">m_step_encode</span>,</span>
 <span>                           correction <span class="op">=</span> <span class="st">"mi"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">2</span><span class="op">)</span></span>
 <span><span class="va">fit_gibbs</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span><span class="va">cb</span><span class="op">$</span><span class="va">e_step</span>, <span class="va">cb</span><span class="op">$</span><span class="va">m_step_encode</span>,</span>
-<span>                              correction <span class="op">=</span> <span class="st">"gibbs"</span>, n_gibbs <span class="op">=</span> <span class="fl">50L</span>,</span>
+<span>                              correction <span class="op">=</span> <span class="st">"gibbs"</span>, n_gibbs <span class="op">=</span> <span class="fl">8000L</span>,</span>
+<span>                              correction_control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>warmup <span class="op">=</span> <span class="fl">1000L</span><span class="op">)</span>,</span>
 <span>                              verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="va">pooled_table</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/with.html" class="external-link">with</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pooled</span>, <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  est <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">occ</span><span class="op">$</span><span class="va">mean</span>, <span class="va">abund</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span>, se <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">occ</span><span class="op">$</span><span class="va">se</span>, <span class="va">abund</span><span class="op">$</span><span class="va">se</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">chain_table</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  est <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">draws</span><span class="op">)</span>, se <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">draws</span>, <span class="fl">2</span>, <span class="va">sd</span><span class="op">)</span>,</span>
+<span>  lower <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">draws</span>, <span class="fl">2</span>, <span class="va">quantile</span>, probs <span class="op">=</span> <span class="fl">.025</span><span class="op">)</span>,</span>
+<span>  upper <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">draws</span>, <span class="fl">2</span>, <span class="va">quantile</span>, probs <span class="op">=</span> <span class="fl">.975</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">fit_mi</span><span class="op">$</span><span class="va">pooled</span><span class="op">$</span><span class="va">occ</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"V_within"</span>, <span class="st">"V_between"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt; $V_within</span></span>
 <span><span class="co">#&gt; [1] 0.01632402 0.01928938</span></span>
@@ -434,111 +442,100 @@ components.</p>
 the uncertainty the plain EM standard error leaves out.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">methods</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>plain <span class="op">=</span> <span class="va">plain</span>, mi <span class="op">=</span> <span class="fu">pooled_table</span><span class="op">(</span><span class="va">fit_mi</span><span class="op">)</span>,</span>
-<span>                gibbs <span class="op">=</span> <span class="fu">pooled_table</span><span class="op">(</span><span class="va">fit_gibbs</span><span class="op">)</span>, exact <span class="op">=</span> <span class="va">exact</span><span class="op">)</span></span>
+<span>                gibbs <span class="op">=</span> <span class="fu">chain_table</span><span class="op">(</span><span class="va">fit_gibbs</span><span class="op">)</span>, exact <span class="op">=</span> <span class="va">exact</span><span class="op">)</span></span>
 <span><span class="va">se_tab</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">methods</span>, <span class="va">`[[`</span>, <span class="st">"se"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">se_tab</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="va">coef_names</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">se_tab</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt;        plain    mi gibbs exact</span></span>
-<span><span class="co">#&gt; gamma0 0.127 0.147 0.144 0.150</span></span>
-<span><span class="co">#&gt; gamma1 0.138 0.159 0.154 0.160</span></span>
-<span><span class="co">#&gt; beta0  0.045 0.050 0.049 0.051</span></span>
+<span><span class="co">#&gt; gamma0 0.127 0.147 0.151 0.150</span></span>
+<span><span class="co">#&gt; gamma1 0.138 0.159 0.163 0.160</span></span>
+<span><span class="co">#&gt; beta0  0.045 0.050 0.050 0.051</span></span>
 <span><span class="co">#&gt; beta1  0.041 0.044 0.043 0.044</span></span></code></pre></div>
-<p>Both corrections widen every standard error to near the exact one.
-For
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>γ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\gamma_1</annotation></semantics></math>
-multiple imputation reads 0.159 and Gibbs 0.154 against 0.160 exact,
-from 0.138 plain; on the abundance coefficients the gap was small to
-begin with.</p>
+<p>The Gibbs column reports posterior standard deviations. The other
+columns report standard errors from the EM curvature, Rubin pooling and
+observed maximum-likelihood information. The fitted Gaussian prior also
+enters the Gibbs posterior. <code>fit_gibbs$mean_accept</code> reports
+conditional MH acceptance; <code>fit_gibbs$target</code> records the
+sampled distribution.</p>
 </div>
 <div class="section level2">
 <h2 id="comparing-the-intervals">Comparing the intervals<a class="anchor" aria-label="anchor" href="#comparing-the-intervals"></a>
 </h2>
-<p>The plot shows each 95% interval, estimate
+<p>The plot shows Gibbs posterior quantiles and estimate
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>±</mi><mn>1.96</mn></mrow><annotation encoding="application/x-tex">\pm 1.96</annotation></semantics></math>
-standard errors, as its distance from the true value.</p>
+standard errors for the other methods, each relative to the simulated
+true value.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">cols</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>plain <span class="op">=</span> <span class="st">"#B23A48"</span>, mi <span class="op">=</span> <span class="st">"#2E86AB"</span>, gibbs <span class="op">=</span> <span class="st">"#3B8B5A"</span>,</span>
 <span>          exact <span class="op">=</span> <span class="st">"grey30"</span><span class="op">)</span></span>
 <span><span class="va">k</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">methods</span><span class="op">)</span></span>
 <span><span class="va">ypos</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/outer.html" class="external-link">outer</a></span><span class="op">(</span><span class="op">(</span><span class="va">k</span><span class="op">:</span><span class="fl">1</span> <span class="op">-</span> <span class="op">(</span><span class="va">k</span> <span class="op">+</span> <span class="fl">1</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span><span class="op">)</span> <span class="op">*</span> <span class="fl">0.18</span>, <span class="fl">4</span><span class="op">:</span><span class="fl">1</span> <span class="op">*</span> <span class="fl">1</span>, <span class="va">`+`</span><span class="op">)</span></span>
 <span><span class="va">err</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">methods</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="va">m</span><span class="op">$</span><span class="va">est</span> <span class="op">-</span> <span class="va">truth</span><span class="op">)</span></span>
-<span><span class="va">half</span> <span class="op">&lt;-</span> <span class="fl">1.96</span> <span class="op">*</span> <span class="va">se_tab</span></span>
+<span><span class="va">lower</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">methods</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">m</span><span class="op">$</span><span class="va">lower</span><span class="op">)</span><span class="op">)</span> <span class="va">m</span><span class="op">$</span><span class="va">est</span> <span class="op">-</span> <span class="fl">1.96</span> <span class="op">*</span> <span class="va">m</span><span class="op">$</span><span class="va">se</span> <span class="kw">else</span> <span class="va">m</span><span class="op">$</span><span class="va">lower</span><span class="op">)</span> <span class="op">-</span> <span class="va">truth</span></span>
+<span><span class="va">upper</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">methods</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">m</span><span class="op">$</span><span class="va">upper</span><span class="op">)</span><span class="op">)</span> <span class="va">m</span><span class="op">$</span><span class="va">est</span> <span class="op">+</span> <span class="fl">1.96</span> <span class="op">*</span> <span class="va">m</span><span class="op">$</span><span class="va">se</span> <span class="kw">else</span> <span class="va">m</span><span class="op">$</span><span class="va">upper</span><span class="op">)</span> <span class="op">-</span> <span class="va">truth</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/par.html" class="external-link">par</a></span><span class="op">(</span>mar <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">4.5</span>, <span class="fl">5.5</span>, <span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="cn">NA</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">err</span> <span class="op">-</span> <span class="va">half</span>, <span class="va">err</span> <span class="op">+</span> <span class="va">half</span><span class="op">)</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">4.5</span><span class="op">)</span>,</span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="cn">NA</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">lower</span>, <span class="va">upper</span><span class="op">)</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">4.5</span><span class="op">)</span>,</span>
 <span>     yaxt <span class="op">=</span> <span class="st">"n"</span>, xlab <span class="op">=</span> <span class="st">"interval minus true value"</span>, ylab <span class="op">=</span> <span class="st">""</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/axis.html" class="external-link">axis</a></span><span class="op">(</span><span class="fl">2</span>, at <span class="op">=</span> <span class="fl">4</span><span class="op">:</span><span class="fl">1</span>, labels <span class="op">=</span> <span class="va">coef_names</span>, las <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span>v <span class="op">=</span> <span class="fl">0</span>, lty <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
 <span><span class="kw">for</span> <span class="op">(</span><span class="va">j</span> <span class="kw">in</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">k</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/graphics/segments.html" class="external-link">segments</a></span><span class="op">(</span><span class="va">err</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span> <span class="op">-</span> <span class="va">half</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span>, <span class="va">ypos</span><span class="op">[</span><span class="va">j</span>, <span class="op">]</span>, <span class="va">err</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span> <span class="op">+</span> <span class="va">half</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span>, <span class="va">ypos</span><span class="op">[</span><span class="va">j</span>, <span class="op">]</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/graphics/segments.html" class="external-link">segments</a></span><span class="op">(</span><span class="va">lower</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span>, <span class="va">ypos</span><span class="op">[</span><span class="va">j</span>, <span class="op">]</span>, <span class="va">upper</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span>, <span class="va">ypos</span><span class="op">[</span><span class="va">j</span>, <span class="op">]</span>,</span>
 <span>           col <span class="op">=</span> <span class="va">cols</span><span class="op">[</span><span class="va">j</span><span class="op">]</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/graphics/points.html" class="external-link">points</a></span><span class="op">(</span><span class="va">err</span><span class="op">[</span>, <span class="va">j</span><span class="op">]</span>, <span class="va">ypos</span><span class="op">[</span><span class="va">j</span>, <span class="op">]</span>, pch <span class="op">=</span> <span class="fl">19</span>, col <span class="op">=</span> <span class="va">cols</span><span class="op">[</span><span class="va">j</span><span class="op">]</span><span class="op">)</span></span>
 <span><span class="op">}</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"bottomright"</span>, legend <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">methods</span><span class="op">)</span>, col <span class="op">=</span> <span class="va">cols</span>, lwd <span class="op">=</span> <span class="fl">2</span>,</span>
 <span>       pch <span class="op">=</span> <span class="fl">19</span>, bty <span class="op">=</span> <span class="st">"n"</span>, cex <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span></span></code></pre></div>
-<p><img src="em-laplace_files/figure-html/interval-plot-1.png" class="r-plt" alt="Dot-and-whisker plot of 95 percent intervals minus the true value for four coefficients, each with four methods: plain EM, multiple imputation, Gibbs and exact maximum likelihood. For gamma1 every interval sits right of zero; the multiple-imputation interval reaches zero, the exact one ends just short of it, and the Gibbs and plain EM intervals end further short. The abundance intervals all cover zero." width="576"></p>
-<p>For
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>γ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\gamma_1</annotation></semantics></math>
-no interval reaches the truth: the multiple-imputation and exact
-intervals end 0.01 short of it, the Gibbs and plain EM intervals further
-short. This dataset’s estimate of
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>γ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\gamma_1</annotation></semantics></math>
-is itself two exact standard errors from the truth, so an interval of
-the exact width cannot reach it by more than a small margin. The four
-abundance intervals are nearly the same and all cover.</p>
+<p><img src="em-laplace_files/figure-html/interval-plot-1.png" class="r-plt" alt="Intervals relative to the simulated coefficients for EM, multiple imputation, Gibbs posterior sampling and maximum likelihood." width="576"></p>
+<p>The intervals describe uncertainty for this dataset. Repeated
+simulation measures the coverage of the standard-error intervals
+below.</p>
 </div>
 <div class="section level2">
 <h2 id="how-often-the-intervals-cover">How often the intervals cover<a class="anchor" aria-label="anchor" href="#how-often-the-intervals-cover"></a>
 </h2>
 <p>One dataset shows the widths; coverage needs many. The chunk below
-repeats the simulation and every fit 100 times and counts how often each
-95% interval contains the truth. It takes about two minutes.</p>
+repeats the simulation, EM, multiple imputation and maximum-likelihood
+fitting 100 times and counts how often each standard-error interval
+contains the truth.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">one_run</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">d</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="va">cb</span> <span class="op">&lt;-</span> <span class="fu">zip_callbacks</span><span class="op">(</span><span class="va">d</span><span class="op">)</span></span>
 <span>  <span class="va">f</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span><span class="va">cb</span><span class="op">$</span><span class="va">e_step</span>, <span class="va">cb</span><span class="op">$</span><span class="va">m_step_encode</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span>  <span class="va">mi</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span><span class="va">cb</span><span class="op">$</span><span class="va">e_step</span>, <span class="va">cb</span><span class="op">$</span><span class="va">m_step_encode</span>,</span>
 <span>                         correction <span class="op">=</span> <span class="st">"mi"</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span>  <span class="va">gb</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span><span class="va">cb</span><span class="op">$</span><span class="va">e_step</span>, <span class="va">cb</span><span class="op">$</span><span class="va">m_step_encode</span>,</span>
-<span>                         correction <span class="op">=</span> <span class="st">"gibbs"</span>, n_gibbs <span class="op">=</span> <span class="fl">50L</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>plain <span class="op">=</span> <span class="fu">em_table</span><span class="op">(</span><span class="va">f</span><span class="op">)</span>, mi <span class="op">=</span> <span class="fu">pooled_table</span><span class="op">(</span><span class="va">mi</span><span class="op">)</span>,</span>
-<span>       gibbs <span class="op">=</span> <span class="fu">pooled_table</span><span class="op">(</span><span class="va">gb</span><span class="op">)</span>, exact <span class="op">=</span> <span class="fu">zip_mle</span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
+<span>       exact <span class="op">=</span> <span class="fu">zip_mle</span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">99</span><span class="op">)</span></span>
 <span><span class="va">runs</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">replicate</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fu">one_run</span><span class="op">(</span><span class="fu">sim_zip</span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span>, simplify <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">mean_se</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">methods</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="va">coverage_methods</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"plain"</span>, <span class="st">"mi"</span>, <span class="st">"exact"</span><span class="op">)</span></span>
+<span><span class="va">mean_se</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">coverage_methods</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">rowMeans</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">runs</span>, <span class="kw">function</span><span class="op">(</span><span class="va">r</span><span class="op">)</span> <span class="va">r</span><span class="op">[[</span><span class="va">m</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">se</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">coverage</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">methods</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span></span>
+<span><span class="va">coverage</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">coverage_methods</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span></span>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">rowMeans</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">runs</span>, <span class="kw">function</span><span class="op">(</span><span class="va">r</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">r</span><span class="op">[[</span><span class="va">m</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">est</span> <span class="op">-</span> <span class="va">truth</span><span class="op">)</span> <span class="op">&lt;</span> <span class="fl">1.96</span> <span class="op">*</span> <span class="va">r</span><span class="op">[[</span><span class="va">m</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">se</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">sd_exact</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">runs</span>, <span class="kw">function</span><span class="op">(</span><span class="va">r</span><span class="op">)</span> <span class="va">r</span><span class="op">$</span><span class="va">exact</span><span class="op">$</span><span class="va">est</span><span class="op">)</span>, <span class="fl">1</span>, <span class="va">sd</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">mean_se</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">coverage</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="va">coef_names</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="va">sd_exact</span>, <span class="va">mean_se</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt;        sd_exact plain    mi gibbs exact</span></span>
-<span><span class="co">#&gt; gamma0    0.165 0.141 0.160 0.163 0.173</span></span>
-<span><span class="co">#&gt; gamma1    0.221 0.162 0.183 0.184 0.192</span></span>
-<span><span class="co">#&gt; beta0     0.053 0.046 0.049 0.049 0.051</span></span>
-<span><span class="co">#&gt; beta1     0.045 0.041 0.043 0.043 0.044</span></span>
+<span><span class="co">#&gt;        sd_exact plain    mi exact</span></span>
+<span><span class="co">#&gt; gamma0    0.168 0.141 0.158 0.171</span></span>
+<span><span class="co">#&gt; gamma1    0.172 0.164 0.185 0.194</span></span>
+<span><span class="co">#&gt; beta0     0.045 0.045 0.048 0.050</span></span>
+<span><span class="co">#&gt; beta1     0.045 0.041 0.043 0.044</span></span>
 <span><span class="va">coverage</span></span>
-<span><span class="co">#&gt;        plain   mi gibbs exact</span></span>
-<span><span class="co">#&gt; gamma0  0.92 0.94  0.95  0.95</span></span>
-<span><span class="co">#&gt; gamma1  0.91 0.91  0.91  0.91</span></span>
-<span><span class="co">#&gt; beta0   0.88 0.90  0.90  0.92</span></span>
-<span><span class="co">#&gt; beta1   0.93 0.94  0.94  0.96</span></span></code></pre></div>
+<span><span class="co">#&gt;        plain   mi exact</span></span>
+<span><span class="co">#&gt; gamma0  0.91 0.95  0.96</span></span>
+<span><span class="co">#&gt; gamma1  0.97 0.98  0.98</span></span>
+<span><span class="co">#&gt; beta0   0.95 0.96  0.96</span></span>
+<span><span class="co">#&gt; beta1   0.93 0.93  0.93</span></span></code></pre></div>
 <p><code>sd_exact</code> is the standard deviation of the exact estimate
 across the 100 datasets, the spread a standard error should match; the
 other columns of the first table are the mean standard error per method.
-For
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>γ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\gamma_1</annotation></semantics></math>
-that spread is 0.221; the plain EM standard error averages 0.162,
-multiple imputation 0.183 and Gibbs 0.184, against 0.192 for the exact
-standard error. All four intervals cover
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>γ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\gamma_1</annotation></semantics></math>
-in 91 of 100 datasets. On
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>γ</mi><mn>0</mn></msub><annotation encoding="application/x-tex">\gamma_0</annotation></semantics></math>
-plain EM covers in 92, the corrections and the exact fit in 94 or 95.
-The abundance coefficients are less affected: plain EM covers
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>β</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\beta_1</annotation></semantics></math>
-in 93 datasets, the corrections in 94.</p>
+<code>coverage</code> reports the fraction of intervals containing each
+known coefficient. This experiment evaluates the three standard-error
+procedures. Gibbs sampling is validated separately against an
+independent joint posterior sampler on a sparse count mixture in the
+package tests.</p>
 </div>
 <div class="section level2">
 <h2 id="a-prior-on-the-coefficients">A prior on the coefficients<a class="anchor" aria-label="anchor" href="#a-prior-on-the-coefficients"></a>
@@ -550,13 +547,13 @@ alike. A tight prior at zero pulls the estimates toward zero:</p>
 <code class="sourceCode R"><span><span class="va">fit_prior</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace</a></span><span class="op">(</span><span class="va">cb</span><span class="op">$</span><span class="va">e_step</span>, <span class="va">cb</span><span class="op">$</span><span class="va">m_step_encode</span>,</span>
 <span>                              beta_prior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>mean <span class="op">=</span> <span class="fl">0</span>, sd <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span>,</span>
 <span>                              verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>no_prior <span class="op">=</span> <span class="va">plain</span><span class="op">$</span><span class="va">est</span>, sd_0.5 <span class="op">=</span> <span class="fu">em_table</span><span class="op">(</span><span class="va">fit_prior</span><span class="op">)</span><span class="op">$</span><span class="va">est</span>,</span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>default_prior <span class="op">=</span> <span class="va">plain</span><span class="op">$</span><span class="va">est</span>, sd_0.5 <span class="op">=</span> <span class="fu">em_table</span><span class="op">(</span><span class="va">fit_prior</span><span class="op">)</span><span class="op">$</span><span class="va">est</span>,</span>
 <span>            row.names <span class="op">=</span> <span class="va">coef_names</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt;        no_prior sd_0.5</span></span>
-<span><span class="co">#&gt; gamma0    0.610  0.556</span></span>
-<span><span class="co">#&gt; gamma1   -0.671 -0.605</span></span>
-<span><span class="co">#&gt; beta0     1.021  1.018</span></span>
-<span><span class="co">#&gt; beta1     0.450  0.448</span></span></code></pre></div>
+<span><span class="co">#&gt;        default_prior sd_0.5</span></span>
+<span><span class="co">#&gt; gamma0         0.610  0.556</span></span>
+<span><span class="co">#&gt; gamma1        -0.671 -0.605</span></span>
+<span><span class="co">#&gt; beta0          1.021  1.018</span></span>
+<span><span class="co">#&gt; beta1          0.450  0.448</span></span></code></pre></div>
 <p>At 300 sites the abundance coefficients barely move; the
 zero-inflation coefficients, which rest on the ambiguous zeros, shrink
 by about a tenth. A block can also carry its own <code>beta_prior</code>
@@ -605,30 +602,32 @@ show the contract:</p>
 <span><span class="co">#&gt; 11   11   19 0.09726740 0.10807802    TRUE</span></span>
 <span><span class="co">#&gt; 12   12   26 0.09524245 0.08018204    TRUE</span></span>
 <span><span class="co">#&gt; 13   13   35 0.04062732 0.08487217    TRUE</span></span></code></pre></div>
-<p>The pooled estimates agree with the EM ones to within 0.03, and their
-standard errors are wider than the plain EM ones and close to the Gibbs
-ones. <code>history$delta</code> is the step between iterations in units
-of each coefficient’s pooled standard error, and the fit converged after
-13 iterations, once the step stayed below the default
-<code>tol = 0.1</code> for three iterations in a row. A step that lies
-inside the Monte Carlo error of its update is marked
-<code>swamped</code>, and each one raised the draws per iteration, from
-10 to 35 here. <code>n_mc_max</code> caps that growth; a run that
-reaches the cap with the step still at the noise level warns.</p>
+<p><code>history$delta</code> measures the step between iterations in
+units of each coefficient’s pooled standard error. Convergence requires
+the step to remain below <code>tol</code> for <code>n_consecutive</code>
+iterations. A step inside its Monte Carlo error is marked
+<code>swamped</code> and increases the next iteration’s draw count.
+<code>n_mc_max</code> caps that growth; a run that reaches the cap with
+the step still at the noise level warns. The Rubin estimator remains
+Tier 2 as <code>n_mc</code> grows.
+<code>tulpa_em_mc(..., correction = "gibbs")</code> uses the same
+true-density posterior composition as <code><a href="../reference/tulpa_em_laplace.html">tulpa_em_laplace()</a></code>.
+The E-step then receives the current sampled coefficients and is called
+with <code>n_mc = 1L</code> for each sweep.</p>
 </div>
 <div class="section level2">
 <h2 id="practical-guidance">Practical guidance<a class="anchor" aria-label="anchor" href="#practical-guidance"></a>
 </h2>
 <ul>
-<li>Treat the plain EM standard errors as a lower bound. In the
-replication they averaged 73% of the observed spread on the
-zero-inflation slope, against 83% for the corrections. Report a
-corrected fit.</li>
-<li>Multiple imputation is the cheaper correction (20 refits, no further
-E-steps) and covered within one dataset in 100 of Gibbs here. Gibbs
-starts each step from the current fit rather than the EM mode, so it can
-follow uncertainty in the coefficients into the labels; give it more
-steps than the default 10, since its steps are autocorrelated.</li>
+<li>The plain EM standard errors use complete-data curvature. Louis’
+observed-information estimate, MI pooling and posterior sampling account
+for the latent labels through their respective information and density
+calculations.</li>
+<li>Multiple imputation costs one refit per block per imputation. Gibbs
+costs one E-step, one Laplace solve per block and
+<code>1 + mh_steps</code> joint-density evaluations per sweep. Choose
+the chain length through Monte Carlo error and convergence
+diagnostics.</li>
 <li>A larger <code>damping</code> moves the weights less per iteration.
 The default 0.3 took 19 iterations here; raise it if the weights
 oscillate between iterations.</li>
@@ -638,6 +637,12 @@ the driver refuses them as its own arguments.
 <code>m_step_extra(fits, weights, ...)</code> updates parameters outside
 the linear predictor (a negative binomial dispersion, a Gamma shape)
 between the M-step and the next E-step.</li>
+<li>Gibbs currently supports fixed dispersion and random-effect
+covariance. It refuses nested and spatial blocks and deterministic
+<code>m_step_extra</code> updates.
+<code>log_complete(fits, z, ...)</code> replaces the full joint density
+for model-specific factors; include likelihood normalizers and all
+priors.</li>
 <li>
 <code>draw_z</code> replaces the default Bernoulli label draw for a
 latent variable with more than two states.</li>
@@ -670,6 +675,21 @@ fitted models.</li>
 <li>
 <code><a href="../reference/tulpa_em_laplace.html">?tulpa_em_laplace</a></code>, <code><a href="../reference/tulpa_em_mc.html">?tulpa_em_mc</a></code> and
 <code><a href="../reference/rubins_pool.html">?rubins_pool</a></code> for every argument.</li>
+<li>
+<a href="https://doi.org/10.1080/01621459.1987.10478458" class="external-link">Tanner and
+Wong (1987)</a>: data augmentation.</li>
+<li>
+<a href="https://doi.org/10.1080/01621459.1990.10474930" class="external-link">Wei and
+Tanner (1990)</a>: Monte Carlo EM and approximate data
+augmentation.</li>
+<li>
+<a href="https://doi.org/10.1007/978-1-4757-3071-5" class="external-link">Robert and
+Casella (1999), sections 7.3.2-7.3.3</a>: invariant kernel composition
+and MH-within-Gibbs.</li>
+<li>
+<a href="https://doi.org/10.1214/07-AOS574" class="external-link">Andrieu and Roberts
+(2009)</a>: unbiased-likelihood extended-state sampling when
+marginalization is estimated.</li>
 </ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

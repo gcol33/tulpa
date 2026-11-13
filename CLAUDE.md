@@ -516,9 +516,17 @@ through `f = L z` alone (gcol33/tulpa#851).
 `offset` on the `m_step_encode` return blocks (gcol33/tulpa#3) and the
 optional `m_step_extra(fits, weights, ...) -> fits` callback for non-η
 parameters fired between M-step and E-step (gcol33/tulpa#4). `correction =
-"mi"/"gibbs"` run post-EM multiple-imputation / warm-started Gibbs refits
-pooled via `rubins_pool()` (`.mi_correction` / `.gibbs_correction` in
-`R/em_correction.R`). An optional `beta_prior = list(mean, sd)` threads a
+"mi"` pools post-EM multiple-imputation Laplace refits via `rubins_pool()`
+(Tier 2). `correction = "gibbs"` alternates exact latent draws with
+true-density independence MH for the full complete-data parameter vector;
+the Laplace mode and precision define its t proposal (Tier 1, conditional on
+fixed block dispersion and RE covariance). Both `tulpa_em_laplace()` and
+`tulpa_em_mc()` share `.gibbs_correction`, the normalized native-family density
+in `R/em_complete_density.R`, and the extended-state MH transition used by
+tgmrf. `log_complete(fits, z, ...)` replaces the whole joint density when the
+model supplies additional factors; it includes all normalizers and priors.
+Nested/spatial blocks and deterministic `m_step_extra` updates are refused
+on the exact path. An optional `beta_prior = list(mean, sd)` threads a
 Gaussian fixed-effect prior into every `tulpa_laplace()` block and into the
 MI/Gibbs refits (gcol33/tulpa#27); blocks may override it with their own
 `beta_prior` field. See `?tulpa_em_laplace`.

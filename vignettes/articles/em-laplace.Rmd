@@ -1,6 +1,6 @@
 ---
 title: "EM + Laplace"
-description: "Fit a model with a discrete latent variable by writing two callbacks for the EM + Laplace driver, then correct its standard errors by multiple imputation or Gibbs sampling."
+description: "Fit a model with a discrete latent variable through EM + Laplace, pool multiple imputations, or sample its joint posterior with true-density MH-within-Gibbs."
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{EM + Laplace}
@@ -26,16 +26,17 @@ pattern. The model enters only through two callbacks, which supply the latent-va
 posterior and the GLM blocks it implies, and the driver fits each block with
 `tulpa_laplace()` and iterates to convergence. This article writes both
 callbacks for a zero-inflated Poisson model with a known truth, runs the
-driver, corrects its standard errors with the two post-EM corrections, and
-checks all of them against the exact maximum-likelihood fit and against the
-truth over 100 simulated datasets. Model packages such as tulpaObs build
+driver, pools multiple imputations, and samples the joint posterior with
+Metropolis-Hastings (MH) within Gibbs. The EM and imputation intervals are
+also compared with maximum likelihood over 100 simulated datasets. Model packages such as tulpaObs build
 their occupancy and N-mixture fitters on this driver; the callbacks below are
 the whole contract.
 
 1. **Simulate** counts with known abundance and zero-inflation coefficients.
 2. **Write** the `e_step` and `m_step_encode` callbacks.
 3. **Fit** with `tulpa_em_laplace()` and read convergence and estimates.
-4. **Correct** the standard errors with `correction = "mi"` and `"gibbs"`.
+4. **Pool** imputations with `correction = "mi"` or sample the joint posterior
+   with `correction = "gibbs"`.
 5. **Compare** intervals against the exact fit and the truth.
 
 Installation is covered in [Get started](tulpa.html).
@@ -128,9 +129,10 @@ zip_callbacks <- function(d) {
   y <- d$y; X <- d$X; Z <- d$Z; n <- length(y)
   e_step <- function(fits, ...) {
     if (!length(fits)) return(list(weights = ifelse(y > 0, 1, 0.5)))
-    psi <- plogis(drop(Z %*% fits$occ$mode))
-    p0  <- psi * exp(-exp(drop(X %*% fits$abund$mode)))
-    list(weights = ifelse(y > 0, 1, p0 / (p0 + 1 - psi)))
+    eta <- drop(Z %*% fits$occ$mode)
+    log_p0 <- plogis(eta, log.p = TRUE) - exp(drop(X %*% fits$abund$mode))
+    list(weights = ifelse(y > 0, 1,
+                         plogis(log_p0 - plogis(-eta, log.p = TRUE))))
   }
   m_step_encode <- function(weights, ...) list(
     occ   = list(y = rep(c(1, 0), each = n), X = rbind(Z, Z),
@@ -222,33 +224,40 @@ uncertainty about which zeros are structural is missing from them.
 
 ## Correcting the standard errors
 
-Two corrections put that uncertainty back. Both draw hard labels
-$z_i \sim \mathrm{Bernoulli}(\omega_i)$, refit every block on each draw, and
-pool the draws by Rubin's rules (`rubins_pool()`): the pooled variance is the
-mean within-draw variance plus $(1 + 1/K)$ times the variance of the
-estimates between the $K$ draws.
+`correction = "mi"` draws independent hard labels
+$z_i \sim \mathrm{Bernoulli}(\omega_i)$ at the converged estimate and refits
+every block. Rubin's rules (`rubins_pool()`) add the mean within-imputation
+variance to $(1 + 1/K)$ times the variance between the $K$ estimates. The
+result in `$pooled` is a Tier 2 approximation from complete-data Laplace fits.
 
-- `correction = "mi"` draws `n_imputations` (default 20) independent label
-  sets from the converged weights.
-- `correction = "gibbs"` runs a chain of `n_gibbs` steps from the EM fit,
-  each step an E-step on the current fit followed by a draw and a refit. The
-  steps are autocorrelated, so the chain here is run for 50 steps instead of
-  the default 10.
+`correction = "gibbs"` alternates a label draw at the current sampled
+coefficients with an MH update of those coefficients. The complete-data
+Laplace mode and full precision define a multivariate-t proposal. The
+acceptance ratio uses the true complete-data likelihood and normalized
+Gaussian priors, together with the proposal density at both states. This
+composition has invariant posterior $p(\theta, Z \mid y)$, conditional on
+fixed block dispersion and random-effect covariance. It is Tier 1.
 
-Both rerun EM first and return the EM fit in `$fits` as before; the pooled
-result is in `$pooled`, one entry per block with `mean`, `se` and the two
-variance components.
+Both modes retain the EM initialization in `$fits`. Gibbs returns a parameter
+matrix in `$draws` and a paired latent-state list in `$latent_draws`. Its
+E-step reads sampled parameter values from each block's `mode` and `beta`.
+The chain needs warmup and enough iterations to estimate its Monte Carlo error.
 
-```{r corrections, fit = c("fit_mi", "fit_gibbs", "pooled_table")}
+```{r corrections, fit = c("fit_mi", "fit_gibbs", "pooled_table", "chain_table")}
 set.seed(1)
 fit_mi <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
                            correction = "mi", verbose = FALSE)
 set.seed(2)
 fit_gibbs <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
-                              correction = "gibbs", n_gibbs = 50L,
+                              correction = "gibbs", n_gibbs = 8000L,
+                              correction_control = list(warmup = 1000L),
                               verbose = FALSE)
 pooled_table <- function(fit) with(fit$pooled, data.frame(
   est = c(occ$mean, abund$mean), se = c(occ$se, abund$se)))
+chain_table <- function(fit) data.frame(
+  est = colMeans(fit$draws), se = apply(fit$draws, 2, sd),
+  lower = apply(fit$draws, 2, quantile, probs = .025),
+  upper = apply(fit$draws, 2, quantile, probs = .975))
 fit_mi$pooled$occ[c("V_within", "V_between")]
 ```
 
@@ -258,36 +267,38 @@ plain EM standard error leaves out.
 
 ```{r compare-table}
 methods <- list(plain = plain, mi = pooled_table(fit_mi),
-                gibbs = pooled_table(fit_gibbs), exact = exact)
+                gibbs = chain_table(fit_gibbs), exact = exact)
 se_tab <- sapply(methods, `[[`, "se")
 rownames(se_tab) <- coef_names
 round(se_tab, 3)
 ```
 
-Both corrections widen every standard error to near the exact one. For
-$\gamma_1$ multiple imputation reads 0.159 and Gibbs 0.154 against 0.160
-exact, from 0.138 plain; on the abundance coefficients the gap was small to
-begin with.
+The Gibbs column reports posterior standard deviations. The other columns
+report standard errors from the EM curvature, Rubin pooling and observed
+maximum-likelihood information. The fitted Gaussian prior also enters the
+Gibbs posterior. `fit_gibbs$mean_accept` reports conditional MH acceptance;
+`fit_gibbs$target` records the sampled distribution.
 
 ## Comparing the intervals
 
-The plot shows each 95% interval, estimate $\pm 1.96$ standard errors, as its
-distance from the true value.
+The plot shows Gibbs posterior quantiles and estimate $\pm 1.96$ standard
+errors for the other methods, each relative to the simulated true value.
 
-```{r interval-plot, fig.height = 4.5, fig.alt = "Dot-and-whisker plot of 95 percent intervals minus the true value for four coefficients, each with four methods: plain EM, multiple imputation, Gibbs and exact maximum likelihood. For gamma1 every interval sits right of zero; the multiple-imputation interval reaches zero, the exact one ends just short of it, and the Gibbs and plain EM intervals end further short. The abundance intervals all cover zero."}
+```{r interval-plot, fig.height = 4.5, fig.alt = "Intervals relative to the simulated coefficients for EM, multiple imputation, Gibbs posterior sampling and maximum likelihood."}
 cols <- c(plain = "#B23A48", mi = "#2E86AB", gibbs = "#3B8B5A",
           exact = "grey30")
 k <- length(methods)
 ypos <- outer((k:1 - (k + 1) / 2) * 0.18, 4:1 * 1, `+`)
 err <- sapply(methods, function(m) m$est - truth)
-half <- 1.96 * se_tab
+lower <- sapply(methods, function(m) if (is.null(m$lower)) m$est - 1.96 * m$se else m$lower) - truth
+upper <- sapply(methods, function(m) if (is.null(m$upper)) m$est + 1.96 * m$se else m$upper) - truth
 par(mar = c(4.5, 5.5, 1, 1))
-plot(NA, xlim = range(err - half, err + half), ylim = c(0.5, 4.5),
+plot(NA, xlim = range(lower, upper), ylim = c(0.5, 4.5),
      yaxt = "n", xlab = "interval minus true value", ylab = "")
 axis(2, at = 4:1, labels = coef_names, las = 1)
 abline(v = 0, lty = 2)
 for (j in seq_len(k)) {
-  segments(err[, j] - half[, j], ypos[j, ], err[, j] + half[, j], ypos[j, ],
+  segments(lower[, j], ypos[j, ], upper[, j], ypos[j, ],
            col = cols[j], lwd = 2)
   points(err[, j], ypos[j, ], pch = 19, col = cols[j])
 }
@@ -295,18 +306,14 @@ legend("bottomright", legend = names(methods), col = cols, lwd = 2,
        pch = 19, bty = "n", cex = 0.8)
 ```
 
-For $\gamma_1$ no interval reaches the truth: the multiple-imputation and
-exact intervals end 0.01 short of it, the Gibbs and plain EM intervals
-further short. This dataset's estimate of $\gamma_1$ is itself two exact
-standard errors from the truth, so an interval of the exact width cannot
-reach it by more than a small margin. The four abundance intervals are nearly the same and all
-cover.
+The intervals describe uncertainty for this dataset. Repeated simulation
+measures the coverage of the standard-error intervals below.
 
 ## How often the intervals cover
 
 One dataset shows the widths; coverage needs many. The chunk below repeats
-the simulation and every fit 100 times and counts how often each 95%
-interval contains the truth. It takes about two minutes.
+the simulation, EM, multiple imputation and maximum-likelihood fitting 100
+times and counts how often each standard-error interval contains the truth.
 
 ```{r replicate, fit = c("runs")}
 one_run <- function(d) {
@@ -314,19 +321,18 @@ one_run <- function(d) {
   f  <- tulpa_em_laplace(cb$e_step, cb$m_step_encode, verbose = FALSE)
   mi <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
                          correction = "mi", verbose = FALSE)
-  gb <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
-                         correction = "gibbs", n_gibbs = 50L, verbose = FALSE)
   list(plain = em_table(f), mi = pooled_table(mi),
-       gibbs = pooled_table(gb), exact = zip_mle(d))
+       exact = zip_mle(d))
 }
 set.seed(99)
 runs <- replicate(100, one_run(sim_zip(n)), simplify = FALSE)
 ```
 
 ```{r coverage}
-mean_se <- sapply(names(methods), function(m)
+coverage_methods <- c("plain", "mi", "exact")
+mean_se <- sapply(coverage_methods, function(m)
   rowMeans(sapply(runs, function(r) r[[m]]$se)))
-coverage <- sapply(names(methods), function(m)
+coverage <- sapply(coverage_methods, function(m)
   rowMeans(sapply(runs, function(r) abs(r[[m]]$est - truth) < 1.96 * r[[m]]$se)))
 sd_exact <- apply(sapply(runs, function(r) r$exact$est), 1, sd)
 rownames(mean_se) <- rownames(coverage) <- coef_names
@@ -336,13 +342,11 @@ coverage
 
 `sd_exact` is the standard deviation of the exact estimate across the 100
 datasets, the spread a standard error should match; the other columns of the
-first table are the mean standard error per method. For $\gamma_1$
-that spread is 0.221; the plain EM standard error averages 0.162, multiple
-imputation 0.183 and Gibbs 0.184, against 0.192 for the exact standard error.
-All four intervals cover $\gamma_1$ in 91 of 100 datasets. On $\gamma_0$
-plain EM covers in 92, the corrections and the exact fit in 94 or 95. The
-abundance coefficients are less affected: plain EM covers $\beta_1$ in 93
-datasets, the corrections in 94.
+first table are the mean standard error per method. `coverage` reports the
+fraction of intervals containing each known coefficient. This experiment
+evaluates the three standard-error procedures. Gibbs sampling is validated
+separately against an independent joint posterior sampler on a sparse count
+mixture in the package tests.
 
 ## A prior on the coefficients
 
@@ -354,7 +358,7 @@ at zero pulls the estimates toward zero:
 fit_prior <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
                               beta_prior = list(mean = 0, sd = 0.5),
                               verbose = FALSE)
-round(data.frame(no_prior = plain$est, sd_0.5 = em_table(fit_prior)$est,
+round(data.frame(default_prior = plain$est, sd_0.5 = em_table(fit_prior)$est,
             row.names = coef_names), 3)
 ```
 
@@ -390,26 +394,26 @@ c(converged = fit_mc$converged, n_iter = fit_mc$n_iter,
 tail(fit_mc$history, 4)
 ```
 
-The pooled estimates agree with the EM ones to within 0.03, and their
-standard errors are wider than the plain EM ones and close to the Gibbs
-ones. `history$delta` is the step between iterations in units of each
-coefficient's pooled standard error, and the fit converged after 13
-iterations, once the step stayed below the default `tol = 0.1` for three
-iterations in a row. A step that lies inside the Monte Carlo error of its
-update is marked `swamped`, and each one raised the draws per iteration, from
-10 to 35 here. `n_mc_max` caps that growth; a run that reaches the cap with
-the step still at the noise level warns.
+`history$delta` measures the step between iterations in units of each
+coefficient's pooled standard error. Convergence requires the step to remain
+below `tol` for `n_consecutive` iterations. A step inside its Monte Carlo
+error is marked `swamped` and increases the next iteration's draw count.
+`n_mc_max` caps that growth; a run that reaches the cap with the step still
+at the noise level warns. The Rubin estimator remains Tier 2 as `n_mc` grows.
+`tulpa_em_mc(..., correction = "gibbs")` uses the same true-density posterior
+composition as `tulpa_em_laplace()`. The E-step then receives the current
+sampled coefficients and is called with `n_mc = 1L` for each sweep.
 
 ## Practical guidance
 
-- Treat the plain EM standard errors as a lower bound. In the replication
-  they averaged 73% of the observed spread on the zero-inflation slope,
-  against 83% for the corrections. Report a corrected fit.
-- Multiple imputation is the cheaper correction (20 refits, no further E-steps)
-  and covered within one dataset in 100 of Gibbs here. Gibbs starts each step from the current
-  fit rather than the EM mode, so it can follow uncertainty in the
-  coefficients into the labels; give it more steps than the default 10,
-  since its steps are autocorrelated.
+- The plain EM standard errors use complete-data curvature. Louis'
+  observed-information estimate, MI pooling and posterior sampling account
+  for the latent labels through their respective information and density
+  calculations.
+- Multiple imputation costs one refit per block per imputation. Gibbs costs
+  one E-step, one Laplace solve per block and `1 + mh_steps` joint-density
+  evaluations per sweep. Choose the chain length through Monte Carlo error
+  and convergence diagnostics.
 - A larger `damping` moves the weights less per iteration. The default 0.3 took 19 iterations
   here; raise it if the weights oscillate between iterations.
 - A block with a random effect or a spatial field carries it as a `re_list`
@@ -417,6 +421,10 @@ the step still at the noise level warns.
   arguments. `m_step_extra(fits, weights, ...)` updates parameters outside
   the linear predictor (a negative binomial dispersion, a Gamma shape)
   between the M-step and the next E-step.
+- Gibbs currently supports fixed dispersion and random-effect covariance.
+  It refuses nested and spatial blocks and deterministic `m_step_extra`
+  updates. `log_complete(fits, z, ...)` replaces the full joint density for
+  model-specific factors; include likelihood normalizers and all priors.
 - `draw_z` replaces the default Bernoulli label draw for a latent variable
   with more than two states.
 
@@ -437,3 +445,11 @@ When not to use it:
 - [Get started](tulpa.html): the `tulpa()` front door.
 - [Model comparison](model-comparison.html): comparing fitted models.
 - `?tulpa_em_laplace`, `?tulpa_em_mc` and `?rubins_pool` for every argument.
+- [Tanner and Wong (1987)](https://doi.org/10.1080/01621459.1987.10478458):
+  data augmentation.
+- [Wei and Tanner (1990)](https://doi.org/10.1080/01621459.1990.10474930):
+  Monte Carlo EM and approximate data augmentation.
+- [Robert and Casella (1999), sections 7.3.2-7.3.3](https://doi.org/10.1007/978-1-4757-3071-5):
+  invariant kernel composition and MH-within-Gibbs.
+- [Andrieu and Roberts (2009)](https://doi.org/10.1214/07-AOS574):
+  unbiased-likelihood extended-state sampling when marginalization is estimated.
