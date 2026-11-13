@@ -30,7 +30,8 @@ make_recording_stub <- function(env) {
       mode      = rep(0.1, n_fixed),
       converged = TRUE,
       n_iter    = 1L,
-      H_beta    = diag(n_fixed)
+      H_beta    = diag(n_fixed),
+      H_latent  = if (isTRUE(args$return_joint_hessian)) diag(n_fixed) else NULL
     )
   }
 }
@@ -199,7 +200,7 @@ test_that("smoke: two homogeneous binomial submodels converge in one step", {
   )
 
   expect_named(res, c("fits", "weights", "n_iter", "converged", "history",
-                      "correction"))
+                      "correction", "inference_mode", "inference_tier", "target"))
   expect_equal(res$correction, "none")
   expect_named(res$fits, c("psi", "p"))
   # With deterministic stub returning identical modes, the second iteration
@@ -318,7 +319,7 @@ test_that("correction = 'mi' runs n_imputations draws and pools via Rubin", {
 })
 
 
-test_that("correction = 'gibbs' runs n_gibbs steps and pools via Rubin", {
+test_that("correction = 'gibbs' runs conditional MH and returns joint draws", {
   skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
@@ -335,17 +336,20 @@ test_that("correction = 'gibbs' runs n_gibbs steps and pools via Rubin", {
     m_step_encode = m_step_encode,
     correction    = "gibbs",
     n_gibbs       = 3L,
+    correction_control = list(warmup = 0L),
     max_iter      = 2L,
     tol           = 1e-12,
     verbose       = FALSE
   )
 
   expect_equal(res$correction, "gibbs")
-  expect_named(res$pooled, "only")
-  expect_length(res$draws, 3L)
+  expect_null(res$pooled)
+  expect_equal(dim(res$draws), c(3L, 2L))
+  expect_length(res$latent_draws, 3L)
   # 1 submodel x (EM iters + n_gibbs).
   expect_equal(length(capture_env$calls), res$n_iter + 3L)
-  expect_equal(res$pooled$only$K, 3L)
+  expect_identical(res$inference_tier, 1L)
+  expect_identical(res$draws_kind, "chain")
 })
 
 
@@ -465,7 +469,7 @@ test_that("MI applies m_step_extra per draw with continuous weights", {
 })
 
 
-test_that("Gibbs passes continuous E-step weights to m_step_extra (not hard z)", {
+test_that("Gibbs refuses deterministic m_step_extra parameter updates", {
   skip_on_cran_budget()
   capture_env <- new.env()
   stub <- make_recording_stub(capture_env)
@@ -483,24 +487,16 @@ test_that("Gibbs passes continuous E-step weights to m_step_extra (not hard z)",
 
   local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
 
-  res <- tulpa_em_laplace(
+  expect_error(tulpa_em_laplace(
     e_step, m_step_encode,
     correction   = "gibbs",
     n_gibbs      = 3L,
     m_step_extra = m_step_extra,
     max_iter     = 1L,
     verbose      = FALSE
-  )
-
-  # EM calls + n_gibbs calls.
-  expect_equal(length(extra_weights), res$n_iter + 3L)
-  # All Gibbs-step calls receive continuous weights from e_step (= 0.3),
-  # not the hard 0/1 draws used to encode the block.
-  gibbs_extra <- tail(extra_weights, 3L)
-  for (w in gibbs_extra) {
-    expect_true(is.numeric(w))
-    expect_equal(w, rep(0.3, 8))
-  }
+  ), "deterministic")
+  expect_length(extra_weights, 0L)
+  expect_length(capture_env$calls, 0L)
 })
 
 

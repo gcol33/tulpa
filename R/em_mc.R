@@ -71,6 +71,15 @@
 #' inferential approximation. An exact E-step sampler alone supplies no
 #' posterior correction for those approximations.
 #'
+#' With `correction = "gibbs"`, the Rubin fit initializes a data-augmentation
+#' chain. Each sweep calls `e_step_sample(fits, 1L, ...)` for one exact latent
+#' draw and applies true-density MH to the full complete-data parameter vector
+#' with a Laplace t proposal. `fits[[k]]$mode` and `$beta` then contain the
+#' current sampled parameter values. The target is `p(theta, Z | y)`, conditional
+#' on fixed block dispersion and random-effect covariance, and the result is
+#' Tier 1. See [tulpa_em_laplace()] for the density contract, supported blocks,
+#' parameter layout, computational cost and convergence requirements.
+#'
 #' @param e_step_sample Function `function(fits, n_mc, ...) -> list`.
 #'   Must return a list of length `n_mc`, each element a weights
 #'   object of the same shape `m_step_encode` consumes (typically a
@@ -102,6 +111,10 @@
 #' @param n_consecutive Number of consecutive iterations `delta < tol` has to
 #'   hold for (default `3L`).
 #' @param verbose Print per-iteration progress (default `TRUE`).
+#' @param correction `"none"` (default) returns the Tier 2 Rubin estimator.
+#'   `"gibbs"` adds true-density MH-within-Gibbs, returning paired parameter
+#'   and latent draws from the joint posterior.
+#' @inheritParams tulpa_em_laplace
 #' @param ... Forwarded to `e_step_sample` and `m_step_encode`.
 #'
 #' @return A list with:
@@ -110,13 +123,24 @@
 #'     [rubins_pool()].
 #'   * `fits` -- the point estimate in the shape `e_step_sample` receives:
 #'     per submodel, `mode`, `beta`, `se`.
-#'   * `draws` -- list of per-MC-draw fit lists from the *final*
-#'     iteration, each indexed by submodel name.
+#'   * `draws` -- with `correction = "none"`, per-MC-draw fit lists from the
+#'     final iteration, indexed by submodel. With `"gibbs"`, a matrix of full
+#'     parameter draws paired by row with `latent_draws`; `log_prob` stores
+#'     the corresponding complete-data log density and `final_fits` the last
+#'     sampled state in E-step form.
+#'   * `em_draws`, `pooled_target` -- with `"gibbs"`, the original final
+#'     MCEM refits and the Tier 2 target of the retained `pooled` summaries.
 #'   * `n_iter` -- iterations actually run.
 #'   * `n_mc_final` -- `n_mc` used in the last iteration.
 #'   * `converged` -- logical.
 #'   * `inference_mode`, `inference_tier`, `target` -- `"structured"`, `2L`,
-#'     and `"Rubin-pooled complete-data Laplace estimates"`.
+#'     and `"Rubin-pooled complete-data Laplace estimates"` for `"none"`.
+#'     Gibbs reports `"exact"`, `1L`, and
+#'     `"joint posterior p(theta, Z | y), conditional on fixed block hyperparameters"`.
+#'   * `accept_prob`, `mean_accept`, `draws_kind` -- with `"gibbs"`, conditional
+#'     MH acceptance indicators on retained sweeps, their mean, and `"chain"`.
+#'   * `means`, `sds`, `vcov`, `se` -- with `"gibbs"`, posterior means, SDs,
+#'     full parameter covariance and per-block fixed-effect SDs from the chain.
 #'   * `history` -- `data.frame(iter, n_mc, delta, mcse, swamped)`: `delta`
 #'     the standardized step, `mcse` the largest Monte Carlo standard error
 #'     as a fraction of the pooled standard error, `swamped` whether the step
@@ -126,6 +150,18 @@
 #' Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation
 #' of the EM algorithm and the poor man's data augmentation algorithms.
 #' *Journal of the American Statistical Association*, 85(411), 699-704.
+#' \doi{10.1080/01621459.1990.10474930}.
+#'
+#' Tanner, M. A., and Wong, W. H. (1987). The calculation of posterior
+#' distributions by data augmentation. *JASA*, 82(398), 528-540.
+#' \doi{10.1080/01621459.1987.10478458}.
+#'
+#' Robert, C. P., and Casella, G. (1999). *Monte Carlo Statistical Methods*.
+#' Springer, sections 7.3.2-7.3.3. \doi{10.1007/978-1-4757-3071-5}.
+#'
+#' Andrieu, C., and Roberts, G. O. (2009). The pseudo-marginal approach for
+#' efficient Monte Carlo computations. *Annals of Statistics*, 37(2), 697-725.
+#' \doi{10.1214/07-AOS574}.
 #'
 #' Booth, J. G., & Hobert, J. P. (1999). Maximizing generalized linear
 #' mixed model likelihoods with an automated Monte Carlo EM algorithm.
@@ -178,7 +214,20 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
                         alpha = 0.25,
                         n_consecutive = 3L,
                         verbose = TRUE,
+                        correction = c("none", "gibbs"),
+                        n_gibbs = 2000L,
+                        log_complete = NULL,
+                        correction_control = list(),
+                        beta_prior = NULL,
                         ...) {
+  correction <- match.arg(correction)
+  if (correction == "gibbs") {
+    .em_gibbs_control(n_gibbs, correction_control)
+    .em_check_exact_callbacks(log_complete)
+  } else if (!is.null(log_complete) || length(correction_control)) {
+    stop("`log_complete` and `correction_control` require correction = 'gibbs'.",
+         call. = FALSE)
+  }
   if (!is.function(e_step_sample)) {
     stop("`e_step_sample` must be a function(fits, n_mc, ...).",
          call. = FALSE)
@@ -244,7 +293,7 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
     for (s in seq_len(n_mc_curr)) {
       fits_per_draw[[s]] <- .fit_one_draw(
         weight_draws[[s]], m_step_encode,
-        label_prefix = sprintf("MCEM draw %d ", s), ...)
+        label_prefix = sprintf("MCEM draw %d ", s), beta_prior = beta_prior, ...)
     }
 
     # ---- Pool via Rubin's rules ----
@@ -290,7 +339,7 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
       history$mcse[nrow(history)], tol), call. = FALSE)
   }
 
-  list(
+  result <- list(
     pooled = pooled,
     fits = fits,
     draws = fits_per_draw,
@@ -300,8 +349,28 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
     inference_mode = "structured",
     inference_tier = 2L,
     target = "Rubin-pooled complete-data Laplace estimates",
+    correction = correction,
     history = history
   )
+  if (correction == "gibbs") {
+    e_step <- function(fits, ...) {
+      draw <- e_step_sample(fits, 1L, ...)
+      if (!is.list(draw) || length(draw) != 1L) {
+        stop("`e_step_sample` must return a list of length 1 in Gibbs correction.",
+             call. = FALSE)
+      }
+      list(weights = draw[[1L]])
+    }
+    result$em_draws <- result$draws
+    result$pooled_target <- result$target
+    gibbs <- .gibbs_correction(fits, e_step, m_step_encode, identity,
+                                n_gibbs = n_gibbs, verbose = verbose,
+                                beta_prior = beta_prior,
+                                log_complete = log_complete,
+                                correction_control = correction_control, ...)
+    result[names(gibbs)] <- gibbs
+  }
+  result
 }
 
 

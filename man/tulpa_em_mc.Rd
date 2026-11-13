@@ -15,6 +15,11 @@ tulpa_em_mc(
   alpha = 0.25,
   n_consecutive = 3L,
   verbose = TRUE,
+  correction = c("none", "gibbs"),
+  n_gibbs = 2000L,
+  log_complete = NULL,
+  correction_control = list(),
+  beta_prior = NULL,
   ...
 )
 }
@@ -60,6 +65,37 @@ hold for (default \code{3L}).}
 
 \item{verbose}{Print per-iteration progress (default \code{TRUE}).}
 
+\item{correction}{\code{"none"} (default) returns the Tier 2 Rubin estimator.
+\code{"gibbs"} adds true-density MH-within-Gibbs, returning paired parameter
+and latent draws from the joint posterior.}
+
+\item{n_gibbs}{Total Gibbs sweeps including warmup (default \code{2000L}).
+Used when \code{correction = "gibbs"}.}
+
+\item{log_complete}{Optional function \verb{function(fits, z, ...) -> numeric}
+returning \verb{log p(y, z, theta)}, with every complete-data likelihood
+normalizer, parameter prior and transformation Jacobian. Each block of
+\code{fits} carries the evaluated parameter vector in \code{mode} and its fixed
+effects in \code{beta}. The posterior evidence \code{p(y)} is unnecessary. \code{NULL}
+uses the engine density assembled from the complete-data GLMM blocks.
+The callback must be deterministic and return one finite value or \code{-Inf}.
+Used only with \code{correction = "gibbs"}.}
+
+\item{correction_control}{List of Gibbs settings: \code{warmup} (default
+\code{n_gibbs \%/\% 2L}), \code{thin} (default \code{1L}), \code{mh_steps} (conditional MH
+transitions per sweep, default \code{1L}), and \code{scale} (t proposal scale
+inflation, default \code{1}). Unknown entries are errors.}
+
+\item{beta_prior}{Optional Gaussian prior on the fixed effects, applied to
+every block fit via \code{\link[=tulpa_laplace]{tulpa_laplace()}} (i.e. blocks without a \code{prior}
+field). \code{NULL} (default) takes the engine default \code{N(0, 2.5^2)}. Otherwise a list
+with \code{sd} (required) and optional \code{mean}; see \code{\link[=tulpa_laplace]{tulpa_laplace()}}. The same
+prior flows into the MI / Gibbs correction refits, so penalized
+corrections come for free. A block may override the default by setting its
+own \code{beta_prior} field in \code{m_step_encode} (e.g. different priors for the
+occupancy and detection submodels). Use scalar \code{mean} / \code{sd} here when
+blocks differ in width; per-coefficient vectors belong on the block.}
+
 \item{...}{Forwarded to \code{e_step_sample} and \code{m_step_encode}.}
 }
 \value{
@@ -70,13 +106,24 @@ A list with:
 \code{\link[=rubins_pool]{rubins_pool()}}.
 \item \code{fits} -- the point estimate in the shape \code{e_step_sample} receives:
 per submodel, \code{mode}, \code{beta}, \code{se}.
-\item \code{draws} -- list of per-MC-draw fit lists from the \emph{final}
-iteration, each indexed by submodel name.
+\item \code{draws} -- with \code{correction = "none"}, per-MC-draw fit lists from the
+final iteration, indexed by submodel. With \code{"gibbs"}, a matrix of full
+parameter draws paired by row with \code{latent_draws}; \code{log_prob} stores
+the corresponding complete-data log density and \code{final_fits} the last
+sampled state in E-step form.
+\item \code{em_draws}, \code{pooled_target} -- with \code{"gibbs"}, the original final
+MCEM refits and the Tier 2 target of the retained \code{pooled} summaries.
 \item \code{n_iter} -- iterations actually run.
 \item \code{n_mc_final} -- \code{n_mc} used in the last iteration.
 \item \code{converged} -- logical.
 \item \code{inference_mode}, \code{inference_tier}, \code{target} -- \code{"structured"}, \code{2L},
-and \code{"Rubin-pooled complete-data Laplace estimates"}.
+and \code{"Rubin-pooled complete-data Laplace estimates"} for \code{"none"}.
+Gibbs reports \code{"exact"}, \code{1L}, and
+\code{"joint posterior p(theta, Z | y), conditional on fixed block hyperparameters"}.
+\item \code{accept_prob}, \code{mean_accept}, \code{draws_kind} -- with \code{"gibbs"}, conditional
+MH acceptance indicators on retained sweeps, their mean, and \code{"chain"}.
+\item \code{means}, \code{sds}, \code{vcov}, \code{se} -- with \code{"gibbs"}, posterior means, SDs,
+full parameter covariance and per-block fixed-effect SDs from the chain.
 \item \code{history} -- \code{data.frame(iter, n_mc, delta, mcse, swamped)}: \code{delta}
 the standardized step, \code{mcse} the largest Monte Carlo standard error
 as a fraction of the pooled standard error, \code{swamped} whether the step
@@ -137,6 +184,15 @@ Increasing \code{n_mc} reduces Monte Carlo error in the E-step. The fitted
 modes, Gaussian conditional approximations and Rubin pooling remain the
 inferential approximation. An exact E-step sampler alone supplies no
 posterior correction for those approximations.
+
+With \code{correction = "gibbs"}, the Rubin fit initializes a data-augmentation
+chain. Each sweep calls \code{e_step_sample(fits, 1L, ...)} for one exact latent
+draw and applies true-density MH to the full complete-data parameter vector
+with a Laplace t proposal. \code{fits[[k]]$mode} and \verb{$beta} then contain the
+current sampled parameter values. The target is \code{p(theta, Z | y)}, conditional
+on fixed block dispersion and random-effect covariance, and the result is
+Tier 1. See \code{\link[=tulpa_em_laplace]{tulpa_em_laplace()}} for the density contract, supported blocks,
+parameter layout, computational cost and convergence requirements.
 }
 
 \examples{
@@ -175,6 +231,18 @@ fit$history
 Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation
 of the EM algorithm and the poor man's data augmentation algorithms.
 \emph{Journal of the American Statistical Association}, 85(411), 699-704.
+\doi{10.1080/01621459.1990.10474930}.
+
+Tanner, M. A., and Wong, W. H. (1987). The calculation of posterior
+distributions by data augmentation. \emph{JASA}, 82(398), 528-540.
+\doi{10.1080/01621459.1987.10478458}.
+
+Robert, C. P., and Casella, G. (1999). \emph{Monte Carlo Statistical Methods}.
+Springer, sections 7.3.2-7.3.3. \doi{10.1007/978-1-4757-3071-5}.
+
+Andrieu, C., and Roberts, G. O. (2009). The pseudo-marginal approach for
+efficient Monte Carlo computations. \emph{Annals of Statistics}, 37(2), 697-725.
+\doi{10.1214/07-AOS574}.
 
 Booth, J. G., & Hobert, J. P. (1999). Maximizing generalized linear
 mixed model likelihoods with an automated Monte Carlo EM algorithm.

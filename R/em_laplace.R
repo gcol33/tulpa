@@ -149,7 +149,7 @@
 
   # Optional `prior` field. When present, the block is fit via
   # tulpa_nested_laplace() with hyperparameter integration instead of
-  # plain tulpa_laplace(). Must be a single-block prior list (has a
+# plain tulpa_laplace(). Must be a single-block prior list (has a
   # `type` field) or a multi-block list (list of single-block lists).
   if (!is.null(block$prior)) {
     if (!is.list(block$prior) || length(block$prior) == 0L) {
@@ -174,12 +174,11 @@
 
 # ----------------------------------------------------------------------------
 # Fit one validated block via tulpa_laplace(), forwarding family / offset
-# / phi / re_list / spatial / weights from the block. Single source of truth
-# for "block -> tulpa_laplace() call" so MI/Gibbs (when implemented) can
-# share it.
+# / phi / re_list / spatial / weights from the block in every EM and correction
+# phase. The full latent precision is requested for conditional MH proposals.
 # ----------------------------------------------------------------------------
 .fit_block_via_laplace <- function(block, n_threads, return_hessian = TRUE,
-                                   beta_prior = NULL) {
+                                   beta_prior = NULL, return_joint_hessian = FALSE) {
   n_trials <- if (is.null(block$n_trials)) {
     rep(1L, length(block$y))
   } else {
@@ -206,6 +205,7 @@
     return_hessian = isTRUE(return_hessian),
     beta_prior = bp
   )
+  if (isTRUE(return_joint_hessian)) args$return_joint_hessian <- TRUE
   if (!is.null(block$phi)) args$phi <- block$phi
 
   do.call(tulpa_laplace, args)
@@ -302,7 +302,7 @@
     sigma_re    = sigma_re,
     family      = block$family,
     # Retain the per-grid fixed-effect Hessians so a grid-marginalized H_beta is
-    # available for the MI / Gibbs correction's SE pooling (see below). An
+    # available for the MI correction's SE pooling. An
     # M-step fit is one iterate of the EM objective, so the outer Pareto-k
     # diagnostic, which costs a batch of inner solves per cell and is read
     # from the fit a caller reports, is off unless the block asks for it. A
@@ -341,8 +341,8 @@
   }
 
   # Grid-marginalized fixed-effect covariance -> H_beta, so .attach_beta_se can
-  # report a real pooled SE for a nested-prior block under correction = "mi" /
-  # "gibbs" instead of NA/NaN. Same law-of-total-variance mixture summary()/
+  # report a pooled SE for a nested-prior block under correction = "mi".
+  # Same law-of-total-variance mixture summary()/
   # vcov() use on a nested fit.
   fm <- .nested_fixed_moments(fit)
   if (!is.null(fm)) {
@@ -360,7 +360,7 @@
 # (main loop, MI/Gibbs correction) share the same routing.
 # ----------------------------------------------------------------------------
 .fit_em_block <- function(block, n_threads, return_hessian = TRUE,
-                          beta_prior = NULL) {
+                          beta_prior = NULL, return_joint_hessian = FALSE) {
   if (!is.null(block$prior)) {
     # Nested-Laplace blocks carry their own prior spec; `beta_prior` (a plain
     # fixed-effect penalty) does not apply and is ignored here.
@@ -368,7 +368,8 @@
   } else {
     .fit_block_via_laplace(block, n_threads = n_threads,
                            return_hessian = return_hessian,
-                           beta_prior = beta_prior)
+                           beta_prior = beta_prior,
+                           return_joint_hessian = return_joint_hessian)
   }
 }
 
@@ -483,9 +484,68 @@
 #' improper imputation that leaves out the estimate's own uncertainty, so its
 #' pooled SE can run below the observed-information one.
 #'
+#' @section Posterior sampling:
+#' `correction = "gibbs"` alternates an exact draw from `p(Z | theta, y)`
+#' with independence Metropolis-Hastings for `p(theta | Z, y)`. Here `theta`
+#' contains every block's fixed effects and random-effect values. The
+#' complete-data Laplace mode and full latent precision define a multivariate-t
+#' proposal. The acceptance ratio uses the true complete-data density,
+#' including priors, divided by the proposal density at both parameter states.
+#' The current density is evaluated again after each latent update. The
+#' resulting chain has invariant joint posterior `p(theta, Z | y)` under the
+#' usual support and ergodicity conditions (Tanner and Wong, 1987; Robert and
+#' Casella, 1999). Finite chains require convergence and Monte Carlo diagnostics.
+#'
+#' The engine density evaluates the native family likelihood, retaining
+#' normalizing constants, and normalized Gaussian coefficient and random-effect
+#' priors. It reads the hard complete-data blocks from `m_step_encode(z, ...)`.
+#' These must encode every factor of `p(y, z | theta)`, including the latent
+#' label model. Observation weights must be 0 or 1 on this path. Supply
+#' `log_complete` when the model needs additional factors or a different joint
+#' density. The callback replaces the entire density, including priors.
+#'
+#' Complete-data blocks currently support fixed effects and any number of
+#' Gaussian random-effect terms with fixed covariance, including correlated
+#' slopes. Dispersion is fixed. Nested, spatial and custom-likelihood blocks
+#' are refused because their integrated fits supply no proposal for the full
+#' conditional parameter vector. Deterministic `m_step_extra` updates are
+#' refused on the Gibbs path. The parameter layout, coefficient order and
+#' random-effect group identities must remain fixed across latent draws.
+#'
+#' During sampling the E-step receives per-block `mode` and `beta` containing
+#' the current parameter draw. It must use those values to compute the exact
+#' latent conditional of the same joint model as the density. A finite MCMC
+#' approximation to that conditional does not meet this contract. A separate
+#' unbiased-likelihood extended-state construction is one alternative when
+#' exact latent draws are unavailable (Andrieu and Roberts, 2009).
+#'
+#' Each sweep costs one E-step, one complete-data Laplace solve per block,
+#' and `1 + correction_control$mh_steps` joint-density evaluations. The
+#' proposal factorization covers the full parameter vector. MI costs one
+#' refit per block per imputation and retains the Tier 2 approximation.
+#'
+#' @section Tier:
+#' `"none"` and `"mi"` are Tier 2. `"gibbs"` is Tier 1 for the declared
+#' joint posterior, conditional on the fixed dispersion and covariance.
+#'
 #' @references
 #' Louis, T. A. (1982). Finding the observed information matrix when using
 #' the EM algorithm. *JRSS B*, 44(2), 226-233.
+#'
+#' Tanner, M. A., and Wong, W. H. (1987). The calculation of posterior
+#' distributions by data augmentation. *JASA*, 82(398), 528-540.
+#' \doi{10.1080/01621459.1987.10478458}.
+#'
+#' Wei, G. C. G., and Tanner, M. A. (1990). A Monte Carlo implementation of
+#' the EM algorithm and the poor man's data augmentation algorithms.
+#' *JASA*, 85(411), 699-704. \doi{10.1080/01621459.1990.10474930}.
+#'
+#' Robert, C. P., and Casella, G. (1999). *Monte Carlo Statistical Methods*.
+#' Springer, sections 7.3.2-7.3.3. \doi{10.1007/978-1-4757-3071-5}.
+#'
+#' Andrieu, C., and Roberts, G. O. (2009). The pseudo-marginal approach for
+#' efficient Monte Carlo computations. *Annals of Statistics*, 37(2), 697-725.
+#' \doi{10.1214/07-AOS574}.
 #'
 #' @param spatial,re_list Not consumed at the driver level -- latent structure
 #'   is per-submodel, set as a `spatial` / `re_list` field on each block
@@ -501,14 +561,26 @@
 #' @param correction Post-EM correction. `"none"` returns the EM point
 #'   estimate only. `"mi"` draws `n_imputations` independent hard `z` from
 #'   the converged posterior weights P(z|y, theta_hat), refits each block
-#'   on the hard z, and pools via [rubins_pool()]. `"gibbs"` runs a
-#'   warm-started `z|theta -> theta|z` Markov chain of length `n_gibbs`
-#'   starting from the EM fits, also pooled via [rubins_pool()]. `"auto"`
+#'   on the hard z, and pools via [rubins_pool()]. `"gibbs"` runs true-density
+#'   MH-within-Gibbs for `n_gibbs` sweeps starting from the EM fits, returning
+#'   joint posterior draws. `"auto"`
 #'   resolves to `"none"`.
 #' @param n_imputations Number of MI draws (default `20L`). Used when
 #'   `correction = "mi"`.
-#' @param n_gibbs Length of the Gibbs chain (default `10L`). Used when
-#'   `correction = "gibbs"`.
+#' @param n_gibbs Total Gibbs sweeps including warmup (default `2000L`).
+#'   Used when `correction = "gibbs"`.
+#' @param correction_control List of Gibbs settings: `warmup` (default
+#'   `n_gibbs %/% 2L`), `thin` (default `1L`), `mh_steps` (conditional MH
+#'   transitions per sweep, default `1L`), and `scale` (t proposal scale
+#'   inflation, default `1`). Unknown entries are errors.
+#' @param log_complete Optional function `function(fits, z, ...) -> numeric`
+#'   returning `log p(y, z, theta)`, with every complete-data likelihood
+#'   normalizer, parameter prior and transformation Jacobian. Each block of
+#'   `fits` carries the evaluated parameter vector in `mode` and its fixed
+#'   effects in `beta`. The posterior evidence `p(y)` is unnecessary. `NULL`
+#'   uses the engine density assembled from the complete-data GLMM blocks.
+#'   The callback must be deterministic and return one finite value or `-Inf`.
+#'   Used only with `correction = "gibbs"`.
 #' @param n_louis Number of hard latent draws for the Monte Carlo estimate of
 #'   the missing information in Louis' observed-information standard errors
 #'   (default `1000L`; `0` skips them). Each draw costs one `m_step_encode()`
@@ -521,15 +593,16 @@
 #'   per-observation. Multi-class / matrix-valued latent structures must
 #'   supply their own callback.
 #' @param m_step_extra Optional `function(fits, weights, ...) -> fits`. Fired
-#'   once per M-step in every phase (EM iterations, MI draws, Gibbs steps).
+#'   once per M-step in the EM iterations and MI draws.
 #'   Receives the freshly assembled list of [tulpa_laplace()] results (`fits`),
 #'   the continuous E-step weights P(z|y, theta) (NOT the hard z draw used by
-#'   MI/Gibbs to encode the block), and any extra arguments forwarded through
+#'   MI to encode the block), and any extra arguments forwarded through
 #'   `...`. Returns a list with the same length and names as the input,
 #'   possibly with mutated dispersion / shape / precision fields (e.g.
 #'   `fits[[k]]$phi`). Use this to update non-eta parameters that fall out of
 #'   the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
-#'   Gaussian sigma). When `NULL` (default), behavior is unchanged.
+#'   Gaussian sigma). Gibbs correction requires `NULL` and fixed block
+#'   hyperparameters.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, applied to
 #'   every block fit via [tulpa_laplace()] (i.e. blocks without a `prior`
 #'   field). `NULL` (default) takes the engine default `N(0, 2.5^2)`. Otherwise a list
@@ -546,8 +619,10 @@
 #' \itemize{
 #'   \item `fits` -- named list of [tulpa_laplace()] results, one per block,
 #'     each with `beta` and its complete-data `se` attached.
-#'   \item `vcov`, `se`, `louis` -- observed-information covariance and
-#'     standard errors by Louis' method (see the section above).
+#'   \item `vcov`, `se`, `louis` -- for EM and MI, observed-information
+#'     covariance and standard errors by Louis' method. For Gibbs, `vcov`
+#'     is the full sampled parameter covariance and `se` the per-block
+#'     fixed-effect posterior SDs; the EM information is in `em_information`.
 #'   \item `weights` -- final E-step weights.
 #'   \item `n_iter` -- number of EM iterations actually run.
 #'   \item `converged` -- logical.
@@ -555,10 +630,22 @@
 #'     change per iteration.
 #'   \item `correction` -- the resolved correction mode (`"none"`, `"mi"`,
 #'     or `"gibbs"`).
-#'   \item `pooled` -- present when `correction %in% c("mi", "gibbs")`.
+#'   \item `pooled` -- present when `correction = "mi"`.
 #'     Named list of pooled per-submodel summaries from [rubins_pool()].
-#'   \item `draws` -- present when `correction %in% c("mi", "gibbs")`.
-#'     List of per-draw fits with `beta` / `se` attached.
+#'   \item `draws` -- for MI, per-draw fit lists with `beta` / `se`.
+#'     For Gibbs, a matrix of retained full parameter draws; column names
+#'     identify the block, coefficient and random-effect group.
+#'   \item `latent_draws`, `log_prob`, `final_fits` -- for Gibbs, latent
+#'     states paired by row with `draws`, their complete-data log densities,
+#'     and the final sampled parameters in E-step form. `fits` retains the EM
+#'     initialization; `converged` describes that EM loop.
+#'   \item `means`, `sds` -- Gibbs posterior means and SDs over retained draws.
+#'   \item `accept_prob`, `mean_accept`, `draws_kind` -- for Gibbs, acceptance
+#'     indicators for the conditional MH steps on retained sweeps, their mean,
+#'     and `"chain"`.
+#'   \item `inference_mode`, `inference_tier`, `target` -- the actual
+#'     inference class and target. Gibbs reports `"exact"`, `1L`, and
+#'     `"joint posterior p(theta, Z | y), conditional on fixed block hyperparameters"`.
 #' }
 #'
 #' @examples
@@ -598,12 +685,14 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
                               spatial = NULL, re_list = list(),
                               max_iter = 50L, tol = 1e-4, damping = 0.3,
                               correction = c("auto", "mi", "gibbs", "none"),
-                              n_imputations = 20L, n_gibbs = 10L,
+                              n_imputations = 20L, n_gibbs = 2000L,
                               n_louis = 1000L,
                               draw_z = NULL,
                               m_step_extra = NULL,
                               beta_prior = NULL,
-                              verbose = TRUE, ...) {
+                              verbose = TRUE,
+                              log_complete = NULL,
+                              correction_control = list(), ...) {
   correction <- match.arg(correction)
   if (correction == "auto") correction <- "none"
 
@@ -624,12 +713,11 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     }
   }
   if (correction == "gibbs") {
-    n_gibbs <- as.integer(n_gibbs)
-    if (length(n_gibbs) != 1L || is.na(n_gibbs) || n_gibbs < 2L) {
-      stop("`n_gibbs` must be an integer >= 2 ",
-           "(Rubin's rules need at least 2 draws to estimate ",
-           "between-imputation variance).", call. = FALSE)
-    }
+    .em_gibbs_control(n_gibbs, correction_control)
+    .em_check_exact_callbacks(log_complete, m_step_extra)
+  } else if (!is.null(log_complete) || length(correction_control)) {
+    stop("`log_complete` and `correction_control` require correction = 'gibbs'.",
+         call. = FALSE)
   }
   draw_z_fn <- if (is.null(draw_z)) .draw_z_default else draw_z
   n_louis <- as.integer(n_louis)
@@ -691,37 +779,8 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     }
 
     # ---- M-step ----
-    blocks <- m_step_encode(weights, ...)
-    if (!is.list(blocks) || length(blocks) == 0) {
-      stop("`m_step_encode` must return a non-empty list of blocks",
-           call. = FALSE)
-    }
-
-    block_names <- names(blocks)
-    if (is.null(block_names)) {
-      block_names <- paste0("submodel_", seq_along(blocks))
-    }
-
-    new_fits <- vector("list", length(blocks))
-    names(new_fits) <- block_names
-
-    for (k in seq_along(blocks)) {
-      .validate_submodel_block(blocks[[k]],
-                               idx = if (nzchar(block_names[k])) {
-                                 sprintf("'%s' (#%d)", block_names[k], k)
-                               } else {
-                                 sprintf("#%d", k)
-                               })
-      # Damped parameter update is applied via the weights; the M-step itself
-      # is a fresh fit on the damped weights, so we don't need to mix beta
-      # vectors directly. A block with `$prior` set routes through
-      # tulpa_nested_laplace(); otherwise tulpa_laplace().
-      new_fits[[k]] <- .attach_beta_se(
-        .fit_em_block(blocks[[k]], n_threads = 1L, beta_prior = beta_prior),
-        n_fixed = ncol(blocks[[k]]$X))
-    }
-
-    fits <- new_fits
+    blocks <- .em_encode_blocks(weights, m_step_encode, label_prefix = "", ...)
+    fits <- .fit_em_blocks(blocks, beta_prior = beta_prior)
 
     # ---- Optional non-eta parameter update (NB phi, Gamma shape, ...) ----
     # Fired between the M-step and the next E-step; engine is model-agnostic.
@@ -759,7 +818,9 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     n_iter     = iter,
     converged  = converged,
     history    = history,
-    correction = correction
+    correction = correction,
+    inference_mode = "structured", inference_tier = 2L,
+    target = "complete-data Laplace EM point estimate"
   )
 
   if (n_louis > 0L) {
@@ -787,7 +848,11 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     )
     result$pooled <- mi$pooled
     result$draws  <- mi$draws
+    result[c("inference_mode", "inference_tier", "target")] <-
+      mi[c("inference_mode", "inference_tier", "target")]
   } else if (correction == "gibbs") {
+    result$em_information <- result[intersect(c("vcov", "se", "louis"), names(result))]
+    result[c("vcov", "se", "louis")] <- NULL
     if (verbose) {
       message(sprintf("  Running Gibbs correction with %d steps", n_gibbs))
     }
@@ -797,13 +862,13 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
       m_step_encode  = m_step_encode,
       draw_z         = draw_z_fn,
       n_gibbs        = n_gibbs,
-      m_step_extra   = m_step_extra,
       beta_prior     = beta_prior,
+      log_complete   = log_complete,
+      correction_control = correction_control,
       verbose        = verbose,
       ...
     )
-    result$pooled <- gibbs$pooled
-    result$draws  <- gibbs$draws
+    result[names(gibbs)] <- gibbs
   }
 
   result
@@ -844,9 +909,7 @@ apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
 
 
 # ============================================================================
-# Rubin's rules: pool K imputation draws. Used by the MI and Gibbs corrections
-# (.mi_correction / .gibbs_correction) and exported for downstream callers that
-# pool their own draws.
+# Rubin's rules pool K imputation fits for MI and Monte Carlo EM.
 # ============================================================================
 
 #' Pool multiple imputation draws via Rubin's rules

@@ -119,16 +119,9 @@ imh_laplace <- function(log_posterior,
   .finalize_fit(fit, param_names = names(mode))
 }
 
-# Independence MH on an extended state. The target value and auxiliary state
-# are retained together on rejection, including for a random likelihood estimate.
-.imh_laplace_chain <- function(evaluate, mode, hessian, n_iter, warmup,
-                                scale = 1, init = NULL, thin = 1L,
-                                verbose = FALSE) {
+# Multivariate-t independence proposal with the Laplace inverse precision as scale.
+.imh_laplace_proposal <- function(mode, hessian, scale = 1) {
   d <- length(mode)
-  .check_run_length(n_iter, warmup, "imh_laplace")
-  if (length(thin) != 1L || !is.finite(thin) || thin < 1 || thin != floor(thin)) {
-    stop("`thin` must be a positive whole number.", call. = FALSE)
-  }
   if (length(scale) != 1L || !is.finite(scale) || scale <= 0) {
     stop("`scale` must be positive and finite.", call. = FALSE)
   }
@@ -158,12 +151,47 @@ imh_laplace <- function(log_posterior,
     log_norm - 0.5 * (df + d) * log1p(sum(z^2) / df)
   }
 
+  draw <- function(n) {
+    z <- matrix(rnorm(n * d), nrow = n) /
+      sqrt(stats::rchisq(n, df) / df)
+    sweep(z %*% R, 2L, mode, `+`)
+  }
+  list(draw = draw, log_density = log_prop, mode = mode,
+       cov = prop_cov, scale = scale, df = df)
+}
+
+# A rejection retains the parameter, density value and auxiliary state together.
+.imh_laplace_transition <- function(theta, state, proposal, evaluate,
+                                     proposed = drop(proposal$draw(1L))) {
+  candidate <- evaluate(proposed)
+  log_alpha <- (candidate$log_prob - proposal$log_density(proposed)) -
+    (state$log_prob - proposal$log_density(theta))
+  accepted <- is.finite(candidate$log_prob) &&
+    log(stats::runif(1L)) < log_alpha
+  if (accepted) {
+    theta <- proposed
+    state <- candidate
+  }
+  list(theta = theta, state = state, accepted = accepted, log_alpha = log_alpha)
+}
+
+# Independence MH on an extended state. The target value and auxiliary state
+# are retained together on rejection, including for a random likelihood estimate.
+.imh_laplace_chain <- function(evaluate, mode, hessian, n_iter, warmup,
+                                scale = 1, init = NULL, thin = 1L,
+                                verbose = FALSE) {
+  d <- length(mode)
+  .check_run_length(n_iter, warmup, "imh_laplace")
+  if (length(thin) != 1L || !is.finite(thin) || thin < 1 || thin != floor(thin)) {
+    stop("`thin` must be a positive whole number.", call. = FALSE)
+  }
+  proposal <- .imh_laplace_proposal(mode, hessian, scale)
+
   # Initial state.
   if (is.null(init)) init <- mode
   theta <- as.numeric(init)
   state_curr <- evaluate(theta)
   log_p_curr <- state_curr$log_prob
-  log_q_curr <- log_prop(theta)
   if (!is.finite(log_p_curr)) {
     stop("`log_posterior(init)` is not finite; pick a different init.",
          call. = FALSE)
@@ -179,25 +207,15 @@ imh_laplace <- function(log_posterior,
 
   # Pre-draw all proposals: a t draw is a standard normal divided by
   # sqrt(W / df), W ~ chi^2_df, mapped through the scale matrix's factor.
-  z_all <- matrix(rnorm(n_iter * d), nrow = n_iter) /
-    sqrt(stats::rchisq(n_iter, df) / df)
+  proposed <- proposal$draw(n_iter)
 
   for (t in seq_len(n_iter)) {
-    prop <- mode + as.numeric(z_all[t, ] %*% R)
-    state_prop <- evaluate(prop)
-    log_p_prop <- state_prop$log_prob
-    log_q_prop <- log_prop(prop)
-
-    # IMH acceptance: alpha = (p(prop)/q(prop)) / (p(curr)/q(curr))
-    log_alpha <- (log_p_prop - log_q_prop) - (log_p_curr - log_q_curr)
-    if (is.finite(log_p_prop) &&
-        log(stats::runif(1L)) < log_alpha) {
-      theta <- prop
-      log_p_curr <- log_p_prop
-      log_q_curr <- log_q_prop
-      state_curr <- state_prop
-      accept_all[t] <- TRUE
-    }
+    step <- .imh_laplace_transition(theta, state_curr, proposal, evaluate,
+                                     proposed[t, ])
+    theta <- step$theta
+    state_curr <- step$state
+    log_p_curr <- state_curr$log_prob
+    accept_all[t] <- step$accepted
     draws_all[t, ] <- theta
     log_prob_all[t] <- log_p_curr
     if (t > warmup && (t - warmup - 1L) %% thin == 0L) {
@@ -232,7 +250,7 @@ imh_laplace <- function(log_posterior,
     inference_mode = "exact",
     inference_tier = 1L,
     backend = "imh_laplace",
-    proposal = list(mode = mode, cov = prop_cov, scale = scale, df = df)
+    proposal = proposal[c("mode", "cov", "scale", "df")]
   )
   fit$states <- states
   fit

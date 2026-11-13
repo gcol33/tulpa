@@ -2,6 +2,21 @@
 
 ## Models and inference
 
+* `tulpa_em_mc(correction = "gibbs")` and
+  `tulpa_em_laplace(correction = "gibbs")` alternate exact latent draws with
+  true-density MH on the complete-data parameter vector. The complete-data
+  Laplace t proposal uses the full fixed-effect and random-effect precision;
+  the shared MH transition corrects against the native normalized family
+  likelihood and Gaussian priors, or one `log_complete` callback containing
+  the full joint density. Results carry paired parameter/latent draws, MH
+  acceptance, an explicit joint-posterior target and Tier 1. Each sweep costs
+  an E-step, a Laplace solve per block and `1 + mh_steps` density evaluations.
+  Fixed dispersion and RE covariance are supported; integrated nested/spatial
+  blocks and deterministic extra parameter updates are explicitly refused.
+  Rubin-pooled MCEM and MI retain Tier 2. Gibbs results now summarize sampled
+  states and use warmup; `n_gibbs` counts all sweeps and defaults to 2000
+  (Tanner and Wong 1987; Robert and Casella 1999, sections 7.3.2-7.3.3) (#1175).
+
 * `tulpa_tgmrf(mode = "imh")` uses pseudo-marginal independence MH against
   an unbiased importance estimate of the true marginal likelihood, with
   joint beta and latent draws retained on rejection. The shared IS estimator

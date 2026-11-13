@@ -14,12 +14,14 @@ tulpa_em_laplace(
   damping = 0.3,
   correction = c("auto", "mi", "gibbs", "none"),
   n_imputations = 20L,
-  n_gibbs = 10L,
+  n_gibbs = 2000L,
   n_louis = 1000L,
   draw_z = NULL,
   m_step_extra = NULL,
   beta_prior = NULL,
   verbose = TRUE,
+  log_complete = NULL,
+  correction_control = list(),
   ...
 )
 }
@@ -73,16 +75,16 @@ mixing successive parameter vectors.}
 \item{correction}{Post-EM correction. \code{"none"} returns the EM point
 estimate only. \code{"mi"} draws \code{n_imputations} independent hard \code{z} from
 the converged posterior weights P(z|y, theta_hat), refits each block
-on the hard z, and pools via \code{\link[=rubins_pool]{rubins_pool()}}. \code{"gibbs"} runs a
-warm-started \code{z|theta -> theta|z} Markov chain of length \code{n_gibbs}
-starting from the EM fits, also pooled via \code{\link[=rubins_pool]{rubins_pool()}}. \code{"auto"}
+on the hard z, and pools via \code{\link[=rubins_pool]{rubins_pool()}}. \code{"gibbs"} runs true-density
+MH-within-Gibbs for \code{n_gibbs} sweeps starting from the EM fits, returning
+joint posterior draws. \code{"auto"}
 resolves to \code{"none"}.}
 
 \item{n_imputations}{Number of MI draws (default \code{20L}). Used when
 \code{correction = "mi"}.}
 
-\item{n_gibbs}{Length of the Gibbs chain (default \code{10L}). Used when
-\code{correction = "gibbs"}.}
+\item{n_gibbs}{Total Gibbs sweeps including warmup (default \code{2000L}).
+Used when \code{correction = "gibbs"}.}
 
 \item{n_louis}{Number of hard latent draws for the Monte Carlo estimate of
 the missing information in Louis' observed-information standard errors
@@ -98,15 +100,16 @@ per-observation. Multi-class / matrix-valued latent structures must
 supply their own callback.}
 
 \item{m_step_extra}{Optional \verb{function(fits, weights, ...) -> fits}. Fired
-once per M-step in every phase (EM iterations, MI draws, Gibbs steps).
+once per M-step in the EM iterations and MI draws.
 Receives the freshly assembled list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results (\code{fits}),
 the continuous E-step weights P(z|y, theta) (NOT the hard z draw used by
-MI/Gibbs to encode the block), and any extra arguments forwarded through
+MI to encode the block), and any extra arguments forwarded through
 \code{...}. Returns a list with the same length and names as the input,
 possibly with mutated dispersion / shape / precision fields (e.g.
 \code{fits[[k]]$phi}). Use this to update non-eta parameters that fall out of
 the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
-Gaussian sigma). When \code{NULL} (default), behavior is unchanged.}
+Gaussian sigma). Gibbs correction requires \code{NULL} and fixed block
+hyperparameters.}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, applied to
 every block fit via \code{\link[=tulpa_laplace]{tulpa_laplace()}} (i.e. blocks without a \code{prior}
@@ -120,6 +123,20 @@ blocks differ in width; per-coefficient vectors belong on the block.}
 
 \item{verbose}{Print per-iteration progress.}
 
+\item{log_complete}{Optional function \verb{function(fits, z, ...) -> numeric}
+returning \verb{log p(y, z, theta)}, with every complete-data likelihood
+normalizer, parameter prior and transformation Jacobian. Each block of
+\code{fits} carries the evaluated parameter vector in \code{mode} and its fixed
+effects in \code{beta}. The posterior evidence \code{p(y)} is unnecessary. \code{NULL}
+uses the engine density assembled from the complete-data GLMM blocks.
+The callback must be deterministic and return one finite value or \code{-Inf}.
+Used only with \code{correction = "gibbs"}.}
+
+\item{correction_control}{List of Gibbs settings: \code{warmup} (default
+\code{n_gibbs \%/\% 2L}), \code{thin} (default \code{1L}), \code{mh_steps} (conditional MH
+transitions per sweep, default \code{1L}), and \code{scale} (t proposal scale
+inflation, default \code{1}). Unknown entries are errors.}
+
 \item{...}{Forwarded to \code{e_step}, \code{m_step_encode}, and \code{m_step_extra}.}
 }
 \value{
@@ -127,8 +144,10 @@ A list with:
 \itemize{
 \item \code{fits} -- named list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results, one per block,
 each with \code{beta} and its complete-data \code{se} attached.
-\item \code{vcov}, \code{se}, \code{louis} -- observed-information covariance and
-standard errors by Louis' method (see the section above).
+\item \code{vcov}, \code{se}, \code{louis} -- for EM and MI, observed-information
+covariance and standard errors by Louis' method. For Gibbs, \code{vcov}
+is the full sampled parameter covariance and \code{se} the per-block
+fixed-effect posterior SDs; the EM information is in \code{em_information}.
 \item \code{weights} -- final E-step weights.
 \item \code{n_iter} -- number of EM iterations actually run.
 \item \code{converged} -- logical.
@@ -136,10 +155,22 @@ standard errors by Louis' method (see the section above).
 change per iteration.
 \item \code{correction} -- the resolved correction mode (\code{"none"}, \code{"mi"},
 or \code{"gibbs"}).
-\item \code{pooled} -- present when \code{correction \%in\% c("mi", "gibbs")}.
+\item \code{pooled} -- present when \code{correction = "mi"}.
 Named list of pooled per-submodel summaries from \code{\link[=rubins_pool]{rubins_pool()}}.
-\item \code{draws} -- present when \code{correction \%in\% c("mi", "gibbs")}.
-List of per-draw fits with \code{beta} / \code{se} attached.
+\item \code{draws} -- for MI, per-draw fit lists with \code{beta} / \code{se}.
+For Gibbs, a matrix of retained full parameter draws; column names
+identify the block, coefficient and random-effect group.
+\item \code{latent_draws}, \code{log_prob}, \code{final_fits} -- for Gibbs, latent
+states paired by row with \code{draws}, their complete-data log densities,
+and the final sampled parameters in E-step form. \code{fits} retains the EM
+initialization; \code{converged} describes that EM loop.
+\item \code{means}, \code{sds} -- Gibbs posterior means and SDs over retained draws.
+\item \code{accept_prob}, \code{mean_accept}, \code{draws_kind} -- for Gibbs, acceptance
+indicators for the conditional MH steps on retained sweeps, their mean,
+and \code{"chain"}.
+\item \code{inference_mode}, \code{inference_tier}, \code{target} -- the actual
+inference class and target. Gibbs reports \code{"exact"}, \code{1L}, and
+\code{"joint posterior p(theta, Z | y), conditional on fixed block hyperparameters"}.
 }
 }
 \description{
@@ -209,6 +240,54 @@ improper imputation that leaves out the estimate's own uncertainty, so its
 pooled SE can run below the observed-information one.
 }
 
+\section{Posterior sampling}{
+
+\code{correction = "gibbs"} alternates an exact draw from \code{p(Z | theta, y)}
+with independence Metropolis-Hastings for \code{p(theta | Z, y)}. Here \code{theta}
+contains every block's fixed effects and random-effect values. The
+complete-data Laplace mode and full latent precision define a multivariate-t
+proposal. The acceptance ratio uses the true complete-data density,
+including priors, divided by the proposal density at both parameter states.
+The current density is evaluated again after each latent update. The
+resulting chain has invariant joint posterior \code{p(theta, Z | y)} under the
+usual support and ergodicity conditions (Tanner and Wong, 1987; Robert and
+Casella, 1999). Finite chains require convergence and Monte Carlo diagnostics.
+
+The engine density evaluates the native family likelihood, retaining
+normalizing constants, and normalized Gaussian coefficient and random-effect
+priors. It reads the hard complete-data blocks from \code{m_step_encode(z, ...)}.
+These must encode every factor of \code{p(y, z | theta)}, including the latent
+label model. Observation weights must be 0 or 1 on this path. Supply
+\code{log_complete} when the model needs additional factors or a different joint
+density. The callback replaces the entire density, including priors.
+
+Complete-data blocks currently support fixed effects and any number of
+Gaussian random-effect terms with fixed covariance, including correlated
+slopes. Dispersion is fixed. Nested, spatial and custom-likelihood blocks
+are refused because their integrated fits supply no proposal for the full
+conditional parameter vector. Deterministic \code{m_step_extra} updates are
+refused on the Gibbs path. The parameter layout, coefficient order and
+random-effect group identities must remain fixed across latent draws.
+
+During sampling the E-step receives per-block \code{mode} and \code{beta} containing
+the current parameter draw. It must use those values to compute the exact
+latent conditional of the same joint model as the density. A finite MCMC
+approximation to that conditional does not meet this contract. A separate
+unbiased-likelihood extended-state construction is one alternative when
+exact latent draws are unavailable (Andrieu and Roberts, 2009).
+
+Each sweep costs one E-step, one complete-data Laplace solve per block,
+and \code{1 + correction_control$mh_steps} joint-density evaluations. The
+proposal factorization covers the full parameter vector. MI costs one
+refit per block per imputation and retains the Tier 2 approximation.
+}
+
+\section{Tier}{
+
+\code{"none"} and \code{"mi"} are Tier 2. \code{"gibbs"} is Tier 1 for the declared
+joint posterior, conditional on the fixed dispersion and covariance.
+}
+
 \examples{
 \donttest{
 # Zero-inflated Poisson via EM: the E-step scores the posterior probability
@@ -245,4 +324,19 @@ exp(res$fits$abund$mode[1])     # abundance mean, truth 4
 \references{
 Louis, T. A. (1982). Finding the observed information matrix when using
 the EM algorithm. \emph{JRSS B}, 44(2), 226-233.
+
+Tanner, M. A., and Wong, W. H. (1987). The calculation of posterior
+distributions by data augmentation. \emph{JASA}, 82(398), 528-540.
+\doi{10.1080/01621459.1987.10478458}.
+
+Wei, G. C. G., and Tanner, M. A. (1990). A Monte Carlo implementation of
+the EM algorithm and the poor man's data augmentation algorithms.
+\emph{JASA}, 85(411), 699-704. \doi{10.1080/01621459.1990.10474930}.
+
+Robert, C. P., and Casella, G. (1999). \emph{Monte Carlo Statistical Methods}.
+Springer, sections 7.3.2-7.3.3. \doi{10.1007/978-1-4757-3071-5}.
+
+Andrieu, C., and Roberts, G. O. (2009). The pseudo-marginal approach for
+efficient Monte Carlo computations. \emph{Annals of Statistics}, 37(2), 697-725.
+\doi{10.1214/07-AOS574}.
 }
