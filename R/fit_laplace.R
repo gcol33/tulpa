@@ -85,14 +85,19 @@
 #' @param skew_idx 1-based latent indices to probe (in the `[beta | random
 #'   effects]` layout of `mode`). `NULL` with `compute_skew = TRUE` probes every
 #'   latent index.
-#' @param debias Subspace debias: a list with `idx` (1-based
-#'   latent indices to correct by Metropolis along the Gaussian-conditional-mean
-#'   surface through the mode) and optional `n_iter` / `warmup` / `thin`. The
-#'   result then carries `debias_draws` (`n_kept x length(idx)`, the sampled
-#'   `x_S - mode_S`), `debias_sigma_ss` (the inner Laplace's own marginal
-#'   covariance of `x_S`), `debias_accept` and `debias_idx`. `NULL` (default) or
-#'   an empty `idx` leaves the solve bit-for-bit as it was and consumes no
-#'   random number. Non-spatial path only.
+#' @param debias Subspace correction, a list with `idx` (1-based latent
+#'   indices), `method` (`"fast"` by default, or `"exact"`), and optional
+#'   `n_iter` / `warmup` / `thin`. Fast correction samples the true density
+#'   on the Gaussian conditional-mean surface and returns selected offsets
+#'   `x_S - mode_S` in `debias_draws`, with `debias_sigma_ss`, `debias_accept`
+#'   and `debias_idx`. An empty fast selection consumes no randomness.
+#'   Exact correction jointly proposes the selected coordinates and Gaussian
+#'   conditional nuisance residuals, with their proposal density in the MH
+#'   ratio. It retains the full state on rejection and returns full latent
+#'   offsets in `debias_draws`, natural-coordinate `joint_latent_draws`,
+#'   fixed-effect `draws` and paired random-effect `re` draws. This conditional
+#'   target is Tier 1 for the supplied fixed hyperparameters. An empty exact
+#'   selection uses full Gaussian independence MH. Non-spatial path only.
 #' @param zi_prior_sd Prior SD on the zero-inflation coefficients,
 #'   `beta_zi ~ N(0, zi_prior_sd^2)` (default 2.5, matching the samplers'
 #'   `ModelData::zi_prior_sd`). It is what keeps the logit identified when a
@@ -474,6 +479,23 @@ tulpa_laplace <- function(y, n_trials, X,
   p_zi <- if (is.null(X_zi)) 0L else ncol(X_zi)
   zi_names <- if (p_zi == 0L) character(0) else
     colnames(X_zi) %||% paste0("zi_", seq_len(p_zi))
+  if (identical(debias_req$method, "exact")) {
+    if (!is.matrix(result$debias_draws) || !nrow(result$debias_draws)) {
+      stop("Exact conditional subspace kernel declined: ",
+           result$debias_declined %||% "no_latent_draws", ".", call. = FALSE)
+    }
+    result$joint_latent_draws <- sweep(result$debias_draws, 2L, result$mode, `+`)
+    result$draws <- result$joint_latent_draws[, seq_len(n_fixed + p_zi), drop = FALSE]
+    colnames(result$draws) <- c(colnames(X), zi_names)
+    random <- setdiff(seq_len(ncol(result$joint_latent_draws)), seq_len(n_fixed + p_zi))
+    if (length(random)) result$re <- result$joint_latent_draws[, random, drop = FALSE]
+    result$means <- colMeans(result$draws)
+    result$n_samples <- nrow(result$draws)
+    result$inference_mode <- "exact"
+    result$inference_tier <- 1L
+    result$draws_kind <- "chain"
+    result$target <- "p(x | y), conditional on supplied block hyperparameters"
+  }
   .finalize_fit(result, backend = "laplace",
                 n_fixed = n_fixed + p_zi,
                 fixed_names = c(colnames(X), zi_names),

@@ -1,33 +1,3 @@
-# Unbiased integration over the full (beta, re, z) vector. Each particle reads
-# the Newton solver's own family density; Gaussian priors retain normalizers.
-.tgmrf_is_estimate <- function(proposal, n_particles, log_joint,
-                                df = .TGMRF_IS$df) {
-  D <- length(proposal$mean)
-  fac <- Matrix::Cholesky(methods::as(proposal$precision, "symmetricMatrix"),
-                          perm = FALSE, LDL = FALSE)
-  Z <- matrix(stats::rnorm(D * n_particles), D, n_particles)
-  radii <- stats::rchisq(n_particles, df) / df
-  Z <- sweep(Z, 2L, sqrt(radii), `/`)
-  delta <- as.matrix(Matrix::solve(fac, Z, system = "Lt"))
-  particles <- sweep(delta, 1L, proposal$mean, `+`)
-  logdet <- as.numeric(Matrix::determinant(proposal$precision,
-                                          logarithm = TRUE)$modulus)
-  log_q <- lgamma((df + D) / 2) - lgamma(df / 2) + logdet / 2 -
-    D / 2 * log(df * pi) - (df + D) / 2 * log1p(colSums(Z^2) / df)
-  log_w <- log_joint(particles) - log_q
-  if (anyNA(log_w) || any(log_w == Inf)) {
-    stop("Non-finite importance ratio in the tgmrf likelihood estimator.",
-         call. = FALSE)
-  }
-  lse <- .tulpa_logsumexp(log_w)
-  if (!is.finite(lse)) {
-    return(list(log_prob = -Inf, draw = rep(NA_real_, D), particle_ess = 0))
-  }
-  selected <- sample.int(n_particles, 1L, prob = exp(log_w - lse))
-  list(log_prob = lse - log(n_particles), draw = particles[, selected],
-       particle_ess = exp(2 * lse - .tulpa_logsumexp(2 * log_w)))
-}
-
 # The exact joint density at fixed theta. The fixed-effect prior is the same
 # engine default the Laplace solver and joint NUTS read.
 .tgmrf_log_joint <- function(theta, y, n_trials, X, block, obs_idx,
@@ -77,23 +47,10 @@
                                     ri, n_re_groups, sigma_re, family, phi)
   proposal_mode <- lm$conditional(theta_mode)
   joint_mode <- density(theta_mode)
-  M <- .TGMRF_IS$initial_particles
-  n_evaluations <- 0
-  repeat {
-    log_estimates <- replicate(.TGMRF_IS$pilot_batches, {
-      .tgmrf_is_estimate(proposal_mode, M, joint_mode)$log_prob
-    })
-    n_evaluations <- n_evaluations + .TGMRF_IS$pilot_batches * M
-    log_sd <- stats::sd(log_estimates)
-    if (is.finite(log_sd) && log_sd <= .TGMRF_IS$target_log_sd) break
-    if (M >= .TGMRF_IS$max_particles) {
-      stop("IS calibration could not meet the log-estimate SD target; ",
-           "use mode = 'nuts_joint' for a C++ block.", call. = FALSE)
-    }
-    M <- as.integer(min(.TGMRF_IS$max_particles,
-                         max(2 * M, if (is.finite(log_sd))
-                           ceiling(M * (log_sd / .TGMRF_IS$target_log_sd)^2) else 2 * M)))
-  }
+  calibration <- .laplace_is_calibrate(proposal_mode, joint_mode)
+  M <- calibration$n_particles
+  log_sd <- calibration$log_estimate_sd
+  n_evaluations <- calibration$likelihood_evaluations
   evaluate <- function(theta) {
     lp <- block$prior(theta)
     if (length(lp) != 1L || is.na(lp) || lp == Inf) {

@@ -1033,6 +1033,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
   }
 
   backend <- fit$backend %||% "unknown"
+  cell_chains <- identical(.tulpa_draws_kind(fit), "mcmc_mixture")
   recommendations <- character(0)
   status <- "PASS"
 
@@ -1061,7 +1062,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
   # Get MCMC diagnostics (chain fits only; the registry's `emits` property
   # decides, so every chain backend -- hmc, gibbs, mala, imh_laplace, ess, ...
   # -- is covered, and no approximation fit gets a vacuous Rhat/ESS table).
-  if (.tulpa_is_chain(fit)) {
+  if (.tulpa_is_chain(fit) || cell_chains) {
     diag <- tryCatch(diagnostics(fit), error = function(e) NULL)
 
     if (!is.null(diag)) {
@@ -1073,7 +1074,8 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       bad_rhat <- diag[!is.na(diag$rhat) & diag$rhat > 1.01, ]
       if (nrow(bad_rhat) > 0) {
         bad_rhat <- bad_rhat[order(bad_rhat$rhat, decreasing = TRUE), ]
-        result$worst_rhat <- head(bad_rhat[, c("parameter", "rhat")], 5)
+        result$worst_rhat <- head(bad_rhat[, c("parameter", "rhat",
+          if (cell_chains) c("cell", "weight"))], 5)
         recommendations <- c(recommendations,
           "Rhat > 1.01: Run more iterations or chains")
         status <- "WARN"
@@ -1083,7 +1085,8 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       low_ess <- diag[!is.na(diag$ess_bulk) & diag$ess_bulk < 400, ]
       if (nrow(low_ess) > 0) {
         low_ess <- low_ess[order(low_ess$ess_bulk), ]
-        result$worst_ess <- head(low_ess[, c("parameter", "ess_bulk", "ess_tail")], 5)
+        result$worst_ess <- head(low_ess[, c("parameter", "ess_bulk", "ess_tail",
+          if (cell_chains) c("cell", "weight"))], 5)
         recommendations <- c(recommendations,
           "ESS < 400: Run more iterations or use thinning")
         status <- "WARN"
@@ -1134,7 +1137,15 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
   # accuracy gate is the Pareto-k-hat of the nested integration (when the
   # backend computed it); fall back to the grid's quadrature effective sample
   # size for the C++ nested paths that store weights but no sampled k-hat yet.
-  if (!.tulpa_is_chain(fit)) {
+  if (cell_chains) {
+    outer <- fit$subspace_debias$outer
+    result$pareto_k <- outer$pareto_k
+    if (!is.finite(outer$pareto_k) || outer$pareto_k >= outer$k_threshold)
+      status <- "WARN"
+    recommendations <- c(recommendations,
+      "Source-chain mixing and latent importance weights are scored separately; the outer grid remains finite.")
+  }
+  if (!.tulpa_is_chain(fit) && !cell_chains) {
     # Model-package wrappers carry the nested pieces under `$joint_fit`; unwrap it
     # the same way the shared reliability readers do
     # (.tulpa_psis_reliability / .tulpa_grid_reliability) so the k-hat / weights

@@ -78,6 +78,8 @@ Rcpp::List nl_pack_grid_results(
     // diagnostics above every integrated cell contributes its own sample.
     int debias_cell = -1;
     Rcpp::List debias_per_grid(n_grid);
+    Rcpp::List debias_importance(n_grid);
+    Rcpp::List debias_importance_log_weights(n_grid);
     Rcpp::NumericVector debias_accept(n_grid, NA_REAL);
     Rcpp::CharacterVector debias_declined(n_grid, NA_STRING);
     // Corrected integrated Laplace (inner_cila.h) is per cell for the same
@@ -147,6 +149,10 @@ Rcpp::List nl_pack_grid_results(
         if (!res.debias_idx.empty()) {
             if (debias_cell < 0) debias_cell = k;
             debias_accept[k] = res.debias_accept;
+            if (!res.debias_importance.empty())
+                debias_importance[k] = Rcpp::wrap(res.debias_importance);
+            if (!res.debias_importance_log_weights.empty())
+                debias_importance_log_weights[k] = Rcpp::wrap(res.debias_importance_log_weights);
             const int q = static_cast<int>(res.debias_idx.size());
             const int S = res.debias_n_kept;
             if (S > 0 && res.debias_draws.size() ==
@@ -264,6 +270,8 @@ Rcpp::List nl_pack_grid_results(
         }
         out["debias_idx"] = idx_r;
         out["debias_draws_per_grid"] = debias_per_grid;
+        out["debias_importance_per_grid"] = debias_importance;
+        out["debias_importance_log_weights_per_grid"] = debias_importance_log_weights;
         out["debias_accept"] = debias_accept;
         out["debias_declined"] = debias_declined;
     }

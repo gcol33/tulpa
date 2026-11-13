@@ -675,6 +675,9 @@
       nrow(object$draws) > 0L) {
     return("sampler_model")
   }
+  if (isTRUE(object$subspace_debias$outer$applied) &&
+      identical(object$subspace_debias$method, "exact") &&
+      !is.null(.field_source_grid(object))) return("field_mixture")
   if (is.matrix(object$fitted_eta) && !is.null(object$weights) &&
       length(object$weights) == nrow(object$fitted_eta)) {
     return("grid_mixture")

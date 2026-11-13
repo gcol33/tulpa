@@ -2,6 +2,20 @@
 
 ## Models and inference
 
+* `control$subspace_debias = list(method = "exact")` uses full-latent
+  true-density MH within each nested-Laplace cell. A selected-subspace move
+  carries a fresh Gaussian nuisance proposal whose density enters the joint
+  acceptance ratio; rejection retains every latent coordinate. The shared
+  t importance estimator corrects the outer cell integrals using independent
+  calibration pilots and a final unbiased estimate, with the existing PSIS
+  gate and per-cell diagnostics. Fixed effects, random effects and outer-cell
+  draws retain their joint row pairing. Nested fits remain Tier 2 because the
+  outer quadrature and finite importance estimates retain error. The direct
+  conditional `tulpa_laplace(debias = list(method = "exact", ...))` kernel
+  reports Tier 1 conditional on its supplied hyperparameters. `method = "fast"`
+  preserves the Gaussian-conditioned surface correction. Hard constraints
+  decline explicitly on the exact path (#1176).
+
 * `tulpa_em_mc(correction = "gibbs")` and
   `tulpa_em_laplace(correction = "gibbs")` alternate exact latent draws with
   true-density MH on the complete-data parameter vector. The complete-data

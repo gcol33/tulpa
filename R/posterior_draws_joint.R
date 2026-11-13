@@ -66,6 +66,8 @@
 tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
                                                              n = 1000, ...) {
     n <- .nl_draws_check_n(n)
+    corrected <- .subspace_posterior_draws(fit, idx, n)
+    if (!is.null(corrected)) return(corrected)
 
     Qp  <- fit$Q_csc_p_per_grid
     Qi  <- fit$Q_csc_i_per_grid

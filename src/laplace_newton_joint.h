@@ -664,7 +664,8 @@ inline void joint_newton_finalize_dense(
         run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
                             sparse_solver, used_sparse_factor,
                             eval_objective, x, debias, nullptr,
-                            hard_on ? hard : nullptr);
+                            hard_on ? hard : nullptr,
+                            [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
 
         // The correction reads the same pre-centering iterate for the same reason,
         // and presents each draw through the loop's own centering fold so a drawn

@@ -229,22 +229,11 @@ struct LaplaceResult {
   std::vector<double> inner_is_sigma;
   std::string         inner_is_declined;
 
-  // Subspace debias (see src/subspace_debias.h). Populated
-  // only when the solver is called with a non-empty index set: the Metropolis
-  // draws of x_S - mode_S along the Gaussian-conditional-mean surface through
-  // the mode, laid out column-major as [n_kept x q] against `debias_idx`
-  // (0-based here, 1-based on the R side), together with the inner Laplace's
-  // own marginal covariance of x_S (`debias_sigma_ss`, q x q column-major) so
-  // the caller can rebuild the Gaussian conditional for the coordinates it did
-  // NOT sample. `debias_declined` says why nothing was sampled, when nothing
-  // was; an empty index set never reaches the sampler at all, so the fit is
-  // then the plain Laplace fit with no random number consumed. Vocabulary:
-  // "no_probe_indices", "degenerate_proposal", "objective_not_finite", plus the
-  // gate reasons the driver settles first -- "not_converged" and, on the sparse
-  // joint path, "pd_eigen_clamp" / "s2z_rank1_factor" / "factor_unavailable".
-  // A gated decline echoes `debias_idx` back with `debias_n_kept = 0`, so a
-  // requested correction that produced nothing is not mistaken for one that was
-  // never requested.
+  // Metropolis offsets in column-major order against 0-based `debias_idx`:
+  // selected coordinates for the fast surface, the full latent for exact MH.
+  // `debias_sigma_ss` is the selected Gaussian covariance for recombination.
+  // Exact outer correction carries IS summaries and raw log ratios.
+  // `debias_declined` records an unusable mode, factor or constraint geometry.
   std::vector<int>    debias_idx;
   std::vector<double> debias_draws;
   std::vector<double> debias_sigma_ss;
@@ -252,6 +241,8 @@ struct LaplaceResult {
   double              debias_accept = 0.0;
   double              debias_scale = 0.0;
   std::string         debias_declined;
+  std::vector<double> debias_importance;
+  std::vector<double> debias_importance_log_weights;
 
   // Corrected integrated Laplace (see src/inner_cila.h).
   // Populated only when the solver is called with an active request: the M
@@ -285,6 +276,9 @@ inline void attach_debias_fields(Rcpp::List& out, const LaplaceResult& res) {
   out["debias_accept"] = res.debias_accept;
   out["debias_scale"] = res.debias_scale;
   out["debias_declined"] = res.debias_declined;
+  if (!res.debias_importance.empty()) out["debias_importance"] = res.debias_importance;
+  if (!res.debias_importance_log_weights.empty())
+    out["debias_importance_log_weights"] = res.debias_importance_log_weights;
   const int S = res.debias_n_kept;
   if (S > 0 && res.debias_draws.size() ==
                    static_cast<std::size_t>(S) * static_cast<std::size_t>(q)) {

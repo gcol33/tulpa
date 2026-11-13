@@ -540,7 +540,8 @@ LaplaceResult laplace_newton_solve_ll(
             run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
                                 sparse_solver, used_sparse_factor,
                                 eval_probe, x, debias, nullptr,
-                                hard_on ? hard : nullptr);
+                                hard_on ? hard : nullptr,
+                                [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
 
             // The correction reads the same pre-centering iterate, and presents each
             // draw through the loop's own centering fold so a drawn coefficient is in

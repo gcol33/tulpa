@@ -78,6 +78,11 @@ one does, and a per-parameter posterior summary. See the
 this table and its attributes.}
 \item{point summaries}{no sample to diagnose; returns \code{NULL} with a
 message naming the backend.}
+\item{resampled within-cell chains}{the original cell-chain diagnostic
+table, including cell indices and weights. The
+\code{subspace_outer_correction} attribute contains per-cell IS diagnostics;
+\code{pareto_k} and \code{scope} describe the stratified outer correction.
+Monte Carlo uncertainty depends on those source chains and estimates.}
 }
 
 Provenance is read from \verb{$draws_kind} (stamped by \code{tulpa_dispatch}), falling

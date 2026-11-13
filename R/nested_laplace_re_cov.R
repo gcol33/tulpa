@@ -2000,21 +2000,22 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'       criteria all read the node centres. `FALSE` keeps the mode. Off at
 #'       `n_quad > 1` and whenever the subspace debias runs. Which nodes were
 #'       centred is recorded in `mean_shift` on the returned fit.
-#'     \item `subspace_debias`: subspace debias, `FALSE` by
-#'       default. `TRUE` takes every default; a list overrides `band` (the
-#'       inner-reliability floor a coordinate is selected at, default `"ok"`),
-#'       `idx` (pin the corrected set explicitly, skipping the selector),
-#'       `probe` (the latent indices scored, default the fixed effects),
-#'       `closure` (`FALSE`, `TRUE`, or a partial-correlation threshold: grow
-#'       the set by the precision-graph neighbours it is strongly coupled to),
-#'       `closure_max`, and the sampler budget `n_iter` / `warmup` / `thin`.
-#'       When the selected set is non-empty, each integration node reports the
-#'       selected fixed-effect coordinates from Metropolis on the true density
-#'       along the Gaussian-conditional-mean surface, and the rest
-#'       from the Gaussian conditional given them; an EMPTY set leaves the fit
-#'       bit-for-bit identical to the plain path. What was selected is recorded
-#'       in `subspace_debias` on the returned fit. The Gaussian nuisance carry
-#'       and approximate outer integration remain; the fit stays Tier 2.
+#'     \item `subspace_debias`: latent Metropolis correction, `FALSE` by
+#'       default. `TRUE` takes the defaults; a list accepts `method` (`"fast"`
+#'       or `"exact"`), `band` (default `"ok"`), `idx`, `probe`, `closure`,
+#'       `closure_max`, `n_iter`, `warmup`, `thin`, and `n_draws`.
+#'       Fast correction samples the joint density on the selected Gaussian
+#'       conditional-mean surface, carries Gaussian nuisance conditionals, and
+#'       keeps the Laplace cell weights. Exact correction uses full-latent
+#'       true-density MH, including the Gaussian nuisance proposal density in
+#'       the ratio, and corrects each cell's integral with the shared unbiased
+#'       t importance estimator. Independent pilots calibrate the particle
+#'       count; the existing PSIS k gate decides whether the correction applies.
+#'       The finite outer design and importance estimates keep the result
+#'       Tier 2. Applied exact correction returns paired fixed-effect, random-
+#'       effect and covariance-node draws, with retained source chains and IS
+#'       diagnostics in `subspace_debias`. Fast empty selections preserve the
+#'       plain fit; exact empty selections use full Gaussian independence MH.
 #'   }
 #'
 #' @return A list with:
@@ -2115,7 +2116,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   k_width     <- .tulpa_pareto_k_threads(1L, n_threads, k_samples,
                                          control$k_threads)
   checkpoint  <- control$checkpoint
-  sd_cfg      <- .subspace_debias_config(control$subspace_debias)
+  sd_cfg      <- .subspace_debias_config(control$subspace_debias, control$cila)
   skew_correct <- isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
   n_quad <- .check_n_quad(n_quad)
   .seed_scoped(seed)
@@ -2192,9 +2193,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     }
     subspace <- .subspace_select(probe, sd_cfg)
   }
-  debias_arg <- if (!is.null(subspace) && length(subspace$idx))
-    list(idx = subspace$idx, n_iter = sd_cfg$n_iter, warmup = sd_cfg$warmup,
-         thin = sd_cfg$thin) else NULL
+  debias_arg <- if (!is.null(subspace)) .subspace_debias_request(
+    utils::modifyList(sd_cfg, list(idx = subspace$idx, correct_outer = TRUE)))
+  exact_subspace <- !is.null(sd_cfg) && identical(sd_cfg$method, "exact")
 
   # --- integration nodes in whitened theta-space ----------------------------
   if (integration == "ccd") {
@@ -2300,6 +2301,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (!is.null(debias_arg)) {
       rec$debias_draws  <- fit_i$debias_draws
       rec$debias_accept <- fit_i$debias_accept %||% NA_real_
+      rec$debias_importance <- fit_i$debias_importance
+      rec$debias_importance_log_weights <- fit_i$debias_importance_log_weights
     }
     if (re_cond && length(fit_i$mode) == p_fix + n_re) {
       rec$re <- fit_i$mode[p_fix + seq_len(n_re)]
@@ -2364,6 +2367,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   } else .ccd_log_measure(ccd, L_scale)
 
   logm           <- vapply(recs, rec_logm, numeric(1))
+  laplace_logm   <- logm
   lp_theta_nodes <- vapply(recs, function(r) r$lp_theta %||% NA_real_, numeric(1))
   hbeta_unformed <- vapply(recs, function(r) isTRUE(r$unformed), logical(1))
   Sig_node_list  <- lapply(seq_len(ng), function(i)
@@ -2417,6 +2421,19 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   lw <- lw - max(finite_lw)
   w  <- exp(lw); w[!is.finite(w)] <- 0
   w  <- w / sum(w)
+  outer_correction <- NULL
+  exact_applied <- FALSE
+  if (exact_subspace) {
+    outer_correction <- .subspace_outer_correction(w,
+      lapply(recs, `[[`, "debias_importance"),
+      lapply(recs, `[[`, "debias_importance_log_weights"))
+    exact_applied <- outer_correction$applied
+    if (exact_applied) {
+      w <- outer_correction$weights
+      at <- which(w > 0)
+      logm[at] <- logm[at] + outer_correction$log_correction[at]
+    }
+  }
   .re_cov_report_hbeta(hbeta_unformed, w, "tulpa_re_cov_nested")
 
   # A weighted node whose latent tail was the wrong width, or whose covariance
@@ -2472,9 +2489,17 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   beta_names <- c(colnames(X) %||% paste0("beta", seq_len(core$p_fix)),
                   if (core$p_zi > 0L)
                     colnames(core$X_zi) %||% paste0("zi_", seq_len(core$p_zi)))
-  ds <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
+  joint_draws <- NULL
+  if (exact_applied) {
+    modes <- do.call(rbind, lapply(recs, function(r)
+      r$mode_raw %||% rep(NA_real_, p_fix + n_re)))
+    ds <- .subspace_joint_draws(debias_nodes, modes, w, n_draws)
+    joint_draws <- ds$draws
+    ds$draws <- joint_draws[, seq_len(p_fix), drop = FALSE]
+    colnames(ds$draws) <- beta_names
+  } else ds <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
                                   as.integer(n_draws), beta_names,
-                                  debias_nodes = if (is.null(debias_arg)) NULL
+                                  debias_nodes = if (is.null(debias_arg) || exact_subspace) NULL
                                                  else debias_nodes,
                                   debias_idx = subspace$idx)
   draws <- ds$draws
@@ -2486,7 +2511,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # on, so the two tables marginalize one weighted node set.
   re_debias_draws <- NULL
   re_debias_idx   <- NULL
-  if (!is.null(debias_arg) && !is.null(ds) && re_cond && !is.null(re_nodes)) {
+  if (exact_applied && re_cond) {
+    re_debias_idx <- seq_len(n_re)
+    re_debias_draws <- joint_draws[, p_fix + re_debias_idx, drop = FALSE]
+  } else if (!exact_subspace && !is.null(debias_arg) && !is.null(ds) &&
+             re_cond && !is.null(re_nodes)) {
     cols <- which(subspace$idx > p_fix & subspace$idx <= p_fix + n_re)
     if (length(cols)) {
       pos <- as.integer(subspace$idx[cols]) - p_fix
@@ -2554,12 +2583,24 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     }
   }
 
-  .finalize_fit(list(
+  result <- .finalize_fit(list(
+    inference_mode = "structured",
+    inference_tier = 2L,
     posterior   = posterior,
     map         = map,
     Sigma_mean  = summ$Sigma_mean,
     beta        = beta_mean,
     draws       = draws,
+    joint_latent_draws = joint_draws,
+    re = if (exact_applied) re_debias_draws,
+    draws_theta = if (exact_applied) theta_grid[ds$picks, , drop = FALSE],
+    weights_source = if (exact_applied) "subspace_is" else "laplace_grid",
+    target = if (exact_applied)
+      "finite-grid IS approximation to p(x, theta | y), with true conditional MH within cells"
+      else if (!is.null(debias_arg) && !exact_subspace)
+        "Gaussian-conditioned subspace surface with Gaussian nuisance carry and Laplace outer weights"
+      else "Laplace outer-cell weights with Gaussian latent conditionals",
+    draws_kind = if (exact_applied) "mcmc_mixture" else "iid",
     hyper_log_prior_draws = hyper_lp_draws,
     pareto_k    = pareto_k,
     pareto_k_is_ess = k_is_ess,
@@ -2631,12 +2672,23 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # were sampled exactly, which band each probed coordinate was read at, and
     # what the coupling closure added on top.
     subspace_debias = if (is.null(subspace)) NULL else list(
+      method = sd_cfg$method,
       idx = subspace$idx, bands = subspace$bands, closure_added = subspace$added,
       selected_by = subspace$selected_by, band_floor = sd_cfg$band,
       closure = sd_cfg$closure,
       n_iter = sd_cfg$n_iter, warmup = sd_cfg$warmup, thin = sd_cfg$thin,
-      accept = debias_accept)
+      accept = debias_accept,
+      within_cell_target = if (exact_subspace) "p(x | theta_k, y)"
+        else "joint density on the Gaussian conditional-mean surface",
+      outer = outer_correction,
+      laplace_log_marginal = if (exact_subspace) laplace_logm,
+      source_rows = if (exact_applied) ds$rows,
+      cell_draws = if (exact_applied) debias_nodes,
+      cell_modes = if (exact_applied) modes,
+      declined = if (exact_subspace) outer_correction$declined)
   ), backend = "re_cov_nested", n_fixed = p_fix, fixed_names = beta_names,
      data = list(y = y, n_trials = n_trials, model_matrix = X,
                 family = family, offset = offset, phi = phi, phi2 = phi2))
+  if (exact_applied) result <- .subspace_attach_diagnostics(result, outer_correction)
+  result
 }

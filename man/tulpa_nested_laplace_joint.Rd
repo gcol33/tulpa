@@ -888,20 +888,15 @@ third-derivative oracle, and an absent \code{gamma_1} is never read as zero.
 Such a fit therefore reports what it reported before the default moved, to
 the bit -- a declined coefficient keeps the grid-mixture read. See
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement behind the default.
-\item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
-inner-layer diagnostics flagged, by Metropolis on the true joint density along the
-Gaussian-conditional-mean surface through each cell's mode, and leave the
-rest at their Gaussian conditional. That nuisance carry and the Laplace
-outer weights remain approximations, so this remains Tier 2.
-Settings and semantics are the ones
-documented on \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}. On a fully coupled fit \code{gamma_3}
-is \code{NaN} for every arm, so the selector rests on the derivative-free
-inner Pareto-k-hat; where that also bands the
-coordinate reliable, \code{idx} pins the set explicitly. An EMPTY selection
-leaves the fit bit-for-bit identical to the plain path. A fit whose
-inner solve took the s2z rank-1 or the PSD eigen-clamp path carries no
-usable factor to build the surface from and is left uncorrected, the same
-two paths \code{diagnose_skew} declines on.
+\item \code{subspace_debias} (\code{FALSE}) -- the same \code{method = "fast"} or
+\code{method = "exact"} composition and controls as \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.
+Fast correction uses the Gaussian conditional-mean surface and keeps
+Gaussian nuisance carry and Laplace cell weights. Exact correction
+applies full-latent true-density MH within cells and shared unbiased IS
+correction of their weights, gated by PSIS. Finite outer-grid and
+importance errors keep the result Tier 2. Hard constraints and a solver
+without a usable Cholesky factor decline explicitly. The selected set,
+per-cell source chains and correction diagnostics travel on the fit.
 \item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
 debias (after Lai, Margossian and Sheldon,
 arXiv:2605.20345). At every outer cell it

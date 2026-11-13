@@ -420,7 +420,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // The subspace sampler draws from R's RNG (rwmh.h), which is not reentrant
     // and would make a run's draws a function of the thread schedule, so a
     // debiased grid is integrated serially whatever the caller asked for.
-    const bool debias_active = (debias != nullptr) && !debias->idx.empty();
+    const bool debias_active = (debias != nullptr) && (!debias->idx.empty() || debias->exact);
     if (debias_active) n_threads_outer = 1;
     int n_outer = std::max(1, n_threads_outer);
     std::vector<NewtonScratch> scratch_pool(n_outer);

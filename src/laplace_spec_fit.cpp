@@ -12,9 +12,15 @@ const SubspaceDebiasOptions* unwrap_debias(
 ) {
     if (debias.isNull()) return nullptr;
     Rcpp::List spec(debias);
+    if (spec.containsElementNamed("method")) {
+        const std::string method = Rcpp::as<std::string>(spec["method"]);
+        if (method != "fast" && method != "exact") Rcpp::stop("Unknown debias method.");
+        storage.exact = method == "exact";
+    }
+    if (spec.containsElementNamed("importance")) storage.importance = spec["importance"];
     if (!spec.containsElementNamed("idx")) return nullptr;
     Rcpp::IntegerVector idx_r = spec["idx"];
-    if (idx_r.size() == 0) return nullptr;
+    if (idx_r.size() == 0 && !storage.exact) return nullptr;
     storage.idx.resize(idx_r.size());
     for (int k = 0; k < idx_r.size(); k++) {
         if (idx_r[k] == NA_INTEGER || idx_r[k] < 1) {

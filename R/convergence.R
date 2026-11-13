@@ -360,6 +360,11 @@
 .tulpa_non_chain_msg <- function(fit) {
   k <- .tulpa_draws_kind(fit)
   b <- fit$backend %||% "this backend"
+  if (identical(k, "mcmc_mixture")) {
+    return(paste("This fit resamples within-cell MCMC chains with estimated outer weights.",
+      "Use diagnostics(fit) for source-chain mixing and importance diagnostics;",
+      "Monte Carlo uncertainty depends on both."))
+  }
   if (identical(k, "point")) {
     return(sprintf("Backend '%s' returns a point summary (mode + covariance), not a posterior sample.", b))
   }

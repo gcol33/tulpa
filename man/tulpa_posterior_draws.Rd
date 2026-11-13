@@ -40,6 +40,12 @@ engine analogue of \code{inla.posterior.sample()}. Each draw picks an outer-grid
 cell \code{k ~ Categorical(weights)} and then samples that cell's inner Gaussian,
 so the draws are i.i.d. samples from \verb{sum_k w_k N(m_k, V_k)}.
 
+With an applied \code{subspace_debias = list(method = "exact")} correction,
+rows are sampled from the retained full latent cell chains and corrected
+cell weights. Their \code{draws_kind} is \code{"mcmc_mixture"}; \code{source_rows} and
+\code{cells} identify their origin, and \code{theta} contains the paired cell nodes.
+Monte Carlo uncertainty depends on the source chains and IS estimates.
+
 Sampling the mixture is the faithful primitive for marginalizing nonlinear
 derived quantities (e.g. \code{plogis(eta_2) - plogis(eta_1)}, expected-cover
 products \code{p * mu}): compute the derived quantity per draw, then summarize.

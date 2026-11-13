@@ -1,30 +1,6 @@
-# =============================================================================
-# subspace_debias.R -- the reliability band as the debias SELECTOR.
-#
-# The engine's stated composition is that exact MCMC corrects only the residual
-# directions the deterministic approximation is biased in. Before this the
-# escalation was whole-fit: tulpa_re_cov_nested -> tulpa_re_cov_gibbs, every
-# coordinate paying the sampler's price including the ones the Gaussian already
-# fits. Meanwhile the inner-layer diagnostics are PER INDEX -- gamma_3
-# (src/inner_laplace_skew.h) and the inner importance k-hat
-# (src/inner_laplace_is.h) both score one probed latent coordinate at a time --
-# so the map of which directions need exact treatment already exists on the fit.
-#
-# This file turns that map into a selector. `.subspace_select()` bands every
-# probed index, takes S = the misfit set, optionally closes it under strong
-# posterior coupling, and hands S to the compiled sampler
-# (src/subspace_debias.h), which corrects x_S exactly with x_{-S} carried at its
-# Gaussian conditional. `.subspace_node_draws()` puts the sampled coordinates
-# back together with the Gaussian ones.
-#
-# WHAT THE APPROXIMATION IS. Conditioning x_{-S} on the Gaussian is not exact:
-# the Gaussian conditional is not the true conditional, so error enters in
-# exactly the directions being corrected unless the couplings across the S
-# boundary are weak. That is what the closure rule addresses and what the
-# recovery gate measures -- see tests/testthat/test-subspace-debias-recovery.R
-# for the both-ways numbers, and NEWS.md for the measured coverage and cost
-# against the full Gibbs debias.
-# =============================================================================
+# Select latent directions from the inner reliability bands, construct the
+# Gaussian-conditioned fast correction or full-latent MH correction, and
+# combine cells using their declared outer integration measure.
 
 # Rank of a band, for "at or above this floor" comparisons. NA (never assessed)
 # ranks below `good`, so an unscored coordinate is never selected on the
@@ -132,19 +108,46 @@
   list(idx = sort(c(idx, as.integer(cand))), added = sort(as.integer(cand)))
 }
 
+.subspace_integer <- function(value, name, minimum = 1L) {
+  if (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
+      value < minimum || value != floor(value) || value > .Machine$integer.max) {
+    stop("`", name, "` must be a whole number >= ", minimum, ".", call. = FALSE)
+  }
+  as.integer(value)
+}
+
+.subspace_indices <- function(value, name) {
+  if (is.null(value)) return(NULL)
+  if (!is.numeric(value) || anyNA(value) || any(!is.finite(value)) ||
+      any(value < 1 | value > .Machine$integer.max | value != floor(value)) ||
+      anyDuplicated(value)) {
+    stop("`", name, "` must contain distinct positive whole numbers.", call. = FALSE)
+  }
+  as.integer(value)
+}
+
+.subspace_method <- function(value) {
+  value <- value %||% "fast"
+  if (!is.character(value) || length(value) != 1L || is.na(value) ||
+      !value %in% c("fast", "exact")) {
+    stop("`subspace_debias$method` must be 'fast' or 'exact'.", call. = FALSE)
+  }
+  unname(value)
+}
+
 # Normalize the `control$subspace_debias` value into a settings list, or NULL
 # when the correction is off. `TRUE` takes every default; a list overrides the
 # entries it names. `idx` pins the set explicitly and skips the selector
 # entirely, which is what makes the both-ways closure comparison possible
 # without a second code path.
-.subspace_debias_config <- function(spec) {
+.subspace_debias_config <- function(spec, cila = NULL) {
   if (is.null(spec) || identical(spec, FALSE)) return(NULL)
   if (isTRUE(spec)) spec <- list()
   if (!is.list(spec)) {
     stop("`control$subspace_debias` must be TRUE, FALSE, or a list of ",
          "settings.", call. = FALSE)
   }
-  known <- c("idx", "probe", "band", "closure", "closure_max", "n_iter",
+  known <- c("method", "idx", "probe", "band", "closure", "closure_max", "n_iter",
              "warmup", "thin", "n_draws")
   unknown <- setdiff(names(spec), known)
   if (length(unknown)) {
@@ -157,17 +160,28 @@
     stop("`control$subspace_debias$band` must be one of ",
          paste(names(.SUBSPACE_BAND_RANK), collapse = ", "), ".", call. = FALSE)
   }
-  list(
-    idx         = if (is.null(spec$idx)) NULL else as.integer(spec$idx),
-    probe       = if (is.null(spec$probe)) NULL else as.integer(spec$probe),
+  method <- .subspace_method(spec$method)
+  if (identical(method, "exact") && !is.null(cila) && !identical(cila, FALSE)) {
+    stop("`subspace_debias$method = 'exact'` includes the outer IS correction; ",
+         "choose one of `subspace_debias` and `cila`.", call. = FALSE)
+  }
+  out <- list(
+    method      = method,
+    idx         = .subspace_indices(spec$idx, "control$subspace_debias$idx"),
+    probe       = .subspace_indices(spec$probe, "control$subspace_debias$probe"),
     band        = band,
     closure     = spec$closure %||% FALSE,
-    closure_max = as.integer(spec$closure_max %||% .nl_diag("debias_closure_max")),
-    n_iter      = as.integer(spec$n_iter %||% .nl_diag("debias_n_iter")),
-    warmup      = as.integer(spec$warmup %||% .nl_diag("debias_warmup")),
-    thin        = as.integer(spec$thin %||% .nl_diag("debias_thin")),
-    n_draws     = as.integer(spec$n_draws %||% .nl_diag("debias_n_draws"))
+    closure_max = spec$closure_max %||% .nl_diag("debias_closure_max"),
+    n_iter      = spec$n_iter %||% .nl_diag("debias_n_iter"),
+    warmup      = spec$warmup %||% .nl_diag("debias_warmup"),
+    thin        = spec$thin %||% .nl_diag("debias_thin"),
+    n_draws     = spec$n_draws %||% .nl_diag("debias_n_draws")
   )
+  for (nm in c("n_iter", "warmup", "thin", "n_draws", "closure_max")) {
+    minimum <- if (nm %in% c("warmup", "closure_max")) 0 else 1
+    out[[nm]] <- .subspace_integer(out[[nm]], paste0("control$subspace_debias$", nm), minimum)
+  }
+  out
 }
 
 # Select the coordinates to correct from a probe solve.
@@ -246,12 +260,23 @@
 # which is the C++ side's "never enter the sampler" contract.
 .subspace_debias_request <- function(spec) {
   if (is.null(spec)) return(NULL)
-  idx <- as.integer(spec$idx)
-  if (!length(idx)) return(NULL)
-  list(idx    = idx,
-       n_iter = as.integer(spec$n_iter %||% .nl_diag("debias_n_iter")),
-       warmup = as.integer(spec$warmup %||% .nl_diag("debias_warmup")),
-       thin   = as.integer(spec$thin   %||% .nl_diag("debias_thin")))
+  if (!is.list(spec)) stop("`debias` must be NULL or a list.", call. = FALSE)
+  idx <- as.integer(.subspace_indices(spec$idx, "debias$idx"))
+  exact <- identical(.subspace_method(spec$method), "exact")
+  if (!length(idx) && !exact) return(NULL)
+  out <- list(idx    = idx,
+       n_iter = .subspace_integer(spec$n_iter %||% .nl_diag("debias_n_iter"), "debias$n_iter"),
+       warmup = .subspace_integer(spec$warmup %||% .nl_diag("debias_warmup"), "debias$warmup", 0L),
+       thin   = .subspace_integer(spec$thin %||% .nl_diag("debias_thin"), "debias$thin"))
+  if (as.double(out$n_iter) + out$warmup >= .Machine$integer.max) {
+    stop("The total subspace sweep count exceeds the native integer range.", call. = FALSE)
+  }
+  if (exact) {
+    out$method <- "exact"
+    if (!is.null(spec$importance)) out$importance <- spec$importance
+    else if (isTRUE(spec$correct_outer)) out$importance <- .subspace_importance
+  }
+  out
 }
 
 # What a fit records about the escalation, whether or not anything was
@@ -260,7 +285,7 @@
 # corrected can be told from one that was not without re-reading the bands.
 .subspace_debias_record <- function(sel, cfg, accept = NA_real_,
                                     declined = NA_character_) {
-  list(idx = sel$idx, bands = sel$bands, closure_added = sel$added,
+  list(method = cfg$method, idx = sel$idx, bands = sel$bands, closure_added = sel$added,
        selected_by = sel$selected_by, band_floor = cfg$band,
        closure = cfg$closure, n_iter = cfg$n_iter, warmup = cfg$warmup,
        thin = cfg$thin, accept = accept, declined = declined)
@@ -333,8 +358,11 @@
 # retain; it is recorded as declined rather than silently reporting no
 # neighbours found.
 .nl_subspace_debias_attach <- function(res, cfg, redispatch, p_fixed,
-                                       beta_names = NULL) {
+                                       beta_names = NULL, remoments = identity) {
   if (is.null(cfg)) return(res)
+  res$inference_mode <- "structured"
+  res$inference_tier <- 2L
+  res$target <- "Laplace outer-cell weights with Gaussian latent conditionals"
   if (!is.null(cfg$probe)) {
     stop("`control$subspace_debias$probe` is a `tulpa_re_cov_nested()` setting. ",
          "On a grid or joint nested fit the selector reads the bands the ",
@@ -346,7 +374,7 @@
   cl_declined <- if (!identical(cfg$closure, FALSE) && is.null(res$H_joint))
     "closure_needs_joint_hessian" else NA_character_
   if (!is.na(cl_declined)) sel$added <- integer(0)
-  if (!length(sel$idx)) {
+  if (!length(sel$idx) && !identical(cfg$method, "exact")) {
     # No bands at all is a different answer from "every band came back good":
     # the selector was never given anything to read (control$diagnose_skew off,
     # or a backend that declined the inner diagnostic).
@@ -355,9 +383,14 @@
                                                    declined = cl_declined)
     return(res)
   }
-  out <- tryCatch(redispatch(.subspace_debias_request(
-    list(idx = sel$idx, n_iter = cfg$n_iter, warmup = cfg$warmup,
-         thin = cfg$thin))), error = function(e) NULL)
+  request <- .subspace_debias_request(c(cfg, list(correct_outer = TRUE)) |>
+    utils::modifyList(list(idx = sel$idx)))
+  out <- if (identical(cfg$method, "exact")) redispatch(request)
+         else tryCatch(redispatch(request), error = function(e) NULL)
+  if (identical(cfg$method, "exact")) {
+    return(.nl_subspace_exact_attach(res, out, sel, cfg, p_fixed,
+                                      beta_names, remoments))
+  }
   if (is.null(out) || is.null(out$debias_draws_per_grid)) {
     res$subspace_debias <- .subspace_debias_record(sel, cfg,
                                                    declined = "redispatch_failed")
@@ -377,5 +410,199 @@
   res$subspace_debias <- .subspace_debias_record(
     sel, cfg, accept = as.numeric(out$debias_accept %||% NA_real_),
     declined = cl_declined)
+  res$subspace_debias$within_cell_target <- "joint density on the Gaussian conditional-mean surface"
+  res$subspace_debias$cell_draws <- out$debias_draws_per_grid
+  res$subspace_debias$cell_modes <- out$modes
+  res$target <- "Gaussian-conditioned subspace surface with Gaussian nuisance carry and Laplace outer weights"
+  res
+}
+
+# Independent final IS estimates replace the Laplace cell integrals. The
+# normalized weights retain finite-particle and outer-quadrature uncertainty.
+.subspace_outer_correction <- function(weights, estimates, log_ratios) {
+  cols <- c("log_correction", "particle_ess", "n_particles", "log_estimate_sd",
+            "pilot_evaluations", "pareto_k", "k_threshold")
+  values <- matrix(NA_real_, length(weights), length(cols),
+                    dimnames = list(NULL, cols))
+  for (k in seq_along(weights)) {
+    e <- estimates[[k]]
+    if (is.numeric(e) && length(e) == length(cols)) values[k, ] <- e
+  }
+  active <- which(is.finite(weights) & weights > 0)
+  reason <- if (!length(active)) "no_positive_cell_weight"
+    else if (any(!is.finite(values[active, "log_correction"]))) "cell_estimator_unavailable"
+    else if (any(vapply(active, function(k)
+      length(log_ratios[[k]]) != values[k, "n_particles"], logical(1))))
+      "cell_importance_weights_unavailable" else NA_character_
+  ps <- NULL
+  threshold <- NA_real_
+  if (is.na(reason)) {
+    total <- sum(values[active, "n_particles"])
+    pooled <- unlist(lapply(active, function(k)
+      log(weights[k]) + log_ratios[[k]] + log(total) - log(values[k, "n_particles"])),
+      use.names = FALSE)
+    ps <- tulpa_psis(pooled)
+    threshold <- .ps_khat_threshold(length(pooled))
+    reason <- if (length(pooled) < .PSIS_MIN_EVAL) "draws_too_few"
+      else if (!is.finite(ps$pareto_k)) "nonfinite_pareto_k"
+      else if (ps$pareto_k >= threshold) "pareto_k_above_threshold" else NA_character_
+  }
+  out <- list(applied = is.na(reason), declined = reason,
+              diagnostics = as.data.frame(values), laplace_weights = weights,
+              pareto_k = ps$pareto_k %||% NA_real_, k_threshold = threshold,
+              is_ess = ps$is_ess %||% NA_real_,
+              scope = "stratified latent importance correction on retained outer cells")
+  if (is.na(reason)) {
+    lw <- rep(-Inf, length(weights))
+    lw[active] <- log(weights[active]) + values[active, "log_correction"]
+    out$log_normalizer <- .tulpa_logsumexp(lw)
+    out$weights <- exp(lw - out$log_normalizer)
+    out$log_correction <- values[, "log_correction"]
+  }
+  out
+}
+
+# A node and one retained chain row identify the complete latent state.
+.subspace_joint_draws <- function(nodes, modes, weights, n_draws) {
+  active <- which(weights > 0 & is.finite(weights))
+  if (any(vapply(active, function(k) {
+    d <- nodes[[k]]
+    !is.matrix(d) || !nrow(d) || ncol(d) != ncol(modes) || any(!is.finite(d))
+  }, logical(1)))) {
+    stop("Exact subspace correction requires a full latent chain at every weighted cell.",
+         call. = FALSE)
+  }
+  picks <- sample.int(length(weights), n_draws, replace = TRUE, prob = weights)
+  rows <- integer(n_draws)
+  joint <- matrix(NA_real_, n_draws, ncol(modes))
+  for (k in unique(picks)) {
+    at <- which(picks == k)
+    rows[at] <- sample.int(nrow(nodes[[k]]), length(at), replace = TRUE)
+    joint[at, ] <- sweep(nodes[[k]][rows[at], , drop = FALSE], 2L, modes[k, ], `+`)
+  }
+  list(draws = joint, picks = picks, rows = rows)
+}
+
+.subspace_posterior_draws <- function(fit, idx, n) {
+  record <- fit$subspace_debias
+  if (!identical(record$method, "exact") || !isTRUE(record$outer$applied)) return(NULL)
+  D <- ncol(record$cell_modes)
+  idx <- idx %||% seq_len(D)
+  if (!is.numeric(idx) || anyNA(idx) || any(idx < 1L | idx > D | idx != floor(idx))) {
+    stop("`idx` must index the corrected latent vector.", call. = FALSE)
+  }
+  ds <- .subspace_joint_draws(record$cell_draws, record$cell_modes, fit$weights, n)
+  out <- ds$draws[, idx, drop = FALSE]
+  attr(out, "cells") <- ds$picks
+  attr(out, "source_rows") <- ds$rows
+  attr(out, "scope") <- "latent"
+  attr(out, "draws_kind") <- "mcmc_mixture"
+  attr(out, "theta") <- .nl_theta_matrix(fit)[ds$picks, , drop = FALSE]
+  attr(out, "theta_within_cell") <- "node"
+  out
+}
+
+.subspace_chain_diagnostics <- function(fit, measures, probs, pars = NULL) {
+  nodes <- fit$subspace_debias$cell_draws
+  active <- which(fit$weights > 0)
+  do.call(rbind, lapply(active, function(k) {
+    d <- nodes[[k]]
+    colnames(d) <- paste0("latent_", seq_len(ncol(d)))
+    fixed <- fit$fixed_names
+    if (length(fixed)) colnames(d)[seq_along(fixed)] <- fixed
+    out <- .tulpa_chain_diag_table(list(draws = d, param_names = colnames(d),
+      n_chains = 1L), pars, measures, probs)
+    if (is.null(out)) return(NULL)
+    out$cell <- k
+    out$weight <- fit$weights[k]
+    out
+  }))
+}
+
+# Express the native ratio against the retained fit's Laplace integral. The
+# two mode solves may differ numerically; folded hyperpriors are separate.
+.subspace_rebase_importance <- function(res, out) {
+  n <- length(res$weights)
+  base_prior <- .nl_log_hyperprior_folded(res, n)
+  run_prior <- .nl_log_hyperprior_folded(out, n)
+  if (length(out$log_marginal) != n || is.null(base_prior) || is.null(run_prior)) {
+    stop("Exact subspace cell integrals must align with the retained grid.", call. = FALSE)
+  }
+  shift <- (out$log_marginal - run_prior) - (res$log_marginal - base_prior)
+  active <- which(res$weights > 0)
+  shift[setdiff(seq_len(n), active)] <- NA_real_
+  for (k in seq_len(n)) {
+    if (length(out$debias_importance_per_grid[[k]])) {
+      out$debias_importance_per_grid[[k]][1L] <-
+        out$debias_importance_per_grid[[k]][1L] + shift[k]
+      out$debias_importance_log_weights_per_grid[[k]] <-
+        out$debias_importance_log_weights_per_grid[[k]] + shift[k]
+    }
+  }
+  out$debias_reference_shift <- shift
+  out
+}
+
+.subspace_attach_diagnostics <- function(fit, outer) {
+  fields <- grep("^pareto_k", names(fit), value = TRUE)
+  fit$subspace_debias$laplace_diagnostics <- fit[fields]
+  fit[fields] <- NULL
+  fit$pareto_k <- outer$pareto_k
+  fit$pareto_k_is_ess <- outer$is_ess
+  fit$pareto_k_scope <- outer$scope
+  fit$pareto_k_declined <- NA_character_
+  fit$pareto_k_proposal_source <- "full-latent t at retained outer cells"
+  fit$pareto_k_first_pass <- NA_real_
+  fit
+}
+
+.nl_subspace_exact_attach <- function(res, out, sel, cfg, p_fixed,
+                                       beta_names, remoments) {
+  if (is.null(out$debias_draws_per_grid) || is.null(out$debias_importance_per_grid)) {
+    stop("Exact subspace correction was not returned by the latent solver.", call. = FALSE)
+  }
+  out <- .subspace_rebase_importance(res, out)
+  outer <- .subspace_outer_correction(res$weights, out$debias_importance_per_grid,
+    out$debias_importance_log_weights_per_grid)
+  record <- .subspace_debias_record(sel, cfg, out$debias_accept,
+    declined = outer$declined)
+  record$within_cell_target <- "p(x | theta_k, y)"
+  record$within_cell_applied <- vapply(out$debias_draws_per_grid,
+    function(d) is.matrix(d) && nrow(d) > 0L, logical(1))
+  record$cell_declined <- out$debias_declined
+  record$outer <- outer
+  record$laplace_solver_shift <- out$debias_reference_shift
+  res$subspace_debias <- record
+  res$inference_mode <- "structured"
+  res$inference_tier <- 2L
+  if (!outer$applied) {
+    res$target <- "Laplace outer-cell weights with Gaussian latent conditionals"
+    return(res)
+  }
+  res$subspace_debias$laplace_log_marginal <- res$log_marginal
+  res <- .subspace_attach_diagnostics(res, outer)
+  res$weights <- outer$weights
+  at <- which(res$weights > 0)
+  res$log_marginal[at] <- res$log_marginal[at] + outer$log_correction[at]
+  if (is.finite(res$log_evidence %||% NA_real_))
+    res$log_evidence <- res$log_evidence + outer$log_normalizer
+  res <- remoments(res)
+  ds <- .subspace_joint_draws(out$debias_draws_per_grid, out$modes,
+                               res$weights, cfg$n_draws)
+  res$joint_latent_draws <- ds$draws
+  res$draws <- ds$draws[, seq_len(p_fixed), drop = FALSE]
+  colnames(res$draws) <- beta_names %||% res$fixed_names
+  res$means <- res$beta_mean <- colMeans(res$draws)
+  res$sds <- res$beta_sd <- apply(res$draws, 2L, stats::sd)
+  res$n_samples <- nrow(res$draws)
+  res$draw_nodes <- ds$picks
+  res$draws_theta <- .nl_theta_matrix(res)[ds$picks, , drop = FALSE]
+  res$subspace_debias$source_rows <- ds$rows
+  res$subspace_debias$cell_draws <- out$debias_draws_per_grid
+  res$subspace_debias$cell_modes <- out$modes
+  res$weights_source <- "subspace_is"
+  res$target <- "finite-grid IS approximation to p(x, theta | y), with true conditional MH within cells"
+  res$draws_kind <- "mcmc_mixture"
+  res$n_fixed <- res$n_fixed %||% as.integer(p_fixed)
   res
 }

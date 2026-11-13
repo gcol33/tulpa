@@ -141,14 +141,19 @@ Non-spatial path only.}
 \item{skew_idx}{1-based latent indices to probe (in the \verb{[beta | random effects]} layout of \code{mode}). \code{NULL} with \code{compute_skew = TRUE} probes every
 latent index.}
 
-\item{debias}{Subspace debias: a list with \code{idx} (1-based
-latent indices to correct by Metropolis along the Gaussian-conditional-mean
-surface through the mode) and optional \code{n_iter} / \code{warmup} / \code{thin}. The
-result then carries \code{debias_draws} (\verb{n_kept x length(idx)}, the sampled
-\code{x_S - mode_S}), \code{debias_sigma_ss} (the inner Laplace's own marginal
-covariance of \code{x_S}), \code{debias_accept} and \code{debias_idx}. \code{NULL} (default) or
-an empty \code{idx} leaves the solve bit-for-bit as it was and consumes no
-random number. Non-spatial path only.}
+\item{debias}{Subspace correction, a list with \code{idx} (1-based latent
+indices), \code{method} (\code{"fast"} by default, or \code{"exact"}), and optional
+\code{n_iter} / \code{warmup} / \code{thin}. Fast correction samples the true density
+on the Gaussian conditional-mean surface and returns selected offsets
+\code{x_S - mode_S} in \code{debias_draws}, with \code{debias_sigma_ss}, \code{debias_accept}
+and \code{debias_idx}. An empty fast selection consumes no randomness.
+Exact correction jointly proposes the selected coordinates and Gaussian
+conditional nuisance residuals, with their proposal density in the MH
+ratio. It retains the full state on rejection and returns full latent
+offsets in \code{debias_draws}, natural-coordinate \code{joint_latent_draws},
+fixed-effect \code{draws} and paired random-effect \code{re} draws. This conditional
+target is Tier 1 for the supplied fixed hyperparameters. An empty exact
+selection uses full Gaussian independence MH. Non-spatial path only.}
 }
 \value{
 A list with:

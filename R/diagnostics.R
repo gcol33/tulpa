@@ -40,6 +40,18 @@
     what    = paste("approximation reliability, scoped per backend by",
                     ".APPROX_SCOPE (laplace_diagnostics.R)")
   ),
+  mcmc_mixture = list(
+    fn = function(fit, pars, measures, probs) {
+      out <- .subspace_chain_diagnostics(fit, measures, probs, pars)
+      if (is.null(out)) return(NULL)
+      attr(out, "subspace_outer_correction") <- fit$subspace_debias$outer$diagnostics
+      attr(out, "pareto_k") <- fit$subspace_debias$outer$pareto_k
+      attr(out, "scope") <- fit$subspace_debias$outer$scope
+      out
+    },
+    honours = c("pars", "measures", "probs"),
+    what = "outer importance reliability and within-cell source-chain mixing"
+  ),
   point = list(
     fn      = function(fit, pars, measures, probs) {
                 message(.tulpa_non_chain_msg(fit))
@@ -75,6 +87,11 @@
 #'     this table and its attributes.}
 #'   \item{point summaries}{no sample to diagnose; returns `NULL` with a
 #'     message naming the backend.}
+#'   \item{resampled within-cell chains}{the original cell-chain diagnostic
+#'     table, including cell indices and weights. The
+#'     `subspace_outer_correction` attribute contains per-cell IS diagnostics;
+#'     `pareto_k` and `scope` describe the stratified outer correction.
+#'     Monte Carlo uncertainty depends on those source chains and estimates.}
 #' }
 #'
 #' Provenance is read from `$draws_kind` (stamped by `tulpa_dispatch`), falling

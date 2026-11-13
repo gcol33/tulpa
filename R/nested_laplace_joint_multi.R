@@ -2424,7 +2424,11 @@
             phi_grid_per_arm = .joint_multi_phi_per_arm(res$theta_grid,
                                                         arm_names),
             debias = req)),
-        p_fixed = fixed$n_fixed, beta_names = fixed$names)
+        p_fixed = fixed$n_fixed, beta_names = fixed$names,
+        remoments = function(r) .joint_posterior_moments_multi(
+            r, prepared, axis_offsets, joint_grid, cp,
+            int_weights = if (is_design_weighted) r$weights else NULL,
+            support = prov$read, within = within_cell))
     # Corrected integrated Laplace, over the same settled
     # grid and through the same `call_kernel`.
     res <- .nl_cila_attach(

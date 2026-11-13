@@ -1156,6 +1156,12 @@
 #' @keywords internal
 .field_point_eta <- function(object, src, newdata, sel = NULL,
                              accessor = "predict") {
+  if (isTRUE(object$subspace_debias$outer$applied) &&
+      identical(object$subspace_debias$method, "exact")) {
+    active <- which(src$weights > 0)
+    for (k in active) src$modes[k, ] <- object$subspace_debias$cell_modes[k, ] +
+      colMeans(object$subspace_debias$cell_draws[[k]])
+  }
   w <- src$weights
   on <- is.finite(w) & w > 0 & is.finite(rowSums(src$modes))
   if (!any(on)) {
@@ -1181,6 +1187,8 @@
 # of each row as `"cells"`.
 #' @keywords internal
 .field_latent_draws <- function(object, src, S) {
+  corrected <- .subspace_posterior_draws(object, NULL, S)
+  if (!is.null(corrected)) return(corrected)
   if (isTRUE(src$point)) {
     n <- nrow(src$modes)
     rows <- if (S <= n) sample.int(n, S)

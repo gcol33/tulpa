@@ -58,6 +58,7 @@
 #ifndef TULPA_INNER_CILA_H
 #define TULPA_INNER_CILA_H
 
+#include "inner_gaussian_draw.h"
 #include "hard_constraints.h"
 #include "laplace_cholesky.h"
 #include "sobol.h"
@@ -327,35 +328,18 @@ inline CilaOutcome compute_inner_cila(
   }
   for (int i0 = 0; i0 < M; i0 += CILA_DRAW_CHUNK) {
     const int nc = std::min(CILA_DRAW_CHUNK, M - i0);
-    if (use_sparse) {
-      for (int c = 0; c < nc; c++) {
-        for (int j = 0; j < n_x; j++) {
-          eps_block[static_cast<std::size_t>(c) * n_x + j] =
-              eps[static_cast<std::size_t>(j) * M + (i0 + c)];
-        }
-      }
-      if (!sparse_solver.apply_inv_chol_factor(eps_block.data(), block.data(),
-                                               n_x, nc)) {
-        out.declined = "sparse_factor_not_ll";
-        out.log_w.clear();
-        out.fixed.clear();
-        out.n_points = 0;
-        return out;
-      }
-    } else {
-      for (int c = 0; c < nc; c++) {
-        // Back-substitution L' draw = eps_i, the only linear algebra per draw.
-        double* draw = block.data() + static_cast<std::size_t>(c) * n_x;
-        for (int j = n_x - 1; j >= 0; j--) {
-          double sum = eps[static_cast<std::size_t>(j) * M + (i0 + c)];
-          for (int k = j + 1; k < n_x; k++) {
-            sum -= chol.L[static_cast<std::size_t>(k) +
-                          static_cast<std::size_t>(j) * n_x] * draw[k];
-          }
-          draw[j] = sum /
-              chol.L[static_cast<std::size_t>(j) + static_cast<std::size_t>(j) * n_x];
-        }
-      }
+    eps_block.resize(static_cast<std::size_t>(n_x) * nc);
+    for (int c = 0; c < nc; ++c)
+      for (int j = 0; j < n_x; ++j)
+        eps_block[static_cast<std::size_t>(c) * n_x + j] =
+            eps[static_cast<std::size_t>(j) * M + i0 + c];
+    if (!inner_gaussian_transform(n_x, nc, chol, sparse_solver, use_sparse,
+                                  eps_block.data(), block.data())) {
+      out.declined = "sparse_factor_not_ll";
+      out.log_w.clear();
+      out.fixed.clear();
+      out.n_points = 0;
+      return out;
     }
     for (int c = 0; c < nc; c++) {
       const int i = i0 + c;

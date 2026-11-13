@@ -869,20 +869,15 @@
 #'     Such a fit therefore reports what it reported before the default moved, to
 #'     the bit -- a declined coefficient keeps the grid-mixture read. See
 #'     [tulpa_nested_laplace()] for the measurement behind the default.
-#'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
-#'     inner-layer diagnostics flagged, by Metropolis on the true joint density along the
-#'     Gaussian-conditional-mean surface through each cell's mode, and leave the
-#'     rest at their Gaussian conditional. That nuisance carry and the Laplace
-#'     outer weights remain approximations, so this remains Tier 2.
-#'     Settings and semantics are the ones
-#'     documented on [tulpa_nested_laplace()]. On a fully coupled fit `gamma_3`
-#'     is `NaN` for every arm, so the selector rests on the derivative-free
-#'     inner Pareto-k-hat; where that also bands the
-#'     coordinate reliable, `idx` pins the set explicitly. An EMPTY selection
-#'     leaves the fit bit-for-bit identical to the plain path. A fit whose
-#'     inner solve took the s2z rank-1 or the PSD eigen-clamp path carries no
-#'     usable factor to build the surface from and is left uncorrected, the same
-#'     two paths `diagnose_skew` declines on.
+#'   * `subspace_debias` (`FALSE`) -- the same `method = "fast"` or
+#'     `method = "exact"` composition and controls as [tulpa_nested_laplace()].
+#'     Fast correction uses the Gaussian conditional-mean surface and keeps
+#'     Gaussian nuisance carry and Laplace cell weights. Exact correction
+#'     applies full-latent true-density MH within cells and shared unbiased IS
+#'     correction of their weights, gated by PSIS. Finite outer-grid and
+#'     importance errors keep the result Tier 2. Hard constraints and a solver
+#'     without a usable Cholesky factor decline explicitly. The selected set,
+#'     per-cell source chains and correction diagnostics travel on the fit.
 #'   * `cila` (`FALSE`) -- corrected integrated Laplace, the second inner-layer
 #'     debias (after Lai, Margossian and Sheldon,
 #'     arXiv:2605.20345). At every outer cell it
@@ -1918,7 +1913,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # therefore requests the precision, the same way requesting the debias
     # already turns `keep_grid_hessians` on (gcol33/tulpa#862).
     keep_joint_prec <- {
-      sd_cfg <- .subspace_debias_config(control$subspace_debias)
+      sd_cfg <- .subspace_debias_config(control$subspace_debias, control$cila)
       !is.null(sd_cfg) && !identical(sd_cfg$closure, FALSE)
     }
     if (keep_joint_prec) store_Q <- TRUE
@@ -2253,7 +2248,7 @@ tulpa_nested_laplace_joint <- function(responses,
             diagnose_skew = diagnose_skew,
             skew_idx = skew_idx,
             skew_correct = skew_correct,
-            subspace_debias = .subspace_debias_config(control$subspace_debias),
+            subspace_debias = .subspace_debias_config(control$subspace_debias, control$cila),
             cila = .cila_config(control$cila),
             inner_refresh = inner_refresh,
             integration = integration,
@@ -2564,10 +2559,12 @@ tulpa_nested_laplace_joint <- function(responses,
     # are in place: the correction reports draws recombined from them, so it has
     # to see the settled grid the weights describe.
     res <- .nl_subspace_debias_attach(
-        res, .subspace_debias_config(control$subspace_debias),
+        res, .subspace_debias_config(control$subspace_debias, control$cila),
         redispatch = function(req) .joint_with_quiet_opts(
             kernel_fn(res$theta_grid, debias = req)),
-        p_fixed = fixed$n_fixed, beta_names = fixed$names)
+        p_fixed = fixed$n_fixed, beta_names = fixed$names,
+        remoments = function(r) .nl_posterior_moments(
+            r, paste0("joint_", type), within = within_cell))
     # Corrected integrated Laplace, over the same settled
     # grid and through the same kernel closure.
     res <- .nl_cila_attach(

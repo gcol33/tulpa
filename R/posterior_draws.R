@@ -22,6 +22,12 @@
 #' cell `k ~ Categorical(weights)` and then samples that cell's inner Gaussian,
 #' so the draws are i.i.d. samples from `sum_k w_k N(m_k, V_k)`.
 #'
+#' With an applied `subspace_debias = list(method = "exact")` correction,
+#' rows are sampled from the retained full latent cell chains and corrected
+#' cell weights. Their `draws_kind` is `"mcmc_mixture"`; `source_rows` and
+#' `cells` identify their origin, and `theta` contains the paired cell nodes.
+#' Monte Carlo uncertainty depends on the source chains and IS estimates.
+#'
 #' Sampling the mixture is the faithful primitive for marginalizing nonlinear
 #' derived quantities (e.g. `plogis(eta_2) - plogis(eta_1)`, expected-cover
 #' products `p * mu`): compute the derived quantity per draw, then summarize.
@@ -101,6 +107,8 @@ tulpa_posterior_draws.default <- function(fit, idx = NULL, n = 1000, ...) {
 tulpa_posterior_draws.tulpa_nested_laplace <- function(fit, idx = NULL,
                                                        n = 1000, ...) {
     n <- .nl_draws_check_n(n)
+    corrected <- .subspace_posterior_draws(fit, idx, n)
+    if (!is.null(corrected)) return(corrected)
 
     # The posterior IS the retained mixture: `.nested_fixed_moments()` is the one
     # marginalizer every nested-tier read goes through, so sampling reads exactly

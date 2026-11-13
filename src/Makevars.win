@@ -209,6 +209,7 @@ unity_exports.o: \
   inv_block_extract.h \
   hard_constraints.h \
   laplace_profile.h \
+  inner_gaussian_draw.h \
   sobol.h \
   inner_laplace_probe.h \
   linear_constraint_rows.h \
@@ -314,6 +315,7 @@ unity_glmm.o: \
   intrinsic_log_pdet.h \
   laplace_likelihoods.h \
   hmc_mass_lowrank.h \
+  inner_gaussian_draw.h \
   hard_constraints.h \
   laplace_cholesky.h \
   sobol.h \
@@ -386,6 +388,7 @@ unity_hmc.o: \
   laplace_newton_loop.h \
   joint_pd_step.h \
   coordinate_linalg.h \
+  temporal_gp_kernel.h \
   hmc_gradient_dispatch.h \
   laplace_profile.h \
   hmc_mass_st_gmrf.h \
@@ -449,7 +452,6 @@ unity_hmc.o: \
   checkpoint_io.h \
   hmc_svc_autodiff.h \
   hmc_hsgp_kernels.h \
-  temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
   glmm_oracle.h \
   autodiff.h \
@@ -575,6 +577,7 @@ unity_laplace.o: \
   svc_nc_apply.h \
   msgp_nc_apply.h \
   log_post_generic_impl.h \
+  inner_gaussian_draw.h \
   sobol.h \
   inner_laplace_probe.h \
   rwmh.h \
@@ -714,6 +717,7 @@ unity_nl.o: \
   spde_zero_mass.h \
   gpu_cuda.h \
   autodiff_utils.h \
+  inner_gaussian_draw.h \
   sobol.h \
   builtin_family_zi.h \
   fastmath.h \
@@ -816,6 +820,7 @@ unity_nl_joint.o: \
   builtin_family_zi.h \
   laplace_family_curvature.h \
   subspace_debias.h \
+  inner_gaussian_draw.h \
   sobol.h \
   fastmath.h \
   spde_zero_mass.h \
@@ -1066,6 +1071,7 @@ unity_spatial.o: \
   hmc_sampler_chain_state.h \
   hmc_sampler_funcs.h \
   hmc_sampler_config.h \
+  inner_gaussian_draw.h \
   hard_constraints.h \
   laplace_cholesky.h \
   sobol.h \

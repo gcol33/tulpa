@@ -84,6 +84,8 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put(buf, r.debias_accept);
     ckpt_put(buf, r.debias_scale);
     ckpt_put_str(buf, r.debias_declined);
+    ckpt_put_span(buf, r.debias_importance);
+    ckpt_put_span(buf, r.debias_importance_log_weights);
     // Corrected integrated Laplace
     ckpt_put<std::uint8_t>(buf, r.cila_requested ? 1u : 0u);
     ckpt_put_span(buf, r.cila_log_w);
@@ -138,6 +140,8 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.debias_accept      = rd.get<double>();
     r.debias_scale       = rd.get<double>();
     r.debias_declined    = rd.get_str();
+    r.debias_importance  = rd.get_span<double>();
+    r.debias_importance_log_weights = rd.get_span<double>();
     r.cila_requested     = (rd.get<std::uint8_t>() != 0);
     r.cila_log_w         = rd.get_span<double>();
     r.cila_fixed         = rd.get_span<double>();

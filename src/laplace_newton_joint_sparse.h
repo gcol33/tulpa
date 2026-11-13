@@ -676,7 +676,8 @@ inline void joint_newton_finalize_sparse(
                             solver, /*use_sparse=*/true,
                             eval_objective, x, debias,
                             result.converged ? live_factor_declined : nullptr,
-                            hard_on ? hard : nullptr);
+                            hard_on ? hard : nullptr,
+                            [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
 
         // With sum-to-zero pins the live factor is not of the inner Gaussian's
         // precision, so the correction draws through pinned_inner_gaussian(),

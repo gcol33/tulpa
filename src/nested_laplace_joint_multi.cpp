@@ -2664,7 +2664,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // The subspace sampler draws from R's RNG (rwmh.h), which is neither
     // reentrant nor schedule-independent, so a debiased grid is integrated
     // serially whatever the caller asked for.
-    if (debias && !debias->idx.empty()) n_threads_outer = 1;
+    if (debias && (!debias->idx.empty() || debias->exact)) n_threads_outer = 1;
     int n_outer = std::max(1, n_threads_outer);
 
     // Build the joint Hessian sparsity pattern + scatter index cache ONCE into

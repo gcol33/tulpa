@@ -1330,6 +1330,8 @@ tulpa_joint_axis_specs_from_grid <- function(
              inner_is_log_joint = res_x$inner_is_log_joint,
              inner_is_declined = res_x$inner_is_declined,
              debias_draws_per_grid = res_x$debias_draws_per_grid,
+             debias_importance_per_grid = res_x$debias_importance_per_grid,
+             debias_importance_log_weights_per_grid = res_x$debias_importance_log_weights_per_grid,
              debias_idx = res_x$debias_idx,
              debias_accept = res_x$debias_accept,
              debias_declined = res_x$debias_declined,

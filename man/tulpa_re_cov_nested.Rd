@@ -171,21 +171,22 @@ fixed effects, \code{\link[=ranef]{ranef()}}, \code{\link[=posterior_predict]{po
 criteria all read the node centres. \code{FALSE} keeps the mode. Off at
 \code{n_quad > 1} and whenever the subspace debias runs. Which nodes were
 centred is recorded in \code{mean_shift} on the returned fit.
-\item \code{subspace_debias}: subspace debias, \code{FALSE} by
-default. \code{TRUE} takes every default; a list overrides \code{band} (the
-inner-reliability floor a coordinate is selected at, default \code{"ok"}),
-\code{idx} (pin the corrected set explicitly, skipping the selector),
-\code{probe} (the latent indices scored, default the fixed effects),
-\code{closure} (\code{FALSE}, \code{TRUE}, or a partial-correlation threshold: grow
-the set by the precision-graph neighbours it is strongly coupled to),
-\code{closure_max}, and the sampler budget \code{n_iter} / \code{warmup} / \code{thin}.
-When the selected set is non-empty, each integration node reports the
-selected fixed-effect coordinates from Metropolis on the true density
-along the Gaussian-conditional-mean surface, and the rest
-from the Gaussian conditional given them; an EMPTY set leaves the fit
-bit-for-bit identical to the plain path. What was selected is recorded
-in \code{subspace_debias} on the returned fit. The Gaussian nuisance carry
-and approximate outer integration remain; the fit stays Tier 2.
+\item \code{subspace_debias}: latent Metropolis correction, \code{FALSE} by
+default. \code{TRUE} takes the defaults; a list accepts \code{method} (\code{"fast"}
+or \code{"exact"}), \code{band} (default \code{"ok"}), \code{idx}, \code{probe}, \code{closure},
+\code{closure_max}, \code{n_iter}, \code{warmup}, \code{thin}, and \code{n_draws}.
+Fast correction samples the joint density on the selected Gaussian
+conditional-mean surface, carries Gaussian nuisance conditionals, and
+keeps the Laplace cell weights. Exact correction uses full-latent
+true-density MH, including the Gaussian nuisance proposal density in
+the ratio, and corrects each cell's integral with the shared unbiased
+t importance estimator. Independent pilots calibrate the particle
+count; the existing PSIS k gate decides whether the correction applies.
+The finite outer design and importance estimates keep the result
+Tier 2. Applied exact correction returns paired fixed-effect, random-
+effect and covariance-node draws, with retained source chains and IS
+diagnostics in \code{subspace_debias}. Fast empty selections preserve the
+plain fit; exact empty selections use full Gaussian independence MH.
 }}
 }
 \value{

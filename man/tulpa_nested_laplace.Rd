@@ -264,30 +264,32 @@ moves 0.9510 -> 0.9542 at a standard error of 0.0070, with every class
 inside the acceptance the shipped gates use. A fit the correction cannot
 help -- a coupled one, whose location term is unreachable -- reports what
 it reported before, to the bit.
-\item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
-inner-layer diagnostics flagged, by Metropolis on the true joint density
-evaluated along the Gaussian-conditional-mean surface. The Gaussian
-nuisance carry and Laplace outer weights remain approximations, so this
-remains Tier 2. \code{TRUE} takes every default; a list
-overrides \code{band}
-(the inner-reliability floor a coordinate is selected at, default
-\code{"ok"}), \code{idx} (pin the corrected set explicitly, skipping the selector),
-\code{closure} / \code{closure_max} (grow the set by strongly coupled
-precision-graph neighbours: a coordinate strongly coupled to a member of
-the corrected set and left out of it is carried linearly, which is the
-error the correction removes, so requesting the closure also retains the
-modal cell's joint precision for the selector to read), the sampler
-budget \code{n_iter} / \code{warmup} / \code{thin}, and
-\code{n_draws}. The selector reads the per-index bands \code{diagnose_skew} already
-attached, so it costs no extra solve; the correction itself re-runs the
-settled grid once with the sampler on, and the fit then reports \verb{$draws}
--- the per-cell Metropolis sample for the selected coordinates, the rest
-from the Gaussian conditional given them -- instead of the
-Gaussian-mixture moments. An EMPTY selection leaves the fit bit-for-bit
-identical to the plain path. \verb{$subspace_debias} records what was selected,
-the bands it was read from, and the per-cell acceptance rate. Requesting
-it turns \code{keep_grid_hessians} on, since the recombination reads exactly
-those per-cell pieces.
+\item \code{subspace_debias} (\code{FALSE}) -- latent Metropolis correction, supplied as
+\code{TRUE} or a list. \code{method = "fast"} (default) samples the true joint
+density on the Gaussian conditional-mean surface of the selected
+coordinates, carries Gaussian nuisance conditionals, and keeps Laplace
+cell weights (Tier 2). Its empty selection consumes no randomness.
+\code{method = "exact"} proposes the full latent vector: a symmetric move in
+the selected coordinates and a fresh Gaussian conditional nuisance draw.
+The joint proposal density enters the MH ratio, and rejection retains
+the complete state. Each cell's kernel targets \code{p(x | theta_k, y)}.
+Independent full-dimensional t importance samples estimate the ratio of
+the true latent integral to its Laplace approximation. Independent pilots
+calibrate the particle count using the shared IS settings; the final
+unbiased integral estimate reweights the cell. The existing PSIS k
+diagnostic and gate assess the stratified joint correction. Finite
+importance and outer-grid errors
+remain, so the nested result stays Tier 2. Hard constraints and unusable
+Cholesky factors decline explicitly. Choose one of this exact composition
+and \code{cila}.
+Other settings are \code{band} (default \code{"ok"}), \code{idx} (explicit selected
+indices), \code{closure} / \code{closure_max} (precision-graph neighbours),
+\code{n_iter} (recorded sweeps), \code{warmup}, \code{thin}, and \code{n_draws} (reported
+mixture rows). The selector reads \code{diagnose_skew}'s per-index bands.
+The correction re-solves the settled grid. \verb{$subspace_debias} records
+the selected set, targets, acceptance, IS diagnostics and decline reason.
+An applied exact correction retains each full latent chain, its cell mode
+and paired row indices; \code{tulpa_posterior_draws()} samples those rows.
 \item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
 debias (after Lai, Margossian and Sheldon,
 arXiv:2605.20345). Where

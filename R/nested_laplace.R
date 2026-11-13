@@ -178,30 +178,32 @@
 #'     inside the acceptance the shipped gates use. A fit the correction cannot
 #'     help -- a coupled one, whose location term is unreachable -- reports what
 #'     it reported before, to the bit.
-#'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
-#'     inner-layer diagnostics flagged, by Metropolis on the true joint density
-#'     evaluated along the Gaussian-conditional-mean surface. The Gaussian
-#'     nuisance carry and Laplace outer weights remain approximations, so this
-#'     remains Tier 2. `TRUE` takes every default; a list
-#'     overrides `band`
-#'     (the inner-reliability floor a coordinate is selected at, default
-#'     `"ok"`), `idx` (pin the corrected set explicitly, skipping the selector),
-#'     `closure` / `closure_max` (grow the set by strongly coupled
-#'     precision-graph neighbours: a coordinate strongly coupled to a member of
-#'     the corrected set and left out of it is carried linearly, which is the
-#'     error the correction removes, so requesting the closure also retains the
-#'     modal cell's joint precision for the selector to read), the sampler
-#'     budget `n_iter` / `warmup` / `thin`, and
-#'     `n_draws`. The selector reads the per-index bands `diagnose_skew` already
-#'     attached, so it costs no extra solve; the correction itself re-runs the
-#'     settled grid once with the sampler on, and the fit then reports `$draws`
-#'     -- the per-cell Metropolis sample for the selected coordinates, the rest
-#'     from the Gaussian conditional given them -- instead of the
-#'     Gaussian-mixture moments. An EMPTY selection leaves the fit bit-for-bit
-#'     identical to the plain path. `$subspace_debias` records what was selected,
-#'     the bands it was read from, and the per-cell acceptance rate. Requesting
-#'     it turns `keep_grid_hessians` on, since the recombination reads exactly
-#'     those per-cell pieces.
+#'   * `subspace_debias` (`FALSE`) -- latent Metropolis correction, supplied as
+#'     `TRUE` or a list. `method = "fast"` (default) samples the true joint
+#'     density on the Gaussian conditional-mean surface of the selected
+#'     coordinates, carries Gaussian nuisance conditionals, and keeps Laplace
+#'     cell weights (Tier 2). Its empty selection consumes no randomness.
+#'     `method = "exact"` proposes the full latent vector: a symmetric move in
+#'     the selected coordinates and a fresh Gaussian conditional nuisance draw.
+#'     The joint proposal density enters the MH ratio, and rejection retains
+#'     the complete state. Each cell's kernel targets `p(x | theta_k, y)`.
+#'     Independent full-dimensional t importance samples estimate the ratio of
+#'     the true latent integral to its Laplace approximation. Independent pilots
+#'     calibrate the particle count using the shared IS settings; the final
+#'     unbiased integral estimate reweights the cell. The existing PSIS k
+#'     diagnostic and gate assess the stratified joint correction. Finite
+#'     importance and outer-grid errors
+#'     remain, so the nested result stays Tier 2. Hard constraints and unusable
+#'     Cholesky factors decline explicitly. Choose one of this exact composition
+#'     and `cila`.
+#'     Other settings are `band` (default `"ok"`), `idx` (explicit selected
+#'     indices), `closure` / `closure_max` (precision-graph neighbours),
+#'     `n_iter` (recorded sweeps), `warmup`, `thin`, and `n_draws` (reported
+#'     mixture rows). The selector reads `diagnose_skew`'s per-index bands.
+#'     The correction re-solves the settled grid. `$subspace_debias` records
+#'     the selected set, targets, acceptance, IS diagnostics and decline reason.
+#'     An applied exact correction retains each full latent chain, its cell mode
+#'     and paired row indices; `tulpa_posterior_draws()` samples those rows.
 #'   * `cila` (`FALSE`) -- corrected integrated Laplace, the second inner-layer
 #'     debias (after Lai, Margossian and Sheldon,
 #'     arXiv:2605.20345). Where
@@ -579,7 +581,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # per-cell fixed-effect mode + precision `.nested_fixed_moments()` reads, so
   # requesting it turns that retention on: without it there is nothing to
   # recombine the sampled coordinates with.
-  sd_cfg             <- .subspace_debias_config(control$subspace_debias)
+  sd_cfg             <- .subspace_debias_config(control$subspace_debias, control$cila)
   # Corrected integrated Laplace, the second inner debias.
   # Same shape as the subspace one: a second pass over the settled grid whose
   # per-cell particles are pooled into the reported draws.
@@ -922,7 +924,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       redispatch = function(req) .nl_dispatch_multi(
         cargs_no_ckpt, prior, likelihood = likelihood, debias = req,
         theta_grid_override = .nl_refined_theta(res)),
-      p_fixed = p_fixed, beta_names = colnames(X))
+      p_fixed = p_fixed, beta_names = colnames(X),
+      remoments = function(r) .nl_posterior_moments_multi(
+        r, r$blocks, r$axis_offsets, r$theta_grid, within = within_cell))
     res <- .nl_cila_attach(
       res, cila_cfg,
       redispatch = function(req) .nl_dispatch_multi(
@@ -1076,7 +1080,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     redispatch = function(req) .nl_dispatch(
       type, utils::modifyList(cargs_no_ckpt, list(debias = req)),
       .nl_refined_block(res, prior), prior),
-    p_fixed = p_fixed, beta_names = colnames(X))
+    p_fixed = p_fixed, beta_names = colnames(X),
+    remoments = function(r) .nl_posterior_moments(r, type, within = within_cell))
   res <- .nl_cila_attach(
     res, cila_cfg,
     redispatch = function(req) .nl_dispatch(

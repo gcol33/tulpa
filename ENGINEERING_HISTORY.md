@@ -6,6 +6,46 @@ a regression. Extracted from CLAUDE.md on 2026-09-17 to keep that file
 under the auto-load size limit — this file is reference material Claude
 reads on demand (grep by issue number or topic), not auto-loaded context.
 
+### Full-latent subspace MH and importance-corrected outer cells (gcol33/tulpa#1176)
+
+`subspace_debias$method = "fast"` samples the joint density on a Gaussian
+conditional-mean surface, carries Gaussian nuisance conditionals, and uses
+Laplace outer weights. `method = "exact"` proposes a symmetric selected-coordinate
+move together with a fresh Gaussian conditional residual. Its MH ratio includes
+the residual proposal density, and rejection retains the full latent state.
+Warmup tunes the selected-coordinate scale using its conditional acceptance
+probability at the retained residual. This separates scale adaptation from
+nuisance-proposal rejection; the recorded joint transition uses the full ratio.
+
+Each cell's integral is corrected by the shared full-dimensional t importance
+estimator, with independent calibration pilots and a final unbiased estimate.
+Raw estimates reweight the cells. PSIS scores stratified joint cell/particle
+ratios. Source chains, their row pairing, original Laplace weights and per-cell
+IS diagnostics are retained. A finite grid with normalized finite IS estimates
+remains Tier 2. The direct fixed-hyperparameter conditional kernel is Tier 1.
+
+On a four-group Poisson fixture with intercept/slope correlation 0.85, twelve
+independent corrected fits agreed with a 100,000-iteration full-joint NUTS run
+within 2.80 combined MCSE over latent and log-scale means, SDs and three
+quantiles (55 summaries). The fast surface's maximum discrepancy was 59.70 MCSE.
+Corrected fits took 1.72–1.86 seconds for 101 cells with 16,000 recorded sweeps
+per cell, 2,000 warmup sweeps and 439,552 IS evaluations. Fast fits took
+0.62–0.71 seconds, plus Gaussian nuisance reconstruction for comparison.
+The fast numerical output matched the base implementation byte-for-byte on
+the same seed. A separate Poisson random-effect covariance fixture agreed
+within 3.10 combined MCSE over eight independent fits.
+
+The original screen retained 60 of the 101 nodes; corrections use that retained
+support. Finite conditional chains also retain mixing error. At log(sigma)=0.75,
+a cell carrying 3.34% posterior mass had bulk ESS 11.6 and tail ESS 6.0 for one
+nuisance coordinate. The fifteen heaviest cells carried 62.80% mass and had
+maximum split Rhat 1.087. Replicated-summary agreement establishes the reported
+comparison; convergence of every conditional chain needs separate assessment.
+
+Validation is limited to these non-Gaussian fixtures and Gaussian controls.
+Exact correction declines hard constraints and unusable live factors. A new
+checkpoint magic protects the added internal IS state; the exported ABI stays 60.
+
 ### A placement is laid at the outer mode, and a screen ranks by its converged estimate (gcol33/tulpa#919)
 
 The full 25 km Calluna `occu_cover` fit (4,435 ICAR cells, 12,179 sites,
