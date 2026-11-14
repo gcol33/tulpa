@@ -69,7 +69,7 @@ for name, header in [('before', original), ('after', current), ('before_double',
 fixture = list(csv.DictReader((ROOT/'tests/testthat/fixtures/precision-primitives.csv').open()))
 xs = set(10.**(-8+16*i/10000) for i in range(10001))
 xs.update(i/2 for i in range(1,201))
-xs.update(float(r['x']) for r in fixture if r['kind']=='s')
+xs.update(float.fromhex(r['x']) for r in fixture if r['kind']=='s')
 for t in [2.**e for e in range(-6,4)]+[.25, (math.sqrt(8)-1)/2, 4.5, 10.,
           138619474.,8608.,401.,94.,41.,25.,18.,14.,12.,
           240095971.,12872.,554.,124.,53.,31.,21.,17.,
@@ -80,7 +80,7 @@ for t in [2.**e for e in range(-6,4)]+[.25, (math.sqrt(8)-1)/2, 4.5, 10.,
 mxs = set(10.**(-8+16*i/10000) for i in range(10001))
 mxs.update(-1+10.**(-16+16*i/5000) for i in range(5001))
 mxs.update(-10.**(-8+8*i/5000) for i in range(5001))
-mxs.update(float(r['x']) for r in fixture if r['kind']=='m')
+mxs.update(float.fromhex(r['x']) for r in fixture if r['kind']=='m')
 for t in [-.75, -.125, .125, 2., 2/9, -2/11,
           2*math.sqrt(.125)/(1-math.sqrt(.125)),
           -2*math.sqrt(.125)/(1+math.sqrt(.125))]:
@@ -135,11 +135,11 @@ with (WORK/'grid.csv').open('w',newline='') as f:
             writer.writerow(['s' if k>=0 else 'm',k,repr(x),mp.nstr(ref,25),*errs])
         print('finished',k,'seconds',time.time()-started,flush=True)
 for r in fixture:
-    x,k = float(r['x']),int(r['order']) if r['kind']=='s' else -1
+    x,k = float.fromhex(r['x']),int(r['order']) if r['kind']=='s' else -1
     ref = reference(x,k)
-    expected = float(r['expected'])
+    expected = float.fromhex(r['expected'])
     if float(ref)!=expected:
-        fixture_errors.append(dict(r,correct=repr(float(ref))))
+        fixture_errors.append(dict(r,correct=float(ref).hex()))
 result = dict(summary=summary,perturbation_max_ulp=perturbation,lgamma_calls={n:l.call_count() for n,l in libs.items()},fixture_rounding_differences=fixture_errors,seconds=time.time()-started)
 (WORK/'validation.json').write_text(json.dumps(result,indent=2))
 print(json.dumps(result,indent=2),flush=True)
