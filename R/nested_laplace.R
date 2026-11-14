@@ -73,6 +73,7 @@
 #' @param offset Optional per-observation offset added to the linear predictor
 #'   (length `length(y)`), as an `offset()` term in a model formula. Every
 #'   single- and multi-block kernel carries it, and `fitted_eta` includes it.
+#' @template device
 #' @param control Optional list of perf/numerical tuning knobs (statistical
 #'   arguments stay top-level), following the `control` convention of
 #'   [tulpa()]. Recognised elements (defaults in parentheses):
@@ -544,6 +545,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             control = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   outer_design <- control$outer_design
   if (!is.null(outer_design)) outer_design <- .nl_validate_outer_design(outer_design)
   quad_config <- .nl_aghq_config(control)

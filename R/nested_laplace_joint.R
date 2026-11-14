@@ -403,6 +403,7 @@
 #'   contribution through `evaluate_cell()` when the spec couples at least
 #' one arm.
 #'
+#' @template device
 #' @param control Optional list of perf/numerical tuning knobs (statistical
 #'   arguments stay top-level), following the `control` convention of
 #'   [tulpa()]. Recognised elements (defaults in parentheses):
@@ -1406,6 +1407,8 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     tulpa_check_control(control, .CONTROL_KEYS$nested_laplace_joint,
                    "tulpa_nested_laplace_joint")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
     hyperprior <- .hp_choice(match.arg(hyperprior))
     # An `hsgp` block given by its coordinates with `m` or `c` unset takes its
     # basis from the data: the fit runs at given bases, through the HSGP basis

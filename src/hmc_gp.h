@@ -25,8 +25,6 @@ using tulpa::CovType;
 using tulpa::GPData;
 using tulpa::MultiscaleGPData;
 using tulpa::MSGPSampler;
-using tulpa::GPSolver;
-using tulpa::GPSolverConfig;
 using tulpa_svc::compute_cov;
 
 // Conditioning constants for the GP NNGP kernels. Declared here, ahead of the

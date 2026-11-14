@@ -303,6 +303,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   axis_names <- vapply(specs, `[[`, character(1), "name")
 
   tulpa_check_control(control, .CONTROL_KEYS$hyper_grid, "tulpa_hyper_grid")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   adaptive_grid             <- isTRUE(control$adaptive_grid)
   adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
   adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
@@ -509,6 +511,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     adaptive_grid_info            = adaptive_info,
     var_of_means_consistency_info = consistency_info
   )
+  out <- .device_attach(out)
   class(out) <- c("tulpa_fit", "list")
   .hyper_attach_moments(out)
 }
@@ -654,6 +657,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     design = "ccd", ccd_declined = NULL, pareto_k = ccd$pareto_k,
     ccd_kind = ccd$kind, hyper_specs = specs, combine = combine,
     n_failed = state$n_failed, n_grid = nrow(ccd$grid))
+  out <- .device_attach(out)
   class(out) <- c("tulpa_fit", "list")
   out
 }

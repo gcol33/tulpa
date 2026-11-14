@@ -39,6 +39,8 @@ tulpa_gaussian <- function(formula, data,
                            beta_prior = .tulpa_default_beta_prior("gaussian"),
                            control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$gaussian, "tulpa_gaussian")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   sigma_beta <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("gaussian"))
   iter       <- as.integer(control$iter %||% 2000L)
   warmup     <- as.integer(control$warmup %||% 1000L)
@@ -88,5 +90,5 @@ tulpa_gaussian <- function(formula, data,
   fit$p <- ncol(X)
 
   class(fit) <- "tulpa_fit"
-  fit
+  .device_attach(fit)
 }

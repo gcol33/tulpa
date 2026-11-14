@@ -54,7 +54,8 @@ inline void gp_nngp_gradients(
     double phi,
     const GPData& gp_data,
     NNGPGradients& grads,
-    double /* epsilon */ = 1e-6
+    double /* epsilon */ = 1e-6,
+    const GPSolverConfig& solver = GPSolverConfig{}
 ) {
   int N = gp_data.n_obs;
   int nn = gp_data.nn;
@@ -176,7 +177,7 @@ inline void gp_nngp_gradients(
       // (alpha = C^{-1}c, beta = C^{-1}w_nb).
       Eigen::VectorXd alpha_vec(n_nb);
       if (!solve_neighbor_system(C_eigen, n_nb, c_eigen, alpha_vec, llt,
-                                 gp_data.solver_config)) {
+                                 solver)) {
         nngp_marginal_contrib(w[obs_idx], sigma2, my_grad_w[obs_idx],
                               tl_sigma2[t]);
         continue;
@@ -185,7 +186,7 @@ inline void gp_nngp_gradients(
       for (int j = 0; j < n_nb; j++) w_nb_eigen(j) = w[nb_idx[j]];
       Eigen::VectorXd beta_vec(n_nb);
       if (!solve_neighbor_system_second(C_eigen, n_nb, w_nb_eigen, beta_vec,
-                                        llt, gp_data.solver_config)) {
+                                        llt, solver)) {
         nngp_marginal_contrib(w[obs_idx], sigma2, my_grad_w[obs_idx],
                               tl_sigma2[t]);
         continue;

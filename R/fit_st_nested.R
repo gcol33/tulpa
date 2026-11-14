@@ -313,6 +313,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # misspelling (`rho_spatail`, `n_thread`) was accepted in silence and the fit
   # ran at the default (gcol33/tulpa#673).
   tulpa_check_control(control, .CONTROL_KEYS$st_nested, "fit_st_nested")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   spatial_type  <- match.arg(spatial_type)
   if (spatial_type == "hsgp" && (is.null(hsgp_m) || is.null(hsgp_c))) {
     # A basis left to the data: the fit below runs at a given basis, through

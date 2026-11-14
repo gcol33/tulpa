@@ -668,6 +668,8 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         control = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$gibbs, "tulpa_gibbs")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   family        <- .canonical_family(family)
   n_iter        <- as.integer(control$n_iter %||% 2000L)
   warmup        <- as.integer(control$warmup %||% 1000L)

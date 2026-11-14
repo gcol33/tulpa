@@ -56,6 +56,7 @@
 #'   * `beta`: `phi` is the Beta precision (sampled jointly)
 #'   * `poisson`, `binomial`: `log_phi` is held tight and ignored downstream.
 #' @param log_phi_init Starting value for `log(phi)`.
+#' @template device
 #' @param control A named list of numerical / sampler knobs (statistical
 #'   arguments stay in the signature): `n_iter` (default 2000), `n_warmup`
 #'   (default 1000), `max_treedepth` (default 10), `adapt_delta` (default 0.8),
@@ -118,6 +119,8 @@ tulpa_nuts_spde <- function(y, X, spatial,
                             control          = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nuts_spde, "tulpa_nuts_spde")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   family      <- match.arg(family)
   sigma_beta  <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("spde_nuts"))
   # Perf / sampler knobs live in control (statistical args stay in the

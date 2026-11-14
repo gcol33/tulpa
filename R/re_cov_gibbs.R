@@ -267,6 +267,8 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
   tulpa_check_control(control, .CONTROL_KEYS$re_cov_gibbs, "tulpa_re_cov_gibbs")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   family    <- .canonical_family(family)
   n_iter    <- as.integer(control$n_iter %||% 2000L)
   warmup    <- as.integer(control$warmup %||% 1000L)

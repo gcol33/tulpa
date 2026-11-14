@@ -234,6 +234,8 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      X_zi = NULL, zi_prior_sd = 2.5,
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   # A family typo reached the inner solve and came back as 39 warnings and "the
   # inner Laplace solve failed" (gcol33/tulpa#886); name it, as
   # tulpa_re_cov_nested() does.

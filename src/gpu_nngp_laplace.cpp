@@ -71,7 +71,6 @@ void batch_nngp_scatter(
         int nngp_idx;     // index in NNGP ordering
         int obs_idx;      // original location index
         int n_nb;         // actual neighbor count
-        bool factored;    // its neighbour covariance factorized
     };
     std::vector<LocData> locs;
     std::vector<std::vector<double>> C_mats;  // flattened nn×nn
@@ -113,7 +112,7 @@ void batch_nngp_scatter(
         // Pad unused diagonal for stability
         for (int j = n_nb; j < nn; j++) C[j * nn + j] = 1.0;
 
-        locs.push_back({i, obs_idx, n_nb, true});
+        locs.push_back({i, obs_idx, n_nb});
         C_mats.push_back(std::move(C));
         c_vecs.push_back(std::move(c));
     }
@@ -121,105 +120,14 @@ void batch_nngp_scatter(
     int batch_size = static_cast<int>(locs.size());
     if (batch_size == 0) return;
 
-    // Phase 2: Cholesky factorize — GPU or CPU
-    // After this, C_mats[b] contains L (lower triangular, ROW-major, upper
-    // triangle zeroed) — the layout the TriLayout::RowMajor solves read.
-    //
-    // The GPU result is verified against the CPU factorization of one batch
-    // element before the batch is accepted. This is not defensive padding: the
-    // batched cuSOLVER call returned a COLUMN-major factor that every consumer
-    // here read row-major, so each conditional variance came back wrong by
-    // ~0.25 on a unit-square fixture while staying finite and ordinary-looking,
-    // and nothing downstream could tell. One extra m^3 factorization per batch
-    // (m <= nn, against 50+ matrices) buys a check that the accepted factor is
-    // the one the CPU would have produced.
-    bool chol_ok = false;
-    if (batch_size >= 50) {  // GPU overhead threshold
-        // cuda_batched_cholesky writes into C_mats, and can also fail PARTWAY
-        // (a per-matrix non-PD `info`, or a failed copy-back after some
-        // matrices have landed). Either way the CPU fallback below must see the
-        // original covariances, not half-factorized ones, so keep them.
-        std::vector<std::vector<double>> C_orig(C_mats);
-
-        const int probe = batch_size / 2;
-        const int probe_n = locs[probe].n_nb;
-        std::vector<double> probe_ref(C_orig[probe]);
-        const bool probe_ref_ok =
-            tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-                probe_ref.data(), probe_ref.data(), probe_n, nn,
-                /*nugget=*/0.0);
-
-        chol_ok = probe_ref_ok && tulpa_gpu::cuda_batched_cholesky(C_mats, nn);
-        if (chol_ok) {
-            // Compare the lower triangle only; the reference's upper triangle
-            // still holds its input (chol_factor_lower leaves it untouched).
-            double scale = 0.0, diff = 0.0;
-            for (int j = 0; j < probe_n; j++) {
-                for (int k = 0; k <= j; k++) {
-                    const double ref = probe_ref[j * nn + k];
-                    const double got = C_mats[probe][j * nn + k];
-                    scale = std::max(scale, std::abs(ref));
-                    diff  = std::max(diff, std::abs(ref - got));
-                }
-            }
-            if (!(diff <= 1e-8 * std::max(scale, 1e-12))) chol_ok = false;
-        }
-        // The probe above compares ONE matrix against an exact CPU
-        // refactorization, which catches a whole-batch failure -- a layout
-        // convention, a call that did nothing. It cannot catch a PER-MATRIX one,
-        // and the call documents that it can fail partway (a per-matrix non-PD
-        // `info`, a copy-back that stops after some matrices have landed), so a
-        // probe at a fixed index accepts every failure that begins after it.
-        // The matrices also have different effective sizes -- `locs[b].n_nb` is
-        // smaller at the neighbour-poor first locations -- so the probe is not
-        // representative of the batch either.
-        //
-        // So EVERY matrix is checked against the factorization's own defining
-        // identity on the diagonal: `sum_k L[j][k]^2 == C[j][j]`, plus a
-        // positive pivot. That is O(n_nb^2) per matrix against the O(n_nb^3)
-        // the factorization itself costs, so full coverage stays an order below
-        // the work being verified.
-        if (chol_ok) {
-            for (int b = 0; b < batch_size && chol_ok; b++) {
-                const auto& L = C_mats[b];
-                const int nb = locs[b].n_nb;
-                for (int j = 0; j < nb; j++) {
-                    const double piv = L[j * nn + j];
-                    if (!(piv > 0.0) || !std::isfinite(piv)) { chol_ok = false; break; }
-                    double acc = 0.0;
-                    for (int k = 0; k <= j; k++) {
-                        const double v = L[j * nn + k];
-                        acc += v * v;
-                    }
-                    const double want = C_orig[b][j * nn + j];
-                    // The nugget is already on C_orig's diagonal, so this is the
-                    // factorization's exact defining identity up to rounding.
-                    const double tol = 1e-8 * std::max(std::abs(want), 1e-12);
-                    if (!(std::abs(acc - want) <= tol)) { chol_ok = false; break; }
-                }
-            }
-        }
-        if (chol_ok) gpu_used = true;
-        else C_mats.swap(C_orig);
-    }
-
-    if (!chol_ok) {
-        // CPU Cholesky per matrix: shared core, in-place on the nn-strided
-        // n_nb×n_nb block; zero the upper triangle afterwards, which is what
-        // makes the buffer a row-major lower factor for the solves below.
-        for (int b = 0; b < batch_size; b++) {
-            auto& L = C_mats[b];
-            int n_nb = locs[b].n_nb;
-            // The nugget is already on the diagonal, so this factorizes the
-            // same matrix the batched call was handed.
-            locs[b].factored =
-                tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-                    L.data(), L.data(), n_nb, nn, /*nugget=*/0.0);
-            if (!locs[b].factored) continue;
-            for (int j = 0; j < n_nb; j++) {
-                for (int k = j + 1; k < n_nb; k++) L[j * nn + k] = 0.0;
-            }
-        }
+    auto policy = device::current_policy();
+    std::vector<int> widths;
+    widths.reserve(locs.size());
+    for (const auto& loc : locs) widths.push_back(loc.n_nb);
+    const auto status = device::cholesky_batch(C_mats, nn, *policy, gpu_used, &widths);
+    if (!status) {
+        policy->fail(status);
+        return;
     }
 
     // Phase 3: Solve and extract conditional mean/variance (CPU, O(m²) per loc)
@@ -229,12 +137,6 @@ void batch_nngp_scatter(
         int n_nb = locs[b].n_nb;
         int obs_idx = locs[b].obs_idx;
         int nngp_idx = locs[b].nngp_idx;
-
-        // A neighbour covariance that would not factorize leaves the location
-        // conditioned on NOTHING -- the marginal moments the output buffers were
-        // seeded with, and a zero alpha row -- rather than kriged against an
-        // unusable factor.
-        if (!locs[b].factored) continue;
 
         // Gather neighbor values. Every slot below n_nb resolves inside
         // nn_order by construction (nngp_row_neighbours bounded it) and

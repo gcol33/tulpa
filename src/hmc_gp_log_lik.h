@@ -10,7 +10,8 @@ inline double gp_nngp_log_lik(
     const std::vector<double>& w,
     double sigma2,
     double phi,
-    const GPData& gp_data
+    const GPData& gp_data,
+    const GPSolverConfig& solver = GPSolverConfig{}
 ) {
   int N = gp_data.n_obs;
   int nn = gp_data.nn;
@@ -96,8 +97,7 @@ inline double gp_nngp_log_lik(
       }
     }
 
-    // Solve C_mat * alpha = c_vec via the configured solver (Cholesky default,
-    // CG/PCG opt-in via spatial_gp(solver = "cg"|"pcg")).
+    // Solve the neighbour covariance system.
     // Add small jitter to diagonal for numerical stability — prevents
     // ill-conditioning when phi is very small or sigma2 is near zero.
     for (int j = 0; j < n_neighbors; j++) {
@@ -105,7 +105,7 @@ inline double gp_nngp_log_lik(
     }
 
     if (!solve_neighbor_system(C_mat, n_neighbors, c_vec, alpha, llt,
-                               gp_data.solver_config)) {
+                               solver)) {
       // Solver failed (non-PSD or CG non-convergence) — reject step.
       return -INFINITY;
     }

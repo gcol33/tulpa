@@ -54,8 +54,6 @@ using tulpa::SpatialType;
 using tulpa::GradientMode;
 using tulpa::parse_gradient_mode;
 using tulpa::MassMatrixType;
-using tulpa::GPSolverConfig;
-using tulpa::GPSolver;
 using tulpa::MSGPSampler;
 
 // Human-readable metric name for verbose logging

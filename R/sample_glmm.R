@@ -201,6 +201,8 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               warm_start = NULL,
                               control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   .family_or_stop(family)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   X <- as.matrix(X)

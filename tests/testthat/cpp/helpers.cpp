@@ -1124,16 +1124,18 @@ List cpp_test_gp_solver_dispatch(
   gp.nn_order_inv.assign(nn_order_inv.begin(), nn_order_inv.end());
   gp.cov_type = static_cast<tulpa::CovType>(cov_type);
 
-  gp.solver_config.solver = tulpa_gp::parse_gp_solver(solver);
-  gp.solver_config.cg_tol = cg_tol;
-  gp.solver_config.cg_maxiter = cg_maxiter;
-  gp.solver_config.n_obs = N;
+  tulpa_gp::GPSolverConfig cfg;
+  if (solver == "cg") cfg.solver = tulpa_gp::GPSolver::CG;
+  else if (solver == "pcg") cfg.solver = tulpa_gp::GPSolver::PCG;
+  else if (solver != "cholesky") Rcpp::stop("unknown reference solver");
+  cfg.cg_tol = cg_tol;
+  cfg.cg_maxiter = cg_maxiter;
 
   std::vector<double> w_vec(w.begin(), w.end());
-  double ll = tulpa_gp::gp_nngp_log_lik(w_vec, sigma2, phi, gp);
+  double ll = tulpa_gp::gp_nngp_log_lik(w_vec, sigma2, phi, gp, cfg);
 
   tulpa_gp::NNGPGradients grads;
-  tulpa_gp::gp_nngp_gradients(w_vec, sigma2, phi, gp, grads);
+  tulpa_gp::gp_nngp_gradients(w_vec, sigma2, phi, gp, grads, 1e-6, cfg);
 
   NumericVector grad_w_out(grads.grad_w.begin(), grads.grad_w.end());
 

@@ -77,6 +77,54 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
+cpp_device_info <- function() {
+    .Call(`_tulpa_cpp_device_info`)
+}
+
+cpp_device_operations <- function() {
+    .Call(`_tulpa_cpp_device_operations`)
+}
+
+cpp_device_validate <- function(value) {
+    .Call(`_tulpa_cpp_device_validate`, value)
+}
+
+cpp_device_configure <- function(table, sources) {
+    invisible(.Call(`_tulpa_cpp_device_configure`, table, sources))
+}
+
+cpp_device_begin <- function(choice) {
+    .Call(`_tulpa_cpp_device_begin`, choice)
+}
+
+cpp_device_end <- function(session) {
+    invisible(.Call(`_tulpa_cpp_device_end`, session))
+}
+
+cpp_device_snapshot <- function() {
+    .Call(`_tulpa_cpp_device_snapshot`)
+}
+
+cpp_device_probe <- function(operation, size, variant, choice) {
+    .Call(`_tulpa_cpp_device_probe`, operation, size, variant, choice)
+}
+
+cpp_device_test <- function(action, input, source = "", threads = 8L) {
+    .Call(`_tulpa_cpp_device_test`, action, input, source, threads)
+}
+
+cpp_device_axpy <- function(x, y, a, choice, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_axpy`, x, y, a, choice, repetitions)
+}
+
+cpp_device_cholesky <- function(matrices, n, choice, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_cholesky`, matrices, n, choice, repetitions)
+}
+
+cpp_device_nngp <- function(w, coords, nn_idx, nn_dist, nn_order, sigma2, phi, cov_type, choice, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_nngp`, w, coords, nn_idx, nn_dist, nn_order, sigma2, phi, cov_type, choice, repetitions)
+}
+
 cpp_family_loglik_batch <- function(y, n_trials, eta, family, phi) {
     .Call(`_tulpa_cpp_family_loglik_batch`, y, n_trials, eta, family, phi)
 }
@@ -211,22 +259,6 @@ cpp_bound_gaussian_loglik <- function(y, a, b, eta, sigma, family) {
 
 cpp_gp_field_rows <- function(new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise) {
     .Call(`_tulpa_cpp_gp_field_rows`, new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise)
-}
-
-cpp_gpu_available <- function() {
-    .Call(`_tulpa_cpp_gpu_available`)
-}
-
-cpp_gpu_backend_kind <- function() {
-    .Call(`_tulpa_cpp_gpu_backend_kind`)
-}
-
-cpp_gpu_info <- function() {
-    .Call(`_tulpa_cpp_gpu_info`)
-}
-
-cpp_gpu_batched_cholesky_solve <- function(C_flat, c_rhs, k) {
-    .Call(`_tulpa_cpp_gpu_batched_cholesky_solve`, C_flat, c_rhs, k)
 }
 
 cpp_get_max_threads <- function() {

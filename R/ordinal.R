@@ -87,6 +87,8 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
                           control = list()) {
   link <- match.arg(link)
   tulpa_check_control(control, .CONTROL_KEYS$ordinal, "tulpa_ordinal")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("ordinal"))
   pfun <- .ordinal_link_cdf(link)
   qfun <- if (link == "probit") stats::qnorm else stats::qlogis
@@ -161,6 +163,7 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
     inference_tier = 2L, inference_mode = "structured", draws_kind = "iid"
   )
   class(fit) <- c("tulpa_ordinal", "tulpa_categorical", "tulpa_fit")
+  fit <- .device_attach(fit)
   .tulpa_check_mode_convergence(fit, "tulpa_ordinal()")
 }
 
@@ -196,5 +199,6 @@ print.tulpa_ordinal <- function(x, ...) {
   sp <- .ordinal_table_split(x)
   print(round(sp$coefficients, 4))
   cat("\nCutpoints:\n"); print(round(sp$cutpoints, 4))
+  .print_device(x$device)
   invisible(x)
 }

@@ -704,6 +704,8 @@ tulpa_dispatch <- function(mode,
                           data = NULL) {
   if (!is.list(fit)) return(fit)
 
+  fit <- .device_attach(fit)
+
   if (!is.null(backend)) fit$backend <- fit$backend %||% backend
   reg <- if (!is.null(fit$backend)) BACKEND_REGISTRY[[fit$backend]] else NULL
   fit$draws_kind <- fit$draws_kind %||% draws_kind %||% reg$emits

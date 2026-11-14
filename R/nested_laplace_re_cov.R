@@ -2100,6 +2100,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
   tulpa_check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   family <- .canonical_family(family)
   .family_or_stop(family)
   hyperprior <- .hp_choice(match.arg(hyperprior))

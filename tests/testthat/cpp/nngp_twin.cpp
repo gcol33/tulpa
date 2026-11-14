@@ -57,8 +57,6 @@ tulpa::GPData make_gp(const Rcpp::NumericMatrix& coords,
   gp.nn_order.assign(nn_order.begin(), nn_order.end());
   gp.nn_order_inv.assign(nn_order_inv.begin(), nn_order_inv.end());
   gp.cov_type = static_cast<tulpa::CovType>(cov_type);
-  gp.solver_config.solver = tulpa_gp::parse_gp_solver("chol");
-  gp.solver_config.n_obs = N;
   return gp;
 }
 

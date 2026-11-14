@@ -187,6 +187,8 @@ fit_spde <- function(y, X, spatial,
       control = control))
   }
   tulpa_check_control(control, .CONTROL_KEYS$spde, "fit_spde")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.

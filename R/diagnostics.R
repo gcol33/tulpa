@@ -440,6 +440,10 @@ diagnostics.default <- function(fit, pars = NULL,
   }
 
   out <- entry$fn(fit, pars = pars, measures = measures, probs = probs)
+  .print_device(fit$device)
+  if (!is.null(out) && !is.null(fit$device)) {
+    attr(out, "device") <- fit$device
+  }
   hsgp <- .hsgp_basis_check(fit)
   if (!is.null(hsgp) && !is.null(out)) {
     attr(out, "hsgp_basis") <- hsgp

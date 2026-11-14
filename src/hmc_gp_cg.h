@@ -1,15 +1,5 @@
 // hmc_gp_cg.h
-// Conjugate Gradient based linear solvers for NNGP neighbor systems.
-//
-// The neighbor system C * alpha = c is small (k x k where k = nn, typically
-// 10-20) but solved O(N) times per log-lik / gradient call. CG is an
-// alternative to direct Cholesky that can be cheaper for ill-conditioned
-// or very large NNGP problems and serves as a stepping stone toward a
-// future GPU-batched solver.
-//
-// Wired into the sampler via `GPSolverConfig::solver = CG/PCG` set from
-// `R/spatial.R` (`solver = "cg"` argument). The default ("cholesky") path
-// is unchanged.
+// Conjugate gradient reference solvers for dense neighbour systems.
 
 #ifndef TULPA_HMC_GP_CG_H
 #define TULPA_HMC_GP_CG_H

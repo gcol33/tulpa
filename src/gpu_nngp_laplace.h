@@ -1,12 +1,10 @@
 // gpu_nngp_laplace.h
-// GPU-accelerated NNGP for Laplace approximation.
-// Batches the m×m neighbor covariance Cholesky factorizations on GPU.
-// Falls back to CPU transparently if CUDA unavailable.
+// NNGP conditional moments with policy-selected batched Cholesky.
 
 #ifndef TULPA_GPU_NNGP_LAPLACE_H
 #define TULPA_GPU_NNGP_LAPLACE_H
 
-#include "gpu_backend.h"  // single entry point; it owns the CUDA/stub choice
+#include "device.h"
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
 #include "nngp_cond.h"    // nngp_row_neighbours: the shared left-packed scan
 #include "tulpa/cov_kernel.h"  // cov_value: the one kernel per cov_type code
@@ -33,7 +31,7 @@ inline double nngp_cov_gpu(double d, double sigma2, double phi, int cov_type) {
 // Batch-compute all NNGP conditional means, variances, and (optionally) the
 // conditional regression weights `alpha`.
 //
-// Uses GPU for the Cholesky step if available, CPU otherwise.
+// The fit's device policy selects the Cholesky implementation.
 //
 // Outputs:
 //   cond_mean_out, cond_var_out: length n_spatial, indexed by ORIGINAL obs idx.

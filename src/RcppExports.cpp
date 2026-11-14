@@ -284,6 +284,156 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_device_info
+Rcpp::List cpp_device_info();
+RcppExport SEXP _tulpa_cpp_device_info() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_device_info());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_operations
+Rcpp::CharacterVector cpp_device_operations();
+RcppExport SEXP _tulpa_cpp_device_operations() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_device_operations());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_validate
+std::string cpp_device_validate(SEXP value);
+RcppExport SEXP _tulpa_cpp_device_validate(SEXP valueSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type value(valueSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_validate(value));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_configure
+void cpp_device_configure(Rcpp::DataFrame table, Rcpp::List sources);
+RcppExport SEXP _tulpa_cpp_device_configure(SEXP tableSEXP, SEXP sourcesSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::DataFrame >::type table(tableSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type sources(sourcesSEXP);
+    cpp_device_configure(table, sources);
+    return R_NilValue;
+END_RCPP
+}
+// cpp_device_begin
+SEXP cpp_device_begin(std::string choice);
+RcppExport SEXP _tulpa_cpp_device_begin(SEXP choiceSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_begin(choice));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_end
+void cpp_device_end(SEXP session);
+RcppExport SEXP _tulpa_cpp_device_end(SEXP sessionSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< SEXP >::type session(sessionSEXP);
+    cpp_device_end(session);
+    return R_NilValue;
+END_RCPP
+}
+// cpp_device_snapshot
+Rcpp::List cpp_device_snapshot();
+RcppExport SEXP _tulpa_cpp_device_snapshot() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_device_snapshot());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_probe
+Rcpp::List cpp_device_probe(std::string operation, double size, int variant, std::string choice);
+RcppExport SEXP _tulpa_cpp_device_probe(SEXP operationSEXP, SEXP sizeSEXP, SEXP variantSEXP, SEXP choiceSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type operation(operationSEXP);
+    Rcpp::traits::input_parameter< double >::type size(sizeSEXP);
+    Rcpp::traits::input_parameter< int >::type variant(variantSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_probe(operation, size, variant, choice));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_test
+Rcpp::List cpp_device_test(std::string action, Rcpp::NumericVector input, std::string source, int threads);
+RcppExport SEXP _tulpa_cpp_device_test(SEXP actionSEXP, SEXP inputSEXP, SEXP sourceSEXP, SEXP threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type action(actionSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type input(inputSEXP);
+    Rcpp::traits::input_parameter< std::string >::type source(sourceSEXP);
+    Rcpp::traits::input_parameter< int >::type threads(threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_test(action, input, source, threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_axpy
+Rcpp::List cpp_device_axpy(Rcpp::NumericVector x, Rcpp::NumericVector y, double a, std::string choice, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_axpy(SEXP xSEXP, SEXP ySEXP, SEXP aSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< double >::type a(aSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_axpy(x, y, a, choice, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_cholesky
+Rcpp::List cpp_device_cholesky(Rcpp::NumericMatrix matrices, int n, std::string choice, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_cholesky(SEXP matricesSEXP, SEXP nSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type matrices(matricesSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_cholesky(matrices, n, choice, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_nngp
+Rcpp::List cpp_device_nngp(Rcpp::NumericVector w, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, double sigma2, double phi, int cov_type, std::string choice, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_nngp(SEXP wSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP cov_typeSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_nngp(w, coords, nn_idx, nn_dist, nn_order, sigma2, phi, cov_type, choice, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_loglik_batch
 Rcpp::NumericVector cpp_family_loglik_batch(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix eta, std::string family, double phi);
 RcppExport SEXP _tulpa_cpp_family_loglik_batch(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP) {
@@ -761,49 +911,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
     Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type noise(noiseSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_gp_field_rows(new_coords, unique_coords, field_rows, cell, sigma2_cell, phi_cell, nn, cov_type, noise));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_gpu_available
-bool cpp_gpu_available();
-RcppExport SEXP _tulpa_cpp_gpu_available() {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    rcpp_result_gen = Rcpp::wrap(cpp_gpu_available());
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_gpu_backend_kind
-std::string cpp_gpu_backend_kind();
-RcppExport SEXP _tulpa_cpp_gpu_backend_kind() {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    rcpp_result_gen = Rcpp::wrap(cpp_gpu_backend_kind());
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_gpu_info
-List cpp_gpu_info();
-RcppExport SEXP _tulpa_cpp_gpu_info() {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    rcpp_result_gen = Rcpp::wrap(cpp_gpu_info());
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_gpu_batched_cholesky_solve
-List cpp_gpu_batched_cholesky_solve(NumericMatrix C_flat, NumericMatrix c_rhs, int k);
-RcppExport SEXP _tulpa_cpp_gpu_batched_cholesky_solve(SEXP C_flatSEXP, SEXP c_rhsSEXP, SEXP kSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< NumericMatrix >::type C_flat(C_flatSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type c_rhs(c_rhsSEXP);
-    Rcpp::traits::input_parameter< int >::type k(kSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_gpu_batched_cholesky_solve(C_flat, c_rhs, k));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3976,6 +4083,18 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},
+    {"_tulpa_cpp_device_info", (DL_FUNC) &_tulpa_cpp_device_info, 0},
+    {"_tulpa_cpp_device_operations", (DL_FUNC) &_tulpa_cpp_device_operations, 0},
+    {"_tulpa_cpp_device_validate", (DL_FUNC) &_tulpa_cpp_device_validate, 1},
+    {"_tulpa_cpp_device_configure", (DL_FUNC) &_tulpa_cpp_device_configure, 2},
+    {"_tulpa_cpp_device_begin", (DL_FUNC) &_tulpa_cpp_device_begin, 1},
+    {"_tulpa_cpp_device_end", (DL_FUNC) &_tulpa_cpp_device_end, 1},
+    {"_tulpa_cpp_device_snapshot", (DL_FUNC) &_tulpa_cpp_device_snapshot, 0},
+    {"_tulpa_cpp_device_probe", (DL_FUNC) &_tulpa_cpp_device_probe, 4},
+    {"_tulpa_cpp_device_test", (DL_FUNC) &_tulpa_cpp_device_test, 4},
+    {"_tulpa_cpp_device_axpy", (DL_FUNC) &_tulpa_cpp_device_axpy, 5},
+    {"_tulpa_cpp_device_cholesky", (DL_FUNC) &_tulpa_cpp_device_cholesky, 4},
+    {"_tulpa_cpp_device_nngp", (DL_FUNC) &_tulpa_cpp_device_nngp, 10},
     {"_tulpa_cpp_family_loglik_batch", (DL_FUNC) &_tulpa_cpp_family_loglik_batch, 5},
     {"_tulpa_cpp_precision_ad_math", (DL_FUNC) &_tulpa_cpp_precision_ad_math, 2},
     {"_tulpa_cpp_beta_grouped_terms", (DL_FUNC) &_tulpa_cpp_beta_grouped_terms, 3},
@@ -4010,10 +4129,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_link_ladder", (DL_FUNC) &_tulpa_cpp_link_ladder, 2},
     {"_tulpa_cpp_bound_gaussian_loglik", (DL_FUNC) &_tulpa_cpp_bound_gaussian_loglik, 6},
     {"_tulpa_cpp_gp_field_rows", (DL_FUNC) &_tulpa_cpp_gp_field_rows, 9},
-    {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
-    {"_tulpa_cpp_gpu_backend_kind", (DL_FUNC) &_tulpa_cpp_gpu_backend_kind, 0},
-    {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
-    {"_tulpa_cpp_gpu_batched_cholesky_solve", (DL_FUNC) &_tulpa_cpp_gpu_batched_cholesky_solve, 3},
     {"_tulpa_cpp_get_max_threads", (DL_FUNC) &_tulpa_cpp_get_max_threads, 0},
     {"_tulpa_cpp_total_ram_bytes", (DL_FUNC) &_tulpa_cpp_total_ram_bytes, 0},
     {"_tulpa_cpp_available_ram_bytes", (DL_FUNC) &_tulpa_cpp_available_ram_bytes, 0},

@@ -2125,6 +2125,7 @@
 #' @param baseline `family = "multinomial"` only: the reference class, one
 #'   level of the response as a string (default `NULL`, the last level). See
 #'   [tulpa_multinomial()]. Any other family refuses it.
+#' @template device
 #' @param control Optional list of backend tuning arguments. Each backend
 #'   accepts its own set, checked at the door: `n_iter` / `warmup` / `epsilon`
 #'   (`mala`), `n_draws` (`pathfinder`), `n_chains` / `max_treedepth` /
@@ -2241,6 +2242,8 @@ tulpa <- function(formula, data,
          "residual VARIANCE) instead.", call. = FALSE)
   }
   tulpa_check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   # The tempered-posterior population WBIC reads is recorded by the SMC path
   # alone; on any other mode the knob would be dropped on the way in.
   if (!is.null(control$wbic) && !identical(mode, "smc")) {

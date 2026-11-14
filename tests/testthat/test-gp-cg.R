@@ -1,16 +1,3 @@
-# test-gp-cg.R
-# Verify that the iterative CG / PCG NNGP solvers agree with the direct
-# Cholesky reference on log-likelihood and gradients for a small NNGP problem.
-#
-# The solvers are reached through GPData::solver_config, which
-# cpp_test_gp_solver_dispatch sets directly. There is no front-door argument:
-# the system a solver choice governs is the k x k neighbour system with
-# k = nn (15 by default), and a Cholesky is both faster and exact at that size,
-# so gp() no longer offers the choice (gcol33/tulpa#542). This test pins the
-# dispatch contract for the kernels themselves: at the same (w, sigma2, phi),
-# all three solvers must produce numerically equivalent log-lik and full
-# gradient vectors (within iterative tolerance).
-
 build_nngp_neighbor_data <- function(coords, nn_k) {
   n_obs <- nrow(coords)
   ord <- order(coords[, 1], coords[, 2])
@@ -53,9 +40,6 @@ build_nngp_neighbor_data <- function(coords, nn_k) {
 }
 
 test_that("gp() offers no solver argument", {
-  # It was accepted, validated, stored and printed, and never reached
-  # GPData::solver_config, so every fit ran the Cholesky path whatever was
-  # asked for (gcol33/tulpa#542).
   expect_false(any(c("solver", "cg_tol", "cg_maxiter") %in%
                      names(formals(spatial_gp))))
   spec <- spatial_gp(~ x + y)

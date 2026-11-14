@@ -24,6 +24,7 @@
 #' @param log_phi_init Starting value for `log(phi)`. Default `0`
 #'   (i.e. `phi = 1`); a method-of-moments warm start can speed warmup
 #'   in highly concentrated regimes.
+#' @template device
 #' @param control A named list of numerical / sampler knobs (statistical
 #'   arguments stay in the signature): `n_iter` (default 2000), `n_warmup`
 #'   (default 1000), `max_treedepth` (default 10), `adapt_delta` (default 0.8),
@@ -60,6 +61,8 @@ tulpa_nuts_beta <- function(y, X,
                             control          = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nuts_beta, "tulpa_nuts_beta")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   stopifnot(is.numeric(y), is.matrix(X), nrow(X) == length(y))
   .assert_finite_model_inputs(NULL, y)
   .validate_family_support("beta", y)

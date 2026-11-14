@@ -177,6 +177,8 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
                      beta_prior = .tulpa_default_beta_prior("ep"),
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   # na.pass, then ep_fit()'s finite guard: an incomplete row is refused, as at
   # every other door, rather than dropped by model.frame()'s default na.action
   # (gcol33/tulpa#886).
@@ -202,6 +204,8 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
                    n_trials = NULL, beta_prior = .tulpa_default_beta_prior("ep"),
                    offset = NULL, control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   .family_or_stop(family)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   max_sweeps <- as.integer(control$max_sweeps %||% 50L)

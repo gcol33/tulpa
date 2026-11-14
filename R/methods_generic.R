@@ -638,6 +638,7 @@ print.tulpa_fit <- function(x, ...) {
 # rather than restating it.
 #' @keywords internal
 .print_fit_body <- function(x) {
+  .print_device(x$device)
   .print_fit_call(x$call)
   outer_note <- .tulpa_outer_integration_note(.tulpa_outer_integration_state(x))
   if (!is.null(outer_note)) cat("  ", outer_note, "\n", sep = "")

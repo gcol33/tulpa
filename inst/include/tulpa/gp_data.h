@@ -22,7 +22,6 @@ struct GPData {
     CovType cov_type = CovType::EXPONENTIAL;
     double nu = 1.5;                            // Matern smoothness
     bool shared = true;                         // shared across processes
-    GPSolverConfig solver_config;
 };
 
 // ============================================================================

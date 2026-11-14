@@ -1,13 +1,10 @@
-inline GPSolver parse_gp_solver(const std::string& s) {
-  static const tulpa::EnumEntry<GPSolver> table[] = {
-      {"auto", GPSolver::AUTO},
-      {"cholesky", GPSolver::CHOLESKY},
-      {"cg", GPSolver::CG},
-      {"pcg", GPSolver::PCG},
-      {"gpu", GPSolver::GPU}
-  };
-  return tulpa::parse_enum(s, table, GPSolver::AUTO);
-}
+enum class GPSolver { AUTO, CHOLESKY, CG, PCG };
+struct GPSolverConfig {
+    GPSolver solver = GPSolver::CHOLESKY;
+    double cg_tol = 1e-6;
+    int cg_maxiter = 200;
+    GPSolver effective_solver() const { return solver; }
+};
 
 // The iterative branch of both entries below: copy the leading n_nb x n_nb
 // block of C and the right-hand side into row-major scratch, solve, and write

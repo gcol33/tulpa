@@ -62,6 +62,8 @@ tulpa_multinomial <- function(formula, data,
                               baseline = NULL,
                               control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$multinomial, "tulpa_multinomial")
+  .device_session <- .device_start(control)
+  on.exit(cpp_device_end(.device_session), add = TRUE)
   beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("multinomial"))
   max_iter <- as.integer(control$max_iter %||% 100L)
   tol      <- control$tol %||% 1e-8
@@ -149,6 +151,7 @@ tulpa_multinomial <- function(formula, data,
     draws_kind = "iid"
   )
   class(fit) <- c("tulpa_multinomial", "tulpa_categorical", "tulpa_fit")
+  fit <- .device_attach(fit)
   .tulpa_check_mode_convergence(fit, "tulpa_multinomial()")
 }
 
@@ -192,5 +195,6 @@ print.tulpa_multinomial <- function(x, ...) {
               x$n_classes, x$baseline))
   cat(sprintf("log marginal: %.2f\n\n", x$log_marginal))
   print(round(stats::coef(x), 4))
+  .print_device(x$device)
   invisible(x)
 }

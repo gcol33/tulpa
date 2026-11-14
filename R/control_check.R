@@ -173,6 +173,7 @@ tulpa_check_control <- function(control, allowed, where) {
       where, paste(sQuote(dup, q = FALSE), collapse = ", ")), call. = FALSE)
   }
   if ("gradient_mode" %in% nm) .check_gradient_mode(control$gradient_mode)
+  if ("device" %in% nm) .device_choice(control)
   invisible(NULL)
 }
 
@@ -325,6 +326,7 @@ tulpa_check_control <- function(control, allowed, where) {
   # not exist -- gcol33/tulpa#708.)
   .tulpa_hyperprior_keys <- c("prior_sigma", "eta", "prior_df", "prior_scale",
                               "sigma_re_scale", "prior_sigma_scale")
+  keys <- lapply(keys, function(x) union(x, "device"))
   keys$tulpa <- sort(unique(setdiff(c(
     keys$nested_laplace, keys$nested_laplace_joint, keys$spde,
     keys$re_cov_nested, keys$re_cov_gibbs, keys$eb,

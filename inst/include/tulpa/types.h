@@ -156,40 +156,6 @@ enum class REParam : int {
 };
 
 // ============================================================================
-// GP solver types
-// ============================================================================
-enum class GPSolver : int {
-    AUTO = 0,
-    CHOLESKY = 1,
-    CG = 2,
-    PCG = 3,
-    GPU = 4
-};
-
-// ============================================================================
-// GP solver configuration
-// ============================================================================
-struct GPSolverConfig {
-    GPSolver solver = GPSolver::AUTO;
-    double cg_tol = 1e-6;
-    int cg_maxiter = 200;
-    int n_obs = 0;
-    bool gpu_available = false;
-
-    // Resolve AUTO to a concrete backend based on problem size.
-    // Cholesky is the default; large problems where the user has not asked
-    // for a specific solver fall through to AUTO -> CHOLESKY here too,
-    // because GPU is currently disabled and CG is opt-in only.
-    GPSolver effective_solver() const {
-        if (solver != GPSolver::AUTO) return solver;
-        // GPU path is not yet wired into the sampler. Until it is, AUTO
-        // is conservatively Cholesky regardless of n_obs — avoids silently
-        // changing posteriors based on dataset size.
-        return GPSolver::CHOLESKY;
-    }
-};
-
-// ============================================================================
 // Multi-scale GP sampler strategies
 // ============================================================================
 enum class MSGPSampler : int {

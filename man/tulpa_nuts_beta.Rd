@@ -60,6 +60,17 @@ Mean-precision parameterisation, default logit link:
 \code{y_i ~ Beta(mu_i * phi, (1 - mu_i) * phi)} with
 \code{mu_i = 1 / (1 + exp(-eta_i))} and \code{eta_i = X_i \%*\% beta}.
 }
+\section{Computation device}{
+
+\code{control$device} is \code{"auto"}, \code{"cpu"}, or \code{"cuda"}. The default \code{"auto"}
+uses CUDA for registered operations above their measured size crossover.
+Operations with no measured crossover run on CPU. \code{"cuda"} requests CUDA
+for each registered operation and errors with the reason from \code{\link[=gpu_info]{gpu_info()}}
+when its device or library is unavailable. Host inference stages run on
+CPU. The fit's \code{device$stages} table records CPU and CUDA call counts per
+stage; \code{print()} and \code{\link[=diagnostics]{diagnostics()}} report these stages.
+}
+
 \examples{
 set.seed(1)
 n <- 150L

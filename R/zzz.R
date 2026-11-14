@@ -91,6 +91,7 @@
 
 
 .onLoad <- function(libname, pkgname) {
+  .device_configure(libname, pkgname)
   # lme4 and nlme both own `fixef` and `ranef`; whichever the user has, the
   # tulpa_fit methods answer. tulpa's ranef() returns a one-row-per-coefficient
   # data frame rather than lme4's list of per-term data frames -- an S3 method

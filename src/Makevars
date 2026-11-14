@@ -32,7 +32,8 @@ unity_core.o: \
   crt_rng.cpp \
   family_terms_export.cpp \
   fastmath_data.cpp \
-  gpu_backend.cpp \
+  device.cpp \
+  device_exports.cpp \
   hyperprior_density_export.cpp \
   multinomial_logit_export.cpp \
   outer_interpolate.cpp \
@@ -54,7 +55,9 @@ unity_core.o: \
   builtin_family_ll_ad.h \
   density_probe.h \
   fastmath.h \
-  gpu_backend.h \
+  device.h \
+  linalg_fast.h \
+  gpu_nngp_laplace.h \
   pc_prior.h \
   multinomial_logit.h \
   sobol.h \
@@ -65,13 +68,12 @@ unity_core.o: \
   hmc_sampler.h \
   hmc_spatial_marginal.h \
   laplace_types.h \
-  linalg_fast.h \
   omp_threads.h \
   builtin_family_zi.h \
   glmm_family_elt.h \
   laplace_builtin_family_spec.h \
   autodiff_utils.h \
-  gpu_cuda.h \
+  nngp_cond.h \
   sobol_direction_numbers.h \
   hmc_temporal.h \
   hmc_svc.h \
@@ -88,7 +90,6 @@ unity_core.o: \
   hmc_sampler_funcs.h \
   hmc_sampler_config.h \
   laplace_core.h \
-  nngp_cond.h \
   hmc_gp_cg.h \
   hmc_gp_lbfgs.h \
   hmc_gp_solvers.h \
@@ -510,7 +511,7 @@ unity_laplace.o: \
   inner_laplace_skew.h \
   laplace_types.h \
   hmc_temporal.h \
-  gpu_backend.h \
+  device.h \
   nngp_cond.h \
   nested_laplace_checkpoint.h \
   laplace_newton_joint.h \
@@ -548,7 +549,6 @@ unity_laplace.o: \
   sobol.h \
   inner_laplace_probe.h \
   rwmh.h \
-  gpu_cuda.h \
   checkpoint_io.h \
   joint_pd_step.h \
   joint_inner_vcov.h \
@@ -645,7 +645,7 @@ unity_nl.o: \
   re_structure.h \
   inv_block_extract.h \
   spde_qbuilder.h \
-  gpu_backend.h \
+  device.h \
   linalg_fast.h \
   nngp_cond.h \
   hsgp_spectral.h \
@@ -682,7 +682,6 @@ unity_nl.o: \
   checkpoint_io.h \
   spde_logdet.h \
   spde_zero_mass.h \
-  gpu_cuda.h \
   autodiff_utils.h \
   inner_gaussian_draw.h \
   sobol.h \
@@ -791,11 +790,10 @@ unity_nl_joint.o: \
   fastmath.h \
   spde_zero_mass.h \
   autodiff_utils.h \
-  gpu_backend.h \
+  device.h \
   nngp_cond.h \
   rwmh.h \
-  sobol_direction_numbers.h \
-  gpu_cuda.h
+  sobol_direction_numbers.h
 unity_pg.o: \
   unity_pg.cpp \
   pg_binomial.cpp \
