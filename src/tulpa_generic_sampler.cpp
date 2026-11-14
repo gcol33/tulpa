@@ -250,7 +250,12 @@ Rcpp::List cpp_test_field_coordinates(
             const size_t width = static_cast<size_t>(result.n_params_stored);
             for (size_t i = 0; width && i < std::min(result.samples_flat.size(), dense.samples_flat.size()); ++i)
                 if (result.samples_flat[i] != dense.samples_flat[i]) { first_sample = static_cast<int>(i / width); break; }
+            const auto dense_again = sample(tulpa::MassMatrixType::DENSE);
+            const auto auto_again = sample(tulpa::MassMatrixType::AUTO);
             auto_dense_detail = Rcpp::List::create(
+                Rcpp::Named("dense_rerun_max_diff") = max_diff(dense.samples_flat, dense_again.samples_flat),
+                Rcpp::Named("auto_rerun_max_diff") = max_diff(result.samples_flat, auto_again.samples_flat),
+                Rcpp::Named("auto_again_vs_dense_again") = max_diff(auto_again.samples_flat, dense_again.samples_flat),
                 Rcpp::Named("samples_max_diff") = max_diff(result.samples_flat, dense.samples_flat),
                 Rcpp::Named("first_differing_draw") = first_sample,
                 Rcpp::Named("energy_max_diff") = max_diff(result.energy, dense.energy),
