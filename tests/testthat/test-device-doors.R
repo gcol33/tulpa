@@ -15,7 +15,8 @@ skip_on_cran()
 
 test_that("registry and joint NNGP doors record their actual device stages", {
   skip_on_cran()
-  skip_if_no_cuda("cusolver")
+  # Forced cuda also places these doors' sparse Laplace factor on cuDSS.
+  skip_if_no_cuda(c("cusolver", "cudss"))
   args <- device_nngp_fixture(64L, 10L)
   n <- length(args$w)
   prior <- list(type = "nngp", coords = args$coords, nn_idx = args$nn_idx,
