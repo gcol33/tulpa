@@ -26,6 +26,17 @@
 
 ## Models and inference
 
+* A NUTS chain on a dense metric reproduces itself bit for bit at a fixed
+  seed whatever the build's vector width. With 16 or more parameters the
+  kinetic energy, the velocity and the drift went through Eigen's symmetric
+  product, whose AVX kernels split each sum at the first 32-byte-aligned
+  element; malloc guarantees 16, so the summation order followed where the
+  heap placed the momentum buffers and two same-seed chains in one process
+  differed by about 1e-12. An x86-64-v3 build (the Ubuntu 26.04 amd64v3
+  toolchain default) showed it as alternating draws on every other call. The
+  three products now share one column-swept matvec whose result does not
+  depend on alignment.
+
 * `control$subspace_debias = list(method = "exact")` uses full-latent
   true-density MH within each nested-Laplace cell. A selected-subspace move
   carries a fresh Gaussian nuisance proposal whose density enters the joint

@@ -53,14 +53,7 @@ inline void apply_drift(
   } else if (mass.type == MassMatrixType::DIAG) {
     tulpa_linalg::axpy_weighted(coeff, mass.inv_mass_diag.data(), p, q, n);
   } else {
-    if (n >= 16) {
-      Eigen::Map<const Eigen::MatrixXd> Am(mass.inv_mass_dense.data(), n, n);
-      Eigen::Map<const Eigen::VectorXd> pv(p, n);
-      Eigen::Map<Eigen::VectorXd> qv(q, n);
-      qv.noalias() += coeff * (Am.selfadjointView<Eigen::Lower>() * pv);
-    } else {
-      tulpa_linalg::axpy_matvec(coeff, mass.inv_mass_dense.data(), p, q, n);
-    }
+    tulpa_linalg::axpy_matvec(coeff, mass.inv_mass_dense.data(), p, q, n);
   }
 }
 

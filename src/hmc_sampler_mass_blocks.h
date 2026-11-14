@@ -354,10 +354,6 @@ struct DenseMassMatrix {
       return 0.5 * ke;
     } else if (type == MassMatrixType::DIAG || !adapted) {
       return 0.5 * tulpa_linalg::weighted_norm_squared(p, inv_mass_diag.data(), n);
-    } else if (n >= 16) {
-      Eigen::Map<const Eigen::MatrixXd> Am(inv_mass_dense.data(), n, n);
-      Eigen::Map<const Eigen::VectorXd> pv(p, n);
-      return 0.5 * pv.dot(Am.selfadjointView<Eigen::Lower>() * pv);
     } else {
       return 0.5 * tulpa_linalg::quadratic_form(p, inv_mass_dense.data(), n);
     }
@@ -365,7 +361,6 @@ struct DenseMassMatrix {
 
   // Compute C * p (for leapfrog position update: q += eps * C * p)
   // Result written to `result` buffer.
-  // Uses Eigen BLAS for dense case (n>=16) for SIMD acceleration.
   void inv_mass_times_p(const double* p, double* result) const {
     if (has_lowrank()) {
       for (int i = 0; i < n; i++) result[i] = inv_mass_diag[i] * p[i];
@@ -389,11 +384,6 @@ struct DenseMassMatrix {
       for (int i = 0; i < n; i++) {
         result[i] = inv_mass_diag[i] * p[i];
       }
-    } else if (n >= 16) {
-      Eigen::Map<const Eigen::MatrixXd> Am(inv_mass_dense.data(), n, n);
-      Eigen::Map<const Eigen::VectorXd> pv(p, n);
-      Eigen::Map<Eigen::VectorXd> rv(result, n);
-      rv.noalias() = Am.selfadjointView<Eigen::Lower>() * pv;
     } else {
       tulpa_linalg::symmatvec(inv_mass_dense.data(), p, result, n);
     }

@@ -927,39 +927,50 @@ inline auto make_diagonal_precond(
 // Dense matrix operations (column-major storage, for mass matrix support)
 // ============================================================================
 
-// Row i of a symmetric column-major n×n matrix, dotted with x.
-static inline double sym_row_dot(const double* A, const double* x, int n, int i) {
-  double sum = 0.0;
-  for (int j = 0; j < n; j++) {
-    sum += A[j * n + i] * x[j];  // column-major: A[i,j] = A[j*n + i]
-  }
-  return sum;
-}
-
-// Symmetric matrix-vector product: y = A * x
-// A is n×n symmetric, stored column-major (only uses lower triangle logic
-// but reads full matrix for simplicity since it's symmetric)
+// Symmetric matrix-vector product y = A * x, A an n×n symmetric matrix stored
+// column-major with both triangles filled.
+//
+// Swept by columns: y_i accumulates A(i,j) x_j in increasing j, and each step
+// is elementwise over i, so a vectorized loop produces the same bits whatever
+// the addresses of A, x and y. A product that splits a reduction at the first
+// aligned element (Eigen's packet kernels under AVX, whose packets need 32
+// bytes where malloc guarantees 16) sums in an order set by where the heap
+// placed the buffers, and a same-seed chain then differs from itself in the
+// last bits from one run to the next.
 inline void symmatvec(const double* A, const double* x, double* y, int n) {
-  for (int i = 0; i < n; i++) {
-    y[i] = sym_row_dot(A, x, n, i);
+  for (int i = 0; i < n; i++) y[i] = 0.0;
+  for (int j = 0; j < n; j++) {
+    const double xj = x[j];
+    const double* col = A + static_cast<std::size_t>(j) * n;
+    for (int i = 0; i < n; i++) y[i] += col[i] * xj;
   }
 }
 
-// Quadratic form: x^T * A * x (A symmetric n×n, column-major)
+// Per-thread buffer for A * x inside the products below. Held through a
+// pointer that is never freed: a thread_local object with a destructor runs
+// it at OpenMP worker exit, after the runtime has torn the thread down.
+inline double* symmatvec_scratch(int n) {
+  static thread_local std::vector<double>* scratch = nullptr;
+  if (!scratch) scratch = new std::vector<double>();
+  if (scratch->size() < static_cast<std::size_t>(n)) scratch->resize(n);
+  return scratch->data();
+}
+
+// Quadratic form x' A x (A symmetric n×n, column-major).
 inline double quadratic_form(const double* x, const double* A, int n) {
+  double* ax = symmatvec_scratch(n);
+  symmatvec(A, x, ax, n);
   double result = 0.0;
-  for (int i = 0; i < n; i++) {
-    result += x[i] * sym_row_dot(A, x, n, i);
-  }
+  for (int i = 0; i < n; i++) result += x[i] * ax[i];
   return result;
 }
 
-// Fused scale + matvec + add: y += alpha * A * x (A symmetric n×n, column-major)
+// Fused scale + matvec + add: y += alpha * A * x (A symmetric n×n, column-major).
 inline void axpy_matvec(double alpha, const double* A, const double* x,
                         double* y, int n) {
-  for (int i = 0; i < n; i++) {
-    y[i] += alpha * sym_row_dot(A, x, n, i);
-  }
+  double* ax = symmatvec_scratch(n);
+  symmatvec(A, x, ax, n);
+  for (int i = 0; i < n; i++) y[i] += alpha * ax[i];
 }
 
 }  // namespace tulpa_linalg

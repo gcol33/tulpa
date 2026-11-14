@@ -7,9 +7,6 @@
 #include <R_ext/Rdynload.h>
 #include <vector>
 #include <cmath>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 #include "hmc_chain_stack.h"
 #include "hmc_sampler.h"
 #include "log_post_impl.h"
@@ -230,14 +227,11 @@ Rcpp::List cpp_test_field_coordinates(
     }
     double last_reported_lp = NA_REAL, last_native_lp = NA_REAL;
     Rcpp::LogicalVector auto_dense_equal = Rcpp::LogicalVector::create(NA_LOGICAL);
-    Rcpp::List auto_dense_detail;
     if (n_iter > 0) {
-        const ModelData pristine = data;
-        auto sample_on = [&](ModelData& on, tulpa::MassMatrixType metric) {
-            return tulpa_hmc::run_hmc_chain_cpp(x, on, layout,
+        auto sample = [&](tulpa::MassMatrixType metric) {
+            return tulpa_hmc::run_hmc_chain_cpp(x, data, layout,
                 n_iter, n_iter / 2, 0, 1, 18, false, 8, metric, .9, nullptr, {});
         };
-        auto sample = [&](tulpa::MassMatrixType metric) { return sample_on(data, metric); };
         const auto result = sample(tulpa::MassMatrixType::AUTO);
         last_reported_lp = result.log_prob.back();
         last_native_lp = tulpa_hmc::compute_log_post(result.final_position, data, layout);
@@ -245,50 +239,6 @@ Rcpp::List cpp_test_field_coordinates(
             const auto dense = sample(tulpa::MassMatrixType::DENSE);
             auto_dense_equal[0] = result.samples_flat == dense.samples_flat &&
                 result.n_leapfrog == dense.n_leapfrog && result.energy == dense.energy;
-            auto max_diff = [](const std::vector<double>& a, const std::vector<double>& b) {
-                if (a.size() != b.size()) return R_PosInf;
-                double m = 0.0;
-                for (size_t i = 0; i < a.size(); ++i) m = std::max(m, std::abs(a[i] - b[i]));
-                return m;
-            };
-            int first_sample = -1;
-            const size_t width = static_cast<size_t>(result.n_params_stored);
-            for (size_t i = 0; width && i < std::min(result.samples_flat.size(), dense.samples_flat.size()); ++i)
-                if (result.samples_flat[i] != dense.samples_flat[i]) { first_sample = static_cast<int>(i / width); break; }
-            const auto dense_again = sample(tulpa::MassMatrixType::DENSE);
-            const auto auto_again = sample(tulpa::MassMatrixType::AUTO);
-            const auto dense_fifth = sample(tulpa::MassMatrixType::DENSE);
-            ModelData fresh_a = pristine, fresh_b = pristine;
-            const auto dense_fresh_a = sample_on(fresh_a, tulpa::MassMatrixType::DENSE);
-            const auto dense_fresh_b = sample_on(fresh_b, tulpa::MassMatrixType::DENSE);
-            int max_threads = 1;
-#ifdef _OPENMP
-            max_threads = omp_get_max_threads();
-            omp_set_num_threads(1);
-#endif
-            const auto dense_serial_a = sample(tulpa::MassMatrixType::DENSE);
-            const auto dense_serial_b = sample(tulpa::MassMatrixType::DENSE);
-#ifdef _OPENMP
-            omp_set_num_threads(max_threads);
-#endif
-            auto_dense_detail = Rcpp::List::create(
-                Rcpp::Named("omp_max_threads") = max_threads,
-                Rcpp::Named("fifth_vs_first") = max_diff(dense_fifth.samples_flat, result.samples_flat),
-                Rcpp::Named("fifth_vs_second") = max_diff(dense_fifth.samples_flat, dense.samples_flat),
-                Rcpp::Named("fresh_a_vs_fresh_b") = max_diff(dense_fresh_a.samples_flat, dense_fresh_b.samples_flat),
-                Rcpp::Named("fresh_a_vs_first") = max_diff(dense_fresh_a.samples_flat, result.samples_flat),
-                Rcpp::Named("fresh_a_vs_second") = max_diff(dense_fresh_a.samples_flat, dense.samples_flat),
-                Rcpp::Named("serial_a_vs_serial_b") = max_diff(dense_serial_a.samples_flat, dense_serial_b.samples_flat),
-                Rcpp::Named("serial_a_vs_first") = max_diff(dense_serial_a.samples_flat, result.samples_flat),
-                Rcpp::Named("serial_a_vs_second") = max_diff(dense_serial_a.samples_flat, dense.samples_flat),
-                Rcpp::Named("dense_rerun_max_diff") = max_diff(dense.samples_flat, dense_again.samples_flat),
-                Rcpp::Named("auto_rerun_max_diff") = max_diff(result.samples_flat, auto_again.samples_flat),
-                Rcpp::Named("auto_again_vs_dense_again") = max_diff(auto_again.samples_flat, dense_again.samples_flat),
-                Rcpp::Named("samples_max_diff") = max_diff(result.samples_flat, dense.samples_flat),
-                Rcpp::Named("first_differing_draw") = first_sample,
-                Rcpp::Named("energy_max_diff") = max_diff(result.energy, dense.energy),
-                Rcpp::Named("leapfrog_equal") = result.n_leapfrog == dense.n_leapfrog,
-                Rcpp::Named("epsilon") = Rcpp::NumericVector::create(result.epsilon, dense.epsilon));
         }
     }
     tulpa_hmc::FieldCoordinateScope coordinate_scope(&map);
@@ -320,7 +270,6 @@ Rcpp::List cpp_test_field_coordinates(
         Rcpp::Named("last_reported_lp") = last_reported_lp,
         Rcpp::Named("last_native_lp") = last_native_lp,
         Rcpp::Named("auto_dense_equal") = auto_dense_equal,
-        Rcpp::Named("auto_dense_detail") = auto_dense_detail,
         Rcpp::Named("inverse") = inverse, Rcpp::Named("jacobian") = jacobian,
         Rcpp::Named("raw_lp") = raw_lp, Rcpp::Named("lp") = lp,
         Rcpp::Named("spatial_log_normalizer") =

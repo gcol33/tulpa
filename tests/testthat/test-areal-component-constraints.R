@@ -52,9 +52,6 @@ test_that("areal constraints and island priors match dense Gaussian references",
         .5 * S * log(2 * pi) * if (type == "bym2") 2 else 1, tolerance = 1e-10)
     expect_true(r$verified)
     expect_lt(max(abs(r$gradient - r$numerical) / pmax(1, abs(r$gradient))), 1e-4)
-    if (type == "bym2") expect_true(r$auto_dense_equal,
-      info = paste(names(r$auto_dense_detail), vapply(r$auto_dense_detail,
-        function(v) paste(format(v, digits = 17), collapse = "/"), ""),
-        sep = " = ", collapse = "; "))
+    if (type == "bym2") expect_true(r$auto_dense_equal)
   }
 })
