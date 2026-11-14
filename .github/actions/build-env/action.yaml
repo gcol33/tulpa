@@ -114,12 +114,14 @@ runs:
     # -std flag R pairs with its own compiler entry. On Windows R puts the
     # Rtools compilers at the front of PATH itself, so the user Makevars
     # prefixes R's own compiler definitions instead (`CXX17 := ccache
-    # $(CXX17)`), which keeps every flag R set. R CMD build and R CMD check each
-    # compile the sources under their own random temporary directory, so the
-    # working directory is kept out of the hash (NOHASHDIR) and absolute paths
-    # are rewritten relative to it (BASEDIR); otherwise no compile can hit an
-    # entry another one wrote. On Windows BASEDIR is the checkout's drive, and
-    # TMPDIR moves R's temporary directory onto it.
+    # $(CXX17)`), which keeps every flag R set. R CMD build, R CMD check and an
+    # install from the checkout each compile the sources in a directory of
+    # their own, and the package's own paths are relative to it (unity members,
+    # -I../inst/include), so keeping the working directory out of the hash
+    # (NOHASHDIR) is what lets one reuse another's objects. BASEDIR is left
+    # unset: it rewrites the system include paths (R's, Rcpp's) relative to the
+    # working directory, which differs by the directory's depth and made every
+    # compile miss.
     - name: Compile cache
       shell: bash
       run: |
@@ -128,11 +130,11 @@ runs:
             sudo apt-get update -qq
             sudo apt-get install -y ccache
             echo /usr/lib/ccache >> "$GITHUB_PATH"
-            cache_dir="$HOME/.ccache"; base_dir=/ ;;
+            cache_dir="$HOME/.ccache" ;;
           macOS)
             brew install ccache
             echo "$(brew --prefix)/opt/ccache/libexec" >> "$GITHUB_PATH"
-            cache_dir="$HOME/.ccache"; base_dir=/ ;;
+            cache_dir="$HOME/.ccache" ;;
           Windows)
             choco install ccache -y --no-progress
             mk="$RUNNER_TEMP/tulpa-makevars"
@@ -140,10 +142,7 @@ runs:
               echo "$v := ccache \$($v)" >> "$mk"
             done
             cat "$mk"
-            cache_dir=$(cygpath -m "$HOME/.ccache")
-            tmp=$(cygpath -m "$RUNNER_TEMP/rtmp"); mkdir -p "$RUNNER_TEMP/rtmp"
-            base_dir="${tmp%%:*}:/"
-            echo "TMPDIR=$tmp" >> "$GITHUB_ENV" ;;
+            cache_dir=$(cygpath -m "$HOME/.ccache") ;;
         esac
         {
           echo "CCACHE_DIR=$cache_dir"
@@ -151,7 +150,6 @@ runs:
           echo "CCACHE_COMPRESS=1"
           echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros"
           echo "CCACHE_NOHASHDIR=1"
-          echo "CCACHE_BASEDIR=$base_dir"
         } >> "$GITHUB_ENV"
 
     # Restore only: actions/cache saves in its post step when the job
