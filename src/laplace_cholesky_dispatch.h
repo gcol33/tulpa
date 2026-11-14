@@ -144,14 +144,7 @@ inline bool live_factor_solve(const double* rhs, double* out, int n_x,
                               DenseCholeskyScratch& dense_scratch,
                               int ncol = 1) {
     if (sparse_live) return sparse_solver.solve(rhs, out, n_x, ncol);
-    std::vector<double> z_work(n_x, 0.0);
-    bool ok = true;
-    for (int c = 0; c < ncol; c++) {
-        const std::size_t off = static_cast<std::size_t>(c) * n_x;
-        ok = chol_substitute_raw(dense_scratch.L.data(), n_x, rhs + off,
-                                 out + off, z_work.data()) && ok;
-    }
-    return ok;
+    return dense_scratch.factor && dense_scratch.factor->solve(rhs, out, ncol);
 }
 
 // g' H^-1 g off the live factor (live_factor_solve). It is the Newton

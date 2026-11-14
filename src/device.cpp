@@ -283,6 +283,11 @@ void* Context::symbol(Capability capability, const char* name, Status& status) {
     status.absorb(supports(capability));
     return status ? impl_->libraries[static_cast<int>(capability)].find(name, status) : nullptr;
 }
+void* Context::handle(Capability capability, Status& status) {
+    status.absorb(supports(capability));
+    return status ? (capability == Capability::Solver ? impl_->solver :
+                     capability == Capability::Blas ? impl_->blas : nullptr) : nullptr;
+}
 Status Context::push() { Status s = initialize(); return s ? Status::read("CUDA", impl_->push(impl_->context), "cuCtxPushCurrent_v2") : s; }
 Status Context::pop() { Handle previous = nullptr; return Status::read("CUDA", impl_->pop(&previous), "cuCtxPopCurrent_v2"); }
 Status Context::allocate(Address& pointer, std::size_t bytes) { return Status::read("CUDA", impl_->allocate(&pointer, bytes), "cuMemAlloc_v2"); }
@@ -416,7 +421,18 @@ const std::vector<Operation>& operations() {
         {"nngp_cholesky", {Capability::Solver}}, {"axpy", {Capability::Compiler}},
         {"sparse_cholesky", {Capability::Sparse}},
         {"likelihood", {Capability::Compiler, Capability::Blas}},
-        {"likelihood_weights", {Capability::Compiler, Capability::Blas}}
+        {"likelihood_weights", {Capability::Compiler, Capability::Blas}},
+        {"dense_gp", {Capability::Solver, Capability::Blas, Capability::Compiler}},
+        {"temporal_gp", {Capability::Solver, Capability::Blas, Capability::Compiler}},
+        {"rsr_gibbs", {Capability::Solver, Capability::Blas, Capability::Compiler}},
+        {"gp_rsr_gibbs", {Capability::Solver, Capability::Blas, Capability::Compiler}},
+        {"dense_spec", {Capability::Solver, Capability::Blas, Capability::Compiler}},
+        {"dense_precision", {Capability::Solver, Capability::Blas, Capability::Compiler}},
+        {"hsgp_product", {Capability::Blas}},
+        {"hsgp_transpose", {Capability::Blas}},
+        {"hsgp_crossprod", {Capability::Blas, Capability::Compiler}},
+        {"hsgp_cross", {Capability::Blas}},
+        {"dense_adjoint", {Capability::Blas, Capability::Compiler}}
     };
     return table;
 }

@@ -124,7 +124,7 @@ inline bool tvc_log_prior_gp(
   T log_prior = T(0.0);
   for (int j = 0; j < n_tvc; ++j) {
     tulpa_temporal_gp::FieldKernel<T> kernel(tvc_data.time_values, n_times,
-        sigma2[j], phi[j], tvc_data.cov_type, tvc_data.nu, tvc_data.period, 0.0, true);
+        sigma2[j], phi[j], tvc_data.cov_type, tvc_data.nu, tvc_data.period, 0.0, true, noncentered);
     if (!kernel.valid()) return false;
     for (int g = 0; g < n_groups; ++g)
       kernel.accumulate_log_density(w_flat,

@@ -37,6 +37,7 @@
 #include "laplace_newton_joint.h"
 #include "laplace_newton_joint_sparse.h"
 #include "laplace_profile.h"
+#include "dense_basis_products.h"
 #include "laplace_re_priors.h"
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
@@ -1560,7 +1561,8 @@ inline void visit_joint_arm_row(
     std::vector<double>&                    basis_scratch,
     std::vector<std::pair<int,double>>&     multi_scratch,
     Lin&&                                   lin,
-    Bil&&                                   bil
+    Bil&&                                   bil,
+    bool                                    skip_dense_basis = false
 ) {
     for (int j = 0; j < pa.p; j++) lin(pa.beta_start + j, pa.X(i, j));
     if (pa.n_re_groups > 0) {
@@ -1593,6 +1595,7 @@ inline void visit_joint_arm_row(
             break;
         }
         case BlockContribKind::DENSE_BASIS: {
+            if (skip_dense_basis) break;
             if (!blk.basis_eval) break;
             if (static_cast<int>(basis_scratch.size()) < blk.size) {
                 basis_scratch.assign(blk.size, 0.0);

@@ -13,6 +13,7 @@
 #include "pg_binomial.h"   // update_beta, update_re
 #include "pg_rng.h"        // rpg_int, rpg_real
 #include "linalg_fast.h"   // shared small-dense Cholesky / NNGP solve core
+#include "device_dense.h"
 #include "omp_threads.h"   // tulpa_omp_team_size_req, tulpa_parallel_for
 #include "pc_prior.h"      // tulpa::log_prior_sigma2_pc
 #include "slice_univariate.h"
@@ -975,26 +976,43 @@ inline double rtruncnorm_pos(double linear, double precision) {
   }
 }
 
-// Draw from N(M^{-1} b, M^{-1}) for a symmetric positive-definite M held
-// row-major in `M_flat`, which is overwritten by its Cholesky factor. Solving
-// L' z_star = z for z ~ N(0, I) gives Cov(z_star) = (L L')^{-1} = M^{-1}.
+// L' z_star = z for z ~ N(0, I) gives Cov(z_star) = (L L')^{-1}.
+inline void pg_draw_from_factor(device::DenseFactor& factor, int n, const double* b,
+                                 double* out, const char* what) {
+  std::vector<double> mean(n), z(n), z_star(n);
+  if (!factor.solve(b, mean.data())) Rcpp::stop("The %s conditional mean solve failed.", what);
+  for (int i = 0; i < n; i++) z[i] = R::rnorm(0.0, 1.0);
+  if (!factor.solve(z.data(), z_star.data(), 1, device::DenseSystem::LowerTranspose))
+    Rcpp::stop("The %s conditional draw solve failed.", what);
+  for (int i = 0; i < n; i++) out[i] = mean[i] + z_star[i];
+}
+
+// Draw from N(M^{-1} b, M^{-1}) for row-major SPD precision M.
 inline void pg_draw_gaussian_precision(double* M_flat, int n, const double* b,
-                                       double* out, const char* what) {
-  std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
-  if (!tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-          M_flat, L.data(), n, n, /*nugget=*/0.0)) {
+                                       double* out, const char* what,
+                                       const char* operation = "dense_precision") {
+  auto& factor = device::dense_factor(operation);
+  if (!factor.factorize(M_flat, n, true, operation)) {
+    const auto status = device::current_policy()->failure();
+    if (!status) Rcpp::stop(status.message);
     Rcpp::stop("The %s full conditional has a %d x %d precision matrix that is "
                "not positive definite.", what, n, n);
   }
-  std::vector<double> y(n), mean(n), z(n), z_star(n);
-  tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
-      L.data(), n, n, b, y.data());
-  tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
-      L.data(), n, n, y.data(), mean.data());
-  for (int i = 0; i < n; i++) z[i] = R::rnorm(0.0, 1.0);
-  tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
-      L.data(), n, n, z.data(), z_star.data());
-  for (int i = 0; i < n; i++) out[i] = mean[i] + z_star[i];
+  pg_draw_from_factor(factor, n, b, out, what);
+}
+
+inline void pg_draw_projected_gaussian(const double* projector, int n, const double* weights,
+    const double* residual, const double* prior, double prior_scale, double constant,
+    double* out, const char* operation) {
+  auto& factor = device::dense_factor(operation);
+  std::vector<double> linear(n);
+  if (!factor.projected(projector, n, weights, residual, prior, true,
+                         prior_scale, constant, linear.data(), operation)) {
+    const auto status = device::current_policy()->failure();
+    if (!status) Rcpp::stop(status.message);
+    Rcpp::stop("The projected %s precision is not positive definite.", operation);
+  }
+  pg_draw_from_factor(factor, n, linear.data(), out, operation);
 }
 
 // ============================================================================

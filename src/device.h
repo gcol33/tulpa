@@ -125,6 +125,7 @@ public:
     // Later backends resolve typed library entry points here and check every
     // result with Status::read. Handle use is protected by the same lease.
     void* symbol(Capability capability, const char* name, Status& status);
+    void* handle(Capability capability, Status& status);
     std::mutex& execution_mutex();
 };
 

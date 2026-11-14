@@ -29,6 +29,9 @@
 #include "nngp_cond.h"        // templated chol_decomp / solve_lower
 #include "tulpa/portable_math.h"
 #include "tulpa/types.h"
+#include "coordinate_linalg.h"
+#include "device_dense.h"
+#include "../inst/device/dense_covariance.cu"
 
 namespace tulpa_temporal_gp {
 
@@ -42,37 +45,22 @@ inline bool cov_is_markov(TemporalCovType cov_type, double nu) {
     return cov_type == TemporalCovType::MATERN && std::abs(nu - 0.5) < 1e-12;
 }
 
+inline int dense_cov_kind(TemporalCovType cov_type, double nu) {
+    if (cov_type == TemporalCovType::MATERN)
+        return std::abs(nu - 1.5) < 1e-12 ? 1 : std::abs(nu - 2.5) < 1e-12 ? 2 : 0;
+    return cov_type == TemporalCovType::GAUSSIAN ? 3 : cov_type == TemporalCovType::PERIODIC ? 4 : 0;
+}
+
 // k(d) for a time lag d >= 0. `sigma2` is the marginal variance, `phi` the
 // lengthscale, `nu` the Matern smoothness and `period` the periodic kernel's
 // period; the last two are read only by the kernel that uses them.
 template <typename T>
 inline T temporal_cov(double d, const T& sigma2, const T& phi,
                       TemporalCovType cov_type, double nu, double period) {
-    const T r = T(d) / phi;
-    switch (cov_type) {
-        case TemporalCovType::MATERN: {
-            if (std::abs(nu - 1.5) < 1e-12) {
-                const T u = T(std::sqrt(3.0)) * r;
-                return sigma2 * (T(1.0) + u) * safe_exp(-u);
-            }
-            if (std::abs(nu - 2.5) < 1e-12) {
-                const T u = T(std::sqrt(5.0)) * r;
-                return sigma2 * (T(1.0) + u + u * u / T(3.0)) * safe_exp(-u);
-            }
-            // nu = 1/2 collapses to the exponential kernel; every other nu is
-            // rejected in R, so this is the only remaining case.
-            return sigma2 * safe_exp(-r);
-        }
-        case TemporalCovType::GAUSSIAN:
-            return sigma2 * safe_exp(-r * r);
-        case TemporalCovType::PERIODIC: {
-            const double s = std::sin(M_PI * d / period);
-            return sigma2 * safe_exp(T(-2.0 * s * s) / (phi * phi));
-        }
-        case TemporalCovType::EXPONENTIAL:
-        default:
-            return sigma2 * safe_exp(-r);
-    }
+    const int kind = dense_cov_kind(cov_type, nu);
+    const double s = kind == 4 ? std::sin(M_PI * d / period) : 0.0;
+    return tulpa_dense_covariance(d, sigma2, phi, kind, s * s,
+        [](const T& x) { return safe_exp(x); });
 }
 
 // Lower Cholesky of the T x T covariance over `time_values`. Returns false when
@@ -82,21 +70,69 @@ template <typename T>
 inline bool temporal_cov_chol(const std::vector<double>& time_values,
                               int n_times, const T& sigma2, const T& phi,
                               TemporalCovType cov_type, double nu,
-                              double period, std::vector<T>& L, double relative_nugget = 0.0) {
-    std::vector<T> K(static_cast<std::size_t>(n_times) * n_times);
-    for (int i = 0; i < n_times; i++) {
-        for (int j = 0; j <= i; j++) {
+                              double period, std::vector<T>& L, double relative_nugget = 0.0,
+                              int dense_variant = 0) {
+    if (n_times <= 0 || time_values.size() != static_cast<std::size_t>(n_times)) return false;
+    const int kind = dense_cov_kind(cov_type, nu);
+    const double nugget = relative_nugget > 0 ? get_value(sigma2) * relative_nugget
+        : tulpa_linalg::kNngpNugget;
+    auto& factor = tulpa::device::dense_factor("temporal_gp");
+    if (!factor.covariance(time_values, get_value(sigma2), get_value(phi), kind,
+                           period, nugget, "temporal_gp", dense_variant)) return false;
+    using Matrix = tulpa_coordinate_linalg::Matrix;
+    using tulpa_coordinate_linalg::flatten;
+    using tulpa_coordinate_linalg::Cholesky;
+    using tulpa_coordinate_linalg::custom;
+    Matrix lower(n_times, n_times);
+    if (!factor.lower(lower.data(), true)) return false;
+    if constexpr (std::is_same<T, double>::value) L = flatten(lower);
+    else {
+        Matrix ds, dp(n_times, n_times);
+        if constexpr (!tulpa::math::is_arena_var<T>::value) ds.resize(n_times, n_times);
+        for (int i = 0; i < n_times; ++i) for (int j = 0; j <= i; ++j) {
             const double d = std::abs(time_values[i] - time_values[j]);
-            const T k = temporal_cov(d, sigma2, phi, cov_type, nu, period);
-            K[static_cast<std::size_t>(i) * n_times + j] = k;
-            K[static_cast<std::size_t>(j) * n_times + i] = k;
+            auto p = temporal_cov(d, fwd::Dual(get_value(sigma2)),
+                fwd::Dual(get_value(phi), 1), cov_type, nu, period);
+            dp(i, j) = dp(j, i) = p.grad;
+            if constexpr (!tulpa::math::is_arena_var<T>::value) {
+                auto s = temporal_cov(d, fwd::Dual(get_value(sigma2), 1),
+                    fwd::Dual(get_value(phi)), cov_type, nu, period);
+                ds(i, j) = ds(j, i) = s.grad + (i == j && relative_nugget > 0 ? relative_nugget : 0);
+            }
+        }
+        if constexpr (tulpa::math::is_arena_var<T>::value) {
+            Cholesky operation;
+            operation.lower = lower;
+            operation.ok = true;
+            const double variance = get_value(sigma2);
+            const double fixed_nugget = relative_nugget > 0 ? 0.0 : nugget;
+            auto backward = [operation, dp, variance, fixed_nugget](const double*, int, const double*, int,
+                                                const double* adjoint, double* out) {
+                Matrix dk(dp.rows(), dp.cols());
+                operation(nullptr, 0, nullptr, 0, adjoint, dk.data());
+                // K:bar(K) = L:bar(L)/2 follows from Cholesky homogeneity.
+                long double scale = 0, range = 0, trace = 0;
+                for (int i = 0; i < dk.size(); ++i) {
+                    scale += static_cast<long double>(operation.lower.data()[i]) * adjoint[i];
+                    range += static_cast<long double>(dk.data()[i]) * dp.data()[i];
+                }
+                for (int i = 0; i < dk.rows(); ++i) trace += dk(i, i);
+                out[0] = static_cast<double>((0.5L * scale - fixed_nugget * trace) / variance);
+                out[1] = static_cast<double>(range);
+            };
+            L = custom(std::vector<T>{sigma2, phi}, lower, backward);
+        } else {
+            Matrix perturbation = ds * sigma2.grad + dp * phi.grad;
+            const Matrix left = lower.template triangularView<Eigen::Lower>().solve(perturbation);
+            Matrix p = lower.template triangularView<Eigen::Lower>().solve(left.transpose()).transpose();
+            p.template triangularView<Eigen::StrictlyUpper>().setZero();
+            p.diagonal() *= 0.5;
+            const Matrix derivative = lower * p;
+            L.resize(static_cast<std::size_t>(n_times) * n_times);
+            for (int i = 0; i < lower.size(); ++i) L[i] = T(lower.data()[i], derivative.data()[i]);
         }
     }
-    if (relative_nugget > 0)
-        for (int i = 0; i < n_times; ++i)
-            K[static_cast<std::size_t>(i) * n_times + i] =
-                K[static_cast<std::size_t>(i) * n_times + i] + sigma2 * T(relative_nugget);
-    return tulpa_nngp::chol_decomp(K, n_times, L, relative_nugget > 0 ? 0.0 : 1e-8);
+    return true;
 }
 
 // log N(f; 0, K) for one group, given the factor L of K.
@@ -222,7 +258,7 @@ public:
     FieldKernel(const std::vector<double>& times, int n_times,
                 const T& sigma2, const T& phi, TemporalCovType cov,
                 double nu, double period, double relative_nugget = 0.0,
-                bool separate_level = false)
+                bool separate_level = false, bool noncentered = true)
         : n_(n_times), markov_(cov_is_markov(cov, nu)), valid_(true),
           separate_level_(separate_level),
           sigma2_(sigma2), sigma_(safe_sqrt(sigma2)) {
@@ -231,7 +267,8 @@ public:
             ou_forward_scale(sigma_, omr2_, a_);
         } else {
             valid_ = temporal_cov_chol(times, n_, sigma2, phi, cov, nu,
-                                       period, L_, relative_nugget);
+                                       period, L_, relative_nugget,
+                                       (separate_level ? 2 : 0) + (noncentered ? 1 : 0));
         }
         if (!valid_ || !separate_level_) return;
         level_axis_.resize(n_);

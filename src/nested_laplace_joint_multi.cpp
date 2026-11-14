@@ -2842,7 +2842,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
 
     std::vector<std::vector<DenseBasisScratch>> db_buffers_pool(n_outer);
     for (auto& d : db_buffers_pool)
-        d.assign(static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
+        d.resize(static_cast<size_t>(n_arms) * B);
 
     // Latent-factor blocks: their scores are integrated out per unit by the
     // fixed-point solve of latent_factor_marginal.h, which reads the third
@@ -3229,13 +3229,18 @@ inline double joint_row_eta_value(
     const std::vector<LatentBlock>& blocks, int cell,
     const std::vector<std::vector<double>>& d_eff,
     std::vector<double>& basis_scratch,
-    std::vector<std::pair<int, double>>& multi_scratch
+    std::vector<std::pair<int, double>>& multi_scratch,
+    const std::vector<std::vector<double>>* dense_fields = nullptr
 ) {
     double e = pa.offset.size() ? pa.offset[row] : 0.0;
+    if (dense_fields) for (std::size_t b = 0; b < blocks.size(); ++b) {
+        if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS)
+            e += d_eff[b][arm] * block_row_weight(blocks[b], row, arm) * (*dense_fields)[b][row];
+    }
     visit_joint_arm_row(pa, arm, row, blocks, cell, d_eff, basis_scratch,
         multi_scratch,
         [&](int col, double c) { e += c * x[col]; },
-        [&](int u, int l, double c) { e += c * x[u] * x[l]; });
+        [&](int u, int l, double c) { e += c * x[u] * x[l]; }, dense_fields != nullptr);
     return e;
 }
 void compute_eta_joint_sparse_dispatch(
@@ -3253,9 +3258,14 @@ void compute_eta_joint_sparse_dispatch(
     for (int k_arm = 0; k_arm < n_arms; k_arm++) {
         const ParsedArm& pa = parsed[k_arm];
         const int N_k = arms[k_arm].N;
+        std::vector<std::vector<double>> dense_fields(blocks.size());
+        for (std::size_t b = 0; b < blocks.size(); ++b) {
+            if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS)
+                dense_basis_field(blocks[b], N_k, k_arm, k_grid, x.begin() + blocks[b].start, dense_fields[b]);
+        }
         for (int i = 0; i < N_k; i++) {
             etas[k_arm][i] = joint_row_eta_value(x, pa, k_arm, i, blocks,
-                k_grid, d_eff, basis_scratch, multi_scratch);
+                k_grid, d_eff, basis_scratch, multi_scratch, &dense_fields);
         }
     }
 }
@@ -3277,9 +3287,14 @@ void nl_retain_fitted_eta_single_arm(
     std::vector<double> basis_scratch;
     std::vector<std::pair<int, double>> multi_scratch;
     result.eta_mean.resize(N);
+    std::vector<std::vector<double>> dense_fields(blocks.size());
+    for (std::size_t b = 0; b < blocks.size(); ++b) {
+        if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS)
+            dense_basis_field(blocks[b], N, 0, cell, result.mode.data() + blocks[b].start, dense_fields[b]);
+    }
     for (int i = 0; i < N; ++i)
         result.eta_mean[i] = joint_row_eta_value(result.mode, parsed[0], 0, i,
-            blocks, cell, d_eff, basis_scratch, multi_scratch);
+            blocks, cell, d_eff, basis_scratch, multi_scratch, &dense_fields);
 }
 
 void nl_attach_fitted_eta_single_arm(

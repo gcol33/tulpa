@@ -28,9 +28,12 @@
 #include "latent_block.h"
 #include "nested_laplace_joint_core.h"
 #include "sparse_hessian.h"
+#include "device_dense.h"
+#include "dense_basis_products.h"
 #include <Eigen/Core>
 #include <Rcpp.h>
 #include <vector>
+#include <limits>
 
 namespace tulpa {
 
@@ -67,18 +70,9 @@ struct DenseBasisActive {
 // rstart); any mismatch triggers a rebuild. In the common case (same
 // H_builder reused across Newton iters and outer-grid cells, same block /
 // arm shape) the cache is built once and reused.
-struct DenseBasisScratch {
-    Eigen::VectorXd g_obs;        // length N_k
-    Eigen::VectorXd w_obs;        // length N_k
-    Eigen::VectorXd w_sqrt;       // length N_k
-    Eigen::VectorXd w_signed_sqrt;
-    Eigen::MatrixXd WQ;           // N_k x M (|W|^{1/2} Q)
-    Eigen::MatrixXd signed_WQ;
-    bool has_negative = false;
-    Eigen::MatrixXd H_block;      // M x M (SYRK output, lower)
+struct DenseBasisScratch : DenseBasisProducts {
     Eigen::MatrixXd H_beta;       // M x p_k (GEMM output)
     Eigen::MatrixXd H_re;         // M x n_re (per-group accumulate)
-    Eigen::VectorXd grad_block;   // length M
 
     // ---- Scatter index cache ----
     // idx_bb stores flat values[] indices for block x block (lower-tri
@@ -215,49 +209,15 @@ inline bool scatter_dense_basis_block(
     // curvature can be negative and its sign travels with the weighted row.
     scratch.g_obs.resize(N_k);
     scratch.w_obs.resize(N_k);
-    scratch.w_sqrt.resize(N_k);
-    scratch.w_signed_sqrt.resize(N_k);
-    scratch.has_negative = false;
+    scratch.amplitude.resize(N_k);
     for (int i = 0; i < N_k; i++) {
         auto gh = arm_grad_hess(view, i, eta[i]);
         scratch.g_obs(i) = gh.grad;
         scratch.w_obs(i) = gh.neg_hess;
-        const double w = gh.neg_hess;
-        scratch.w_sqrt(i) = std::sqrt(std::abs(w));
-        scratch.w_signed_sqrt(i) = (w < 0.0) ? -scratch.w_sqrt(i) : scratch.w_sqrt(i);
-        scratch.has_negative = scratch.has_negative || w < 0.0;
+        scratch.amplitude(i) = block_row_weight(blk, i, k_arm);
     }
 
-    // Map raw Phi and apply column scaling sqrt_S and row scaling sqrt(|w|).
-    Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
-                                   Eigen::RowMajor>>
-        Phi(batch.data, N_k, M);
-
-    Eigen::Map<const Eigen::VectorXd> sqrt_S_vec(
-        batch.sqrt_S, batch.sqrt_S ? M : 0);
-
-    scratch.WQ.resize(N_k, M);
-    if (batch.sqrt_S) {
-        // WQ = diag(sqrt(|w|)) * Phi * diag(sqrt_S)
-        scratch.WQ.noalias() = scratch.w_sqrt.asDiagonal() * Phi
-                                * sqrt_S_vec.asDiagonal();
-    } else {
-        scratch.WQ.noalias() = scratch.w_sqrt.asDiagonal() * Phi;
-    }
-
-    // ---- Block x block (SYRK, lower triangle) ----
-    // H_block = WQ' sign(W) WQ. Nonnegative weights use a symmetric update.
-    scratch.H_block.setZero(M, M);
-    if (scratch.has_negative) {
-        scratch.signed_WQ = scratch.WQ;
-        for (int i = 0; i < N_k; ++i) {
-            if (scratch.w_obs(i) < 0.0) scratch.signed_WQ.row(i) *= -1.0;
-        }
-        scratch.H_block.noalias() = scratch.WQ.transpose() * scratch.signed_WQ;
-    } else {
-        scratch.H_block.template selfadjointView<Eigen::Lower>()
-            .rankUpdate(scratch.WQ.transpose());
-    }
+    dense_basis_products(batch, scratch, scratch.amplitude.data());
 
     const double dd = d_eff * d_eff;
     // Cached write order: column-major lower triangle (j2 outer, j1 inner
@@ -283,7 +243,9 @@ inline bool scatter_dense_basis_block(
         Eigen::MatrixXd WX(N_k, p_k);
         WX.noalias() = scratch.w_signed_sqrt.asDiagonal() * X_map;
         scratch.H_beta.resize(M, p_k);
-        scratch.H_beta.noalias() = scratch.WQ.transpose() * WX;
+        if (!device::cross_product(scratch.WQ.data(), N_k, M, WX.data(), p_k,
+                                   scratch.H_beta.data()))
+            scratch.H_beta.setConstant(std::numeric_limits<double>::quiet_NaN());
 
         // Cached write order matches scratch.idx_bbeta layout (column-major
         // over (l, j)).
@@ -321,13 +283,6 @@ inline bool scatter_dense_basis_block(
         }
     }
 
-    // ---- Gradient: grad[block] += d_eff * Q^T g_obs ----
-    // Q^T g_obs = diag(sqrt_S) Phi^T g_obs.
-    scratch.grad_block.resize(M);
-    scratch.grad_block.noalias() = Phi.transpose() * scratch.g_obs;
-    if (batch.sqrt_S) {
-        scratch.grad_block.array() *= sqrt_S_vec.array();
-    }
     for (int j = 0; j < M; j++) {
         grad[blk.start + m_off + j] += d_eff * scratch.grad_block(j);
     }
@@ -350,8 +305,7 @@ inline void scatter_dense_basis_cross(
     if (ba.N_k != bb.N_k) {
         Rcpp::stop("Dense basis cross-product: observation counts differ.");
     }
-    const Eigen::MatrixXd cross = sa.WQ.transpose() *
-        (sb.has_negative ? sb.signed_WQ : sb.WQ);
+    const Eigen::MatrixXd cross = dense_basis_cross_products(sa, sb);
     const int off_a = a.start + ba.m_offset_in_block;
     const int off_b = b.start + bb.m_offset_in_block;
     const double scale = d_a * d_b;

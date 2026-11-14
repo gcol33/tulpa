@@ -523,6 +523,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     static_cast<std::uint64_t>(kg) + 1ULL, eta_var_ptr,
                     hard_on ? &st[s].hard : nullptr);
             }
+            nl_retain_fitted_eta_single_arm(r, kg, arms, parsed, blocks);
             cell_results[s][kg] = std::move(r);
             prev_mode[s] = cell_results[s][kg].mode;
         }

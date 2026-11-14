@@ -124,8 +124,7 @@ Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(
   std::vector<double> w_proj(J, 0.0);
   std::vector<double> sum_omega_s(J, 0.0), sum_resid_s(J, 0.0);
   const double* P = rsr_projection.begin();
-  std::vector<double> Lambda, PW(static_cast<size_t>(J) * J);
-  std::vector<double> M(static_cast<size_t>(J) * J), lin(J);
+  std::vector<double> Lambda;
   Rcpp::NumericVector w_draw(J);
 
   int save_idx = 0;
@@ -155,26 +154,8 @@ Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(
     tulpa::pg_nngp_factors(gp.phi, cov_type, coords, nn_dist, gp.top, gp.fac);
     tulpa::pg_nngp_precision_dense(gp.top, gp.fac, gp.sigma2, Lambda);
 
-    for (int a = 0; a < J; a++) {
-      const size_t ra = static_cast<size_t>(a) * J;
-      for (int s = 0; s < J; s++) PW[ra + s] = P[ra + s] * sum_omega_s[s];
-      double v = 0.0;
-      for (int s = 0; s < J; s++) v += P[ra + s] * sum_resid_s[s];
-      lin[a] = v;
-    }
-    for (int a = 0; a < J; a++) {
-      const size_t ra = static_cast<size_t>(a) * J;
-      for (int b = a; b < J; b++) {
-        const size_t rb = static_cast<size_t>(b) * J;
-        double v = 0.0;
-        for (int s = 0; s < J; s++) v += PW[ra + s] * P[rb + s];
-        M[ra + b] = v + Lambda[ra + b];
-        M[rb + a] = v + Lambda[rb + a];
-      }
-    }
-
-    tulpa::pg_draw_gaussian_precision(M.data(), J, lin.data(), w_draw.begin(),
-                                      "restricted NNGP spatial field");
+    tulpa::pg_draw_projected_gaussian(P, J, sum_omega_s.data(), sum_resid_s.data(),
+        Lambda.data(), 1.0, 0.0, w_draw.begin(), "gp_rsr_gibbs");
     for (int s = 0; s < J; s++) gp.w[s] = w_draw[s];
 
     // 7. The projected field for this draw, so the reported pair and the eta of

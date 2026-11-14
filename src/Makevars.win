@@ -64,6 +64,8 @@ unity_core.o: \
   device_sparse.cpp \
   device_likelihood.cpp \
   device_likelihood_exports.cpp \
+  device_dense.cpp \
+  device_dense_exports.cpp \
   device_exports.cpp \
   hyperprior_density_export.cpp \
   multinomial_logit_export.cpp \
@@ -94,6 +96,12 @@ unity_core.o: \
   sampler_model_data.h \
   log_post_impl.h \
   sysmem.h \
+  device_dense.h \
+  ../inst/device/dense_covariance.cu \
+  dense_basis_apply.h \
+  temporal_gp_kernel.h \
+  hsgp_field.h \
+  dense_basis_products.h \
   gpu_nngp_laplace.h \
   cholmod_view.h \
   pc_prior.h \
@@ -121,9 +129,12 @@ unity_core.o: \
   svc_nc_apply.h \
   msgp_nc_apply.h \
   log_post_generic_impl.h \
-  nngp_cond.h \
-  sobol_direction_numbers.h \
+  coordinate_linalg.h \
   hmc_temporal.h \
+  nngp_cond.h \
+  hsgp_spectral.h \
+  latent_block.h \
+  sobol_direction_numbers.h \
   hmc_svc.h \
   hmc_gp.h \
   hmc_temporal_multiscale.h \
@@ -151,17 +162,17 @@ unity_core.o: \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
   log_post_device_impl.h \
+  linear_constraint_rows.h \
   hmc_gp_cg.h \
   hmc_gp_lbfgs.h \
   hmc_gp_solvers.h \
   hmc_gp_log_lik.h \
   hmc_gp_gradients.h \
   hmc_gp_nc.h \
-  temporal_gp_kernel.h \
+  simp/scheme.h \
   hmc_mass_lowrank.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
-  hsgp_spectral.h \
   spde_matern_map.h \
   svc_range.h \
   hmc_svc_autodiff.h \
@@ -230,6 +241,7 @@ unity_exports.o: \
   hmc_gp_nc.h \
   hmc_hsgp_kernels.h \
   temporal_gp_kernel.h \
+  simp/scheme.h \
   hmc_mass_lowrank.h \
   device.h \
   laplace_cholesky.h \
@@ -239,6 +251,9 @@ unity_exports.o: \
   latent_block.h \
   omp_threads.h \
   glmm_family_elt.h \
+  coordinate_linalg.h \
+  device_dense.h \
+  ../inst/device/dense_covariance.cu \
   st_null_space.h \
   laplace_cholesky_dispatch.h \
   laplace_family_curvature.h \
@@ -350,11 +365,15 @@ unity_glmm.o: \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
   hmc_hsgp_kernels.h \
+  coordinate_linalg.h \
+  device_dense.h \
+  ../inst/device/dense_covariance.cu \
   hsgp_spectral.h \
   svc_range.h \
   hmc_svc_autodiff.h \
   intrinsic_log_pdet.h \
   laplace_likelihoods.h \
+  simp/scheme.h \
   hmc_mass_lowrank.h \
   inner_gaussian_draw.h \
   hard_constraints.h \
@@ -391,11 +410,13 @@ unity_glmm.o: \
   inner_laplace_probe.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
+  hsgp_field.h \
   spde_matern_map.h \
   hmc_latent_autodiff.h \
   small_dense_sym.h \
   sparse_hessian.h \
   curvature3_contract.h \
+  dense_basis_apply.h \
   cholmod_view.h \
   hessian_pattern_guard.h
 unity_hmc.o: \
@@ -441,6 +462,7 @@ unity_hmc.o: \
   st_type_iv_precision.h \
   hmc_walnuts.h \
   sampler_field_store.h \
+  simp/adapt.h \
   hmc_nuts_chain_setup.h \
   hmc_nuts_chain_iter_window.h \
   hmc_nuts_chain_iter_nuts.h \
@@ -489,6 +511,8 @@ unity_hmc.o: \
   linalg_fast.h \
   laplace_cholesky.h \
   laplace_family_link.h \
+  device_dense.h \
+  ../inst/device/dense_covariance.cu \
   device.h \
   laplace_types.h \
   device_sparse.h \
@@ -496,6 +520,8 @@ unity_hmc.o: \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
   tulpa_priors_mstemporal.h \
+  simp/scheme.h \
+  simp/harmonic.h \
   checkpoint_io.h \
   hmc_svc_autodiff.h \
   hmc_hsgp_kernels.h \
@@ -518,10 +544,12 @@ unity_hmc.o: \
   glmm_family_elt.h \
   hmc_gp_autodiff.h \
   hsgp_spectral.h \
+  hsgp_field.h \
   spde_matern_map.h \
   svc_range.h \
   hmc_latent_autodiff.h \
-  fastmath.h
+  fastmath.h \
+  dense_basis_apply.h
 unity_laplace.o: \
   unity_laplace.cpp \
   implicit_diff.cpp \
@@ -570,6 +598,7 @@ unity_laplace.o: \
   laplace_cholesky_dispatch.h \
   laplace_spec_curvature3.h \
   laplace_spec_solve.h \
+  dense_basis_products.h \
   hard_constraints.h \
   omp_threads.h \
   sparse_cholesky.h \
@@ -600,6 +629,7 @@ unity_laplace.o: \
   scatter_dense_basis.h \
   scatter_indexed_cache.h \
   nl_cell_cache.h \
+  device_dense.h \
   linear_constraint_rows.h \
   fastmath.h \
   device_likelihood.h \
@@ -641,6 +671,7 @@ unity_laplace.o: \
   hmc_gp_nc.h \
   hmc_hsgp_kernels.h \
   temporal_gp_kernel.h \
+  simp/scheme.h \
   hmc_mass_lowrank.h \
   tulpa_priors_re.h \
   tulpa_priors_icar.h \
@@ -657,15 +688,19 @@ unity_laplace.o: \
   tulpa_priors_zioi.h \
   log_post_device_impl.h \
   sobol_direction_numbers.h \
+  coordinate_linalg.h \
+  ../inst/device/dense_covariance.cu \
   st_null_space.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
   hsgp_spectral.h \
+  hsgp_field.h \
   spde_matern_map.h \
   svc_range.h \
   hmc_svc_autodiff.h \
   hmc_latent_autodiff.h \
-  st_gp_kernel.h
+  st_gp_kernel.h \
+  dense_basis_apply.h
 unity_nl.o: \
   unity_nl.cpp \
   areal_input_check.cpp \
@@ -754,6 +789,7 @@ unity_nl.o: \
   coupled_scatter_plan.h \
   joint_hessian_pattern.h \
   laplace_newton_joint_sparse.h \
+  dense_basis_products.h \
   row_classes.h \
   scatter_dense_basis.h \
   scatter_indexed_cache.h \
@@ -769,6 +805,7 @@ unity_nl.o: \
   device_likelihood.h \
   builtin_family_zi.h \
   fastmath.h \
+  device_dense.h \
   inner_laplace_probe.h \
   rwmh.h \
   curvature3_contract.h \
@@ -840,6 +877,7 @@ unity_nl_joint.o: \
   laplace_profile.h \
   coupled_scatter_plan.h \
   laplace_family_link.h \
+  dense_basis_products.h \
   scatter_dense_basis.h \
   scatter_indexed_cache.h \
   laplace_builtin_family_spec.h \
@@ -849,6 +887,7 @@ unity_nl_joint.o: \
   inner_cila.h \
   inner_laplace_is.h \
   hard_constraints.h \
+  device_dense.h \
   laplace_likelihoods.h \
   cholmod_view.h \
   hessian_pattern_guard.h \
@@ -901,6 +940,7 @@ unity_pg.o: \
   laplace_spatial_priors.h \
   hmc_temporal.h \
   pg_negbin.h \
+  device_dense.h \
   omp_threads.h \
   pc_prior.h \
   slice_univariate.h \
@@ -908,6 +948,7 @@ unity_pg.o: \
   laplace_types.h \
   intrinsic_log_pdet.h \
   autodiff_utils.h \
+  device.h \
   laplace_likelihoods.h \
   laplace_core.h \
   fastmath.h
@@ -936,6 +977,7 @@ unity_samplers.o: \
   restricted_slopes_setup.h \
   sghmc_sampler.h \
   hmc_sampler_decls.h \
+  simp/adapt.h \
   smc_sampler.h \
   smc_modeldata.h \
   smc_interweave.h \
@@ -971,6 +1013,8 @@ unity_samplers.o: \
   pc_prior.h \
   tulpa_priors_re.h \
   tulpa_priors_mstemporal.h \
+  simp/scheme.h \
+  simp/harmonic.h \
   hmc_gp.h \
   slice_univariate.h \
   device_likelihood.h \
@@ -1022,13 +1066,18 @@ unity_samplers.o: \
   tulpa_priors_zioi.h \
   log_post_device_impl.h \
   glmm_oracle.h \
+  coordinate_linalg.h \
+  device_dense.h \
+  ../inst/device/dense_covariance.cu \
   fastmath.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
+  hsgp_field.h \
   spde_matern_map.h \
   svc_range.h \
   hmc_latent_autodiff.h \
-  glmm_family_elt.h
+  glmm_family_elt.h \
+  dense_basis_apply.h
 unity_spatial.o: \
   unity_spatial.cpp \
   brasil_export.cpp \
@@ -1099,6 +1148,7 @@ unity_spatial.o: \
   joint_hessian_pattern.h \
   laplace_family_link.h \
   laplace_newton_joint_sparse.h \
+  dense_basis_products.h \
   row_classes.h \
   scatter_dense_basis.h \
   scatter_indexed_cache.h \
@@ -1139,8 +1189,10 @@ unity_spatial.o: \
   cholmod_view.h \
   small_dense_sym.h \
   inv_block_extract.h \
+  device_dense.h \
   laplace_family_curvature.h \
   temporal_gp_kernel.h \
+  simp/scheme.h \
   hmc_mass_lowrank.h \
   sobol_direction_numbers.h \
   device.h \
@@ -1148,5 +1200,7 @@ unity_spatial.o: \
   inner_laplace_probe.h \
   rwmh.h \
   curvature3_contract.h \
+  coordinate_linalg.h \
+  ../inst/device/dense_covariance.cu \
   st_null_space.h
 # unity-build: end

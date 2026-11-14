@@ -93,9 +93,8 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
 
   const double* P = rsr_projection.begin();
   std::vector<double> sum_omega_s(J), sum_resid_s(J);
-  std::vector<double> PW(static_cast<size_t>(J) * J);
-  std::vector<double> M(static_cast<size_t>(J) * J);
-  std::vector<double> lin(J);
+  std::vector<double> prior(static_cast<size_t>(J) * J, 0.0);
+  icar.add_dense(prior.data(), 1.0);
 
   int save_idx = 0;
 
@@ -119,29 +118,8 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
                                C.kappa.begin(), C.offset.begin(),
                                sum_omega_s.data(), sum_resid_s.data());
 
-    for (int a = 0; a < J; a++) {
-      const size_t ra = static_cast<size_t>(a) * J;
-      for (int s = 0; s < J; s++) PW[ra + s] = P[ra + s] * sum_omega_s[s];
-      double v = 0.0;
-      for (int s = 0; s < J; s++) v += P[ra + s] * sum_resid_s[s];
-      lin[a] = v;
-    }
-    const double one_over_J = 1.0 / J;
-    for (int a = 0; a < J; a++) {
-      const size_t ra = static_cast<size_t>(a) * J;
-      for (int b = a; b < J; b++) {
-        const size_t rb = static_cast<size_t>(b) * J;
-        double v = 0.0;
-        for (int s = 0; s < J; s++) v += PW[ra + s] * P[rb + s];
-        v += one_over_J;
-        M[ra + b] = v;
-        M[rb + a] = v;
-      }
-    }
-    icar.add_dense(M.data(), tau);
-
-    tulpa::pg_draw_gaussian_precision(M.data(), J, lin.data(), phi.begin(),
-                                      "RSR spatial field");
+    tulpa::pg_draw_projected_gaussian(P, J, sum_omega_s.data(), sum_resid_s.data(),
+        prior.data(), tau, 1.0 / J, phi.begin(), "rsr_gibbs");
 
     double mean_phi = 0.0;
     for (int s = 0; s < J; s++) mean_phi += phi[s];

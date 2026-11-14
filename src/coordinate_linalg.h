@@ -5,6 +5,7 @@
 #include <tulpa/autodiff_arena.h>
 #include <algorithm>
 #include <vector>
+#include "device_dense.h"
 
 namespace tulpa_coordinate_linalg {
 
@@ -79,27 +80,23 @@ struct Cholesky {
     Matrix lower;
     bool ok;
 
+    Cholesky() : ok(false) {}
+
     template<class T> Cholesky(const std::vector<T>& x, int n) {
-        const Eigen::LLT<Matrix> factor(matrix(x, n, n));
-        ok = factor.info() == Eigen::Success;
+        const Matrix input = matrix(x, n, n);
+        auto& factor = tulpa::device::dense_factor("dense_gp");
+        ok = factor.factorize(input.data(), n, true, "dense_gp");
         if (ok) {
-            lower = factor.matrixL();
-            ok = lower.allFinite();
+            lower.resize(n, n);
+            ok = factor.lower(lower.data(), true);
         }
     }
 
     void operator()(const double*, int, const double*, int, const double* adjoint, double* out) const {
         const int n = lower.rows();
-        const Eigen::Map<const Matrix> g(adjoint, n, n);
-        const Matrix s = lower.transpose() * g.triangularView<Eigen::Lower>().toDenseMatrix();
-        Matrix p = Matrix::Zero(n, n);
-        p.triangularView<Eigen::Lower>() = s.triangularView<Eigen::Lower>();
-        p.diagonal() *= 0.5;
-        // Symmetric precision perturbations share the two off-diagonal adjoints.
-        const Matrix symmetric = 0.5 * (p + p.transpose());
-        const Matrix inverse = lower.triangularView<Eigen::Lower>().solve(Matrix::Identity(n, n));
-        const Matrix result = inverse.transpose() * symmetric * inverse;
-        std::copy(result.data(), result.data() + result.size(), out);
+        if (!tulpa::device::cholesky_adjoint(lower.data(), adjoint, out, n))
+            std::fill(out, out + static_cast<std::size_t>(n) * n,
+                      std::numeric_limits<double>::quiet_NaN());
     }
 };
 

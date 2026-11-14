@@ -13,6 +13,7 @@
 #include "hsgp_spectral.h"
 #include "pc_prior.h"
 #include "spatial_range_prior.h"
+#include "hsgp_field.h"
 
 namespace tulpa {
 namespace priors {
@@ -22,23 +23,6 @@ using namespace math;
 // ============================================================================
 // 5. HSGP spatial prior
 // ============================================================================
-
-template<typename T>
-void evaluate_hsgp_field(const T* beta, const T& sigma2, const T& lengthscale,
-                         const HSGPData& basis, std::vector<T>& out) {
-    const int m_total = basis.m_total;
-    out.assign(basis.n_obs, T(0.0));
-    const HsgpKernel kernel = static_cast<HsgpKernel>(basis.kernel);
-    for (int j = 0; j < m_total; j++) {
-        T S_j = hsgp_spectral_density_2d(
-            kernel, sigma2, lengthscale, basis.eigenvalues[j]);
-        T scaled_beta_j = safe_sqrt(S_j) * beta[j];
-        for (int i = 0; i < basis.n_obs; i++) {
-            out[i] = out[i]
-                + T(basis.phi_flat[i * m_total + j]) * scaled_beta_j;
-        }
-    }
-}
 
 template<typename T>
 T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data,

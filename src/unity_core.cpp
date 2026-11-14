@@ -18,6 +18,8 @@
 #include "device_sparse.cpp"
 #include "device_likelihood.cpp"
 #include "device_likelihood_exports.cpp"
+#include "device_dense.cpp"
+#include "device_dense_exports.cpp"
 #include "device_exports.cpp"
 #include "hyperprior_density_export.cpp"
 #include "multinomial_logit_export.cpp"

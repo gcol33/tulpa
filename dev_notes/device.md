@@ -27,10 +27,10 @@ policy->fail(status);
 if (status) policy->record(operation, cuda);
 ```
 
-`operations()` owns the operation-to-capability registry. An unknown operation
+`operations()` owns the operation-to-capabilities registry. An unknown operation
 is an error. The `variant` is an exact matrix order for NNGP and zero for axpy.
 An unmeasured operation or variant has an infinite crossover in automatic mode.
-Forced CUDA ignores the size gate and requires that operation's capability.
+Forced CUDA ignores the size gate and requires all of the operation's capabilities.
 Host inference remains on CPU. A failed device operation records a status;
 it never calls R or throws a library error from a worker. The R finalization
 and session exit read this status on the main thread.

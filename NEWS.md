@@ -15,6 +15,10 @@
   pass the NUTS numerical verification gate. `LikelihoodSpec::device_fn`
   lets consumers supply fused observation kernels; ABI 64 requires rebuilding
   packages that allocate the spec.
+* Dense temporal GP and TVC covariance factors, projected RSR Gibbs conditionals,
+  HSGP basis products, and dense Newton solves use the shared device policy.
+  CUDA workspaces retain covariance inputs and bases across evaluations.
+  Cholesky pullbacks use measured CPU or CUDA matrix operations.
 
 * `control$device` selects `auto`, `cpu`, or `cuda` through one runtime-loaded
   CUDA layer. `gpu_info()` reports the device and library availability.

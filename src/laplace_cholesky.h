@@ -5,6 +5,7 @@
 #define TULPA_LAPLACE_CHOLESKY_H
 
 #include "laplace_types.h"
+#include "device_dense.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <cstddef>
@@ -57,6 +58,7 @@ struct CholeskyResult {
 // Holds L (n*n, column-major: L_data[i + j*n]) and z (n).
 // Allocate once outside the parallel region; reuse across cells/iterations.
 struct DenseCholeskyScratch {
+    std::unique_ptr<device::DenseFactor> factor;
     std::vector<double> L;   // column-major, capacity >= n*n
     std::vector<double> z;   // capacity >= n
     int n_alloc = 0;
@@ -257,10 +259,11 @@ inline bool dense_cholesky_solve_raw(
     scratch.ensure(n);
     if (static_cast<int>(delta_out.size()) < n) delta_out.assign(n, 0.0);
 
-    tulpa::detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
-
-    return chol_substitute_raw(scratch.L.data(), n,
-                               rhs.data(), delta_out.data(), scratch.z.data());
+    if (!scratch.factor) scratch.factor.reset(new device::DenseFactor);
+    const bool ok = scratch.factor->factorize(H.data(), n, true, "dense_spec");
+    log_det_out = scratch.factor->log_determinant();
+    return ok && scratch.factor->lower(scratch.L.data()) &&
+        scratch.factor->solve(rhs.data(), delta_out.data());
 }
 
 // Raw-buffer factorize-for-log-det: no solve, no Rcpp alloc. Returns true when
@@ -275,8 +278,10 @@ inline bool dense_cholesky_log_det_raw(
     double& log_det_out
 ) {
     scratch.ensure(n);
-    tulpa::detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
-    return std::isfinite(log_det_out);
+    if (!scratch.factor) scratch.factor.reset(new device::DenseFactor);
+    const bool ok = scratch.factor->factorize(H.data(), n, true, "dense_spec");
+    log_det_out = scratch.factor->log_determinant();
+    return ok && scratch.factor->lower(scratch.L.data());
 }
 
 // Extract a symmetric DenseMat into raw CSC lower-triangle arrays

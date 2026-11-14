@@ -32,6 +32,16 @@ if (length(missing)) stop("in no unity file: ", paste(missing, collapse = ", "))
 if (length(unknown)) stop("named by a unity file but absent from src/: ", paste(unknown, collapse = ", "))
 
 objs <- sub("\\.cpp$", ".o", unity)
+normalize_include <- function(path) {
+  parts <- strsplit(gsub("\\\\", "/", path), "/", fixed = TRUE)[[1L]]
+  out <- character()
+  for (part in parts) {
+    if (part %in% c("", ".")) next
+    if (part == ".." && length(out) && tail(out, 1L) != "..") out <- head(out, -1L)
+    else out <- c(out, part)
+  }
+  paste(out, collapse = "/")
+}
 prerequisites <- function(files) {
   seen <- character()
   pending <- files
@@ -42,8 +52,9 @@ prerequisites <- function(files) {
     seen <- c(seen, current)
     lines <- readLines(file.path(src, current), warn = FALSE)
     includes <- regmatches(lines,
-      regexec('^[[:space:]]*#[[:space:]]*include[[:space:]]*"([^"/]+)"', lines))
+      regexec('^[[:space:]]*#[[:space:]]*include[[:space:]]*"([^"]+)"', lines))
     includes <- vapply(Filter(length, includes), `[[`, "", 2L)
+    includes <- vapply(file.path(dirname(current), includes), normalize_include, "")
     pending <- c(pending, includes[file.exists(file.path(src, includes))])
   }
   seen

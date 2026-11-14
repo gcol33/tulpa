@@ -39,6 +39,8 @@
 #include "laplace_re_priors.h"
 #include "laplace_spec_curvature3.h"  // build_spec_curvature3_oracle (inner-skew diagnostic)
 #include "laplace_spec_solve.h"   // spec_inner_solve (defined below, shared with driver)
+#include "dense_basis_products.h"
+#include <type_traits>
 #include "hard_constraints.h"     // HardConstraintState, level_prior_conditioning
 #include "laplace_spatial_priors.h"
 #include "latent_block.h"
@@ -508,6 +510,18 @@ template<class T> inline void compute_eta_spec(
         const LatentBlock& blk = (*L.blocks)[b];
         d_fac_cache[b] = blk.d_fac_at(k_grid);
     }
+    // A basis block's field is formed once per evaluation on the numeric path.
+    // A symbolic predictor (the device projection plan) keeps the per-row
+    // basis evaluation, since its coefficients are not numbers.
+    constexpr bool numeric = std::is_same<T, double>::value;
+    std::vector<std::vector<double>> dense_fields(L.n_blocks);
+    if constexpr (numeric) {
+        for (int b = 0; b < L.n_blocks; ++b) {
+            const auto& block = (*L.blocks)[b];
+            if (block.contrib_kind == BlockContribKind::DENSE_BASIS)
+                dense_basis_field(block, N, 0, k_grid, params.data() + L.block_param_start[b], dense_fields[b]);
+        }
+    }
 
     // Reached once per objective evaluation (eval_penalized_log_lik_ll ->
     // compute_eta), so the region entry itself is on the hot path: at one
@@ -526,7 +540,6 @@ template<class T> inline void compute_eta_spec(
         // with barycentric weights read from obs_indices.
         T blk_eff(0.0);
         std::vector<std::pair<int,double>> blk_multi;
-        std::vector<double> blk_basis;
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*L.blocks)[b];
             // Per-row design weight (SVC field): weight[i] * z[.], folded into
@@ -546,16 +559,21 @@ template<class T> inline void compute_eta_spec(
                     }
                 }
             } else if (blk.contrib_kind == BlockContribKind::DENSE_BASIS) {
-                // Every block coefficient is touched by obs i with weight
-                // basis_eval(i)[l] (HSGP folds sqrt(S_l) into the weight). The
-                // block's prior is added separately in scatter_spec / log_prior.
-                const int sz = L.block_size[b];
-                blk_basis.assign(sz, 0.0);
-                blk.basis_eval(i, /*k_arm=*/0, k_grid, blk_basis.data());
-                const T* xp = &params[L.block_param_start[b]];
-                T acc(0.0);
-                for (int l = 0; l < sz; l++) acc += blk_basis[l] * xp[l];
-                blk_eff += d_b * acc;
+                if constexpr (numeric) {
+                    blk_eff += d_b * dense_fields[b][i];
+                } else {
+                    std::vector<double> blk_basis;
+                    // Every block coefficient is touched by obs i with weight
+                    // basis_eval(i)[l] (HSGP folds sqrt(S_l) into the weight). The
+                    // block's prior is added separately in scatter_spec / log_prior.
+                    const int sz = L.block_size[b];
+                    blk_basis.assign(sz, 0.0);
+                    blk.basis_eval(i, /*k_arm=*/0, k_grid, blk_basis.data());
+                    const T* xp = &params[L.block_param_start[b]];
+                    T acc(0.0);
+                    for (int l = 0; l < sz; l++) acc += blk_basis[l] * xp[l];
+                    blk_eff += d_b * acc;
+                }
             } else {
                 int l = blk.idx(i, /*k_arm=*/0);
                 if (l >= 1 && l <= L.block_size[b]) {
@@ -653,6 +671,7 @@ inline void scatter_spec(
     int /*n_threads*/,
     const BetaPrior* beta_prior,
     const std::vector<SpecRePrior>& re_priors,
+    std::vector<DenseBasisProducts>& basis_products,
     // Per-observation weights already evaluated at exactly this eta
     // (SpecFusedWeights), N * np and N * np * np, or null to call
     // spec.eta_weights_fn.
@@ -693,6 +712,19 @@ inline void scatter_spec(
     std::vector<std::pair<int,double>> blk_contrib;
     std::vector<std::pair<int,double>> blk_multi_scratch;
     std::vector<double> blk_basis_scratch;
+    std::vector<DenseBasisView> basis_views(L.n_blocks);
+    std::vector<int> basis_owner(L.n_x, -1);
+    bool has_dense_basis = false;
+    for (int b = 0; b < L.n_blocks; ++b) {
+        const auto& block = (*L.blocks)[b];
+        if (block.contrib_kind != BlockContribKind::DENSE_BASIS) continue;
+        basis_views[b] = dense_basis_view(block, N, 0, k_grid);
+        const auto& batch = basis_views[b].batch;
+        for (int j = 0; j < batch.m_per_arm; ++j)
+            basis_owner[L.block_latent_offset[b] + batch.m_offset_in_block + j] = b;
+        has_dense_basis = true;
+    }
+    Eigen::VectorXd basis_score(has_dense_basis ? N : 0), basis_weight(has_dense_basis ? N : 0);
 
     for (int i = 0; i < N; i++) {
         if (cached_grad_eta) {
@@ -874,6 +906,8 @@ inline void scatter_spec(
             }
         }
 
+        if (has_dense_basis) { basis_score[i] = s_grad; basis_weight[i] = s_hess; }
+
         // ============= LATENT BLOCK scatter (lower triangle) =============
         // Single-process (np == 1): blocks enter process 0, so the effective
         // eta-space score / weight summed over shared processes are exactly
@@ -939,7 +973,7 @@ inline void scatter_spec(
                 const int    idx_c = blk_contrib[c].first;
                 const double a_c   = blk_contrib[c].second;
 
-                grad[idx_c] += a_c * s_grad;
+                if (basis_owner[idx_c] < 0) grad[idx_c] += a_c * s_grad;
 
                 // block x beta (block row > beta col -> lower triangle)
                 for (int l = 0; l < np; l++) {
@@ -974,11 +1008,36 @@ inline void scatter_spec(
                     for (int d = 0; d < n_contrib; d++) {
                         const int    idx_d = blk_contrib[d].first;
                         if (idx_d > idx_c) continue;   // upper handled when c,d swap
+                        if (basis_owner[idx_c] >= 0 && basis_owner[idx_d] >= 0) continue;
                         const double v = a_c * blk_contrib[d].second * s_hess;
                         H.add(idx_c, idx_d, v);
                     }
                 }
             }
+        }
+    }
+
+    for (int b = 0; b < L.n_blocks; ++b) {
+        const auto& block = (*L.blocks)[b];
+        if (block.contrib_kind != BlockContribKind::DENSE_BASIS) continue;
+        auto& product = basis_products[b];
+        product.g_obs = basis_score;
+        product.w_obs = basis_weight;
+        product.amplitude.resize(N);
+        for (int i = 0; i < N; ++i) product.amplitude[i] = blk_dfac[b] * block_row_weight(block, i, 0);
+        const auto& batch = basis_views[b].batch;
+        dense_basis_products(batch, product, product.amplitude.data());
+        const int off = L.block_latent_offset[b] + batch.m_offset_in_block;
+        for (int j = 0; j < batch.m_per_arm; ++j) {
+            grad[off + j] += product.grad_block[j];
+            for (int i = j; i < batch.m_per_arm; ++i) H.add(off + i, off + j, product.H_block(i, j));
+        }
+        for (int a = 0; a < b; ++a) {
+            if ((*L.blocks)[a].contrib_kind != BlockContribKind::DENSE_BASIS) continue;
+            const auto cross = dense_basis_cross_products(product, basis_products[a]);
+            const int other = L.block_latent_offset[a] + basis_views[a].batch.m_offset_in_block;
+            for (int j = 0; j < cross.cols(); ++j) for (int i = 0; i < cross.rows(); ++i)
+                H.add(off + i, other + j, cross(i, j));
         }
     }
 
@@ -1414,6 +1473,7 @@ LaplaceResult spec_inner_solve(
         device_policy->fail(device_status); throw std::runtime_error(device_status.message);
     }
     double device_log_lik=0;
+    std::vector<DenseBasisProducts> basis_products(L.n_blocks);
 
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta_out) {
         scatter_compacted_latent(L, x.begin(), params_work);
@@ -1453,7 +1513,7 @@ LaplaceResult spec_inner_solve(
         const bool cached = fused_weights.matches(eta_flat);
         scatter_spec(params_work, eta_flat, re_group_1based, L,
                      data, layout, spec, response_data, N, k_grid,
-                     &x, 1.0, grad, spec_sink(H), n_threads, beta_prior, re_priors,
+                     &x, 1.0, grad, spec_sink(H), n_threads, beta_prior, re_priors, basis_products,
                      cached ? fused_weights.grad.data() : nullptr,
                      cached ? fused_weights.neg_hess.data() : nullptr);
     };

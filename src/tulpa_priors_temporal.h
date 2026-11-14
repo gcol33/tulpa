@@ -99,7 +99,7 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 data.temporal_gp_data.time_values, T_times,
                 sigma2_temporal_gp_out, phi_temporal_gp_out,
                 data.temporal_gp_data.cov_type, data.temporal_gp_data.nu,
-                data.temporal_gp_data.period, data.temporal_gp_relative_nugget);
+                data.temporal_gp_data.period, data.temporal_gp_relative_nugget, false, use_nc);
             if (!kernel.valid()) return T(-INFINITY);
             for (int g = 0; g < data.n_temporal_groups; ++g)
                 kernel.accumulate_log_density(phi_temporal, g * T_times, use_nc, log_post);

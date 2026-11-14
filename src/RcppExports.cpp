@@ -284,6 +284,146 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_device_dense
+Rcpp::List cpp_device_dense(const Eigen::MatrixXd& matrix, const Eigen::MatrixXd& rhs, std::string operation, std::string choice, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_dense(SEXP matrixSEXP, SEXP rhsSEXP, SEXP operationSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type matrix(matrixSEXP);
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type rhs(rhsSEXP);
+    Rcpp::traits::input_parameter< std::string >::type operation(operationSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_dense(matrix, rhs, operation, choice, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_temporal_dense
+Rcpp::List cpp_device_temporal_dense(Rcpp::NumericVector times, Rcpp::NumericVector q, int kind, bool centered, double relative_nugget, bool tvc, std::string choice, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_temporal_dense(SEXP timesSEXP, SEXP qSEXP, SEXP kindSEXP, SEXP centeredSEXP, SEXP relative_nuggetSEXP, SEXP tvcSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type times(timesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type q(qSEXP);
+    Rcpp::traits::input_parameter< int >::type kind(kindSEXP);
+    Rcpp::traits::input_parameter< bool >::type centered(centeredSEXP);
+    Rcpp::traits::input_parameter< double >::type relative_nugget(relative_nuggetSEXP);
+    Rcpp::traits::input_parameter< bool >::type tvc(tvcSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_temporal_dense(times, q, kind, centered, relative_nugget, tvc, choice, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_hsgp_dense
+Rcpp::List cpp_device_hsgp_dense(const Eigen::MatrixXd& basis, const Eigen::VectorXd& weights, const Eigen::VectorXd& scale, const Eigen::VectorXd& beta, std::string choice, int repetitions, std::string action);
+RcppExport SEXP _tulpa_cpp_device_hsgp_dense(SEXP basisSEXP, SEXP weightsSEXP, SEXP scaleSEXP, SEXP betaSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP, SEXP actionSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type basis(basisSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type scale(scaleSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    Rcpp::traits::input_parameter< std::string >::type action(actionSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_hsgp_dense(basis, weights, scale, beta, choice, repetitions, action));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_dense_adjoint
+Rcpp::List cpp_device_dense_adjoint(const Eigen::MatrixXd& lower, const Eigen::MatrixXd& adjoint, std::string choice, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_dense_adjoint(SEXP lowerSEXP, SEXP adjointSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type lower(lowerSEXP);
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type adjoint(adjointSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_dense_adjoint(lower, adjoint, choice, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_projected_dense
+Rcpp::List cpp_device_projected_dense(const Eigen::MatrixXd& projector, const Eigen::MatrixXd& prior, const Eigen::VectorXd& weights, const Eigen::VectorXd& residual, std::string operation, std::string choice, int repetitions, bool changing_prior);
+RcppExport SEXP _tulpa_cpp_device_projected_dense(SEXP projectorSEXP, SEXP priorSEXP, SEXP weightsSEXP, SEXP residualSEXP, SEXP operationSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP, SEXP changing_priorSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type projector(projectorSEXP);
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type prior(priorSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type residual(residualSEXP);
+    Rcpp::traits::input_parameter< std::string >::type operation(operationSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    Rcpp::traits::input_parameter< bool >::type changing_prior(changing_priorSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_projected_dense(projector, prior, weights, residual, operation, choice, repetitions, changing_prior));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_hsgp_sampler
+Rcpp::List cpp_device_hsgp_sampler(const Eigen::MatrixXd& basis, Rcpp::NumericVector eigenvalues, Rcpp::NumericVector parameters, int kernel, std::string choice);
+RcppExport SEXP _tulpa_cpp_device_hsgp_sampler(SEXP basisSEXP, SEXP eigenvaluesSEXP, SEXP parametersSEXP, SEXP kernelSEXP, SEXP choiceSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type basis(basisSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eigenvalues(eigenvaluesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type parameters(parametersSEXP);
+    Rcpp::traits::input_parameter< int >::type kernel(kernelSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_hsgp_sampler(basis, eigenvalues, parameters, kernel, choice));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_hsgp_cross
+Rcpp::List cpp_device_hsgp_cross(const Eigen::MatrixXd& left, const Eigen::MatrixXd& right, std::string choice, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_hsgp_cross(SEXP leftSEXP, SEXP rightSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type left(leftSEXP);
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type right(rightSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_hsgp_cross(left, right, choice, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_basis_moments
+Rcpp::List cpp_device_basis_moments(const Eigen::MatrixXd& basis, const Eigen::VectorXd& weights, const Eigen::VectorXd& score, const Eigen::VectorXd& scale, const Eigen::VectorXd& amplitude, std::string choice);
+RcppExport SEXP _tulpa_cpp_device_basis_moments(SEXP basisSEXP, SEXP weightsSEXP, SEXP scoreSEXP, SEXP scaleSEXP, SEXP amplitudeSEXP, SEXP choiceSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::MatrixXd& >::type basis(basisSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type score(scoreSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type scale(scaleSEXP);
+    Rcpp::traits::input_parameter< const Eigen::VectorXd& >::type amplitude(amplitudeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_basis_moments(basis, weights, score, scale, amplitude, choice));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_dense_threads
+Rcpp::NumericMatrix cpp_device_dense_threads(int n, int threads, std::string choice);
+RcppExport SEXP _tulpa_cpp_device_dense_threads(SEXP nSEXP, SEXP threadsSEXP, SEXP choiceSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< int >::type threads(threadsSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_dense_threads(n, threads, choice));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_device_sparse_state
 Rcpp::List cpp_device_sparse_state(std::string choice, int threads);
 RcppExport SEXP _tulpa_cpp_device_sparse_state(SEXP choiceSEXP, SEXP threadsSEXP) {
@@ -4172,6 +4312,15 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},
+    {"_tulpa_cpp_device_dense", (DL_FUNC) &_tulpa_cpp_device_dense, 5},
+    {"_tulpa_cpp_device_temporal_dense", (DL_FUNC) &_tulpa_cpp_device_temporal_dense, 8},
+    {"_tulpa_cpp_device_hsgp_dense", (DL_FUNC) &_tulpa_cpp_device_hsgp_dense, 7},
+    {"_tulpa_cpp_device_dense_adjoint", (DL_FUNC) &_tulpa_cpp_device_dense_adjoint, 4},
+    {"_tulpa_cpp_device_projected_dense", (DL_FUNC) &_tulpa_cpp_device_projected_dense, 8},
+    {"_tulpa_cpp_device_hsgp_sampler", (DL_FUNC) &_tulpa_cpp_device_hsgp_sampler, 5},
+    {"_tulpa_cpp_device_hsgp_cross", (DL_FUNC) &_tulpa_cpp_device_hsgp_cross, 4},
+    {"_tulpa_cpp_device_basis_moments", (DL_FUNC) &_tulpa_cpp_device_basis_moments, 6},
+    {"_tulpa_cpp_device_dense_threads", (DL_FUNC) &_tulpa_cpp_device_dense_threads, 3},
     {"_tulpa_cpp_device_sparse_state", (DL_FUNC) &_tulpa_cpp_device_sparse_state, 2},
     {"_tulpa_cpp_device_sparse", (DL_FUNC) &_tulpa_cpp_device_sparse, 7},
     {"_tulpa_cpp_device_info", (DL_FUNC) &_tulpa_cpp_device_info, 0},

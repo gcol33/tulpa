@@ -77,6 +77,42 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
+cpp_device_dense <- function(matrix, rhs, operation, choice, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_dense`, matrix, rhs, operation, choice, repetitions)
+}
+
+cpp_device_temporal_dense <- function(times, q, kind, centered, relative_nugget, tvc, choice, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_temporal_dense`, times, q, kind, centered, relative_nugget, tvc, choice, repetitions)
+}
+
+cpp_device_hsgp_dense <- function(basis, weights, scale, beta, choice, repetitions = 1L, action = "all") {
+    .Call(`_tulpa_cpp_device_hsgp_dense`, basis, weights, scale, beta, choice, repetitions, action)
+}
+
+cpp_device_dense_adjoint <- function(lower, adjoint, choice, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_dense_adjoint`, lower, adjoint, choice, repetitions)
+}
+
+cpp_device_projected_dense <- function(projector, prior, weights, residual, operation, choice, repetitions = 1L, changing_prior = FALSE) {
+    .Call(`_tulpa_cpp_device_projected_dense`, projector, prior, weights, residual, operation, choice, repetitions, changing_prior)
+}
+
+cpp_device_hsgp_sampler <- function(basis, eigenvalues, parameters, kernel, choice) {
+    .Call(`_tulpa_cpp_device_hsgp_sampler`, basis, eigenvalues, parameters, kernel, choice)
+}
+
+cpp_device_hsgp_cross <- function(left, right, choice, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_hsgp_cross`, left, right, choice, repetitions)
+}
+
+cpp_device_basis_moments <- function(basis, weights, score, scale, amplitude, choice) {
+    .Call(`_tulpa_cpp_device_basis_moments`, basis, weights, score, scale, amplitude, choice)
+}
+
+cpp_device_dense_threads <- function(n, threads, choice) {
+    .Call(`_tulpa_cpp_device_dense_threads`, n, threads, choice)
+}
+
 cpp_device_sparse_state <- function(choice, threads = 4L) {
     .Call(`_tulpa_cpp_device_sparse_state`, choice, threads)
 }
