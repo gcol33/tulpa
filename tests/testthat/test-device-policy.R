@@ -84,11 +84,15 @@ test_that("every device control reaches a completed front-door fit", {
                  control = list(device = choice))
     expect_identical(fit$device$requested, choice)
     stage <- fit$device$stages
-    expect_true(all(stage$device[stage$stage != "likelihood_weights"] == "cpu"))
+    on_device <- c("likelihood_weights", "dense_spec")
+    expect_true(all(stage$device[!stage$stage %in% on_device] == "cpu"))
     if (any(stage$stage == "likelihood_weights")) {
       want <- tulpa:::cpp_device_probe("likelihood_weights", nrow(d), 0L, choice)$device
       expect_identical(stage$device[stage$stage == "likelihood_weights"], want)
     }
+    if (choice == "cuda") {
+      expect_true(any(stage$stage == "dense_spec" & stage$device == "cuda"))
+    } else expect_true(all(stage$device[stage$stage == "dense_spec"] == "cpu"))
     expect_output(print(fit), "Device: inference=cpu")
     expect_message(expect_output(diag <- diagnostics(fit), "Device: inference=cpu"),
                     "carries no posterior draws")

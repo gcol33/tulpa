@@ -100,12 +100,16 @@ runners$likelihood <- function() device_likelihood_benchmark(append_row,
   detail_file = paste0(output, ".likelihood.csv"))
 runners$likelihood_weights <- function() device_likelihood_benchmark(append_row, weights = TRUE,
   detail_file = paste0(output, ".likelihood-weights.csv"))
+source("tools/bench-device-dense.R")
+basis_columns <- if (length(args) > 2L) as.integer(strsplit(args[[3L]], ",", fixed = TRUE)[[1L]]) else
+  c(16L, 64L, 144L, 225L, 256L, 400L, 900L)
+runners <- c(runners, device_dense_runners(append_row, basis_columns))
 stopifnot(setequal(names(runners), registered))
+selected <- if (length(args) > 1L) strsplit(args[[2L]], ",", fixed = TRUE)[[1L]] else registered
+stopifnot(all(selected %in% registered))
 dir.create(dirname(output), showWarnings = FALSE, recursive = TRUE)
 cat(sprintf("Device: %s; driver=%d; threads=%s\n", info$name,
             info$driver_version, Sys.getenv("OMP_NUM_THREADS", "default")))
-selected <- if (length(args) >= 2L) strsplit(args[[2L]], ',', fixed = TRUE)[[1L]] else registered
-stopifnot(all(selected %in% registered))
 for (operation in selected) runners[[operation]]()
 print(tulpa:::.device_thresholds(do.call(rbind, rows)))
 writeLines(c(capture.output(print(info)), capture.output(sessionInfo())),

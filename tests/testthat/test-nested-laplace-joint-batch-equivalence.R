@@ -200,8 +200,8 @@ test_that("the batched entry refuses a family whose arms are not cell-coupled", 
 # (7) Whole fits: a fused species is the fit its own front-door call returns   #
 # --------------------------------------------------------------------------- #
 
-# The fit fields that record wall-clock time, which no two runs share.
-.nlb_timing_fields <- c("timing", "diagnose_cost_ratio")
+# Elapsed time and numerical-call counters describe each execution.
+.nlb_execution_fields <- c("timing", "diagnose_cost_ratio", "device")
 
 .nlb_max_abs_diff <- function(a, b) {
   a <- suppressWarnings(as.numeric(unlist(a)))
@@ -211,19 +211,25 @@ test_that("the batched entry refuses a family whose arms are not cell-coupled", 
   max(abs(a[ok] - b[ok]))
 }
 
-# Every field of the two fits, then the quantities a user reads off them: the
+# The statistical fields, then the quantities a user reads off the fits: the
 # log-marginal, the weights, the fixed-effect estimates and standard errors, and
 # posterior draws at one seed. The fused scatter reorganises the same arithmetic
 # on these coupled specs, so all of it is required bit for bit (tolerance 0),
 # and the measured largest difference is carried in the failure message.
 .nlb_expect_same_fit <- function(fb, fi, label) {
   expect_identical(class(fb), class(fi), info = paste(label, "class"))
-  keep_b <- setdiff(names(fb), .nlb_timing_fields)
-  keep_i <- setdiff(names(fi), .nlb_timing_fields)
+  keep_b <- setdiff(names(fb), .nlb_execution_fields)
+  keep_i <- setdiff(names(fi), .nlb_execution_fields)
   expect_identical(keep_b, keep_i, info = paste(label, "fields"))
   for (nm in keep_i) {
     expect_identical(fb[[nm]], fi[[nm]], info = paste(label, nm))
   }
+  expect_identical(fb$device$requested, fi$device$requested, info = paste(label, "device choice"))
+  expect_identical(fb$device$stages[c("stage", "device")], fi$device$stages[c("stage", "device")],
+                   info = paste(label, "device assignment"))
+  for (fit in list(fb, fi))
+    expect_true(all(fit$device$stages$cpu_calls + fit$device$stages$cuda_calls > 0),
+                info = paste(label, "recorded device calls"))
   ci_b <- confint(fb); ci_i <- confint(fi)
   set.seed(4401L); d_b <- tulpa_posterior_draws(fb, n = 200L)
   set.seed(4401L); d_i <- tulpa_posterior_draws(fi, n = 200L)
