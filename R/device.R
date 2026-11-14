@@ -67,6 +67,11 @@ print.tulpa_gpu_info <- function(x, ...) {
   files <- list.files(root, pattern = "\\.cu$", full.names = TRUE)
   sources <- lapply(files, function(file) paste(readLines(file, warn = FALSE), collapse = "\n"))
   names(sources) <- tools::file_path_sans_ext(basename(files))
+  headers <- c("device_math.h", "precision_coefficients.h", "precision_math.h",
+               "count_math.h", "likelihood_math.h")
+  include <- system.file("include", "tulpa", package = pkgname, lib.loc = libname)
+  for (header in headers) sources[[paste0("tulpa/", header)]] <-
+    paste(readLines(file.path(include, header), warn = FALSE), collapse = "\n")
   cpp_device_configure(.device_thresholds(timings), sources)
   invisible(NULL)
 }

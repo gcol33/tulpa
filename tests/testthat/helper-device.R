@@ -1,9 +1,11 @@
 skip_if_no_cuda <- function(capability = "driver") {
   info <- tulpa::gpu_info()
   if (!isTRUE(info$available)) testthat::skip(paste("CUDA unavailable:", info$reason))
-  reason <- info$library_reasons[[capability]]
-  if (is.null(reason)) stop("unknown CUDA capability")
-  if (nzchar(reason)) testthat::skip(paste("CUDA", capability, "unavailable:", reason))
+  for (required in capability) {
+    reason <- info$library_reasons[[required]]
+    if (is.null(reason)) stop("unknown CUDA capability")
+    if (nzchar(reason)) testthat::skip(paste("CUDA", required, "unavailable:", reason))
+  }
   invisible(info)
 }
 
@@ -29,6 +31,13 @@ expect_device_equal <- function(actual, expected, tolerance, quantity) {
   if (length(actual) != length(expected) || !identical(dim(actual), dim(expected)))
     return(invisible(NULL))
   scale <- max(abs(expected), 1)
+  output <- Sys.getenv("TULPA_DEVICE_EQUIVALENCE", "")
+  if (nzchar(output)) {
+    row <- data.frame(quantity = quantity, scale = scale,
+      absolute_error = max(abs(actual - expected)), relative_tolerance = tolerance)
+    utils::write.table(row, output, sep = ",", append = file.exists(output),
+      row.names = FALSE, col.names = !file.exists(output), quote = TRUE)
+  }
   testthat::expect_true(max(abs(actual - expected)) <= tolerance * scale,
     info = sprintf("%s: reference scale %.17g, relative tolerance %.3g",
                    quantity, scale, tolerance))

@@ -36,8 +36,12 @@ double log_lik_binomial(int y, int n, double eta) {
 }
 
 double log_lik_negbin(int y, double eta, double phi) {
-  return tulpa::math::log_lik_negbin_log(
-      y, tulpa::math::clamp_exp_arg(eta), std::log(phi));
+  return log_lik_negbin(y,eta,phi,tulpa::math::portable_lgamma(y+1.0));
+}
+
+double log_lik_negbin(int y, double eta, double phi, double log_factorial) {
+  return tulpa::math::negbin_log_pmf_log(y,tulpa::math::clamp_exp_arg(eta),
+                                       std::log(phi),log_factorial);
 }
 
 double grad_log_lik_negbin(int y, double eta, double phi) {

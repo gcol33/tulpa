@@ -6,6 +6,7 @@
 #include <functional>
 #include <type_traits>
 #include "tulpa/model_data.h"
+#include "tulpa/device_likelihood.h"
 #include "tulpa/param_layout.h"
 #include "tulpa/autodiff_arena.h"
 
@@ -245,6 +246,9 @@ struct LikelihoodSpec {
     // Both eta-weight callbacks supply the exact score and observed curvature.
     // This contract permits analytic spatial integration and Gaussian draws.
     bool gaussian_spatial_marginal = false;
+
+    // Optional resident, fused observation likelihood for CUDA evaluation.
+    DeviceLikelihoodFn device_fn = nullptr;
 };
 
 } // namespace tulpa

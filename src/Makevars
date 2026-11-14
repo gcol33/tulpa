@@ -34,6 +34,8 @@ unity_core.o: \
   fastmath_data.cpp \
   device.cpp \
   device_sparse.cpp \
+  device_likelihood.cpp \
+  device_likelihood_exports.cpp \
   device_exports.cpp \
   hyperprior_density_export.cpp \
   multinomial_logit_export.cpp \
@@ -59,13 +61,17 @@ unity_core.o: \
   device.h \
   linalg_fast.h \
   device_sparse.h \
+  device_likelihood.h \
+  laplace_builtin_family_spec.h \
+  sampler_model_data.h \
+  log_post_impl.h \
+  sysmem.h \
   gpu_nngp_laplace.h \
   cholmod_view.h \
   pc_prior.h \
   multinomial_logit.h \
   sobol.h \
   outer_spline.h \
-  sysmem.h \
   tgmrf_registry.h \
   shim_guard.h \
   hmc_sampler.h \
@@ -74,8 +80,19 @@ unity_core.o: \
   omp_threads.h \
   builtin_family_zi.h \
   glmm_family_elt.h \
-  laplace_builtin_family_spec.h \
   autodiff_utils.h \
+  re_structure.h \
+  icar_kernel.h \
+  areal_input_check.h \
+  hmc_hsgp.h \
+  tulpa_priors_re.h \
+  tulpa_priors_mstemporal.h \
+  tulpa_priors.h \
+  spde_nc_apply.h \
+  gp_nc_apply.h \
+  svc_nc_apply.h \
+  msgp_nc_apply.h \
+  log_post_generic_impl.h \
   nngp_cond.h \
   sobol_direction_numbers.h \
   hmc_temporal.h \
@@ -83,7 +100,6 @@ unity_core.o: \
   hmc_gp.h \
   hmc_temporal_multiscale.h \
   hmc_latent.h \
-  hmc_hsgp.h \
   hmc_tvc.h \
   hmc_sampler_decls.h \
   hmc_sampler_nuts_infra.h \
@@ -93,15 +109,36 @@ unity_core.o: \
   hmc_sampler_funcs.h \
   hmc_sampler_config.h \
   laplace_core.h \
+  hmc_hsgp_kernels.h \
+  intrinsic_log_pdet.h \
+  tulpa_priors_icar.h \
+  tulpa_priors_gp.h \
+  tulpa_priors_msgp.h \
+  tulpa_priors_hsgp.h \
+  tulpa_priors_spde.h \
+  tulpa_priors_temporal.h \
+  tulpa_priors_svc.h \
+  tulpa_priors_tvc.h \
+  tulpa_priors_latent.h \
+  tulpa_priors_st.h \
+  tulpa_priors_zioi.h \
+  log_post_device_impl.h \
   hmc_gp_cg.h \
   hmc_gp_lbfgs.h \
   hmc_gp_solvers.h \
   hmc_gp_log_lik.h \
   hmc_gp_gradients.h \
   hmc_gp_nc.h \
-  hmc_hsgp_kernels.h \
   temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
+  spatial_range_prior.h \
+  hmc_gp_autodiff.h \
+  hsgp_spectral.h \
+  spde_matern_map.h \
+  svc_range.h \
+  hmc_svc_autodiff.h \
+  hmc_latent_autodiff.h \
+  st_gp_kernel.h \
   st_null_space.h
 unity_exports.o: \
   unity_exports.cpp \
@@ -257,6 +294,7 @@ unity_glmm.o: \
   laplace_spec_solve.h \
   autodiff_utils.h \
   tulpa_priors.h \
+  device_likelihood.h \
   spde_nc_apply.h \
   gp_nc_apply.h \
   svc_nc_apply.h \
@@ -308,6 +346,8 @@ unity_glmm.o: \
   tulpa_priors_latent.h \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
+  device.h \
+  log_post_device_impl.h \
   fastmath.h \
   st_null_space.h \
   inv_block_extract.h \
@@ -326,7 +366,6 @@ unity_glmm.o: \
   spde_matern_map.h \
   hmc_latent_autodiff.h \
   small_dense_sym.h \
-  device.h \
   sparse_hessian.h \
   curvature3_contract.h \
   cholmod_view.h \
@@ -366,6 +405,7 @@ unity_hmc.o: \
   joint_pd_step.h \
   coordinate_linalg.h \
   temporal_gp_kernel.h \
+  device_likelihood.h \
   hmc_gradient_dispatch.h \
   laplace_profile.h \
   hmc_mass_st_gmrf.h \
@@ -421,6 +461,7 @@ unity_hmc.o: \
   linalg_fast.h \
   laplace_cholesky.h \
   laplace_family_link.h \
+  device.h \
   laplace_types.h \
   device_sparse.h \
   sampler_log_prob.h \
@@ -441,9 +482,9 @@ unity_hmc.o: \
   tulpa_priors_latent.h \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
+  log_post_device_impl.h \
   laplace_likelihoods.h \
   laplace_core.h \
-  device.h \
   intrinsic_log_pdet.h \
   icar_kernel.h \
   glmm_family_elt.h \
@@ -533,6 +574,7 @@ unity_laplace.o: \
   nl_cell_cache.h \
   linear_constraint_rows.h \
   fastmath.h \
+  device_likelihood.h \
   builtin_family_zi.h \
   curvature3_contract.h \
   device_sparse.h \
@@ -585,6 +627,7 @@ unity_laplace.o: \
   tulpa_priors_latent.h \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
+  log_post_device_impl.h \
   sobol_direction_numbers.h \
   st_null_space.h \
   spatial_range_prior.h \
@@ -695,6 +738,7 @@ unity_nl.o: \
   autodiff_utils.h \
   inner_gaussian_draw.h \
   sobol.h \
+  device_likelihood.h \
   builtin_family_zi.h \
   fastmath.h \
   inner_laplace_probe.h \
@@ -795,6 +839,7 @@ unity_nl_joint.o: \
   linalg_fast.h \
   inner_laplace_probe.h \
   device.h \
+  device_likelihood.h \
   builtin_family_zi.h \
   laplace_family_curvature.h \
   subspace_debias.h \
@@ -900,6 +945,7 @@ unity_samplers.o: \
   tulpa_priors_mstemporal.h \
   hmc_gp.h \
   slice_univariate.h \
+  device_likelihood.h \
   laplace_family_link.h \
   builtin_family_zi.h \
   hmc_temporal.h \
@@ -934,6 +980,7 @@ unity_samplers.o: \
   hmc_gp_log_lik.h \
   hmc_gp_gradients.h \
   hmc_gp_nc.h \
+  device.h \
   laplace_likelihoods.h \
   nngp_cond.h \
   hmc_mass_lowrank.h \
@@ -945,6 +992,7 @@ unity_samplers.o: \
   tulpa_priors_tvc.h \
   tulpa_priors_latent.h \
   tulpa_priors_zioi.h \
+  log_post_device_impl.h \
   glmm_oracle.h \
   fastmath.h \
   spatial_range_prior.h \
@@ -1047,6 +1095,7 @@ unity_spatial.o: \
   hard_constraints.h \
   laplace_cholesky.h \
   sobol.h \
+  device_likelihood.h \
   builtin_family_zi.h \
   laplace_likelihoods.h \
   subspace_debias.h \
@@ -1066,10 +1115,10 @@ unity_spatial.o: \
   temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
   sobol_direction_numbers.h \
+  device.h \
   fastmath.h \
   inner_laplace_probe.h \
   rwmh.h \
-  device.h \
   curvature3_contract.h \
   st_null_space.h
 # unity-build: end

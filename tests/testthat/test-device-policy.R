@@ -35,6 +35,22 @@ test_that("the status reader turns library status into an R boundary error", {
                "CUDA::test_status failed \\(status 1\\): invalid value")
 })
 
+test_that("likelihood policy requires the compiler and BLAS libraries", {
+  info <- gpu_info()
+  reasons <- c(if (!isTRUE(info$available)) info$reason,
+               info$library_reasons[c("nvrtc", "cublas")])
+  reasons <- reasons[nzchar(reasons)]
+  for (operation in c("likelihood", "likelihood_weights")) {
+    expect_identical(tulpa:::cpp_device_probe(operation, 1e7, 0L, "cpu")$device, "cpu")
+    if (length(reasons)) {
+      expect_identical(tulpa:::cpp_device_probe(operation, 1e7, 0L, "auto")$device, "cpu")
+      expect_error(tulpa:::cpp_device_probe(operation, 1e7, 0L, "cuda"))
+    } else {
+      expect_identical(tulpa:::cpp_device_probe(operation, 1e7, 0L, "cuda")$device, "cuda")
+    }
+  }
+})
+
 test_that("nested policies restore the enclosing choice and isolate fit counters", {
   outer <- tulpa:::cpp_device_begin("cpu")
   on.exit(tulpa:::cpp_device_end(outer), add = TRUE)
@@ -59,12 +75,20 @@ skip_on_cran()
 test_that("every device control reaches a completed front-door fit", {
   skip_on_cran()
   d <- data.frame(y = c(-0.2, 0.1, 0.3, 0.5, 0.8), x = seq_len(5))
-  choices <- c("cpu", "auto", if (gpu_info()$available) "cuda")
+  info <- gpu_info()
+  cuda <- isTRUE(info$available) &&
+    !any(nzchar(info$library_reasons[c("nvrtc", "cublas")]))
+  choices <- c("cpu", "auto", if (cuda) "cuda")
   for (choice in choices) {
     fit <- tulpa(y ~ x, d, family = "gaussian", phi = 1, mode = "laplace",
                  control = list(device = choice))
     expect_identical(fit$device$requested, choice)
-    expect_true(all(fit$device$stages$device == "cpu"))
+    stage <- fit$device$stages
+    expect_true(all(stage$device[stage$stage != "likelihood_weights"] == "cpu"))
+    if (any(stage$stage == "likelihood_weights")) {
+      want <- tulpa:::cpp_device_probe("likelihood_weights", nrow(d), 0L, choice)$device
+      expect_identical(stage$device[stage$stage == "likelihood_weights"], want)
+    }
     expect_output(print(fit), "Device: inference=cpu")
     expect_message(expect_output(diag <- diagnostics(fit), "Device: inference=cpu"),
                     "carries no posterior draws")

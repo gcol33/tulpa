@@ -8,41 +8,10 @@
 #include <cmath>
 #include <limits>
 #include <utility>   // std::pair, returned by portable_digamma_lgamma
+#include "device_math.h"
 
 namespace tulpa {
 namespace math {
-
-// The exponent range every scalar type shares. std::exp overflows to +Inf past
-// ~709.78 and underflows to 0 below ~-745; a log-scale hyperparameter that
-// wanders there during warmup takes the whole backward pass with it, because
-// every product involving an Inf value or partial is NaN. The value path and
-// the three autodiff paths clamp at the same bounds, so the templated log
-// posterior is ONE function of its argument whichever scalar type instantiates
-// it -- which is what the runtime gradient check assumes when it compares the
-// double instantiation's central differences against the arena gradient.
-//
-// The clamp bounds the VALUE and leaves the chain rule to carry the clamped
-// exponential as the local derivative, so the direction is retained rather than
-// flattened to zero at the boundary.
-constexpr double EXP_ARG_MAX =  700.0;
-constexpr double EXP_ARG_MIN = -700.0;
-
-inline double clamp_exp_arg(double x) {
-    if (x > EXP_ARG_MAX) return EXP_ARG_MAX;
-    if (x < EXP_ARG_MIN) return EXP_ARG_MIN;
-    return x;
-}
-
-// The open interval a probability has to sit in for logit() and its derivative
-// to be finite: at exactly 0 or 1 the value is -Inf / +Inf and the derivative
-// 1 / (p (1 - p)) is +Inf. Same shape as the guard log() already applies.
-constexpr double PROB_EPS = 1e-15;
-
-inline double clamp_prob(double p) {
-    if (p < PROB_EPS) return PROB_EPS;
-    if (p > 1.0 - PROB_EPS) return 1.0 - PROB_EPS;
-    return p;
-}
 
 // Polygamma of order n >= 1, shifted to the asymptotic expansion at x >= 12.
 inline double portable_polygamma(int n, double x) {

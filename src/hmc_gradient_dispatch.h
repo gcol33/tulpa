@@ -5,19 +5,15 @@
 // (`n_processes > 0` plus a non-null `data.likelihood_spec`); downstream
 // packages route through `tulpa::LikelihoodSpec`.
 //
-// resolve_gradient_fn returns one of three gradient sources, in this order:
+// Numerical mode uses central differences. Other modes preserve transformed
+// field coordinates and collapsed targets, then select a resident device
+// likelihood, a consumer full gradient, arena reverse mode, or central
+// differences in that order. Device and arena routes require an arena prior
+// whenever the consumer supplies an extra prior.
 //
-//   1. spec->gradient_fn        the model package's hand-coded full gradient,
-//                               unless the caller asked for NUMERICAL
-//   2. compute_gradient_generic_arena     arena reverse-mode AD, when the
-//                               package ships ll_arena (and an arena variant of
-//                               extra_prior, if it sets one)
-//   3. compute_gradient_generic_numerical central differences against
-//                               compute_log_post_generic_spec_double
-//
-// resolve_prior_gradient_fn mirrors it for the prior-only ("fast") force of the
-// multiple-time-stepping integrator, minus arm 1: a full gradient cannot be
-// split into prior and likelihood parts.
+// resolve_prior_gradient_fn supplies the prior-only force for the
+// multiple-time-stepping integrator. Full gradients include the likelihood,
+// so the prior force uses its own arena or numerical evaluation.
 //
 // Adding a gradient source means adding an arm here. There is no separate
 // predicate header and no specificity ordering to insert into.
@@ -44,10 +40,21 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
 
     const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
 
+    tulpa::DeviceLikelihood kernel;
+    tulpa::device::Status device_status;
+    auto policy=tulpa::device::current_policy();
+    if ((spec->extra_prior==nullptr || spec->extra_prior_arena!=nullptr) &&
+        tulpa::device::select_likelihood(data,layout,kernel,*policy,device_status))
+        return &compute_gradient_generic_device;
+    if (!device_status) {
+        policy->fail(device_status);
+        throw std::runtime_error(device_status.message);
+    }
+    policy->record("likelihood",false);
+
     // Hand-coded full gradient hook (FullGradFn): the model package ships a
-    // tuned gradient that subsumes log-prior + log-likelihood. When set, it
-    // wins regardless of the requested mode unless the user explicitly asks
-    // for NUMERICAL (used for runtime gradient verification). The signature
+    // tuned gradient that subsumes log-prior + log-likelihood. It applies
+    // when device likelihood evaluation is inactive. The signature
     // matches GradientFn exactly, so it plugs straight into the dispatcher
     // with no wrapper.
     if (spec->gradient_fn != nullptr && mode != GradientMode::NUMERICAL) {

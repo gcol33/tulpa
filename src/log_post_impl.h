@@ -14,6 +14,7 @@
 #include "autodiff_utils.h"
 #include "tulpa_priors.h"      // priors::* helpers used by log_post_generic_impl.h
 #include "tulpa/likelihood.h"
+#include "device_likelihood.h"
 #include "spde_nc_apply.h"     // apply_spde_nc_transform_{double,arena};
                                 // included here (outside namespace tulpa)
                                 // so log_post_generic_impl.h's nested

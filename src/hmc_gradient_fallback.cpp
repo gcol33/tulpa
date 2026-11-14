@@ -139,12 +139,13 @@ void compute_gradient_generic_numerical(
 // arena variant when the model package ships one.
 // =====================================================================
 
-void compute_gradient_generic_arena(
+static void compute_gradient_arena_impl(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
     std::vector<double>& grad,
-    double* log_post_out
+    double* log_post_out,
+    bool allow_device
 ) {
     using namespace tulpa::arena;
     const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
@@ -155,7 +156,7 @@ void compute_gradient_generic_arena(
 
     Var log_post = tulpa::compute_log_post_generic<Var>(
         params_ar, data, layout,
-        spec->ll_arena, data.model_response_data);
+        spec->ll_arena, data.model_response_data, false, false, allow_device);
 
     if (spec->extra_prior_arena != nullptr) {
         log_post = log_post + spec->extra_prior_arena(
@@ -165,6 +166,18 @@ void compute_gradient_generic_arena(
     if (log_post_out) *log_post_out = log_post.val();
     log_post.backward();
     grad = get_adjoints(params_ar);
+}
+
+void compute_gradient_generic_arena(const std::vector<double>& params,
+    const ModelData& data, const ParamLayout& layout, std::vector<double>& grad,
+    double* log_post_out) {
+    compute_gradient_arena_impl(params,data,layout,grad,log_post_out,false);
+}
+
+void compute_gradient_generic_device(const std::vector<double>& params,
+    const ModelData& data, const ParamLayout& layout, std::vector<double>& grad,
+    double* log_post_out) {
+    compute_gradient_arena_impl(params,data,layout,grad,log_post_out,true);
 }
 
 // =====================================================================

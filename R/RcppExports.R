@@ -133,6 +133,18 @@ cpp_device_nngp <- function(w, coords, nn_idx, nn_dist, nn_order, sigma2, phi, c
     .Call(`_tulpa_cpp_device_nngp`, w, coords, nn_idx, nn_dist, nn_order, sigma2, phi, cov_type, choice, repetitions)
 }
 
+cpp_device_likelihood_resources <- function() {
+    .Call(`_tulpa_cpp_device_likelihood_resources`)
+}
+
+cpp_device_family <- function(family, y, trials, X, coefficients, phi, zi, offset, weights, groups, choice, repetitions = 1L, batched = TRUE, return_weights = TRUE) {
+    .Call(`_tulpa_cpp_device_family`, family, y, trials, X, coefficients, phi, zi, offset, weights, groups, choice, repetitions, batched, return_weights)
+}
+
+cpp_device_model_gradient <- function(y, trials, X, family, phi, params, choice, re = NULL, spatial = NULL, temporal = NULL, zi = NULL, verify = TRUE, repetitions = 1L, device_slot = TRUE, corrupt = FALSE, consumer_extra = FALSE) {
+    .Call(`_tulpa_cpp_device_model_gradient`, y, trials, X, family, phi, params, choice, re, spatial, temporal, zi, verify, repetitions, device_slot, corrupt, consumer_extra)
+}
+
 cpp_family_loglik_batch <- function(y, n_trials, eta, family, phi) {
     .Call(`_tulpa_cpp_family_loglik_batch`, y, n_trials, eta, family, phi)
 }

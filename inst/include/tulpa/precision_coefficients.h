@@ -1,11 +1,13 @@
 #ifndef TULPA_PRECISION_COEFFICIENTS_H
 #define TULPA_PRECISION_COEFFICIENTS_H
 
+#include "device_math.h"
+
 namespace tulpa { namespace math { namespace detail {
 
 // Degree-21 Chebyshev interpolants of x^k s^(k)(x), in t=x/2^e-3/2,
 // -1/2 <= t <= 1/2, e=-6,...,3. Coefficients are in descending powers.
-static constexpr double stirling_coefficients[5][10][22] = {
+TULPA_CONSTANT static constexpr double stirling_coefficients[5][10][22] = {
 {
 {
     -0x1.1e02eb4b14a0ep-17, 0x1.c14c352c21486p-17, -0x1.3a22e4af7f7cep-17, 0x1.f2c6369530509p-17,
@@ -419,7 +421,7 @@ static constexpr double stirling_coefficients[5][10][22] = {
 };
 
 // x^k s^(k)(x), k=2,3,4, after removal of the pole at zero.
-static constexpr double stirling_small_coefficients[3][16] = {
+TULPA_CONSTANT static constexpr double stirling_small_coefficients[3][16] = {
 {
     -0x1.097441a7e4a71p+3, 0x1.7a8f637e7ffcdp+3, -0x1.7b34fda978a69p+3, 0x1.5fa914883b6cep+3,
     -0x1.4021a5abf84e8p+3, 0x1.20490411e10f3p+3, -0x1.00839c8e37d98p+3, 0x1.c1d39f913001cp+2,
@@ -441,7 +443,7 @@ static constexpr double stirling_small_coefficients[3][16] = {
 };
 
 // log Gamma(1+x)/x and psi(1+x) on [0,1/16].
-static constexpr double stirling_elementary_coefficients[2][12] = {
+TULPA_CONSTANT static constexpr double stirling_elementary_coefficients[2][12] = {
 {
     0x1.e6c32fdf6bc3cp-5, -0x1.657b39b25aa75p-4, 0x1.98a2010ac2979p-4, -0x1.c7f1ce55f3d02p-4,
     0x1.010acfb5a62d4p-3, -0x1.27039f2c9659cp-3, 0x1.5b40cb043015ap-3, -0x1.a8b9c17a84dd3p-3,
@@ -455,7 +457,7 @@ static constexpr double stirling_elementary_coefficients[2][12] = {
 };
 
 // (-1)^k (2n-1)_k B_(2n)/(2n(2n-1)), n=1,...,14.
-static constexpr double stirling_series_coefficients[5][14] = {
+TULPA_CONSTANT static constexpr double stirling_series_coefficients[5][14] = {
 {
     0x1.5555555555555p-4, -0x1.6c16c16c16c17p-9, 0x1.a01a01a01a01ap-11, -0x1.3813813813814p-11,
     0x1.b951e2b18ff23p-11, -0x1.f6ab0d9993c7dp-10, 0x1.a41a41a41a41ap-8, -0x1.e4286cb0f5398p-6,
@@ -489,7 +491,7 @@ static constexpr double stirling_series_coefficients[5][14] = {
 };
 
 // First omitted term / leading term <= 2^-59 above each cutoff.
-static constexpr double stirling_series_cutoffs[5][13] = {
+TULPA_CONSTANT static constexpr double stirling_series_cutoffs[5][13] = {
 {
     0x1.08654a4000000p+27, 0x1.0d00000000000p+13, 0x1.9100000000000p+8, 0x1.7800000000000p+6,
     0x1.4800000000000p+5, 0x1.9000000000000p+4, 0x1.2000000000000p+4, 0x1.c000000000000p+3,
@@ -523,7 +525,7 @@ static constexpr double stirling_series_cutoffs[5][13] = {
 };
 
 // S(y) on [0,1/8] and [1/8,9/25], centered at 1/16 and 1/4.
-static constexpr double log1pmx_tail_coefficients[2][16] = {
+TULPA_CONSTANT static constexpr double log1pmx_tail_coefficients[2][16] = {
 {
     0x1.4dd1848aeacecp-4, 0x1.4d37c64099a35p-4, 0x1.48cd6de4f71a3p-4, 0x1.4b39ec7eb6205p-4,
     0x1.4f902bfa16456p-4, 0x1.5623930ae4269p-4, 0x1.5f893b07d0f20p-4, 0x1.6c8b35e0148f8p-4,
@@ -538,7 +540,7 @@ static constexpr double log1pmx_tail_coefficients[2][16] = {
 }
 };
 
-static constexpr double stirling_constant_low[5][10] = {
+TULPA_CONSTANT static constexpr double stirling_constant_low[5][10] = {
 {
     0x1.eb29c8a5b5918p-54, 0x1.5e887192fb574p-57, 0x1.1cd06b9e7efcdp-55, -0x1.d7429ae9a4b28p-56,
     0x1.eb57bdc0e1e6ap-60, -0x1.848934b6af32ep-64, 0x1.eabb13fadd405p-59, 0x1.6f6769dfa17f6p-60,
@@ -566,20 +568,20 @@ static constexpr double stirling_constant_low[5][10] = {
 }
 };
 
-static constexpr double stirling_small_constant_low[1][3] = {
+TULPA_CONSTANT static constexpr double stirling_small_constant_low[1][3] = {
 {
     -0x1.1d144f792a5d3p-92, -0x1.e0bec881cc92dp-89, -0x1.763973464304dp-85
 }
 };
 
-static constexpr double stirling_elementary_constant_low[1][2] = {
+TULPA_CONSTANT static constexpr double stirling_elementary_constant_low[1][2] = {
 {
     0x1.6cb9771818a3ep-58, 0x1.6cbe92cb65a72p-58
 }
 };
 
 // Coefficients of sum_(j>=0) y^j/(2j+3), 0 <= y <= 1/200.
-static constexpr double log1pmx_coefficients[8] = {
+TULPA_CONSTANT static constexpr double log1pmx_coefficients[8] = {
     0x1.5555555555555p-2, 0x1.999999999999ap-3, 0x1.2492492492492p-3, 0x1.c71c71c71c71cp-4,
     0x1.745d1745d1746p-4, 0x1.3b13b13b13b14p-4, 0x1.1111111111111p-4, 0x1.e1e1e1e1e1e1ep-5
 };

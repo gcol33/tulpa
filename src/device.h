@@ -7,6 +7,9 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <functional>
+#include <thread>
+#include <tuple>
 
 namespace tulpa { namespace device {
 
@@ -24,7 +27,7 @@ enum class Choice { Auto, Cpu, Cuda };
 
 struct Operation {
     std::string name;
-    Capability capability;
+    std::vector<Capability> capabilities;
 };
 const std::vector<Operation>& operations();
 
@@ -46,6 +49,7 @@ class Policy {
     mutable std::mutex mutex_;
     std::vector<Stage> stages_;
     Status failure_;
+    std::map<std::tuple<std::thread::id, const void*, const void*, std::string>, std::shared_ptr<void>> workspaces_;
 public:
     Policy(Choice choice, const std::vector<Threshold>& thresholds);
     bool select(const std::string& operation, std::size_t size, int variant,
@@ -55,6 +59,8 @@ public:
     Status failure() const;
     std::vector<Stage> stages() const;
     Choice choice() const { return choice_; }
+    std::shared_ptr<void> workspace(const void* owner, const void* context,
+        const std::string& kind, const std::function<std::shared_ptr<void>()>& create);
 };
 
 std::shared_ptr<Policy> current_policy();
@@ -93,6 +99,7 @@ public:
     static Context& instance();
     Status initialize();
     Status supports(Capability capability);
+    Status supports_operation(const std::string& operation);
     Info info();
     Status allocate(unsigned long long& pointer, std::size_t bytes);
     Status release(unsigned long long pointer);
@@ -104,6 +111,10 @@ public:
     Status create_stream(void*& stream);
     Status destroy_stream(void* stream);
     Status synchronize_stream(void* stream);
+    Status memory_available(std::size_t& free, std::size_t& total);
+    Status gemv(unsigned long long matrix, unsigned long long x,
+                unsigned long long y, int rows, int cols, bool transpose,
+                double beta = 0, void* stream = nullptr);
     Status factor(unsigned long long pointers, int n, int batch,
                   unsigned long long info);
     Status launch(const std::string& source, const std::string& name,

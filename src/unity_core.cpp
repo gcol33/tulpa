@@ -16,6 +16,8 @@
 #include "fastmath_data.cpp"
 #include "device.cpp"
 #include "device_sparse.cpp"
+#include "device_likelihood.cpp"
+#include "device_likelihood_exports.cpp"
 #include "device_exports.cpp"
 #include "hyperprior_density_export.cpp"
 #include "multinomial_logit_export.cpp"

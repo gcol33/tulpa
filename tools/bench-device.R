@@ -95,6 +95,11 @@ runners <- list(
     }
   })
 registered <- tulpa:::cpp_device_operations()
+source("tools/bench-device-likelihood.R")
+runners$likelihood <- function() device_likelihood_benchmark(append_row,
+  detail_file = paste0(output, ".likelihood.csv"))
+runners$likelihood_weights <- function() device_likelihood_benchmark(append_row, weights = TRUE,
+  detail_file = paste0(output, ".likelihood-weights.csv"))
 stopifnot(setequal(names(runners), registered))
 dir.create(dirname(output), showWarnings = FALSE, recursive = TRUE)
 cat(sprintf("Device: %s; driver=%d; threads=%s\n", info$name,

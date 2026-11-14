@@ -732,6 +732,8 @@ static T compute_generic_likelihood_sum(
     return log_lik;
 }
 
+#include "log_post_device_impl.h"
+
 template<typename T>
 T compute_log_post_generic(
     const std::vector<T>& params,
@@ -740,7 +742,8 @@ T compute_log_post_generic(
     LikelihoodFnT<T> likelihood_fn,
     const void* model_response_data,
     bool skip_obs_loop = false,
-    bool skip_prior = false
+    bool skip_prior = false,
+    bool allow_device = false
 ) {
     // The process count sizes the per-observation eta buffer below, so a model
     // wider than the buffer is a model this build cannot evaluate rather than
@@ -761,9 +764,11 @@ T compute_log_post_generic(
     // precision a direct accumulation keeps wherever the prior is large next
     // to the likelihood.
     if (skip_prior) log_post = T(0.0);
-    precompute_generic_fixed_eta(data, state);
-
     if (!skip_obs_loop) {
+        T device_value(0.0);
+        if (allow_device && compute_device_likelihood_sum(params,data,layout,state,device_value))
+            return log_post+device_value;
+        precompute_generic_fixed_eta(data, state);
         log_post = log_post + compute_generic_likelihood_sum(
             params, data, layout, likelihood_fn, model_response_data, state);
     }
@@ -792,6 +797,7 @@ extern template double compute_log_post_generic<double>(
     const ParamLayout&,
     LikelihoodFnT<double>,
     const void*,
+    bool,
     bool,
     bool);
 

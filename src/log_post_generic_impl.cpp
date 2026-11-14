@@ -68,6 +68,7 @@ template double compute_log_post_generic<double>(
     LikelihoodFnT<double>,
     const void*,
     bool,
+    bool,
     bool);
 
 }  // namespace tulpa

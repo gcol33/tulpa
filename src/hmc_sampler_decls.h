@@ -221,6 +221,9 @@ using GradientFn = void(*)(
 
 // Resolve the gradient function pointer once based on mode + model config
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout);
+void compute_gradient_generic_device(const std::vector<double>& params,
+    const ModelData& data, const ParamLayout& layout, std::vector<double>& grad,
+    double* log_post_out);
 
 // Prior-only gradient (skip_obs_loop = true): the "fast" force for the
 // multiple-time-stepping integrator. resolve_prior_gradient_fn mirrors

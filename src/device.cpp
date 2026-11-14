@@ -30,6 +30,7 @@ namespace detail {
 std::mutex settings_mutex;
 std::vector<Threshold> settings;
 std::map<std::string, std::string> kernel_sources;
+std::size_t source_generation=0;
 std::shared_ptr<Policy> active_policy;
 
 class Library {
@@ -104,7 +105,7 @@ struct Context::Impl {
     Handle context = nullptr, blas = nullptr, solver = nullptr;
     int device = 0;
     struct CompiledKernel { Handle module = nullptr, function = nullptr; };
-    std::map<std::pair<std::string, std::string>, CompiledKernel> kernels;
+    std::map<std::tuple<std::size_t,std::string,std::string>, CompiledKernel> kernels;
     Info info;
     DEVICE_FN(init, (unsigned));
     DEVICE_FN(driver_version, (int*));
@@ -122,6 +123,7 @@ struct Context::Impl {
     DEVICE_FN(upload, (Address, const void*, std::size_t));
     DEVICE_FN(download, (void*, Address, std::size_t));
     DEVICE_FN(sync, ());
+    DEVICE_FN(memory_info, (std::size_t*, std::size_t*));
     DEVICE_FN(stream_create, (Handle*, unsigned));
     DEVICE_FN(stream_destroy, (Handle));
     DEVICE_FN(stream_sync, (Handle));
@@ -132,6 +134,9 @@ struct Context::Impl {
                        unsigned, unsigned, Handle, void**, void**));
     DEVICE_FN(blas_create, (Handle*));
     DEVICE_FN(blas_destroy, (Handle));
+    DEVICE_FN(blas_stream, (Handle, Handle));
+    DEVICE_FN(gemv, (Handle, int, int, int, const double*, const double*, int,
+                     const double*, int, const double*, double*, int));
     DEVICE_FN(solver_create, (Handle*));
     DEVICE_FN(solver_destroy, (Handle));
     DEVICE_FN(potrf, (Handle, int, int, double**, int, int*, int));
@@ -172,6 +177,7 @@ struct Context::Impl {
         RESOLVE(upload, "cuMemcpyHtoD_v2");
         RESOLVE(download, "cuMemcpyDtoH_v2");
         RESOLVE(sync, "cuCtxSynchronize");
+        RESOLVE(memory_info, "cuMemGetInfo_v2");
         RESOLVE(stream_create, "cuStreamCreate");
         RESOLVE(stream_destroy, "cuStreamDestroy_v2");
         RESOLVE(stream_sync, "cuStreamSynchronize");
@@ -213,6 +219,8 @@ struct Context::Impl {
         if (capability[1]) capability[1] = Status::read("cuSOLVER", solver_create(&solver), "cusolverDnCreate");
         resolve(blas_create, 2, "cublasCreate_v2", capability[2]);
         resolve(blas_destroy, 2, "cublasDestroy_v2", capability[2]);
+        resolve(blas_stream, 2, "cublasSetStream_v2", capability[2]);
+        resolve(gemv, 2, "cublasDgemv_v2", capability[2]);
         if (capability[2]) capability[2] = Status::read("cuBLAS", blas_create(&blas), "cublasCreate_v2");
         resolve(program_create, 3, "nvrtcCreateProgram", capability[3]);
         resolve(program_compile, 3, "nvrtcCompileProgram", capability[3]);
@@ -291,6 +299,22 @@ Status Context::synchronize() { return Status::read("CUDA", impl_->sync(), "cuCt
 Status Context::create_stream(void*& stream) { return Status::read("CUDA", impl_->stream_create(&stream, 1), "cuStreamCreate"); }
 Status Context::destroy_stream(void* stream) { return Status::read("CUDA", impl_->stream_destroy(stream), "cuStreamDestroy_v2"); }
 Status Context::synchronize_stream(void* stream) { return Status::read("CUDA", impl_->stream_sync(stream), "cuStreamSynchronize"); }
+Status Context::memory_available(std::size_t& free, std::size_t& total) {
+    return Status::read("CUDA",impl_->memory_info(&free,&total),"cuMemGetInfo_v2");
+}
+Status Context::gemv(Address matrix, Address x, Address y, int rows, int cols,
+                     bool transpose, double beta, Handle stream) {
+    Status s = supports(Capability::Blas);
+    if (s) s = Status::read("cuBLAS", impl_->blas_stream(impl_->blas, stream), "cublasSetStream_v2");
+    const double alpha = 1;
+    if (s) s = Status::read("cuBLAS", impl_->gemv(impl_->blas, transpose ? 1 : 0,
+        rows, cols, &alpha, reinterpret_cast<const double*>(matrix), rows,
+        reinterpret_cast<const double*>(x), 1, &beta, reinterpret_cast<double*>(y), 1),
+        "cublasDgemv_v2");
+    if (impl_->blas_stream && impl_->blas)
+        s.absorb(Status::read("cuBLAS", impl_->blas_stream(impl_->blas, nullptr), "cublasSetStream_v2"));
+    return s;
+}
 Status Context::factor(Address pointers, int n, int batch, Address info) {
     return Status::read("cuSOLVER", impl_->potrf(impl_->solver, 0, n,
         reinterpret_cast<double**>(pointers), n, reinterpret_cast<int*>(info), batch), "cusolverDnDpotrfBatched");
@@ -320,7 +344,22 @@ Status Context::compile(const std::string& source, const std::string& name,
     Status s = supports(Capability::Compiler);
     if (!s) return s;
     Handle program = nullptr;
-    s = Status::read("NVRTC", impl_->program_create(&program, source.c_str(), "tulpa.cu", 0, nullptr, nullptr), "nvrtcCreateProgram");
+    std::vector<std::string> header_names, header_text;
+    {
+        std::lock_guard<std::mutex> lock(settings_mutex);
+        for (const auto& entry : kernel_sources) if (entry.first.find(".h") != std::string::npos) {
+            header_names.push_back(entry.first); header_text.push_back(entry.second);
+            if (entry.first.rfind("tulpa/",0)==0) {
+                header_names.push_back(entry.first.substr(6)); header_text.push_back(entry.second);
+            }
+        }
+    }
+    std::vector<const char*> names, headers;
+    for (std::size_t i=0; i<header_names.size(); ++i) {
+        names.push_back(header_names[i].c_str()); headers.push_back(header_text[i].c_str());
+    }
+    s = Status::read("NVRTC", impl_->program_create(&program, source.c_str(), "tulpa.cu",
+        static_cast<int>(names.size()), headers.data(), names.data()), "nvrtcCreateProgram");
     if (!s) return s;
     const auto destroy = [this, &s](void* value) {
         s.absorb(Status::read("NVRTC", impl_->program_destroy(&value), "nvrtcDestroyProgram"));
@@ -353,7 +392,9 @@ Status Context::unload(Handle module) { return Status::read("CUDA", impl_->modul
 Status Context::launch(const std::string& source, const std::string& name,
                         const Launch& shape, void** arguments) {
     Status s;
-    const auto key = std::make_pair(source, name);
+    std::size_t generation;
+    { std::lock_guard<std::mutex> lock(settings_mutex); generation=source_generation; }
+    const auto key = std::make_tuple(generation,source,name);
     auto found = impl_->kernels.find(key);
     if (found == impl_->kernels.end()) {
         Impl::CompiledKernel entry;
@@ -372,10 +413,27 @@ Status Context::launch(const std::string& source, const std::string& name,
 
 const std::vector<Operation>& operations() {
     static const std::vector<Operation> table = {
-        {"nngp_cholesky", Capability::Solver}, {"axpy", Capability::Compiler},
-        {"sparse_cholesky", Capability::Sparse}
+        {"nngp_cholesky", {Capability::Solver}}, {"axpy", {Capability::Compiler}},
+        {"sparse_cholesky", {Capability::Sparse}},
+        {"likelihood", {Capability::Compiler, Capability::Blas}},
+        {"likelihood_weights", {Capability::Compiler, Capability::Blas}}
     };
     return table;
+}
+static const Operation* registered_operation(const std::string& name) {
+    const auto& table=operations();
+    auto found=std::find_if(table.begin(),table.end(),[&](const Operation& op) { return op.name==name; });
+    return found==table.end() ? nullptr : &*found;
+}
+Status Context::supports_operation(const std::string& name) {
+    const auto* operation=registered_operation(name);
+    if (!operation) return Status::read("policy",-1,"select","unregistered operation "+name);
+    Status status;
+    for (auto capability : operation->capabilities) {
+        status=supports(capability);
+        if (!status) break;
+    }
+    return status;
 }
 Choice parse_choice(const std::string& value) {
     if (value == "auto") return Choice::Auto;
@@ -386,7 +444,7 @@ Choice parse_choice(const std::string& value) {
 void configure(const std::vector<Threshold>& value,
                 const std::map<std::string, std::string>& sources) {
     std::lock_guard<std::mutex> lock(settings_mutex);
-    settings = value; kernel_sources = sources;
+    settings = value; kernel_sources = sources; ++source_generation;
 }
 std::vector<Threshold> thresholds() { std::lock_guard<std::mutex> lock(settings_mutex); return settings; }
 std::string kernel_source(const std::string& name) {
@@ -403,9 +461,7 @@ std::shared_ptr<Policy> exchange_policy(std::shared_ptr<Policy> policy) {
 }
 Policy::Policy(Choice choice, const std::vector<Threshold>& thresholds) : choice_(choice), thresholds_(thresholds) {}
 bool Policy::select(const std::string& name, std::size_t size, int variant, Status& status) const {
-    const auto& table = operations();
-    auto op = std::find_if(table.begin(), table.end(), [&](const Operation& x) { return x.name == name; });
-    if (op == table.end()) { status = Status::read("policy", -1, "select", "unregistered operation " + name); return false; }
+    if (!registered_operation(name)) { status = Status::read("policy", -1, "select", "unregistered operation " + name); return false; }
     if (choice_ == Choice::Cpu || !size) return false;
     if (choice_ == Choice::Auto) {
         auto threshold = std::find_if(thresholds_.begin(), thresholds_.end(), [&](const Threshold& x) {
@@ -413,7 +469,7 @@ bool Policy::select(const std::string& name, std::size_t size, int variant, Stat
         });
         if (threshold == thresholds_.end() || size < threshold->size || !std::isfinite(threshold->size)) return false;
     }
-    Status available = Context::instance().supports(op->capability);
+    Status available = Context::instance().supports_operation(name);
     if (!available) {
         if (choice_ == Choice::Cuda) status = available;
         return false;
@@ -429,6 +485,18 @@ void Policy::record(const std::string& name, bool cuda) {
 void Policy::fail(const Status& status) { std::lock_guard<std::mutex> lock(mutex_); failure_.absorb(status); }
 Status Policy::failure() const { std::lock_guard<std::mutex> lock(mutex_); return failure_; }
 std::vector<Stage> Policy::stages() const { std::lock_guard<std::mutex> lock(mutex_); return stages_; }
+std::shared_ptr<void> Policy::workspace(const void* owner, const void* context,
+    const std::string& kind, const std::function<std::shared_ptr<void>()>& create) {
+    const auto key = std::make_tuple(std::this_thread::get_id(),owner,context,kind);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto found = workspaces_.find(key);
+        if (found != workspaces_.end()) return found->second;
+    }
+    auto value = create();
+    std::lock_guard<std::mutex> lock(mutex_);
+    return workspaces_.emplace(key,std::move(value)).first->second;
+}
 
 Status cholesky_batch(std::vector<std::vector<double>>& matrices, int n,
                        Policy& policy, bool& used_cuda,

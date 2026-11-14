@@ -193,18 +193,21 @@ inline FamilyResolved resolve_family(const std::string& code) {
     return r;
 }
 
-// The eta-independent per-observation term of the families whose log-density
-// splits into `kernel + const` (laplace_likelihoods.h), and zero for every
-// other kind. A fit evaluates this once per observation and hands the value
-// back to log_lik_for_family, which adds it in the same place and the same
-// order the full density did.
+// Count-data normalizers are independent of eta and dispersion. Prepared
+// responses retain them for likelihood evaluations and worker device payloads.
 inline double log_lik_const_for_kind(double y, int n_trials, FamilyKind kind) {
     switch (kind) {
     case FamilyKind::BINOMIAL:
         return log_lik_binomial_const((int)y, n_trials);
+    case FamilyKind::BETA_BINOMIAL:
+        return math::portable_lchoose(n_trials,y);
     case FamilyKind::POISSON:
     case FamilyKind::TRUNCATED_POISSON:   // its base density is the Poisson one
         return log_lik_poisson_const((int)y);
+    case FamilyKind::NEG_BINOMIAL_2:
+    case FamilyKind::NEG_BINOMIAL_1:
+    case FamilyKind::TRUNCATED_NEG_BINOMIAL_2:
+        return -math::portable_lgamma(y+1);
     default:
         return 0.0;
     }
@@ -918,12 +921,9 @@ inline GradHess grad_hess_for_family(
 }
 
 // Per-observation log-density, with the family already classified and its
-// eta-independent term already evaluated. `ll_const` is
-// log_lik_const_for_kind(y, n_trials, kind) -- the binomial lchoose, the
-// Poisson -lgamma(y+1), zero elsewhere -- and it is ADDED in the same position
-// and the same order the full densities in laplace_likelihoods.h add it, so a
-// caller holding a precomputed value reproduces them bit for bit
-//. `fl` and `pos_eta_domain` are read only on the GENERIC
+// eta-independent term already evaluated. `ll_const` is the count-data
+// normalizer from log_lik_const_for_kind(y, n_trials, kind).
+// `fl` and `pos_eta_domain` are read only on the GENERIC
 // branch; every other kind may pass a null `fl`.
 inline double log_lik_for_family_core(
     double y, int n_trials, double eta, FamilyKind kind, const FamilyLink* fl,
@@ -935,14 +935,14 @@ inline double log_lik_for_family_core(
     if (kind == FamilyKind::POISSON) {
         return log_lik_poisson_kernel((int)y, eta) + ll_const;
     }
-    if (kind == FamilyKind::NEG_BINOMIAL_2) return log_lik_negbin((int)y, eta, phi);
+    if (kind == FamilyKind::NEG_BINOMIAL_2) return log_lik_negbin((int)y, eta, phi,-ll_const);
     if (kind == FamilyKind::NEG_BINOMIAL_1) {
         // Log link, variance mu (1 + phi): in NB(r, p) form the shape moves
         // with the mean, r = mu / phi, and p = 1 / (1 + phi) is constant.
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double r  = mu / phi;
         const double yi = (double)(int)y;
-        return log_rising_factorial((int)y, r) - tulpa::math::portable_lgamma(yi + 1.0)
+        return log_rising_factorial((int)y, r) + ll_const
              - (yi + r) * std::log1p(phi) + yi * std::log(phi);
     }
     if (kind == FamilyKind::TRUNCATED_POISSON ||
@@ -952,7 +952,7 @@ inline double log_lik_for_family_core(
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double base = (kind == FamilyKind::TRUNCATED_POISSON)
             ? log_lik_poisson_kernel((int)y, eta) + ll_const
-            : log_lik_negbin((int)y, eta, phi);
+            : log_lik_negbin((int)y, eta, phi,-ll_const);
         double a, da, d2a;
         truncation_shape(kind, mu, phi, &a, &da, &d2a);
         return base - truncation_term(a, da, d2a).log_p;
@@ -960,11 +960,7 @@ inline double log_lik_for_family_core(
     if (kind == FamilyKind::BETA_BINOMIAL) {
         double mu = linkinv(eta, "logit");
         mu = clamp_mu_unit(mu);
-        double a = mu * phi, b = (1.0 - mu) * phi;
-        double n = (double)n_trials, yi = (double)(int)y;
-        return tulpa::math::portable_lchoose(n, yi)
-             + log_rising_factorial((int)y, a) + log_rising_factorial(n_trials - (int)y, b)
-             - log_rising_factorial(n_trials, a + b);
+        return math::beta_binomial_log_pmf(static_cast<int>(y),n_trials,mu,1-mu,phi,ll_const);
     }
     if (kind == FamilyKind::STUDENT_T) {
         const double nu = student_t_df(phi2);

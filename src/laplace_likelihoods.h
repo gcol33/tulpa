@@ -72,6 +72,7 @@ inline double digamma_rising_difference(int y, double size) {
   return polygamma_rising_difference(0, y, size);
 }
 double log_lik_negbin(int y, double eta, double phi);
+double log_lik_negbin(int y, double eta, double phi, double log_factorial);
 double grad_log_lik_negbin(int y, double eta, double phi);
 double neg_hess_log_lik_negbin(int y, double eta, double phi);
 

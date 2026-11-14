@@ -32,8 +32,6 @@ namespace tulpa {
 // two are then derivatives of different functions, and the Newton loop stops
 // where the clamped score vanishes rather than where the reported objective is
 // stationary.
-constexpr double kMuFloor = 1e-15;
-
 inline double clamp_mu_unit(double mu) {
     return std::max(std::min(mu, 1.0 - kMuFloor), kMuFloor);
 }

@@ -463,6 +463,66 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_device_likelihood_resources
+Rcpp::List cpp_device_likelihood_resources();
+RcppExport SEXP _tulpa_cpp_device_likelihood_resources() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_device_likelihood_resources());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_family
+Rcpp::List cpp_device_family(std::string family, Rcpp::NumericVector y, Rcpp::IntegerVector trials, Rcpp::NumericMatrix X, Rcpp::NumericMatrix coefficients, double phi, bool zi, Rcpp::NumericVector offset, Rcpp::NumericVector weights, Rcpp::IntegerVector groups, std::string choice, int repetitions, bool batched, bool return_weights);
+RcppExport SEXP _tulpa_cpp_device_family(SEXP familySEXP, SEXP ySEXP, SEXP trialsSEXP, SEXP XSEXP, SEXP coefficientsSEXP, SEXP phiSEXP, SEXP ziSEXP, SEXP offsetSEXP, SEXP weightsSEXP, SEXP groupsSEXP, SEXP choiceSEXP, SEXP repetitionsSEXP, SEXP batchedSEXP, SEXP return_weightsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type trials(trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coefficients(coefficientsSEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< bool >::type zi(ziSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type offset(offsetSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type groups(groupsSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    Rcpp::traits::input_parameter< bool >::type batched(batchedSEXP);
+    Rcpp::traits::input_parameter< bool >::type return_weights(return_weightsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_family(family, y, trials, X, coefficients, phi, zi, offset, weights, groups, choice, repetitions, batched, return_weights));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_model_gradient
+Rcpp::List cpp_device_model_gradient(Rcpp::NumericVector y, Rcpp::IntegerVector trials, Rcpp::NumericMatrix X, std::string family, double phi, Rcpp::NumericVector params, std::string choice, Rcpp::Nullable<Rcpp::List> re, Rcpp::Nullable<Rcpp::List> spatial, Rcpp::Nullable<Rcpp::List> temporal, Rcpp::Nullable<Rcpp::List> zi, bool verify, int repetitions, bool device_slot, bool corrupt, bool consumer_extra);
+RcppExport SEXP _tulpa_cpp_device_model_gradient(SEXP ySEXP, SEXP trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP paramsSEXP, SEXP choiceSEXP, SEXP reSEXP, SEXP spatialSEXP, SEXP temporalSEXP, SEXP ziSEXP, SEXP verifySEXP, SEXP repetitionsSEXP, SEXP device_slotSEXP, SEXP corruptSEXP, SEXP consumer_extraSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type trials(trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type params(paramsSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re(reSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type spatial(spatialSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type temporal(temporalSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type zi(ziSEXP);
+    Rcpp::traits::input_parameter< bool >::type verify(verifySEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    Rcpp::traits::input_parameter< bool >::type device_slot(device_slotSEXP);
+    Rcpp::traits::input_parameter< bool >::type corrupt(corruptSEXP);
+    Rcpp::traits::input_parameter< bool >::type consumer_extra(consumer_extraSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_model_gradient(y, trials, X, family, phi, params, choice, re, spatial, temporal, zi, verify, repetitions, device_slot, corrupt, consumer_extra));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_loglik_batch
 Rcpp::NumericVector cpp_family_loglik_batch(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix eta, std::string family, double phi);
 RcppExport SEXP _tulpa_cpp_family_loglik_batch(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP) {
@@ -4126,6 +4186,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_device_axpy", (DL_FUNC) &_tulpa_cpp_device_axpy, 5},
     {"_tulpa_cpp_device_cholesky", (DL_FUNC) &_tulpa_cpp_device_cholesky, 4},
     {"_tulpa_cpp_device_nngp", (DL_FUNC) &_tulpa_cpp_device_nngp, 10},
+    {"_tulpa_cpp_device_likelihood_resources", (DL_FUNC) &_tulpa_cpp_device_likelihood_resources, 0},
+    {"_tulpa_cpp_device_family", (DL_FUNC) &_tulpa_cpp_device_family, 14},
+    {"_tulpa_cpp_device_model_gradient", (DL_FUNC) &_tulpa_cpp_device_model_gradient, 16},
     {"_tulpa_cpp_family_loglik_batch", (DL_FUNC) &_tulpa_cpp_family_loglik_batch, 5},
     {"_tulpa_cpp_precision_ad_math", (DL_FUNC) &_tulpa_cpp_precision_ad_math, 2},
     {"_tulpa_cpp_beta_grouped_terms", (DL_FUNC) &_tulpa_cpp_beta_grouped_terms, 3},

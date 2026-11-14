@@ -8,6 +8,7 @@
 #include "hmc_field_coordinates.h"
 #include "hmc_spatial_marginal.h"
 #include "tulpa/likelihood.h"
+#include "device_likelihood.h"
 #include <Rcpp.h>
 
 namespace tulpa_hmc {

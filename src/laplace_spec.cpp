@@ -447,9 +447,9 @@ inline bool re_shared_into(const ModelData& data, int k) {
 // Compute the per-obs RE contribution sum_t z_{t,i}^T b_{t, g_t(i)} once,
 // and return whether any RE term contributed at this obs (so the caller
 // can skip the sharing step entirely when not).
-inline double obs_re_contrib(
+template<class T> inline T obs_re_contrib(
     const ModelData& data,
-    const std::vector<double>& params,
+    const std::vector<T>& params,
     const SpecLatentLayout& L,
     const std::vector<TermDesign>& designs,
     int i,
@@ -457,8 +457,8 @@ inline double obs_re_contrib(
     bool& used_out
 ) {
     used_out = false;
-    if (!L.has_re) return 0.0;
-    double re_eff = 0.0;
+    if (!L.has_re) return T(0.0);
+    T re_eff(0.0);
     for (int t = 0; t < (int)L.re_terms.size(); t++) {
         int g = re_group_at(data, i, t, n_terms_unified);
         if (g < 0) continue;
@@ -468,7 +468,7 @@ inline double obs_re_contrib(
         const int base = s.param_start + g * q;
         // z_{t,i,c} = 1 for the implicit intercept (when present) and the
         // slope design value otherwise; TermDesign::z encodes both cases.
-        double contrib = 0.0;
+        T contrib(0.0);
         for (int c = 0; c < q; c++) {
             contrib += params[base + c] * designs[t].z(i, c);
         }
@@ -484,14 +484,14 @@ inline double obs_re_contrib(
 // pointer expects (one obs at a time, &eta_flat[i*np]).
 //
 // Per process: eta_k_i = (X_k beta_k)_i + offset_k_i + (RE if shared into k).
-inline void compute_eta_spec(
+template<class T> inline void compute_eta_spec(
     const ModelData& data,
-    const std::vector<double>& params,
+    const std::vector<T>& params,
     const SpecLatentLayout& L,
     const std::vector<int>& /*re_group_1based*/,
     int N,
     int k_grid,
-    std::vector<double>& eta_flat,
+    std::vector<T>& eta_flat,
     int n_threads
 ) {
     const int np = L.np;
@@ -516,7 +516,7 @@ inline void compute_eta_spec(
     // bit-identical.
     tulpa_parallel_for(n_threads, N, [&](int i) {
         bool re_used = false;
-        double re_eff = obs_re_contrib(data, params, L, designs, i,
+        T re_eff = obs_re_contrib(data, params, L, designs, i,
                                        n_terms_unified, re_used);
 
         // Block contribution to this obs's predictor (single-process: blocks
@@ -524,7 +524,7 @@ inline void compute_eta_spec(
         // INDEXED_SINGLE blocks touch one unit (idx); INDEXED_MULTI blocks
         // (SPDE: ~3 mesh nodes via the FEM projector A) touch several units
         // with barycentric weights read from obs_indices.
-        double blk_eff = 0.0;
+        T blk_eff(0.0);
         std::vector<std::pair<int,double>> blk_multi;
         std::vector<double> blk_basis;
         for (int b = 0; b < L.n_blocks; b++) {
@@ -552,8 +552,8 @@ inline void compute_eta_spec(
                 const int sz = L.block_size[b];
                 blk_basis.assign(sz, 0.0);
                 blk.basis_eval(i, /*k_arm=*/0, k_grid, blk_basis.data());
-                const double* xp = &params[L.block_param_start[b]];
-                double acc = 0.0;
+                const T* xp = &params[L.block_param_start[b]];
+                T acc(0.0);
                 for (int l = 0; l < sz; l++) acc += blk_basis[l] * xp[l];
                 blk_eff += d_b * acc;
             } else {
@@ -566,10 +566,10 @@ inline void compute_eta_spec(
 
         for (int k = 0; k < np; k++) {
             const ProcessData& proc = data.processes[k];
-            double e = 0.0;
+            T e(0.0);
             if (proc.p > 0) {
                 const double* row = proc.X_flat.data() + (std::ptrdiff_t)i * proc.p;
-                const double* beta = &params[L.beta_start[k]];
+                const T* beta = &params[L.beta_start[k]];
                 for (int j = 0; j < proc.p; j++) e += row[j] * beta[j];
             }
             if (!proc.offset.empty()) e += proc.offset[i];
@@ -1371,9 +1371,73 @@ LaplaceResult spec_inner_solve(
     const std::vector<SpecRePrior> re_priors = spec_re_priors(base_params, L);
     std::vector<double> eta_flat((size_t)n_eta, 0.0);
     SpecFusedWeights fused_weights;
+    std::shared_ptr<device::LikelihoodWorkspace> device_workspace;
+    auto device_policy=device::current_policy();
+    device::Status device_status;
+    DeviceLikelihood device_kernel;
+    if (device::select_likelihood(data,layout,device_kernel,*device_policy,device_status,true)) {
+        device::ObservationPlan plan; plan.n=N;
+        plan.np=np+static_cast<int>(device_kernel.parameter_indices.size());
+        plan.width=static_cast<int>(params_work.size());
+        std::vector<device::Projection> symbolic_params;
+        symbolic_params.reserve(params_work.size());
+        for (std::size_t j=0; j<params_work.size(); ++j)
+            symbolic_params.push_back(device::Projection::leaf(static_cast<int>(j)));
+        for (int k=0; k<np; ++k) {
+            const auto& process=data.processes[k];
+            plan.add_design(process.X_flat.data(),process.p,L.beta_start[k]);
+            for (int j=0; j<process.p; ++j) {
+                symbolic_params[L.beta_start[k]+j]=device::Projection(0);
+            }
+        }
+        for (std::size_t j=0; j<device_kernel.parameter_indices.size(); ++j) {
+            plan.add_design(nullptr,0,0);
+        }
+        std::vector<device::Projection> symbolic_eta(n_eta);
+        compute_eta_spec(data,symbolic_params,L,re_group_1based,N,k_grid,symbolic_eta,1);
+        for (int k=0; k<plan.np; ++k) for (int i=0; i<N; ++i) {
+            const auto e=k<np ? symbolic_eta[static_cast<std::size_t>(i)*np+k]
+                : device::Projection::leaf(device_kernel.parameter_indices[k-np]);
+            plan.append_row(e);
+        }
+        bool created=false;
+        device_workspace=std::static_pointer_cast<device::LikelihoodWorkspace>(device_policy->workspace(
+            &data,&layout,"laplace_observation",[&]() {
+                created=true;
+                if (!spec.device_fn(data,layout,response_data,true,device_kernel))
+                    throw std::logic_error("device likelihood declined its initialized descriptor");
+                return std::make_shared<device::LikelihoodWorkspace>(std::move(plan),std::move(device_kernel));
+            }));
+        if (!created) device_status=device_workspace->refresh_projection(std::move(plan));
+    }
+    if (!device_status) {
+        device_policy->fail(device_status); throw std::runtime_error(device_status.message);
+    }
+    double device_log_lik=0;
 
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta_out) {
         scatter_compacted_latent(L, x.begin(), params_work);
+        if (device_workspace) {
+            spec.device_fn(data,layout,response_data,false,device_workspace->kernel());
+            device::LikelihoodResult result;
+            const auto status=device_workspace->evaluate(params_work,1,true,true,result);
+            if (!status) { device_policy->fail(status); throw std::runtime_error(status.message); }
+            device_policy->record("likelihood_weights",true);
+            device_log_lik=result.value[0];
+            const int channels=device_workspace->plan().np;
+            for (int i=0; i<N; ++i) for (int k=0; k<np; ++k)
+                eta_flat[static_cast<std::size_t>(i)*np+k]=result.eta[static_cast<std::size_t>(i)*channels+k];
+            fused_weights.eta=eta_flat;
+            fused_weights.grad.resize(n_eta);
+            for (int i=0; i<N; ++i) for (int k=0; k<np; ++k)
+                fused_weights.grad[static_cast<std::size_t>(i)*np+k]=result.score[static_cast<std::size_t>(k)*N+i];
+            fused_weights.neg_hess.resize(static_cast<std::size_t>(N)*np*np);
+            for (int i=0; i<N; ++i) for (int k=0; k<np; ++k) for (int l=0; l<np; ++l)
+                fused_weights.neg_hess[(static_cast<std::size_t>(i)*np+k)*np+l]=
+                    result.curvature[(static_cast<std::size_t>(i)*channels+k)*channels+l];
+            std::copy(eta_flat.begin(),eta_flat.end(),eta_out.begin());
+            return;
+        }
         compute_eta_spec(data, params_work, L, re_group_1based, N, k_grid,
                          eta_flat, n_threads);
         for (int i = 0; i < n_eta; i++) eta_out[i] = eta_flat[i];
@@ -1422,6 +1486,7 @@ LaplaceResult spec_inner_solve(
     auto log_lik_fn = [&](const Rcpp::NumericVector& eta,
                           bool need_weights = true) -> double {
         for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
+        if (device_workspace && fused_weights.matches(eta_flat)) return device_log_lik;
         if (need_weights && spec.ll_eta_weights_fn) {
             return total_log_lik_spec_fused(params_work, eta_flat, data, layout,
                                             spec, response_data, N, n_threads,

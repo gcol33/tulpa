@@ -193,6 +193,9 @@ struct CountMath {
     template<class T> static T log(const T& x) { return safe_log(x); }
     template<class T> static T log1p(const T& x) { return log1p_fn(x); }
     template<class T> static T lgamma(const T& x) { return lgamma_fn(x); }
+    template<class T> static T exp(const T& x) { return safe_exp(x); }
+    template<class T> static T softplus(const T& x) { return tulpa::math::softplus(x); }
+    template<class T> static T log1pmx(const T& x) { return tulpa::math::log1pmx(x); }
 };
 
 // Negative binomial (type 2) with log mean eta and log size log_phi:
@@ -206,10 +209,7 @@ struct CountMath {
 // +5.2 for a Poisson -1.65 (y = 4, eta = 1.3).
 template<typename T>
 inline T log_lik_negbin_log(int y, const T& eta, const T& log_phi) {
-    const T phi = safe_exp(log_phi);
-    const T s = softplus(eta - log_phi);
-    return lgamma_ratio_count<T, CountMath>(y, phi) - lgamma_fn(T(y + 1.0))
-         + T(y) * (eta - log_phi - s) - phi * s;
+    return negbin_log_pmf_log<T,CountMath>(y,eta,log_phi,lgamma_fn(T(y+1.0)));
 }
 
 // The same density from the mean mu and the size phi.
@@ -387,20 +387,7 @@ inline T log_lik_hurdle_negbin(int y, const T& mu, const T& phi, const T& logit_
 // So alpha = mu*phi, beta = (1-mu)*phi
 template<typename T>
 inline T log_lik_beta_binomial(int y, int n, const T& mu, const T& phi) {
-    T alpha = mu * phi;
-    T beta = (T(1.0) - mu) * phi;
-
-    // log P(y|n,alpha,beta) = log(B(y+alpha, n-y+beta)) - log(B(alpha, beta)) + log(C(n,y))
-    // = [lgamma(y+alpha) - lgamma(alpha)] + [lgamma(n-y+beta) - lgamma(beta)]
-    //   - [lgamma(n+phi) - lgamma(phi)] + log(C(n,y)),
-    // each bracket a rising factorial formed without cancellation, so the
-    // density reaches the binomial one as phi grows.
-
-    T ll = lgamma_ratio_count<T, CountMath>(y, alpha) + lgamma_ratio_count<T, CountMath>(n - y, beta)
-         - lgamma_ratio_count<T, CountMath>(n, phi);
-    ll = ll + portable_lchoose(n, y);  // constant w.r.t. parameters
-
-    return ll;
+    return beta_binomial_log_pmf<T,CountMath>(y,n,mu,T(1)-mu,phi,portable_lchoose(n,y));
 }
 
 // ============================================================================

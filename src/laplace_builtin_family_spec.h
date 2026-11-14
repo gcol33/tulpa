@@ -16,6 +16,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
+#include "device_likelihood.h"
 #include "laplace_family_link.h"
 #include "builtin_family_zi.h"
 #include <cmath>
@@ -395,6 +396,7 @@ inline LikelihoodSpec builtin_family_spec(const std::string& family,
     spec.ll_eta_weights_fn = zi ? &builtin_family_zi_ll_eta_weights
                                 : &builtin_family_ll_eta_weights;
     spec.n_extra_params = 0;
+    spec.device_fn = &device::builtin_device_likelihood;
     return spec;
 }
 

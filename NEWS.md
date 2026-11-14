@@ -6,6 +6,15 @@
   owns its stream and reusable symbolic state. Exact blocked device solves
   supply marginal variances. Automatic dispatch reads the shared benchmark
   table.
+* Gaussian, binomial, Poisson, negative-binomial, gamma, beta, beta-binomial,
+  and truncated-count likelihoods have resident fused CUDA value, score, and
+  curvature kernels for NUTS and spec-driven Laplace, including their supported
+  zero-inflated and hurdle layouts. Fixed-effect scores use cuBLAS;
+  field scores use segmented reductions. Automatic dispatch reads measured
+  per-family crossovers from the device benchmark table. Device gradients
+  pass the NUTS numerical verification gate. `LikelihoodSpec::device_fn`
+  lets consumers supply fused observation kernels; ABI 64 requires rebuilding
+  packages that allocate the spec.
 
 * `control$device` selects `auto`, `cpu`, or `cuda` through one runtime-loaded
   CUDA layer. `gpu_info()` reports the device and library availability.

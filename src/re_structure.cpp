@@ -92,6 +92,10 @@ void populate_re_structure(
                 Rcpp::stop("re_Z_list[[%d]] has no columns; the intercept "
                            "test reads column 1.", t + 1);
             }
+            if (Z.ncol() != q) {
+                Rcpp::stop("re_Z_list[[%d]] has %d columns; the term declares "
+                           "%d coefficients.", t + 1, Z.ncol(), q);
+            }
             has_int = true;
             for (int i = 0; i < N; i++) { if (Z(i, 0) != 1.0) { has_int = false; break; } }
             n_slopes = has_int ? (Z.ncol() - 1) : Z.ncol();
