@@ -1,5 +1,12 @@
 # tulpa 0.7.8
 
+* Sparse Laplace factorizations use one CPU/cuDSS interface for symbolic
+  analysis, numeric refactorization, log-determinants, multiple right-hand
+  sides and selected inverse entries. cuDSS loads at run time; each factor
+  owns its stream and reusable symbolic state. Exact blocked device solves
+  supply marginal variances. Automatic dispatch reads the shared benchmark
+  table.
+
 * `control$device` selects `auto`, `cpu`, or `cuda` through one runtime-loaded
   CUDA layer. `gpu_info()` reports the device and library availability.
   Fits record device use per stage for `print()` and `diagnostics()`.

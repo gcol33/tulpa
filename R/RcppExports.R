@@ -77,6 +77,14 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
+cpp_device_sparse_state <- function(choice, threads = 4L) {
+    .Call(`_tulpa_cpp_device_sparse_state`, choice, threads)
+}
+
+cpp_device_sparse <- function(p, i, values, b, choice, full_inverse = FALSE, repetitions = 1L) {
+    .Call(`_tulpa_cpp_device_sparse`, p, i, values, b, choice, full_inverse, repetitions)
+}
+
 cpp_device_info <- function() {
     .Call(`_tulpa_cpp_device_info`)
 }

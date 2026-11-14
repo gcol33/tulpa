@@ -11,6 +11,7 @@
 
 #include "sparse_cholesky.h"
 #include "hessian_pattern_guard.h"
+#include "cholmod_view.h"
 
 #include <limits>
 
@@ -25,7 +26,7 @@ namespace tulpa {
 // =====================================================================
 
 SparseCholeskySolver::SparseCholeskySolver()
-    : factor_(nullptr), A_owned_(nullptr), analyzed_(false), factored_(false)
+    : policy_(device::current_policy()), factor_(nullptr), A_owned_(nullptr), analyzed_(false), factored_(false)
 {
     M_cholmod_start(&common_);
     // Prefer supernodal factorization (converts sparse to many small dense
@@ -49,6 +50,10 @@ SparseCholeskySolver::~SparseCholeskySolver() {
 }
 
 void SparseCholeskySolver::reset() {
+    device_factor_.reset();
+    host_factored_ = false;
+    pattern_p_.clear(); pattern_i_.clear(); host_values_.clear();
+    inverse_p_.clear(); inverse_i_.clear(); permutation_.clear();
     if (factor_) {
         M_cholmod_free_factor(&factor_, &common_);
         factor_ = nullptr;
@@ -120,6 +125,8 @@ bool SparseCholeskySolver::build_owned_pattern(
     factored_ = false;
     if (A_owned_) M_cholmod_free_sparse(&A_owned_, &common_);
     A_owned_ = A;
+    device_factor_.reset();
+    host_factored_ = false;
     return true;
 }
 
@@ -211,21 +218,128 @@ bool SparseCholeskySolver::ensure_analyzed(cholmod_sparse* A,
 
 void SparseCholeskySolver::analyze(cholmod_sparse* A,
                                    unsigned long long pattern_tag) {
+    device_factor_.reset();
+    host_factored_ = false;
     pattern_tag_ = pattern_tag;
     if (factor_) {
         M_cholmod_free_factor(&factor_, &common_);
         factor_ = nullptr;
     }
-    factor_ = M_cholmod_analyze(A, &common_);
-    analyzed_ = (factor_ != nullptr);
+    analyzed_ = false;
     factored_ = false;
+    inverse_p_.clear(); inverse_i_.clear(); permutation_.clear();
+    device::Status status;
+    const bool cuda = common_.supernodal != CHOLMOD_SIMPLICIAL &&
+        policy_->select("sparse_cholesky", A->nrow, 0, status);
+    if (!device_result(status)) { analyzed_ = false; return; }
+    if (!cuda) {
+        factor_ = M_cholmod_analyze(A, &common_);
+        analyzed_ = (factor_ != nullptr);
+        if (analyzed_) ++analysis_count_;
+        return;
+    }
+    if (A->stype != -1 || A->itype != CHOLMOD_INT || !A->packed ||
+        !A->sorted || A->xtype != CHOLMOD_REAL || A->dtype != CHOLMOD_DOUBLE ||
+        A->nrow != A->ncol) {
+        device_result(device::Status::read("cuDSS", -1, "analyze", "expected square sorted packed real lower CSC with 32-bit indices"));
+        analyzed_ = false; return;
+    }
+    const int n = static_cast<int>(A->nrow);
+    const int* p = static_cast<const int*>(A->p);
+    const int* i = static_cast<const int*>(A->i);
+    pattern_p_.assign(p, p + n + 1);
+    pattern_i_.assign(i, i + p[n]);
+    host_values_.resize(p[n]);
+    device_factor_.reset(new device::SparseFactor);
+    analyzed_ = device_result(device_factor_->analyze(n, p, i,
+        static_cast<const double*>(A->x), stream_));
+    if (analyzed_) {
+        permutation_ = device_factor_->permutation();
+        ++analysis_count_;
+    }
 }
 
 bool SparseCholeskySolver::factorize(cholmod_sparse* A) {
-    if (!analyzed_ || !factor_) return false;
+    if (!analyzed_ || (!factor_ && !device_factor_)) return false;
+    host_factored_ = false;
+    if (device_factor_) {
+        factored_ = false;
+        const int* p = static_cast<const int*>(A->p);
+        const int* i = static_cast<const int*>(A->i);
+        if (A->nrow + 1 != pattern_p_.size() || A->stype != -1 ||
+            !std::equal(pattern_p_.begin(), pattern_p_.end(), p) ||
+            !std::equal(pattern_i_.begin(), pattern_i_.end(), i)) {
+            return device_result(device::Status::read("cuDSS", -1, "refactor", "sparsity pattern changed; analyze the new pattern"));
+        }
+        std::copy_n(static_cast<const double*>(A->x), host_values_.size(), host_values_.begin());
+        bool positive = false;
+        const bool ok = device_result(device_factor_->refactor(host_values_.data(), positive));
+        factored_ = ok && positive;
+        policy_->record("sparse_cholesky", true);
+        return factored_;
+    }
     int ok = M_cholmod_factorize(A, factor_, &common_);
     factored_ = (ok != 0) && (common_.status == CHOLMOD_OK);
+    host_factored_ = factored_;
+    policy_->record("sparse_cholesky", false);
     return factored_;
+}
+
+bool SparseCholeskySolver::device_result(const device::Status& status) {
+    if (!status) policy_->fail(status);
+    return static_cast<bool>(status);
+}
+void SparseCholeskySolver::set_stream(void* stream) {
+    reset(); stream_ = stream;
+}
+void* SparseCholeskySolver::stream() const {
+    return device_factor_ ? device_factor_->stream() : stream_;
+}
+bool SparseCholeskySolver::host_factor() {
+    if (!factored_) return false;
+    if (!device_factor_ || host_factored_) return factored_;
+    auto A = cholmod_lower_view(pattern_p_.size() - 1, pattern_p_.data(),
+        pattern_i_.data(), host_values_.data(), host_values_.size());
+    if (!factor_) factor_ = M_cholmod_analyze(&A, &common_);
+    if (!factor_) return false;
+    const int ok = M_cholmod_factorize(&A, factor_, &common_);
+    host_factored_ = ok && common_.status == CHOLMOD_OK;
+    policy_->record("sparse_square_root", false);
+    return host_factored_;
+}
+
+void SparseCholeskySolver::inverse_pattern() {
+    const int n = static_cast<int>(permutation_.size());
+    std::vector<int> pinv(n), parent(n, -1), ancestor(n, -1), mark(n, -1);
+    for (int j = 0; j < n; ++j) pinv[permutation_[j]] = j;
+    std::vector<std::vector<int>> upper(n), lower(n);
+    for (int j = 0; j < n; ++j) {
+        lower[j].push_back(j);
+        for (int k = pattern_p_[j]; k < pattern_p_[j + 1]; ++k) {
+            int r = pinv[pattern_i_[k]], c = pinv[j];
+            if (r != c) upper[std::max(r, c)].push_back(std::min(r, c));
+        }
+    }
+    // Elimination tree and row reaches give the simplicial fill pattern in
+    // the device ordering using structure alone.
+    for (int k = 0; k < n; ++k) for (int i : upper[k]) {
+        while (i != -1 && i < k) {
+            const int next = ancestor[i]; ancestor[i] = k;
+            if (next == -1) parent[i] = k;
+            i = next;
+        }
+    }
+    for (int k = 0; k < n; ++k) for (int i : upper[k]) {
+        while (i != -1 && i < k && mark[i] != k) {
+            mark[i] = k; lower[i].push_back(k); i = parent[i];
+        }
+    }
+    inverse_p_.assign(n + 1, 0); inverse_i_.clear();
+    for (int j = 0; j < n; ++j) {
+        inverse_p_[j] = static_cast<int>(inverse_i_.size());
+        inverse_i_.insert(inverse_i_.end(), lower[j].begin(), lower[j].end());
+    }
+    inverse_p_[n] = static_cast<int>(inverse_i_.size());
 }
 
 void SparseCholeskySolver::use_simplicial_ldl() {
@@ -252,6 +366,7 @@ bool SparseCholeskySolver::ldl_inertia(int& n_neg, double& log_abs_det) const {
 }
 
 std::size_t SparseCholeskySolver::analyzed_factor_bytes() const {
+    if (device_factor_) return device_factor_->factor_bytes();
     if (!factor_) return 0;
     const cholmod_factor* L = factor_;
     if (L->is_super) {
@@ -278,6 +393,12 @@ bool SparseCholeskySolver::solve(const double* b, double* x, int n, int ncol) {
     const std::size_t total = static_cast<std::size_t>(n) *
                               static_cast<std::size_t>(ncol > 0 ? ncol : 0);
     if (ncol <= 0) return ncol == 0;
+    if (device_factor_ && factored_) {
+        const bool ok = n == static_cast<int>(permutation_.size()) &&
+            device_result(device_factor_->solve(b, x, ncol));
+        if (!ok) std::fill_n(x, total, failed);
+        return ok;
+    }
     if (!factored_ || !factor_) {
         for (std::size_t i = 0; i < total; i++) x[i] = failed;
         return false;
@@ -327,6 +448,10 @@ bool SparseCholeskySolver::solve(const double* b, double* x, int n,
                                  SolveWorkspace& ws) {
     // Same NaN-on-failure contract as the allocating solve above.
     const double failed = std::numeric_limits<double>::quiet_NaN();
+    if (device_factor_ && (!ws.common_ || ws.common_ == &common_)) {
+        ws.common_ = &common_;
+        return solve(b, x, n);
+    }
     if (!factored_ || !factor_) {
         for (int i = 0; i < n; i++) x[i] = failed;
         return false;
@@ -368,6 +493,7 @@ bool SparseCholeskySolver::solve(const double* b, double* x, int n,
 
 bool SparseCholeskySolver::apply_inv_chol_factor(const double* eps, double* x,
                                                  int n, int ncol) {
+    if (!host_factor()) return false;
     if (!factored_ || !factor_ || n <= 0 || ncol <= 0) return false;
     // LDL' has no square root on this route -- see the header.
     if (!factor_->is_ll) return false;
@@ -398,6 +524,7 @@ bool SparseCholeskySolver::apply_inv_chol_factor(const double* eps, double* x,
 
 bool SparseCholeskySolver::apply_chol_factor_inv(const double* b, double* y,
                                                  int n, int ncol) {
+    if (!host_factor()) return false;
     if (!factored_ || !factor_ || n <= 0 || ncol <= 0) return false;
     if (!factor_->is_ll) return false;
 
@@ -426,6 +553,7 @@ bool SparseCholeskySolver::apply_chol_factor_inv(const double* b, double* y,
 }
 
 double SparseCholeskySolver::log_determinant() const {
+    if (device_factor_) return factored_ ? device_factor_->log_determinant() : std::numeric_limits<double>::quiet_NaN();
     if (!factored_ || !factor_) return 0.0;
     return M_cholmod_factor_ldetA(factor_);
 }
@@ -645,7 +773,18 @@ double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
 
 SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_full() {
     SelectedInverse out;
-    if (!factored_ || !factor_) return out;
+    if (!factored_ || (!factor_ && !device_factor_)) return out;
+    if (device_factor_) {
+        if (inverse_p_.empty()) inverse_pattern();
+        out.n = static_cast<int>(permutation_.size());
+        out.Lp = inverse_p_; out.Li = inverse_i_;
+        out.perm_inv.resize(out.n);
+        for (int j = 0; j < out.n; ++j) out.perm_inv[permutation_[j]] = j;
+        if (!device_result(device_factor_->inverse_entries(out.Lp, out.Li, permutation_, out.Zx))) return SelectedInverse{};
+        policy_->record("sparse_selected_inverse", true);
+        return out;
+    }
+    policy_->record("sparse_selected_inverse", false);
 
     int n = static_cast<int>(factor_->n);
 
@@ -707,6 +846,15 @@ SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_f
 }
 
 std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
+    if (device_factor_) {
+        if (!factored_) return {};
+        std::vector<int> indices(permutation_.size());
+        for (int j = 0; j < static_cast<int>(indices.size()); ++j) indices[j] = j;
+        std::vector<double> out;
+        if (!device_result(device_factor_->inverse_diagonal(indices, out))) return {};
+        policy_->record("sparse_selected_inverse", true);
+        return out;
+    }
     SelectedInverse si = selected_inversion_full();
     if (si.n == 0) return {};
 

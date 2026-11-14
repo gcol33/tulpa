@@ -15,6 +15,7 @@
 #include "family_terms_export.cpp"
 #include "fastmath_data.cpp"
 #include "device.cpp"
+#include "device_sparse.cpp"
 #include "device_exports.cpp"
 #include "hyperprior_density_export.cpp"
 #include "multinomial_logit_export.cpp"

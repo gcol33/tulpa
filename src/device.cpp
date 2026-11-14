@@ -122,6 +122,9 @@ struct Context::Impl {
     DEVICE_FN(upload, (Address, const void*, std::size_t));
     DEVICE_FN(download, (void*, Address, std::size_t));
     DEVICE_FN(sync, ());
+    DEVICE_FN(stream_create, (Handle*, unsigned));
+    DEVICE_FN(stream_destroy, (Handle));
+    DEVICE_FN(stream_sync, (Handle));
     DEVICE_FN(module_load, (Handle*, const void*));
     DEVICE_FN(module_unload, (Handle));
     DEVICE_FN(function, (Handle*, Handle, const char*));
@@ -140,6 +143,7 @@ struct Context::Impl {
     DEVICE_FN(ptx, (Handle, char*));
     DEVICE_FN(log_size, (Handle, std::size_t*));
     DEVICE_FN(log, (Handle, char*));
+    DEVICE_FN(sparse_property, (int, int*));
 
     template<class T> void resolve(T& target, int lib, const char* symbol, Status& s) {
         target = reinterpret_cast<T>(libraries[lib].find(symbol, s));
@@ -168,6 +172,9 @@ struct Context::Impl {
         RESOLVE(upload, "cuMemcpyHtoD_v2");
         RESOLVE(download, "cuMemcpyDtoH_v2");
         RESOLVE(sync, "cuCtxSynchronize");
+        RESOLVE(stream_create, "cuStreamCreate");
+        RESOLVE(stream_destroy, "cuStreamDestroy_v2");
+        RESOLVE(stream_sync, "cuStreamSynchronize");
         RESOLVE(module_load, "cuModuleLoadData");
         RESOLVE(module_unload, "cuModuleUnload");
         RESOLVE(function, "cuModuleGetFunction");
@@ -214,7 +221,11 @@ struct Context::Impl {
         resolve(ptx, 3, "nvrtcGetPTX", capability[3]);
         resolve(log_size, 3, "nvrtcGetProgramLogSize", capability[3]);
         resolve(log, 3, "nvrtcGetProgramLog", capability[3]);
-        if (!libraries[4].loaded()) capability[4] = Status::read("cuDSS", -1, "load", libraries[4].reason);
+        resolve(sparse_property, 4, "cudssGetProperty", capability[4]);
+        int sparse_major = 0;
+        if (capability[4]) capability[4] = Status::read("cuDSS", sparse_property(0, &sparse_major), "cudssGetProperty");
+        if (capability[4] && sparse_major != 1)
+            capability[4] = Status::read("cuDSS", -1, "ABI", "cuDSS 1.x is required");
         Handle previous = nullptr;
         status = Status::read("CUDA", pop(&previous), "cuCtxPopCurrent_v2");
 #endif
@@ -268,9 +279,18 @@ Status Context::push() { Status s = initialize(); return s ? Status::read("CUDA"
 Status Context::pop() { Handle previous = nullptr; return Status::read("CUDA", impl_->pop(&previous), "cuCtxPopCurrent_v2"); }
 Status Context::allocate(Address& pointer, std::size_t bytes) { return Status::read("CUDA", impl_->allocate(&pointer, bytes), "cuMemAlloc_v2"); }
 Status Context::release(Address pointer) { return Status::read("CUDA", impl_->free(pointer), "cuMemFree_v2"); }
-Status Context::upload(Address pointer, const void* data, std::size_t bytes) { return Status::read("CUDA", impl_->upload(pointer, data, bytes), "cuMemcpyHtoD_v2"); }
+Status Context::upload(Address pointer, const void* data, std::size_t bytes) {
+    Status s = Status::read("CUDA", impl_->upload(pointer, data, bytes), "cuMemcpyHtoD_v2");
+    // Pageable host copies may return after staging. Complete the default
+    // stream transfer before a nonblocking solver stream reads the allocation.
+    if (s) s.absorb(synchronize_stream(nullptr));
+    return s;
+}
 Status Context::download(void* data, Address pointer, std::size_t bytes) { return Status::read("CUDA", impl_->download(data, pointer, bytes), "cuMemcpyDtoH_v2"); }
 Status Context::synchronize() { return Status::read("CUDA", impl_->sync(), "cuCtxSynchronize"); }
+Status Context::create_stream(void*& stream) { return Status::read("CUDA", impl_->stream_create(&stream, 1), "cuStreamCreate"); }
+Status Context::destroy_stream(void* stream) { return Status::read("CUDA", impl_->stream_destroy(stream), "cuStreamDestroy_v2"); }
+Status Context::synchronize_stream(void* stream) { return Status::read("CUDA", impl_->stream_sync(stream), "cuStreamSynchronize"); }
 Status Context::factor(Address pointers, int n, int batch, Address info) {
     return Status::read("cuSOLVER", impl_->potrf(impl_->solver, 0, n,
         reinterpret_cast<double**>(pointers), n, reinterpret_cast<int*>(info), batch), "cusolverDnDpotrfBatched");
@@ -352,7 +372,8 @@ Status Context::launch(const std::string& source, const std::string& name,
 
 const std::vector<Operation>& operations() {
     static const std::vector<Operation> table = {
-        {"nngp_cholesky", Capability::Solver}, {"axpy", Capability::Compiler}
+        {"nngp_cholesky", Capability::Solver}, {"axpy", Capability::Compiler},
+        {"sparse_cholesky", Capability::Sparse}
     };
     return table;
 }

@@ -101,6 +101,9 @@ public:
     Status push();
     Status pop();
     Status synchronize();
+    Status create_stream(void*& stream);
+    Status destroy_stream(void* stream);
+    Status synchronize_stream(void* stream);
     Status factor(unsigned long long pointers, int n, int batch,
                   unsigned long long info);
     Status launch(const std::string& source, const std::string& name,

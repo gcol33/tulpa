@@ -1,11 +1,6 @@
 // sparse_cholesky.h
-// CHOLMOD sparse Cholesky solver wrapper for tulpa
-// Feature 1: Replaces dense O(N^3) Cholesky for large Laplace problems
-//
-// Uses CHOLMOD via R's Matrix package C API (stubs.c pattern).
-// Supernodal algorithm: converts sparse problem to many small dense BLAS ops.
-// Symbolic-once / numeric-many: critical for nested Laplace where the
-// sparsity pattern stays fixed across hyperparameter grid points.
+// Sparse direct solves through Matrix's CHOLMOD or runtime-loaded cuDSS.
+// Symbolic analysis belongs to the pattern and numeric updates to its values.
 
 #ifndef TULPA_SPARSE_CHOLESKY_H
 #define TULPA_SPARSE_CHOLESKY_H
@@ -17,6 +12,7 @@
 #include <vector>
 #include <cmath>
 #include "laplace_types.h"  // for tulpa::DenseMat
+#include "device_sparse.h"
 
 // CHOLMOD types from Matrix package.
 // Matrix/cholmod.h defines cholmod_sparse, cholmod_factor, etc.
@@ -28,7 +24,7 @@
 namespace tulpa {
 
 // =====================================================================
-// SparseCholeskySolver: thin RAII wrapper around CHOLMOD
+// SparseCholeskySolver: common host/device factor lifecycle
 // =====================================================================
 //
 // Usage pattern:
@@ -194,7 +190,7 @@ public:
     // Converts factor to simplicial LL' if currently supernodal, and returns a
     // default-constructed SelectedInverse (n == 0) when that conversion fails.
     //
-    // The conversion is in place and permanent: both selected-inversion entry
+    // On CPU the conversion is in place and permanent: both entry
     // points leave the solver holding a simplicial factor, so every later
     // solve() and log_determinant() on the same object runs the simplicial
     // path that analyze() may not have chosen. A caller that needs the
@@ -230,6 +226,11 @@ public:
 
     // Whether factorize() succeeded
     bool factored() const { return factored_; }
+    bool uses_cuda() const { return device_factor_ != nullptr; }
+    // Bind before analysis. A supplied stream remains owned by the caller.
+    void set_stream(void* stream);
+    void* stream() const;
+    std::size_t analysis_count() const { return analysis_count_; }
 
     // Bytes the numeric Cholesky factor will occupy once factorize() runs, read
     // from the analyzed symbolic factor -- no numeric factorization required.
@@ -277,6 +278,16 @@ public:
     void reset();
 
 private:
+    bool device_result(const device::Status& status);
+    bool host_factor();
+    void inverse_pattern();
+    std::shared_ptr<device::Policy> policy_;
+    std::unique_ptr<device::SparseFactor> device_factor_;
+    void* stream_ = nullptr;
+    bool host_factored_ = false;
+    std::size_t analysis_count_ = 0;
+    std::vector<int> pattern_p_, pattern_i_, inverse_p_, inverse_i_, permutation_;
+    std::vector<double> host_values_;
     // Allocate A_owned_ over the union of `keep`'s pattern (null for the first
     // discovery) and H's above-tolerance entries, fill the values, and drop any
     // analyzed factor. False on allocation failure, leaving A_owned_ untouched.

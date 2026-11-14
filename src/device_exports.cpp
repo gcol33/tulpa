@@ -1,6 +1,8 @@
 #include <RcppEigen.h>
 #include "device.h"
 #include "gpu_nngp_laplace.h"
+#include "sparse_cholesky.h"
+#include "cholmod_view.h"
 #include <chrono>
 #include <thread>
 
@@ -35,6 +37,131 @@ Rcpp::DataFrame device_stages(const tulpa::device::Policy& policy) {
         Rcpp::Named("device") = device, Rcpp::Named("cpu_calls") = cpu,
         Rcpp::Named("cuda_calls") = cuda);
 }
+}
+
+// [[Rcpp::export]]
+Rcpp::List cpp_device_sparse_state(std::string choice, int threads = 4) {
+    if (threads < 1 || threads > 32) Rcpp::stop("invalid sparse worker count");
+    DeviceSession session(tulpa::device::parse_choice(choice));
+    std::vector<int> success(threads), analyses(threads);
+    std::vector<std::string> errors(threads);
+    auto worker = [&](int id) {
+        try {
+            const int p[] = {0, 1, 2, 3}, i[] = {0, 1, 2};
+            double values[] = {1.0 + id, 2.0 + id, 3.0 + id};
+            double rhs[] = {1, 1, 1}, x[] = {0, 0, 0};
+            auto A = tulpa::cholmod_lower_view(3, p, i, values, 3);
+            tulpa::SparseCholeskySolver solver;
+            solver.analyze(&A);
+            bool ok = solver.factorize(&A);
+            values[0] = -1;
+            ok = ok && !solver.factorize(&A) && !solver.solve(rhs, x, 3);
+            for (double v : x) ok = ok && std::isnan(v);
+            values[0] = 1.0 + id;
+            ok = ok && solver.factorize(&A) && solver.solve(rhs, x, 3);
+            for (int j = 0; j < 3; ++j) ok = ok && std::abs(x[j] - 1/values[j]) < 1e-12;
+            auto diagonal = solver.selected_inversion_diagonal();
+            ok = ok && diagonal.size() == 3;
+            for (int j = 0; ok && j < 3; ++j) ok = std::abs(diagonal[j] - 1/values[j]) < 1e-12;
+            ok = ok && solver.apply_inv_chol_factor(rhs, x, 3, 1);
+            for (int j = 0; j < 3; ++j) ok = ok && std::abs(x[j]*x[j] - 1/values[j]) < 1e-12;
+            if (solver.uses_cuda()) {
+                tulpa::device::SparseFactor subset;
+                auto status = subset.analyze(3, p, i, values, solver.stream());
+                bool positive = false;
+                if (status) status = subset.refactor(values, positive);
+                std::vector<double> selected;
+                ok = ok && bool(status) && positive;
+                const auto invalid = subset.inverse_entries({0, 4, 2, 3}, {0, 1, 2}, {0, 1, 2}, selected);
+                ok = ok && !invalid;
+                if (status) status = subset.inverse_diagonal({2, 0, 2}, selected);
+                ok = ok && bool(status) && selected.size() == 3;
+                if (ok) ok = std::abs(selected[0] - 1/values[2]) < 1e-12 &&
+                    std::abs(selected[1] - 1/values[0]) < 1e-12 && selected[0] == selected[2];
+            }
+            success[id] = ok;
+            analyses[id] = static_cast<int>(solver.analysis_count());
+        } catch (const std::exception& error) { errors[id] = error.what(); }
+    };
+    std::vector<std::thread> workers;
+    for (int id = 0; id < threads; ++id) workers.emplace_back(worker, id);
+    for (auto& thread : workers) thread.join();
+    device_check(session.policy->failure());
+    return Rcpp::List::create(Rcpp::Named("success") = success,
+        Rcpp::Named("analyses") = analyses, Rcpp::Named("errors") = errors);
+}
+
+// [[Rcpp::export]]
+Rcpp::List cpp_device_sparse(Rcpp::IntegerVector p, Rcpp::IntegerVector i,
+                             Rcpp::NumericMatrix values, Rcpp::NumericMatrix b,
+                             std::string choice, bool full_inverse = false,
+                             int repetitions = 1) {
+    const int n = p.size() - 1;
+    if (n <= 0 || b.nrow() != n || values.nrow() != i.size() ||
+        values.ncol() == 0 || p[0] != 0 || p[n] != i.size() || repetitions < 1)
+        Rcpp::stop("invalid sparse fixture dimensions");
+    for (int j = 0; j < n; ++j) {
+        if (p[j] < 0 || p[j + 1] <= p[j] || p[j + 1] > i.size() || i[p[j]] != j)
+            Rcpp::stop("invalid sparse fixture pointers or diagonal");
+        for (int k = p[j]; k < p[j + 1]; ++k)
+            if (i[k] < j || i[k] >= n || (k > p[j] && i[k] <= i[k - 1]))
+                Rcpp::stop("invalid sparse fixture indices");
+    }
+    DeviceSession session(tulpa::device::parse_choice(choice));
+    tulpa::SparseCholeskySolver solver;
+    Rcpp::NumericMatrix x(n, b.ncol());
+    std::vector<double> diagonal;
+    tulpa::SparseCholeskySolver::SelectedInverse inverse;
+    using Clock = std::chrono::steady_clock;
+    double analyze_seconds = 0, factor_seconds = 0, solve_seconds = 0, inverse_seconds = 0;
+    auto A = tulpa::cholmod_lower_view(n, p.begin(), i.begin(), values.begin(), i.size());
+    auto start = Clock::now();
+    solver.analyze(&A);
+    analyze_seconds = std::chrono::duration<double>(Clock::now() - start).count();
+    device_check(session.policy->failure());
+    bool ok = solver.analyzed();
+    Rcpp::NumericVector logdet(values.ncol());
+    for (int rep = 0; rep < repetitions && ok; ++rep) {
+        for (int v = 0; v < values.ncol() && ok; ++v) {
+            A.x = values.begin() + static_cast<std::size_t>(v) * i.size();
+            start = Clock::now();
+            ok = solver.factorize(&A);
+            if (ok) logdet[v] = solver.log_determinant();
+            factor_seconds += std::chrono::duration<double>(Clock::now() - start).count();
+            device_check(session.policy->failure());
+            if (!ok) break;
+            start = Clock::now();
+            ok = solver.solve(b.begin(), x.begin(), n, b.ncol());
+            solve_seconds += std::chrono::duration<double>(Clock::now() - start).count();
+            start = Clock::now();
+            if (full_inverse) {
+                inverse = solver.selected_inversion_full();
+                ok = ok && inverse.n == n;
+                diagonal.resize(n);
+                for (int j = 0; j < n && ok; ++j) diagonal[j] = inverse.at(j, j);
+            } else {
+                diagonal = solver.selected_inversion_diagonal();
+                ok = ok && diagonal.size() == static_cast<std::size_t>(n);
+            }
+            inverse_seconds += std::chrono::duration<double>(Clock::now() - start).count();
+            device_check(session.policy->failure());
+        }
+    }
+    session.close();
+    const double calls = repetitions * values.ncol();
+    return Rcpp::List::create(Rcpp::Named("ok") = ok,
+        Rcpp::Named("used_cuda") = solver.uses_cuda(),
+        Rcpp::Named("solution") = x, Rcpp::Named("logdet") = logdet,
+        Rcpp::Named("diagonal") = diagonal,
+        Rcpp::Named("inverse_p") = inverse.Lp, Rcpp::Named("inverse_i") = inverse.Li,
+        Rcpp::Named("inverse_x") = inverse.Zx, Rcpp::Named("permutation_inverse") = inverse.perm_inv,
+        Rcpp::Named("analyses") = static_cast<double>(solver.analysis_count()),
+        Rcpp::Named("factor_bytes") = static_cast<double>(solver.analyzed_factor_bytes()),
+        Rcpp::Named("analysis_seconds") = analyze_seconds,
+        Rcpp::Named("factor_seconds") = factor_seconds/calls,
+        Rcpp::Named("solve_seconds") = solve_seconds/calls,
+        Rcpp::Named("inverse_seconds") = inverse_seconds/calls,
+        Rcpp::Named("seconds") = (factor_seconds + solve_seconds + inverse_seconds)/calls);
 }
 
 // [[Rcpp::export]]

@@ -284,6 +284,35 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_device_sparse_state
+Rcpp::List cpp_device_sparse_state(std::string choice, int threads);
+RcppExport SEXP _tulpa_cpp_device_sparse_state(SEXP choiceSEXP, SEXP threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< int >::type threads(threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_sparse_state(choice, threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_sparse
+Rcpp::List cpp_device_sparse(Rcpp::IntegerVector p, Rcpp::IntegerVector i, Rcpp::NumericMatrix values, Rcpp::NumericMatrix b, std::string choice, bool full_inverse, int repetitions);
+RcppExport SEXP _tulpa_cpp_device_sparse(SEXP pSEXP, SEXP iSEXP, SEXP valuesSEXP, SEXP bSEXP, SEXP choiceSEXP, SEXP full_inverseSEXP, SEXP repetitionsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type p(pSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type i(iSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type values(valuesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type b(bSEXP);
+    Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
+    Rcpp::traits::input_parameter< bool >::type full_inverse(full_inverseSEXP);
+    Rcpp::traits::input_parameter< int >::type repetitions(repetitionsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_sparse(p, i, values, b, choice, full_inverse, repetitions));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_device_info
 Rcpp::List cpp_device_info();
 RcppExport SEXP _tulpa_cpp_device_info() {
@@ -4083,6 +4112,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},
+    {"_tulpa_cpp_device_sparse_state", (DL_FUNC) &_tulpa_cpp_device_sparse_state, 2},
+    {"_tulpa_cpp_device_sparse", (DL_FUNC) &_tulpa_cpp_device_sparse, 7},
     {"_tulpa_cpp_device_info", (DL_FUNC) &_tulpa_cpp_device_info, 0},
     {"_tulpa_cpp_device_operations", (DL_FUNC) &_tulpa_cpp_device_operations, 0},
     {"_tulpa_cpp_device_validate", (DL_FUNC) &_tulpa_cpp_device_validate, 1},

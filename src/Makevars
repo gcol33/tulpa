@@ -33,6 +33,7 @@ unity_core.o: \
   family_terms_export.cpp \
   fastmath_data.cpp \
   device.cpp \
+  device_sparse.cpp \
   device_exports.cpp \
   hyperprior_density_export.cpp \
   multinomial_logit_export.cpp \
@@ -57,7 +58,9 @@ unity_core.o: \
   fastmath.h \
   device.h \
   linalg_fast.h \
+  device_sparse.h \
   gpu_nngp_laplace.h \
+  cholmod_view.h \
   pc_prior.h \
   multinomial_logit.h \
   sobol.h \
@@ -142,6 +145,7 @@ unity_exports.o: \
   hmc_sampler_chain_state.h \
   hmc_sampler_funcs.h \
   hmc_sampler_config.h \
+  device_sparse.h \
   mclmc.h \
   smc_sampler.h \
   shim_guard.h \
@@ -162,6 +166,7 @@ unity_exports.o: \
   hmc_hsgp_kernels.h \
   temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
+  device.h \
   laplace_cholesky.h \
   laplace_newton.h \
   inner_cila.h \
@@ -309,6 +314,7 @@ unity_glmm.o: \
   laplace_newton_loop.h \
   linear_constraint_rows.h \
   sobol_direction_numbers.h \
+  device_sparse.h \
   laplace_cholesky_dispatch.h \
   laplace_family_curvature.h \
   inner_laplace_is.h \
@@ -320,6 +326,7 @@ unity_glmm.o: \
   spde_matern_map.h \
   hmc_latent_autodiff.h \
   small_dense_sym.h \
+  device.h \
   sparse_hessian.h \
   curvature3_contract.h \
   cholmod_view.h \
@@ -415,6 +422,7 @@ unity_hmc.o: \
   laplace_cholesky.h \
   laplace_family_link.h \
   laplace_types.h \
+  device_sparse.h \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
@@ -435,6 +443,7 @@ unity_hmc.o: \
   tulpa_priors_zioi.h \
   laplace_likelihoods.h \
   laplace_core.h \
+  device.h \
   intrinsic_log_pdet.h \
   icar_kernel.h \
   glmm_family_elt.h \
@@ -498,9 +507,9 @@ unity_laplace.o: \
   lkj_chol_helpers.h \
   hmc_sampler.h \
   log_post_impl.h \
+  cholmod_view.h \
   stochastic_logdet.h \
   laplace_family_curvature.h \
-  cholmod_view.h \
   laplace_family_link.h \
   spde_zero_mass.h \
   small_dense_sym.h \
@@ -526,6 +535,7 @@ unity_laplace.o: \
   fastmath.h \
   builtin_family_zi.h \
   curvature3_contract.h \
+  device_sparse.h \
   hmc_svc.h \
   hmc_gp.h \
   hmc_temporal_multiscale.h \
@@ -690,6 +700,7 @@ unity_nl.o: \
   inner_laplace_probe.h \
   rwmh.h \
   curvature3_contract.h \
+  device_sparse.h \
   joint_pd_step.h \
   laplace_spec_curvature3.h \
   joint_inner_vcov.h \
@@ -753,6 +764,7 @@ unity_nl_joint.o: \
   row_classes.h \
   small_dense_sym.h \
   laplace_types.h \
+  device_sparse.h \
   laplace_profile.h \
   coupled_scatter_plan.h \
   laplace_family_link.h \
@@ -782,6 +794,7 @@ unity_nl_joint.o: \
   spde_logdet.h \
   linalg_fast.h \
   inner_laplace_probe.h \
+  device.h \
   builtin_family_zi.h \
   laplace_family_curvature.h \
   subspace_debias.h \
@@ -790,7 +803,6 @@ unity_nl_joint.o: \
   fastmath.h \
   spde_zero_mass.h \
   autodiff_utils.h \
-  device.h \
   nngp_cond.h \
   rwmh.h \
   sobol_direction_numbers.h
@@ -1039,6 +1051,7 @@ unity_spatial.o: \
   laplace_likelihoods.h \
   subspace_debias.h \
   checkpoint_io.h \
+  device_sparse.h \
   joint_pd_step.h \
   laplace_cholesky_dispatch.h \
   laplace_newton_loop.h \
@@ -1056,6 +1069,7 @@ unity_spatial.o: \
   fastmath.h \
   inner_laplace_probe.h \
   rwmh.h \
+  device.h \
   curvature3_contract.h \
   st_null_space.h
 # unity-build: end
