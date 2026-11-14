@@ -59,6 +59,17 @@ synchronous host hooks. They do not enqueue an entire outer-grid batch.
 The native lifecycle fixture also checks a borrowed stream, repeated diagonal
 indices, and rejection of a selected-pattern column pointer beyond its buffer.
 
+## Blackwell sanitizer compatibility
+
+NVIDIA acknowledges invalid shared-memory reports from the CUB masked bulk
+copy instruction on Blackwell with Compute Sanitizer 13.2 or earlier in
+[NVIDIA/cccl#8288](https://github.com/NVIDIA/cccl/issues/8288). The sparse
+fixture encounters that report inside cuDSS's analysis kernels. The local
+verification uses Compute Sanitizer from CUDA 13.4. The reproducer is
+`dev_notes/repro-sanitizer-blackwell.R`; its optional argument is the library
+containing this tulpa build. Run it through memcheck with child-process
+instrumentation enabled. All engine kernels remain instrumented.
+
 The shared `Context` owns driver stream creation, destruction and synchronization.
 Its host upload completes the default-stream transfer before returning, so
 nonblocking solver streams consume the uploaded values. The NVRTC cache and
