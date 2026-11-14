@@ -79,8 +79,12 @@ test_that("fixed-hyperparameter HSGP fits use the shared basis products", {
   expect_true(cuda$fit$converged)
   expect_device_equal(cuda$fit$mode, cpu$fit$mode, 1e-8, "fixed HSGP mode")
   expect_device_equal(cuda$fit$log_marginal, cpu$fit$log_marginal, 1e-9, "fixed HSGP marginal")
-  for (operation in c("hsgp_product", "hsgp_crossprod", "dense_spec"))
-    expect_true(any(cuda$device$stage == operation & cuda$device$cuda_calls > 0))
+  # The fused likelihood forms the predictor from its own projection plan, so
+  # the forward basis product runs only when that route is not taken.
+  on_cuda <- function(operation) any(cuda$device$stage == operation & cuda$device$cuda_calls > 0)
+  predictor <- if (on_cuda("likelihood_weights")) "likelihood_weights" else "hsgp_product"
+  for (operation in c(predictor, "hsgp_crossprod", "dense_spec"))
+    expect_true(on_cuda(operation), info = operation)
 })
 
 expect_dense_parameter_gradient <- function(actual, expected, tolerance, label, variance_tolerance = tolerance) {
