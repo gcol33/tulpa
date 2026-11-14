@@ -1,0 +1,25 @@
+name: save-ccache
+description: >
+  Report the compile cache's hit rate and save it under the key build-env
+  restored with. Called with `if: always()`, so a failed check still leaves
+  its objects for the next run.
+
+inputs:
+  key:
+    description: The `ccache-key` output of build-env.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Compile cache statistics
+      if: runner.os != 'Windows'
+      shell: bash
+      run: ccache --show-stats || true
+
+    - name: Save compile cache
+      if: runner.os != 'Windows' && inputs.key != ''
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.ccache
+        key: ${{ inputs.key }}

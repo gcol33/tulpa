@@ -62,7 +62,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/build-env
+      - id: build-env
+        uses: ./.github/actions/build-env
         with:
           cache-key: recovery
 
@@ -71,6 +72,12 @@ jobs:
 
       - name: Recovery tier
         run: Rscript .github/scripts/run-tests.R
+
+      - name: Save compile cache
+        if: always()
+        uses: ./.github/actions/save-ccache
+        with:
+          key: ${{ steps.build-env.outputs.ccache-key }}
 
       - name: Upload tier timings
         if: always()

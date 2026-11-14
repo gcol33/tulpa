@@ -32,6 +32,11 @@ inputs:
     required: false
     default: 'off'
 
+outputs:
+  ccache-key:
+    description: The key the compile cache is saved under (empty on Windows).
+    value: ${{ steps.ccache-restore.outputs.cache-primary-key }}
+
 runs:
   using: composite
   steps:
@@ -104,9 +109,13 @@ runs:
         echo "fp-contract: $FP_CONTRACT"
         cat "$mk"
 
-    # The engine is 99 translation units over 177 headers, so a cold build is
-    # most of a job. ccache is reached through PATH rather than by overriding
-    # CXX, which would drop the -std flag R pairs with its own compiler entry.
+    # A cold build of the engine is most of a job. ccache is reached through
+    # PATH rather than by overriding CXX, which would drop the -std flag R pairs
+    # with its own compiler entry. R CMD build and R CMD check each compile the
+    # sources under their own random temporary directory, so the working
+    # directory is kept out of the hash (NOHASHDIR) and absolute paths are
+    # rewritten relative to it (BASEDIR); otherwise no compile can hit an entry
+    # another one wrote.
     - name: Compile cache
       if: runner.os != 'Windows'
       shell: bash
@@ -124,11 +133,18 @@ runs:
           echo "CCACHE_MAXSIZE=2G"
           echo "CCACHE_COMPRESS=1"
           echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros"
+          echo "CCACHE_NOHASHDIR=1"
+          echo "CCACHE_BASEDIR=/"
         } >> "$GITHUB_ENV"
 
+    # Restore only: actions/cache saves in its post step when the job
+    # succeeds, so a red job never stored what it compiled and the next run
+    # started cold. The calling workflow saves with `if: always()` through the
+    # save-ccache action.
     - name: Restore compile cache
+      id: ccache-restore
       if: runner.os != 'Windows'
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: ~/.ccache
         key: ccache-${{ runner.os }}-${{ inputs.r-version }}-${{ inputs.cache-key }}-fp${{ inputs.fp-contract }}-${{ github.sha }}

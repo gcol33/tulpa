@@ -59,7 +59,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/build-env
+      - id: build-env
+        uses: ./.github/actions/build-env
         with:
           r-version: ${{ matrix.r }}
           cache-key: check
@@ -90,6 +91,12 @@ jobs:
 
       - name: Check
         run: Rscript .github/scripts/check.R
+
+      - name: Save compile cache
+        if: always()
+        uses: ./.github/actions/save-ccache
+        with:
+          key: ${{ steps.build-env.outputs.ccache-key }}
 
       - name: Upload check results
         if: always()

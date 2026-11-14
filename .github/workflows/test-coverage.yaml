@@ -96,7 +96,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/build-env
+      - id: build-env
+        uses: ./.github/actions/build-env
         with:
           cache-key: coverage${{ env.TULPA_COV_OPT }}
           fp-contract: 'off'
@@ -116,9 +117,14 @@ jobs:
           status=0
           Rscript .github/scripts/coverage.R shard || status=$?
           kill "$follower" 2>/dev/null || true
-          ccache --show-stats
           exit "$status"
         shell: bash
+
+      - name: Save compile cache
+        if: always()
+        uses: ./.github/actions/save-ccache
+        with:
+          key: ${{ steps.build-env.outputs.ccache-key }}
 
       - name: Upload shard report
         if: always()
