@@ -13,12 +13,11 @@ runs:
   using: composite
   steps:
     - name: Compile cache statistics
-      if: runner.os != 'Windows'
       shell: bash
       run: ccache --show-stats || true
 
     - name: Save compile cache
-      if: runner.os != 'Windows' && inputs.key != ''
+      if: inputs.key != ''
       uses: actions/cache/save@v4
       with:
         path: ~/.ccache

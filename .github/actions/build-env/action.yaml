@@ -34,7 +34,7 @@ inputs:
 
 outputs:
   ccache-key:
-    description: The key the compile cache is saved under (empty on Windows).
+    description: The key the compile cache is saved under.
     value: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
 runs:
@@ -109,32 +109,49 @@ runs:
         echo "fp-contract: $FP_CONTRACT"
         cat "$mk"
 
-    # A cold build of the engine is most of a job. ccache is reached through
-    # PATH rather than by overriding CXX, which would drop the -std flag R pairs
-    # with its own compiler entry. R CMD build and R CMD check each compile the
-    # sources under their own random temporary directory, so the working
-    # directory is kept out of the hash (NOHASHDIR) and absolute paths are
-    # rewritten relative to it (BASEDIR); otherwise no compile can hit an entry
-    # another one wrote.
+    # A cold build of the engine is most of a job. On Linux and macOS ccache is
+    # reached through PATH rather than by overriding CXX, which would drop the
+    # -std flag R pairs with its own compiler entry. On Windows R puts the
+    # Rtools compilers at the front of PATH itself, so the user Makevars
+    # prefixes R's own compiler definitions instead (`CXX17 := ccache
+    # $(CXX17)`), which keeps every flag R set. R CMD build and R CMD check each
+    # compile the sources under their own random temporary directory, so the
+    # working directory is kept out of the hash (NOHASHDIR) and absolute paths
+    # are rewritten relative to it (BASEDIR); otherwise no compile can hit an
+    # entry another one wrote. On Windows BASEDIR is the checkout's drive, and
+    # TMPDIR moves R's temporary directory onto it.
     - name: Compile cache
-      if: runner.os != 'Windows'
       shell: bash
       run: |
-        if [ "$RUNNER_OS" = "Linux" ]; then
-          sudo apt-get update -qq
-          sudo apt-get install -y ccache
-          echo /usr/lib/ccache >> "$GITHUB_PATH"
-        else
-          brew install ccache
-          echo "$(brew --prefix)/opt/ccache/libexec" >> "$GITHUB_PATH"
-        fi
+        case "$RUNNER_OS" in
+          Linux)
+            sudo apt-get update -qq
+            sudo apt-get install -y ccache
+            echo /usr/lib/ccache >> "$GITHUB_PATH"
+            cache_dir="$HOME/.ccache"; base_dir=/ ;;
+          macOS)
+            brew install ccache
+            echo "$(brew --prefix)/opt/ccache/libexec" >> "$GITHUB_PATH"
+            cache_dir="$HOME/.ccache"; base_dir=/ ;;
+          Windows)
+            choco install ccache -y --no-progress
+            mk="$RUNNER_TEMP/tulpa-makevars"
+            for v in CC CXX CXX11 CXX14 CXX17 CXX20; do
+              echo "$v := ccache \$($v)" >> "$mk"
+            done
+            cat "$mk"
+            cache_dir=$(cygpath -m "$HOME/.ccache")
+            tmp=$(cygpath -m "$RUNNER_TEMP/rtmp"); mkdir -p "$RUNNER_TEMP/rtmp"
+            base_dir="${tmp%%:*}:/"
+            echo "TMPDIR=$tmp" >> "$GITHUB_ENV" ;;
+        esac
         {
-          echo "CCACHE_DIR=$HOME/.ccache"
+          echo "CCACHE_DIR=$cache_dir"
           echo "CCACHE_MAXSIZE=2G"
           echo "CCACHE_COMPRESS=1"
           echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros"
           echo "CCACHE_NOHASHDIR=1"
-          echo "CCACHE_BASEDIR=/"
+          echo "CCACHE_BASEDIR=$base_dir"
         } >> "$GITHUB_ENV"
 
     # Restore only: actions/cache saves in its post step when the job
@@ -143,7 +160,6 @@ runs:
     # save-ccache action.
     - name: Restore compile cache
       id: ccache-restore
-      if: runner.os != 'Windows'
       uses: actions/cache/restore@v4
       with:
         path: ~/.ccache

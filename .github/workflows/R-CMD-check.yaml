@@ -36,20 +36,50 @@ permissions:
   contents: read
 
 jobs:
+  # The platform list both jobs below run on, and the tier-1 shards. One list,
+  # so the check and the tier it no longer runs whole cannot drift apart.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      platforms: ${{ steps.platforms.outputs.platforms }}
+      shards: ${{ steps.shards.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: platforms
+        shell: bash
+        run: |
+          echo 'platforms=[
+            {"os":"ubuntu-latest","r":"release","manual":"1","fp":"off"},
+            {"os":"ubuntu-latest","r":"devel","manual":"0","fp":"off"},
+            {"os":"macos-latest","r":"release","manual":"0","fp":"off"},
+            {"os":"macos-latest","r":"release","manual":"0","fp":"default"},
+            {"os":"windows-latest","r":"release","manual":"0","fp":"off"},
+            {"os":"windows-latest","r":"devel","manual":"0","fp":"off"}
+          ]' | tr -d ' \n' >> "$GITHUB_OUTPUT"
+          echo >> "$GITHUB_OUTPUT"
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - id: shards
+        run: |
+          source(".github/scripts/tier-files.R")
+          write_shard_plan("tier1")
+        shell: Rscript {0}
+
   check:
+    needs: plan
     name: ${{ matrix.os }} (${{ matrix.r }}, fp-contract ${{ matrix.fp }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest,  r: 'release', manual: '1', fp: 'off' }
-          - { os: ubuntu-latest,  r: 'devel',   manual: '0', fp: 'off' }
-          - { os: macos-latest,   r: 'release', manual: '0', fp: 'off' }
-          - { os: macos-latest,   r: 'release', manual: '0', fp: 'default' }
-          - { os: windows-latest, r: 'release', manual: '0', fp: 'off' }
-          - { os: windows-latest, r: 'devel',   manual: '0', fp: 'off' }
+        include: ${{ fromJSON(needs.plan.outputs.platforms) }}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -104,5 +134,56 @@ jobs:
         with:
           name: check-${{ matrix.os }}-${{ matrix.r }}-fp-${{ matrix.fp }}
           path: check
+          if-no-files-found: warn
+          retention-days: 30
+
+  # Tier 1 whole -- every test file under the CRAN profile with the CRAN budget
+  # open -- on every platform the check runs on, in shards against the
+  # installed package. The check itself runs only what CRAN runs.
+  tier1:
+    needs: plan
+    name: tier 1 ${{ matrix.platform.os }} (${{ matrix.platform.r }}, fp-contract ${{ matrix.platform.fp }}) shard ${{ matrix.shard.shard }}
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(needs.plan.outputs.platforms) }}
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      NOT_CRAN: 'false'
+      TULPA_CRAN_BUDGET: 'off'
+      TULPA_TIER: '1'
+      TULPA_TEST_FILES: ${{ matrix.shard.files }}
+      TULPA_TEST_OUT: tier1-out
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: build-env
+        uses: ./.github/actions/build-env
+        with:
+          r-version: ${{ matrix.platform.r }}
+          cache-key: check
+          fp-contract: ${{ matrix.platform.fp }}
+
+      - name: Install package
+        run: R CMD INSTALL --no-multiarch .
+
+      - name: Tier 1
+        run: Rscript .github/scripts/run-tests.R
+
+      - name: Save compile cache
+        if: always()
+        uses: ./.github/actions/save-ccache
+        with:
+          key: ${{ steps.build-env.outputs.ccache-key }}
+
+      - name: Upload tier timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier1-${{ matrix.platform.os }}-${{ matrix.platform.r }}-fp-${{ matrix.platform.fp }}-${{ matrix.shard.shard }}
+          path: tier1-out
           if-no-files-found: warn
           retention-days: 30

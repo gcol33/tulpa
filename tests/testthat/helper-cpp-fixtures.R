@@ -28,7 +28,7 @@
 #
 # Compiling is not cheap, so the loader skips in fast mode and under the CRAN
 # profile (skip_on_cran_budget(): TULPA_CRAN_BUDGET=off opens it, which is how
-# the CI check matrix runs the fixture blocks on every platform), and also
+# the CI tier1 job runs the fixture blocks on every platform), and also
 # without a C++ toolchain and where the package sources are not on disk. A
 # test file calls it inside the block or helper that needs it.
 

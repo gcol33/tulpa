@@ -27,7 +27,9 @@ checks, so the whole suite runs in seconds for plumbing / dispatch iteration.
 (`CRAN_SMOKE_FILES` in `helper-tiers.R`, one file per subsystem), less the
 blocks over the CRAN budget (`NOT_CRAN` unset trips `skip_on_cran()` and
 `skip_on_cran_budget()`, `TULPA_SLOW_TESTS` unset trips `skip_if_not_slow()`).
-The CI check matrix sets `TULPA_CRAN_BUDGET=off` and runs tier 1 of every file.
+R CMD check in CI runs this CRAN profile. The CI `tier1` job sets
+`TULPA_CRAN_BUDGET=off` and runs tier 1 of every file, in shards, on every
+platform the check runs on.
 
 Keep tests file-independent (use `tempfile()` for any on-disk artefact), so a
 file runs the same alone as in the suite.

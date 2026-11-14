@@ -10,7 +10,8 @@
 # for everything it got through, which is what the tier lists are sized from.
 #
 # Environment:
-#   TULPA_TIER        2 (recovery / equivalence) or 3 (samplers / coverage).
+#   TULPA_TIER        1 (structural, the CRAN tier), 2 (recovery /
+#                     equivalence) or 3 (samplers / coverage).
 #   TULPA_TEST_FILES  comma-separated file names, overriding the tier list.
 #                     The tier-3 matrix runs one file per job.
 #   TULPA_TEST_SCOPE  "curated" (default) runs the tier list. "all-gated" runs
@@ -62,6 +63,7 @@ if (length(absent)) {
 
 tier_name <- switch(
   tier,
+  "1" = "structural (the CRAN tier with its budget open)",
   "2" = "recovery (single-fit recovery and equivalence)",
   "3" = "full validation (samplers and multi-seed coverage)",
   paste0("tier ", tier)

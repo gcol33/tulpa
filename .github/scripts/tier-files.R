@@ -51,8 +51,9 @@ tier_files <- function(tier) {
   tier <- as.integer(tier)
   files <- switch(as.character(tier),
     "2" = sort(tier_table()$file),
+    "1" = test_files_on_disk(),
     "3" = tier_gated_files("slow"),
-    stop("no CI tier ", tier, "; tier 1 is R CMD check", call. = FALSE))
+    stop("no CI tier ", tier, call. = FALSE))
   if (!length(files)) {
     stop("tier ", tier, " holds no files", call. = FALSE)
   }
@@ -85,23 +86,43 @@ tier_uncovered <- function() {
   setdiff(tier_gated_files("any"), union(tier_files(2), tier_files(3)))
 }
 
-# Coverage runs every test file -- the suite devtools::test() runs, tiers 1 and
-# 2 -- against an instrumented build, which is several times slower than the
-# build the tiers above run. It is split into shards, each a job of its own, and
-# files are packed onto shards by their measured seconds under coverage
-# (.github/coverage-seconds.csv, refreshed from the timings.csv every shard
-# publishes). A file with no measurement is costed at the median of those with
-# one, so a new test file lands on some shard without editing the table.
+# Two suites run in shards, each shard a job of its own:
+#
+#   coverage  every test file -- the suite devtools::test() runs, tiers 1 and
+#             2 -- against an instrumented build, several times slower than the
+#             build the tiers above run.
+#   tier1     every test file under the CRAN profile with the CRAN budget open
+#             (TULPA_CRAN_BUDGET=off), on every platform R CMD check runs on.
+#             R CMD check itself runs what CRAN runs, the smoke files.
+#
+# Files are packed onto shards by their measured seconds in that suite
+# (`seconds_csv`, refreshed from the timings.csv every shard publishes). A file
+# with no measurement is costed at the median of those with one, so a new test
+# file lands on some shard without editing the table. With no file measured
+# there is nothing to size the shard count from, and `unmeasured` is the count
+# the measuring run spreads the suite over. `budget` is the seconds of tests one
+# shard should carry once the table exists.
 
-COVERAGE_SECONDS_CSV <- file.path(".github", "coverage-seconds.csv")
+SHARD_SUITES <- list(
+  coverage = list(seconds_csv = file.path(".github", "coverage-seconds.csv"),
+                  budget = 2400, unmeasured = 12L),
+  tier1 = list(seconds_csv = file.path(".github", "tier1-seconds.csv"),
+               budget = 300, unmeasured = 3L)
+)
 
-# With no file measured there is nothing to size the shard count from; this is
-# the count the measuring run spreads the suite over.
-COVERAGE_SHARDS_UNMEASURED <- 12L
+shard_suite <- function(suite) {
+  spec <- SHARD_SUITES[[suite]]
+  if (is.null(spec)) {
+    stop("no shard suite '", suite, "'; one of ",
+         paste(names(SHARD_SUITES), collapse = ", "), call. = FALSE)
+  }
+  spec
+}
 
-coverage_cost <- function(files) {
-  known <- if (file.exists(COVERAGE_SECONDS_CSV)) {
-    tab <- utils::read.csv(COVERAGE_SECONDS_CSV, stringsAsFactors = FALSE)
+shard_cost <- function(suite, files) {
+  csv <- shard_suite(suite)$seconds_csv
+  known <- if (file.exists(csv)) {
+    tab <- utils::read.csv(csv, stringsAsFactors = FALSE)
     stats::setNames(tab$seconds, trimws(tab$file))
   } else {
     numeric()
@@ -113,15 +134,16 @@ coverage_cost <- function(files) {
 }
 
 # Longest-processing-time packing: each file, longest first, onto the shard
-# carrying the fewest seconds so far. `n` unset sizes the shard count from
-# `budget`, the seconds of tests one shard should carry.
-coverage_shards <- function(n = NULL, budget = 2400, files = test_files_on_disk()) {
-  cost <- coverage_cost(files)
+# carrying the fewest seconds so far. `n` unset sizes the shard count from the
+# suite's budget.
+plan_shards <- function(suite, n = NULL, files = test_files_on_disk()) {
+  spec <- shard_suite(suite)
+  cost <- shard_cost(suite, files)
   if (is.null(n) || is.na(n)) {
-    n <- if (file.exists(COVERAGE_SECONDS_CSV)) {
-      ceiling(sum(cost) / budget)
+    n <- if (file.exists(spec$seconds_csv)) {
+      ceiling(sum(cost) / spec$budget)
     } else {
-      COVERAGE_SHARDS_UNMEASURED
+      spec$unmeasured
     }
   }
   n <- max(1L, min(as.integer(n), length(files)))
@@ -139,9 +161,23 @@ coverage_shards <- function(n = NULL, budget = 2400, files = test_files_on_disk(
     stringsAsFactors = FALSE)
 }
 
-coverage_shards_json <- function(...) {
-  plan <- coverage_shards(...)
+shards_json <- function(plan) {
   paste0("[", paste0(
     "{\"shard\":\"", plan$shard, "\",\"files\":\"", plan$files,
     "\",\"seconds\":", plan$seconds, "}", collapse = ","), "]")
+}
+
+# The plan step both shard workflows run: prints the plan and writes `shards`
+# (the job matrix) and `count` to GITHUB_OUTPUT. SHARDS and FILES are the
+# optional dispatch inputs overriding the count and the file list.
+write_shard_plan <- function(suite) {
+  n <- if (nzchar(Sys.getenv("SHARDS"))) as.integer(Sys.getenv("SHARDS")) else NULL
+  files <- trimws(strsplit(Sys.getenv("FILES"), ",", fixed = TRUE)[[1]])
+  if (!length(files)) files <- test_files_on_disk()
+  plan <- plan_shards(suite, n = n, files = files)
+  print(plan[, c("shard", "seconds")], row.names = FALSE)
+  out <- Sys.getenv("GITHUB_OUTPUT")
+  cat("shards=", shards_json(plan), "\n", sep = "", file = out, append = TRUE)
+  cat("count=", nrow(plan), "\n", sep = "", file = out, append = TRUE)
+  invisible(plan)
 }

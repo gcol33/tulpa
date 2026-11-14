@@ -66,15 +66,7 @@ jobs:
           FILES: ${{ inputs.files }}
         run: |
           source(".github/scripts/tier-files.R")
-          n <- if (nzchar(Sys.getenv("SHARDS"))) as.integer(Sys.getenv("SHARDS")) else NULL
-          files <- trimws(strsplit(Sys.getenv("FILES"), ",", fixed = TRUE)[[1]])
-          if (!length(files)) files <- test_files_on_disk()
-          plan <- coverage_shards(n = n, files = files)
-          print(plan[, c("shard", "seconds")], row.names = FALSE)
-          out <- Sys.getenv("GITHUB_OUTPUT")
-          cat("shards=", coverage_shards_json(n = nrow(plan), files = files), "\n",
-              sep = "", file = out, append = TRUE)
-          cat("count=", nrow(plan), "\n", sep = "", file = out, append = TRUE)
+          write_shard_plan("coverage")
         shell: Rscript {0}
 
   coverage:

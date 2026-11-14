@@ -66,13 +66,13 @@
 # file is sourced there. Sourcing a file costs more than its tier-1 blocks do --
 # the 245 files CRAN ran held 4 s of block time and took 43 s on win-builder --
 # so the file count is what the budget reads. A smoke file is one whose tier-1
-# part covers its subsystem's constructors and closed forms cheaply; the CI check
-# matrix (TULPA_CRAN_BUDGET=off) and every other profile run all files.
+# part covers its subsystem's constructors and closed forms cheaply; the CI tier1
+# job (TULPA_CRAN_BUDGET=off) and every other profile run all files.
 #
 # A block that drives the engine through a C++ test fixture (load_cpp_fixture(),
 # helper-cpp-fixtures.R) never runs on CRAN or in fast mode, whatever its own
 # cost, because the fixture has to be compiled: the loader carries the
-# skip_if_fast() and skip_on_cran_budget() gates, so the CI check matrix
+# skip_if_fast() and skip_on_cran_budget() gates, so the CI tier1 job
 # (TULPA_CRAN_BUDGET=off) still runs it. A smoke file's CRAN part therefore
 # reaches the engine through R-level doors only.
 #
@@ -131,7 +131,7 @@ skip_on_cran <- function() {
 # CRAN time-budget gate: a tier-1 block over the CRAN budget (see the header).
 # It skips on CRAN only, so TULPA_FAST=1 still runs the block, and
 # TULPA_CRAN_BUDGET=off opens it under the CRAN profile too, which is how the CI
-# check matrix runs the whole of tier 1 on every platform.
+# tier1 job runs the whole of tier 1 on every platform.
 skip_on_cran_budget <- function() {
   if (!cran_budget_applies()) {
     return(invisible())
