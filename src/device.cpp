@@ -74,7 +74,7 @@ public:
     bool loaded() const { return handle_ != nullptr; }
 };
 
-std::vector<std::string> library_names(const char* windows, const char* linux) {
+std::vector<std::string> library_names(const char* windows, const char* posix) {
 #ifdef _WIN32
     std::vector<std::string> result{windows};
     for (const char* variable : {"CUDA_PATH", "CUDSS_DIR"}) {
@@ -85,7 +85,7 @@ std::vector<std::string> library_names(const char* windows, const char* linux) {
     }
     return result;
 #else
-    return {linux};
+    return {posix};
 #endif
 }
 
