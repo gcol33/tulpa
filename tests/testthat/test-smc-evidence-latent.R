@@ -332,20 +332,26 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
 
   # TVC: RW1, AR1 and GP coefficients over three instants
   Tn <- 3L
-  for (st in c("rw1", "ar1", "gp")) {
-    v <- tulpa:::validate_tvc(temporal_tvc("t", terms = ~ x - 1, structure = st,
-                                           cov = "exponential"), d, X)
+  for (st in c("rw1", "ar1", "gp_centered", "gp_noncentered")) {
+    structure <- sub("_.*", "", st)
+    par <- if (structure == "gp") sub(".*_", "", st) else "auto"
+    v <- tulpa:::validate_tvc(temporal_tvc("t", terms = ~ x - 1,
+                                           structure = structure,
+                                           cov = "exponential",
+                                           parameterization = par), d, X)
     sp <- tulpa:::.tvc_sampler_spec(v, X)
     check(list(tvc_spec = sp), function(r) {
       w <- r[grep("^tvc_w", names(r))]
-      if (st == "gp") {
+      if (structure == "gp") {
         tv <- sp$time_values
         lo <- sp$phi_prior_lower %||% 0.01; hi <- sp$phi_prior_upper %||% 10
         ell <- lo + (hi - lo) * plogis(r[["logit_phi_tvc_gp[1]"]])
         ls2 <- r[["log_sigma2_tvc_gp[1]"]]
+        field <- if (par == "noncentered") sum(dnorm(w, log = TRUE)) else
+          lmvn_cov(w, exp(ls2) * exp(-abs(outer(tv, tv, "-")) / ell))
         return(lp_pc_log_sigma2(ls2, 1, 0.01) +
                  log((ell - lo) * (hi - ell) / (hi - lo)) - log(hi - lo) +
-                 lmvn_cov(w, exp(ls2) * exp(-abs(outer(tv, tv, "-")) / ell)))
+                 field)
       }
       lt <- r[["log_tau_tvc[1]"]]; tau <- exp(lt)
       lp <- lp_pc_log_tau(lt, 1, 0.01)
@@ -354,7 +360,7 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
       P <- diag(c(1, rep(1 + rho^2, Tn - 2), 1))
       P[cbind(1:(Tn - 1), 2:Tn)] <- P[cbind(2:Tn, 1:(Tn - 1))] <- -rho
       lp + log(u) + log1p(-u) + lmvn_prec(w, tau * P)
-    }, tol = if (st == "gp") 1e-6 else 1e-10, info = paste("tvc", st))
+    }, tol = if (structure == "gp") 1e-6 else 1e-10, info = paste("tvc", st))
   }
 })
 

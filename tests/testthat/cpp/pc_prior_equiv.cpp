@@ -66,12 +66,11 @@ Rcpp::NumericVector cpp_test_bounded_from_logit(Rcpp::NumericVector u,
 }
 
 // [[Rcpp::export]]
-Rcpp::NumericVector cpp_test_log_jacobian_bounded(Rcpp::NumericVector phi,
+Rcpp::NumericVector cpp_test_log_jacobian_bounded(Rcpp::NumericVector u,
                                                   double lower, double upper) {
-  Rcpp::NumericVector out(phi.size());
-  for (R_xlen_t i = 0; i < phi.size(); i++) {
-    const double p = phi[i];
-    out[i] = tulpa::math::log_jacobian_bounded<double>(p, lower, upper);
+  Rcpp::NumericVector out(u.size());
+  for (R_xlen_t i = 0; i < u.size(); i++) {
+    out[i] = tulpa::math::log_jacobian_bounded<double>(u[i], lower, upper);
   }
   return out;
 }

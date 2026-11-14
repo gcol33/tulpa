@@ -57,6 +57,8 @@ Rcpp::List cpp_test_hsgp_warm_start(bool has_hsgp, int n_basis = 4,
         h.phi_flat.assign(static_cast<std::size_t>(n_spatial) * n_basis, 0.0);
         h.eigenvalues.assign(static_cast<std::size_t>(n_basis), 1.0);
         h.coords_scaled.assign(static_cast<std::size_t>(n_spatial), 0.0);
+        data.hsgp_lengthscale_prior_U = 0.5;
+        data.hsgp_lengthscale_prior_alpha = 0.05;
     }
 
     ParamLayout layout = tulpa_hmc::compute_param_layout(data);

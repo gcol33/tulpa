@@ -118,8 +118,7 @@ test_that("the bounded map stays inside its interval and its Jacobian is right",
   u_fd <- c(-2, -0.5, 0, 0.7, 2.5)
   num <- (cpp_test_bounded_from_logit(u_fd + h, lower, upper) -
           cpp_test_bounded_from_logit(u_fd - h, lower, upper)) / (2 * h)
-  ana <- exp(cpp_test_log_jacobian_bounded(
-    cpp_test_bounded_from_logit(u_fd, lower, upper), lower, upper))
+  ana <- exp(cpp_test_log_jacobian_bounded(u_fd, lower, upper))
   expect_equal(ana, num, tolerance = 1e-6)
 })
 
