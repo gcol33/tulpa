@@ -14,7 +14,7 @@
   `H` / `handcoded`; invalid names error and list the valid modes. Removed
   the tape AD implementation, unused forward kernels and reserved forward
   slots. Scalar dual numbers remain for directional derivative probes.
-  The exported gradient enum and custom GMRF header use ABI 63; consumers
+  The exported gradient enum and custom GMRF header use ABI 62; consumers
   must rebuild. `control$gradient_mode` selects a source on ModelData samplers.
 
 ## Models and inference
