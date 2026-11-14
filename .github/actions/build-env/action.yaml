@@ -121,7 +121,10 @@ runs:
     # (NOHASHDIR) is what lets one reuse another's objects. BASEDIR is left
     # unset: it rewrites the system include paths (R's, Rcpp's) relative to the
     # working directory, which differs by the directory's depth and made every
-    # compile miss.
+    # compile miss. PKG_BUILD_EXTRA_FLAGS=false keeps pkgbuild (the R CMD build
+    # rcmdcheck runs) from wrapping its compile in compiler_flags(): with them
+    # the build's objects carry flags the check's install does not, and the two
+    # never share an entry.
     - name: Compile cache
       shell: bash
       run: |
@@ -150,6 +153,7 @@ runs:
           echo "CCACHE_COMPRESS=1"
           echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros"
           echo "CCACHE_NOHASHDIR=1"
+          echo "PKG_BUILD_EXTRA_FLAGS=false"
         } >> "$GITHUB_ENV"
 
     # Restore only: actions/cache saves in its post step when the job
