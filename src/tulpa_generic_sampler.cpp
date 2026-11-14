@@ -227,6 +227,7 @@ Rcpp::List cpp_test_field_coordinates(
     }
     double last_reported_lp = NA_REAL, last_native_lp = NA_REAL;
     Rcpp::LogicalVector auto_dense_equal = Rcpp::LogicalVector::create(NA_LOGICAL);
+    Rcpp::List auto_dense_detail;
     if (n_iter > 0) {
         auto sample = [&](tulpa::MassMatrixType metric) {
             return tulpa_hmc::run_hmc_chain_cpp(x, data, layout,
@@ -239,6 +240,22 @@ Rcpp::List cpp_test_field_coordinates(
             const auto dense = sample(tulpa::MassMatrixType::DENSE);
             auto_dense_equal[0] = result.samples_flat == dense.samples_flat &&
                 result.n_leapfrog == dense.n_leapfrog && result.energy == dense.energy;
+            auto max_diff = [](const std::vector<double>& a, const std::vector<double>& b) {
+                if (a.size() != b.size()) return R_PosInf;
+                double m = 0.0;
+                for (size_t i = 0; i < a.size(); ++i) m = std::max(m, std::abs(a[i] - b[i]));
+                return m;
+            };
+            int first_sample = -1;
+            const size_t width = static_cast<size_t>(result.n_params_stored);
+            for (size_t i = 0; width && i < std::min(result.samples_flat.size(), dense.samples_flat.size()); ++i)
+                if (result.samples_flat[i] != dense.samples_flat[i]) { first_sample = static_cast<int>(i / width); break; }
+            auto_dense_detail = Rcpp::List::create(
+                Rcpp::Named("samples_max_diff") = max_diff(result.samples_flat, dense.samples_flat),
+                Rcpp::Named("first_differing_draw") = first_sample,
+                Rcpp::Named("energy_max_diff") = max_diff(result.energy, dense.energy),
+                Rcpp::Named("leapfrog_equal") = result.n_leapfrog == dense.n_leapfrog,
+                Rcpp::Named("epsilon") = Rcpp::NumericVector::create(result.epsilon, dense.epsilon));
         }
     }
     tulpa_hmc::FieldCoordinateScope coordinate_scope(&map);
@@ -270,6 +287,7 @@ Rcpp::List cpp_test_field_coordinates(
         Rcpp::Named("last_reported_lp") = last_reported_lp,
         Rcpp::Named("last_native_lp") = last_native_lp,
         Rcpp::Named("auto_dense_equal") = auto_dense_equal,
+        Rcpp::Named("auto_dense_detail") = auto_dense_detail,
         Rcpp::Named("inverse") = inverse, Rcpp::Named("jacobian") = jacobian,
         Rcpp::Named("raw_lp") = raw_lp, Rcpp::Named("lp") = lp,
         Rcpp::Named("spatial_log_normalizer") =
