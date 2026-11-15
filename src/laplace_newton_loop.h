@@ -23,6 +23,18 @@
 namespace tulpa {
 
 constexpr int MAX_HALVING = 12;
+inline constexpr double NEWTON_NEARMODE_GATE = 1e-6;
+
+// The objective is a sum of log densities. Near stationarity its subtraction
+// loses precision while the directional derivative retains relative accuracy.
+// A relative sqrt(epsilon) band admits accumulated evaluation error only when
+// the full Newton gain is below both that band and the near-mode gate.
+inline double newton_objective_slack(double objective, double decrement) {
+    const double roundoff = std::sqrt(std::numeric_limits<double>::epsilon()) *
+        std::max(1.0, std::abs(objective));
+    return (decrement >= 0.0 && decrement < NEWTON_NEARMODE_GATE &&
+            decrement <= roundoff) ? std::max(1e-8, roundoff) : 1e-8;
+}
 
 // Post-mode density probes consume no curvature. A likelihood that caches
 // Newton weights accepts a second argument to leave that work switched off.
@@ -91,7 +103,7 @@ inline double eval_penalized_log_lik(
 // backtrack lands on or near the line optimum where fixed halving needs several.
 // Falls back to halving when the direction is not ascent (slope <= 0) or the
 // model is degenerate / non-finite. A trial is accepted when its objective is
-// finite AND either improves on the incoming one up to the absolute slack below
+// finite AND either improves on the incoming one up to the numerical slack below
 // or is the last trial. Each trial step is <= 0.5 x the previous, so the
 // MAX_HALVING trial cap is the pure-halving path's; only the trial sequence
 // inside a backtrack differs.
@@ -102,15 +114,12 @@ inline double eval_penalized_log_lik(
 // either leaves the model undefined at x and every subsequent gradient, Hessian
 // and log-determinant reading garbage. This is what makes the barrier hold: the
 // search backtracks off an infeasible trial instead of walking through it.
-// Accepting a FINITE non-improving value at the last trial is unchanged, so any
-// solve whose objective stays finite -- every fit on an unconstrained link --
-// takes exactly the trial sequence it always did.
+// A finite final trial can be accepted at the trial cap.
 //
-// The acceptance slack is ABSOLUTE (1e-8), which makes it a real criterion far
-// from the mode and no criterion at all near it: once the whole available gain
-// drops below 1e-8 every finite trial passes. That is not a defect to tighten
-// away -- see newton_trust_scale below, which is what steers in the regime where
-// no rule reading the objective can.
+// Away from stationarity the acceptance slack is 1e-8. When the full Newton
+// gain falls below the objective's numerical resolution, the slack scales with
+// the objective magnitude (Hager and Zhang 2005, sec. 4, condition T2).
+// newton_trust_scale controls the direction using the decrement in this regime.
 //
 // When no trial is acceptable the search returns 0, leaving `x` and `obj_out`
 // untouched: the caller's iterate is still the best point known. newton_converged
@@ -138,12 +147,13 @@ inline double line_search_backtrack(
     double start_scale = 1.0
 ) {
     double step_scale = start_scale;
+    const double slack = newton_objective_slack(obj_old, slope);
     for (int half = 0; half <= MAX_HALVING; half++) {
         for (int j = 0; j < n_x; j++) x_try_scratch[j] = x[j] + step_scale * delta[j];
         double obj_try = eval_obj(x_try_scratch);
         if (n_evals_out) ++(*n_evals_out);
         if (std::isfinite(obj_try) &&
-            (obj_try >= obj_old - 1e-8 || half == MAX_HALVING)) {
+            (obj_try >= obj_old - slack || half == MAX_HALVING)) {
             for (int j = 0; j < n_x; j++) x[j] = x_try_scratch[j];
             obj_out = obj_try;
             return step_scale;
@@ -282,7 +292,6 @@ inline double newton_step_gain(const Rcpp::NumericVector& x, const double* step,
 // The gate (predicted objective gain < 1e-6) marks "essentially at a mode"; the
 // patience is how many consecutive iterations without a new shortest step count
 // as a conditioning-limited stall rather than ongoing progress.
-inline constexpr double NEWTON_NEARMODE_GATE  = 1e-6;
 inline constexpr int    NEWTON_STALL_PATIENCE = 5;
 
 // Trust-factor schedule for newton_trust_scale below: how hard a step that grew
@@ -357,7 +366,7 @@ inline double newton_trust_scale(NewtonConvState& st, double decrement) {
 
 // Newton convergence test, the single source of truth for every solver.
 //
-// Both paths read the FULL Newton step max|delta|, never the damped step
+// The step criteria read the FULL Newton step max|delta|, never the damped step
 // max|step_scale delta| that was actually taken. Convergence is a property of the
 // iterate -- the proposal H^-1 g at x is small exactly when x is stationary --
 // while step_scale is the line search's choice about how much of that proposal to
@@ -367,10 +376,13 @@ inline double newton_trust_scale(NewtonConvState& st, double decrement) {
 // open at 2^-20 that is not hypothetical -- a proposal of 1e-6 damped to the floor
 // would otherwise clear a 1e-12 tolerance.
 //
-// Two paths:
+// Stopping criteria:
 //   1. max|delta| < tol -- the historic step criterion. On a well-conditioned
 //      solve this fires exactly when it always did, so those fits are unchanged.
-//   2. a stalled step -- the rescue for an ill-conditioned H (a high-order
+//   2. sqrt(grad . delta) < tol -- the full proposal's curvature norm, invariant
+//      under affine changes of latent coordinates (Boyd and Vandenberghe,
+//      sec. 9.5.1-9.5.2). It uses the same tolerance in curvature units.
+//   3. a stalled step -- the rescue for an ill-conditioned H (a high-order
 //      high-order SPDE precision at a long range; a near-singular GMRF). There the Cholesky solve loses too many digits for
 //      the step to ever fall below tol: H^-1 amplifies the gradient's rounding
 //      residual into a spurious step, and the iteration thrashes around a floor
@@ -413,11 +425,16 @@ inline bool newton_converged(const std::vector<double>& delta,
     if (step_scale <= 0.0) return false;
     const double step = max_abs(delta);
     if (step < tol) return true;
+    // sqrt(g' H^-1 g) measures the full proposal in curvature units and is
+    // invariant under an invertible affine change of latent coordinates.
+    const double decrement = newton_decrement(grad, delta, n_x);
+    if (decrement >= 0.0 && std::isfinite(decrement) &&
+        std::sqrt(decrement) < tol) return true;
     // Tracked unconditionally, so `best_step` is the true running minimum over
     // the whole solve rather than over the near-mode tail only.
     const bool progress = step < st.best_step;
     if (progress) st.best_step = step;
-    if (newton_decrement(grad, delta, n_x) >= NEWTON_NEARMODE_GATE || progress) {
+    if (decrement >= NEWTON_NEARMODE_GATE || progress) {
         st.stalled = 0;
         return false;
     }

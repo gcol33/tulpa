@@ -1644,14 +1644,16 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_line_search_probe
-Rcpp::List cpp_line_search_probe(double slope, double c);
-RcppExport SEXP _tulpa_cpp_line_search_probe(SEXP slopeSEXP, SEXP cSEXP) {
+Rcpp::List cpp_line_search_probe(double slope, double c, double obj_offset, double trial_error);
+RcppExport SEXP _tulpa_cpp_line_search_probe(SEXP slopeSEXP, SEXP cSEXP, SEXP obj_offsetSEXP, SEXP trial_errorSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< double >::type slope(slopeSEXP);
     Rcpp::traits::input_parameter< double >::type c(cSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_line_search_probe(slope, c));
+    Rcpp::traits::input_parameter< double >::type obj_offset(obj_offsetSEXP);
+    Rcpp::traits::input_parameter< double >::type trial_error(trial_errorSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_line_search_probe(slope, c, obj_offset, trial_error));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4399,7 +4401,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_log_rising_factorial", (DL_FUNC) &_tulpa_cpp_log_rising_factorial, 2},
     {"_tulpa_cpp_polygamma_rising_difference", (DL_FUNC) &_tulpa_cpp_polygamma_rising_difference, 3},
     {"_tulpa_cpp_negbin2_log_density", (DL_FUNC) &_tulpa_cpp_negbin2_log_density, 3},
-    {"_tulpa_cpp_line_search_probe", (DL_FUNC) &_tulpa_cpp_line_search_probe, 2},
+    {"_tulpa_cpp_line_search_probe", (DL_FUNC) &_tulpa_cpp_line_search_probe, 4},
     {"_tulpa_cpp_newton_converged_probe", (DL_FUNC) &_tulpa_cpp_newton_converged_probe, 4},
     {"_tulpa_cpp_newton_trust_probe", (DL_FUNC) &_tulpa_cpp_newton_trust_probe, 1},
     {"_tulpa_cpp_profile_enable", (DL_FUNC) &_tulpa_cpp_profile_enable, 1},

@@ -32,22 +32,20 @@ static_assert(
     "kPhaseNames must match PhaseIdx ordering in laplace_profile.h"
 );
 
-// Line-search probe: drive the shared backtracking line search on a 1-D
-// quadratic phi(a) = slope*a + c*a^2 (obj_old = 0) along delta = 1 from x = 0,
-// and report the accepted step plus the number of objective evaluations. Lets
-// tests exercise the interpolation backtrack directly: for an overshoot
-// (c < 0 with phi(1) < 0) the line optimum is a* = -slope/(2c), and one
-// safeguarded interpolation should land within [0.1, 0.5] of it in far fewer
-// sweeps than fixed halving.
+// One-dimensional quadratic line search from x = 0 along delta = 1, with an
+// additive objective offset and trial evaluation error. Reports the accepted
+// step, objective and number of evaluations.
 // [[Rcpp::export]]
-Rcpp::List cpp_line_search_probe(double slope, double c) {
+Rcpp::List cpp_line_search_probe(double slope, double c,
+                                double obj_offset = 0.0,
+                                double trial_error = 0.0) {
     Rcpp::NumericVector x(1, 0.0), x_try(1, 0.0);
     std::vector<double> delta(1, 1.0);
-    double obj_old = 0.0, obj_out = 0.0;
+    double obj_old = obj_offset, obj_out = obj_offset;
     int n_evals = 0;
     auto eval_obj = [&](const Rcpp::NumericVector& xv) -> double {
         const double a = xv[0];
-        return slope * a + c * a * a;
+        return obj_offset + slope * a + c * a * a + trial_error;
     };
     double step = tulpa::line_search_backtrack(
         x, delta, 1, obj_old, slope, eval_obj, obj_out, x_try, &n_evals);

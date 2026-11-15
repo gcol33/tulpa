@@ -425,8 +425,8 @@ cpp_negbin2_log_density <- function(y, mu, phi) {
     .Call(`_tulpa_cpp_negbin2_log_density`, y, mu, phi)
 }
 
-cpp_line_search_probe <- function(slope, c) {
-    .Call(`_tulpa_cpp_line_search_probe`, slope, c)
+cpp_line_search_probe <- function(slope, c, obj_offset = 0.0, trial_error = 0.0) {
+    .Call(`_tulpa_cpp_line_search_probe`, slope, c, obj_offset, trial_error)
 }
 
 cpp_newton_converged_probe <- function(delta, grad, step_scale, tol) {

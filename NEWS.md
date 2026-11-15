@@ -1,5 +1,9 @@
 # tulpa 0.7.8
 
+* Inner Laplace Newton solves accept near-mode steps within the objective's
+  relative numerical resolution and check the Newton decrement in curvature
+  units. Large temporal fields retain full Newton steps at tight tolerances.
+
 * Sparse Laplace factorizations use one CPU/cuDSS interface for symbolic
   analysis, numeric refactorization, log-determinants, multiple right-hand
   sides and selected inverse entries. cuDSS loads at run time; each factor
