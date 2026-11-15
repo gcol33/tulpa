@@ -5,6 +5,10 @@
   CUDA execution agree on log marginals, modes and latent marginal variances.
 * Large temporal fields retain coefficient covariances and latent marginal
   variances with storage linear in the number of field coordinates.
+* GPU release checks run the equivalence files and CUDA 13.4 Compute Sanitizer,
+  and write assertion counts, complete-fit timings, operation coverage and
+  device gates to one summary. Fit benchmarks record factorization, solves
+  and selected inversion separately in the shared calibration table.
 
 * Inner Laplace Newton solves accept near-mode steps within the objective's
   relative numerical resolution and check the Newton decrement in curvature

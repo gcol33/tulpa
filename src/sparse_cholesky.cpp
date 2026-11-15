@@ -279,6 +279,7 @@ void SparseCholeskySolver::analyze(cholmod_sparse* A,
 }
 
 bool SparseCholeskySolver::factorize(cholmod_sparse* A) {
+    device::StageTimer timer(*policy_, purpose_ == Purpose::SelectedInverse ? "inverse_factor" : "factor");
     if (device::cell_cpu() && uses_cuda()) analyze(A, pattern_tag_);
     if (!analyzed_ || (!factor_ && !uses_cuda())) return false;
     host_factored_ = false;
@@ -330,6 +331,7 @@ void* SparseCholeskySolver::stream() const {
 bool SparseCholeskySolver::host_factor(const char* operation) {
     if (!factored_) return false;
     if (!uses_cuda() || host_factored_) return factored_;
+    device::StageTimer timer(*policy_, std::string(operation) == "sparse_inverse_host_factor" ? "inverse_factor" : "factor");
     auto A = cholmod_lower_view(pattern_p_.size() - 1, pattern_p_.data(),
         pattern_i_.data(), host_values_.data(), host_values_.size());
     if (!factor_) factor_ = M_cholmod_analyze(&A, &common_);
@@ -446,6 +448,7 @@ std::size_t SparseCholeskySolver::analyzed_factor_bytes() const {
 }
 
 bool SparseCholeskySolver::solve(const double* b, double* x, int n, int ncol) {
+    device::StageTimer timer(*policy_, "solve");
     // A failed solve fills NaN, never zero: zero is a valid step and reads as
     // convergence to a caller testing max|delta| < tol. See the header.
     const double failed = std::numeric_limits<double>::quiet_NaN();
@@ -505,6 +508,7 @@ SparseCholeskySolver::SolveWorkspace::~SolveWorkspace() {
 
 bool SparseCholeskySolver::solve(const double* b, double* x, int n,
                                  SolveWorkspace& ws) {
+    device::StageTimer timer(*policy_, "solve");
     // Same NaN-on-failure contract as the allocating solve above.
     const double failed = std::numeric_limits<double>::quiet_NaN();
     if (uses_cuda() && (!ws.common_ || ws.common_ == &common_)) {
@@ -612,6 +616,7 @@ bool SparseCholeskySolver::apply_chol_factor_inv(const double* b, double* y,
 }
 
 double SparseCholeskySolver::log_determinant() {
+    device::StageTimer timer(*policy_, "factor");
     if (dense_factor_) return factored_ ? dense_logdet_ : std::numeric_limits<double>::quiet_NaN();
     if (device_factor_) {
         if (!factored_) return std::numeric_limits<double>::quiet_NaN();
@@ -837,6 +842,7 @@ double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
 }
 
 SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_full() {
+    device::StageTimer timer(*policy_, "selected_inverse");
     SelectedInverse out;
     if (!factored_ || (!factor_ && !uses_cuda())) return out;
     if (inverse_on_device()) {
@@ -912,6 +918,7 @@ SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_f
 }
 
 std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
+    device::StageTimer timer(*policy_, "selected_inverse");
     if (device_factor_ && inverse_on_device()) {
         if (!factored_) return {};
         std::vector<int> indices(permutation_.size());

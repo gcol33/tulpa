@@ -1,10 +1,13 @@
 args <- commandArgs(trailingOnly = TRUE)
 output <- if (length(args)) args[[1L]] else "inst/device/benchmarks.csv"
+dir.create(dirname(output),showWarnings=FALSE,recursive=TRUE)
 library(tulpa)
 library_md5 <- unname(tools::md5sum(getLoadedDLLs()[['tulpa']][['path']]))
 info <- gpu_info()
 if (!info$available) stop(info$reason)
 source("tests/testthat/helper-device.R")
+source('tools/bench-device-fits.R')
+device_wait_for_gpu(paste0(output,'.gpu.txt'))
 ladder <- c(50L, 100L, 250L, 500L, 1000L, 2500L, 5000L, 10000L,
             25000L, 50000L, 100000L)
 rows <- list()
@@ -18,11 +21,21 @@ if (file.exists(output)) {
   calibration <- max(existing$calibration) + 1L
   rows <- split(existing, seq_len(nrow(existing)))
 }
-append_row <- function(operation, variant, size, cpu, cuda, stream = Inf) {
-  stopifnot(is.finite(cpu), cpu > 0, is.finite(cuda), cuda > 0)
-  rows[[length(rows) + 1L]] <<- data.frame(operation = operation,
+append_row <- function(operation, variant, size, cpu, cuda, stream = Inf, extra = list()) {
+  if (length(device_gpu_processes()$busy)) stop('GPU contention invalidated this benchmark sample')
+  if (identical(extra$scope,'fit_auto')) {
+    stopifnot(is.na(cpu),is.na(cuda),is.finite(extra$auto_seconds),extra$auto_seconds>0)
+  } else stopifnot(is.finite(cpu), cpu > 0, is.finite(cuda), cuda > 0)
+  row <- data.frame(operation = operation,
     variant = variant, size = size, cpu_seconds = cpu, cuda_seconds = cuda, stream_seconds = stream,
     library_md5 = library_md5, calibration = calibration)
+  for (name in names(extra)) row[[name]] <- extra[[name]]
+  columns <- unique(c(unlist(lapply(rows, names)), names(row)))
+  complete <- function(x) {
+    for (name in setdiff(columns, names(x))) x[[name]] <- NA
+    x[columns]
+  }
+  rows <<- lapply(c(rows, list(row)), complete)
   utils::write.csv(do.call(rbind, rows), output, row.names = FALSE)
   cat(sprintf("%s variant=%d size=%d CPU=%.6fs CUDA=%.6fs\n",
               operation, variant, size, cpu, cuda))
@@ -114,58 +127,8 @@ runners <- list(
         utils::write.csv(do.call(rbind, stages), paste0(output, '.sparse-stages.csv'), row.names = FALSE)
       }
     }
-    gates <- tulpa:::.device_thresholds(do.call(rbind, rows))
-    gates <- gates[gates$operation != 'sparse_cholesky', ]
-    candidate <- rbind(gates, data.frame(operation = 'sparse_cholesky', variant = 0L,
-                                        threshold = 1, batch_threshold = 0))
-    files <- list.files('inst/device', pattern = '\\.cu$', full.names = TRUE)
-    sources <- lapply(files, function(x) paste(readLines(x, warn = FALSE), collapse = '\n'))
-    names(sources) <- tools::file_path_sans_ext(basename(files))
-    tulpa:::cpp_device_configure(candidate, sources)
-    on.exit(tulpa:::cpp_device_configure(tulpa:::.device_thresholds(do.call(rbind, rows)), sources), add = TRUE)
-    capture <- new.env(parent = emptyenv())
-    capture$values <- list()
-    entries <- grep('^cpp_nested_laplace_joint', ls(asNamespace('tulpa')), value = TRUE)
-    tracer <- substitute({
-      z <- returnValue()
-      sink <- SINK
-      if (!is.null(z$n_iter)) sink$values[[length(sink$values) + 1L]] <- z$n_iter
-    }, list(SINK = capture))
-    for (entry in entries) trace(entry, where = asNamespace('tulpa'), print = FALSE, exit = tracer)
-    on.exit(for (entry in entries) untrace(entry, where = asNamespace('tulpa')), add = TRUE)
-    fits <- list()
-    for (size in c(1000L, 3000L, 10000L, 30000L, 100000L)) {
-      input <- device_sparse_door_inputs(size, 'spde', 'cpu', family = 'poisson',
-        extra_control = list(progress = FALSE))
-      run <- function(choice) {
-        capture$values <- list()
-        input$control$device <- choice
-        timing <- system.time(fit <- do.call(tulpa_nested_laplace_joint, input))
-        stopifnot(all(fit$converged))
-        stopifnot(!any(grepl('cpu_recovery$', fit$device$stages$stage)))
-        list(fit = fit, seconds = timing[['elapsed']], iterations = capture$values)
-      }
-      cpu <- run('cpu'); hybrid <- run('auto')
-      for (q in c('log_marginal', 'modes', 'fitted_eta', 'fitted_eta_var')) {
-        scale <- max(1, abs(cpu$fit[[q]]))
-        error <- max(abs(cpu$fit[[q]] - hybrid$fit[[q]]))
-        cat(sprintf('whole SPDE size=%d %s scale=%.17g error=%.17g relative tolerance=1e-7\n',
-                    size, q, scale, error))
-        stopifnot(error <= 1e-7 * scale)
-      }
-      for (trial in seq_len(3L)) {
-        order <- if (trial %% 2L) c('cpu', 'auto') else c('auto', 'cpu')
-        measured <- lapply(order, run); names(measured) <- order
-        append_row('sparse_cholesky', 0L, size, measured$cpu$seconds, measured$auto$seconds)
-        for (choice in order) {
-          r <- measured[[choice]]
-          fits[[length(fits) + 1L]] <- list(size = size, trial = trial, device = choice,
-            seconds = r$seconds, n_iter_per_native_call = r$iterations,
-            stages = r$fit$device$stages)
-        }
-        saveRDS(fits, paste0(output, '.whole-fits.rds'))
-      }
-    }
+    source('tools/bench-device-fits.R')
+    device_fit_benchmark(append_row, output)
   },
   laplace_dense = function() {
     source('tests/testthat/helper-device-laplace-batch.R')

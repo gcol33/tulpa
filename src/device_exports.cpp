@@ -443,10 +443,21 @@ Rcpp::List cpp_device_snapshot() {
     auto policy = tulpa::device::current_policy();
     device_check(policy->failure());
     auto choice = policy->choice();
-    return Rcpp::List::create(Rcpp::Named("requested") =
+    Rcpp::List out = Rcpp::List::create(Rcpp::Named("requested") =
         (choice == tulpa::device::Choice::Auto ? "auto" :
          choice == tulpa::device::Choice::Cpu ? "cpu" : "cuda"),
         Rcpp::Named("stages") = device_stages(*policy));
+    if (policy->profiling()) {
+        Rcpp::CharacterVector stage;
+        Rcpp::NumericVector calls, seconds;
+        for (const auto& timing : policy->timings()) {
+            stage.push_back(timing.stage); calls.push_back(timing.calls);
+            seconds.push_back(timing.seconds);
+        }
+        out["timings"] = Rcpp::DataFrame::create(Rcpp::Named("stage")=stage,
+            Rcpp::Named("calls")=calls, Rcpp::Named("seconds")=seconds);
+    }
+    return out;
 }
 
 // [[Rcpp::export]]

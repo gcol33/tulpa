@@ -39,6 +39,8 @@ print.tulpa_gpu_info <- function(x, ...) {
 .device_thresholds <- function(timings) {
   required <- c("operation", "variant", "size", "cpu_seconds", "cuda_seconds")
   if (!all(required %in% names(timings))) stop("invalid device timing columns")
+  if ('scope' %in% names(timings))
+    timings <- timings[is.na(timings$scope) | timings$scope != 'fit_auto', , drop=FALSE]
   out <- data.frame(operation = character(), variant = integer(), threshold = numeric(),
                     batch_threshold = numeric())
   if (!nrow(timings)) return(out)
@@ -50,6 +52,7 @@ print.tulpa_gpu_info <- function(x, ...) {
   if (anyNA(timings$stream_seconds) || any(timings$stream_seconds <= 0))
     stop("device stream timings must be positive or infinite")
   if (!"calibration" %in% names(timings)) timings$calibration <- 0L
+  if ('model' %in% names(timings)) timings$model <- as.character(timings$model)
   if (anyNA(timings$calibration) || any(!is.finite(timings$calibration)) ||
       any(timings$calibration < 0 | timings$calibration != floor(timings$calibration)))
     stop("device calibration identifiers must be non-negative integers")
@@ -57,10 +60,19 @@ print.tulpa_gpu_info <- function(x, ...) {
   for (g in groups) {
     g <- g[g$calibration == max(g$calibration), , drop = FALSE]
     sizes <- sort(unique(g$size))
+    by_model <- 'model' %in% names(g) && any(!is.na(g$model) & nzchar(g$model))
+    if (by_model && (anyNA(g$model) || any(!nzchar(g$model))))
+      stop('device fit calibration must name every model')
     costs <- vapply(sizes, function(s) {
       rows <- g[g$size == s, , drop = FALSE]
-      c(cpu=stats::median(rows$cpu_seconds), batch=stats::median(rows$cuda_seconds),
-        stream=stats::median(rows$stream_seconds))
+      medians <- function(x) c(cpu=stats::median(x$cpu_seconds), batch=stats::median(x$cuda_seconds),
+        stream=stats::median(x$stream_seconds))
+      if (!by_model) return(medians(rows))
+      if (!setequal(unique(rows$model), unique(g$model)))
+        stop('device fit calibration must cover every model at every size')
+      models <- vapply(split(rows, rows$model), medians, c(cpu=0,batch=0,stream=0))
+      c(cpu=1, batch=max(models['batch',] / models['cpu',]),
+        stream=max(models['stream',] / models['cpu',]))
     }, c(cpu=0,batch=0,stream=0))
     crossover <- function(wins) {
       sustained <- rev(cumprod(rev(as.integer(wins)))) == 1L
@@ -77,9 +89,8 @@ print.tulpa_gpu_info <- function(x, ...) {
   out
 }
 
-.device_configure <- function(libname, pkgname) {
+.device_kernel_sources <- function(libname, pkgname) {
   root <- system.file("device", package = pkgname, lib.loc = libname)
-  timings <- utils::read.csv(file.path(root, "benchmarks.csv"), stringsAsFactors = FALSE)
   files <- list.files(root, pattern = "\\.cu$", full.names = TRUE)
   sources <- lapply(files, function(file) paste(readLines(file, warn = FALSE), collapse = "\n"))
   names(sources) <- tools::file_path_sans_ext(basename(files))
@@ -88,6 +99,13 @@ print.tulpa_gpu_info <- function(x, ...) {
   include <- system.file("include", "tulpa", package = pkgname, lib.loc = libname)
   for (header in headers) sources[[paste0("tulpa/", header)]] <-
     paste(readLines(file.path(include, header), warn = FALSE), collapse = "\n")
+  sources
+}
+
+.device_configure <- function(libname, pkgname) {
+  root <- system.file("device", package = pkgname, lib.loc = libname)
+  timings <- utils::read.csv(file.path(root, "benchmarks.csv"), stringsAsFactors = FALSE)
+  sources <- .device_kernel_sources(libname, pkgname)
   cpp_device_configure(.device_thresholds(timings), sources)
   invisible(NULL)
 }

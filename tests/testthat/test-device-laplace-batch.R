@@ -41,6 +41,56 @@ test_that('cell recovery flags survive joint and registry refinement packing', {
 
 skip_on_cran()
 
+test_that('dense Laplace factors agree on both sides of every worker gate', {
+  skip_if_no_cuda(c('cusolver','nvrtc'))
+  gates <- tulpa:::.device_thresholds(read.csv(system.file('device','benchmarks.csv',package='tulpa')))
+  gates <- gates[gates$operation == 'laplace_dense', ]
+  for (row in seq_len(nrow(gates))) {
+    gate <- gates$threshold[row]
+    sizes <- if (is.finite(gate)) as.integer(c(max(1,gate-1),gate+1)) else c(31L,129L)
+    for (n in sizes) {
+      f <- device_laplace_fixture(n, gates$variant[row] + 1L)
+      cpu <- device_laplace_run(f,'cpu',gates$variant[row])
+      cuda <- device_laplace_run(f,'cuda',gates$variant[row])
+      auto <- device_laplace_run(f,'auto',gates$variant[row])
+      for (r in list(cuda,auto)) {
+        expect_true(all(r$positive)); expect_false(any(r$recovered))
+        expect_true(all(r$errors == ''))
+        for (q in c('solution','logdet')) expect_device_equal(r[[q]],cpu[[q]],1e-8,
+          paste('dense Laplace gate',gates$variant[row],n,q))
+      }
+      used <- any(auto$stages$stage == 'laplace_dense' & auto$stages$cuda_calls > 0)
+      expect_identical(used,n >= gate)
+    }
+  }
+})
+
+test_that('uniform sparse factors agree across every worker threshold', {
+  skip_if_no_cuda(c('cudss','nvrtc'))
+  gates <- tulpa:::.device_thresholds(read.csv(system.file('device','benchmarks.csv',package='tulpa')))
+  gates <- gates[gates$operation == 'sparse_uniform', ]
+  for (row in seq_len(nrow(gates))) {
+    gate <- gates$threshold[row]
+    sizes <- if (is.finite(gate)) as.integer(c(max(2,gate-1),gate+1)) else c(63L,257L)
+    for (n in sizes) {
+      f <- device_sparse_fixture(n,'spde')
+      values <- outer(f$values[,1L],1+seq_len(gates$variant[row]+1L)/100)
+      run <- function(choice) tulpa:::cpp_device_sparse_batch(f$p,f$i,values,f$b,
+        choice,gates$variant[row],TRUE,FALSE)
+      cpu <- run('cpu'); cuda <- run('cuda'); auto <- run('auto')
+      for (r in list(cuda,auto)) {
+        expect_true(all(r$positive)); expect_false(any(r$recovered))
+        expect_true(all(r$errors == ''))
+        for(q in c('solution','logdet')) expect_device_equal(r[[q]],cpu[[q]],1e-8,
+          paste('uniform sparse gate',gates$variant[row],n,q))
+      }
+      used <- any(auto$stages$stage == 'sparse_uniform_analysis' & auto$stages$cuda_calls > 0)
+      expect_true(any(cuda$stages$stage == 'sparse_uniform_analysis' & cuda$stages$cuda_calls > 0))
+      expect_identical(used,n >= gate && n >= gates$batch_threshold[row])
+    }
+  }
+})
+
 test_that('joint sparse outer workers preserve each declared cell on CUDA', {
   skip_if_no_cuda(c('cudss','nvrtc'))
   for (kind in c('spde', 'joint')) for (prune in c(FALSE, TRUE)) {
@@ -125,11 +175,11 @@ test_that('full CSC Hessians use their own CPU crossover', {
 
 test_that('dense device inverse diagonals agree for every cell', {
   skip_if_no_cuda(c('cusolver','nvrtc'))
-  for(n in c(31L,74L,252L)) {
+  for(width in c(1L,4L,8L)) for(n in c(31L,74L,252L)) {
     f <- device_full_csc_fixture(device_laplace_fixture(n,13L))
     f$b <- matrix(numeric(),n,0L)
     run <- function(choice,batched=TRUE)do.call(tulpa:::cpp_device_sparse_batch,
-      c(f,list(choice=choice,workers=4L,batched=batched,selected_inverse=TRUE)))
+      c(f,list(choice=choice,workers=width,batched=batched,selected_inverse=TRUE)))
     cpu <- run('cpu')
     for(batched in c(FALSE,TRUE)) {
       cuda <- run('cuda',batched)

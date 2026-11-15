@@ -35,6 +35,27 @@ test_that("the status reader turns library status into an R boundary error", {
                "CUDA::test_status failed \\(status 1\\): invalid value")
 })
 
+test_that('fit calibration requires a sustained win for every measured model', {
+  timings <- expand.grid(model=c('spde','temporal'),size=c(1000,10000))
+  timings$operation <- 'sparse_cholesky'; timings$variant <- 0L
+  timings$cpu_seconds <- 1
+  timings$cuda_seconds <- c(.5,1.5,.5,.8)
+  expect_identical(tulpa:::.device_thresholds(timings)$threshold,10000)
+  timings$cuda_seconds[4L] <- 1.1
+  expect_identical(tulpa:::.device_thresholds(timings)$threshold,Inf)
+  expect_error(tulpa:::.device_thresholds(timings[-4L,]),'every model at every size')
+})
+
+test_that('automatic fit validation contributes no unmeasured crossover samples', {
+  measured <- data.frame(operation='sparse_cholesky',variant=0L,size=1000,
+    cpu_seconds=2,cuda_seconds=1,scope='fit',model='spde')
+  validation <- measured
+  validation$scope <- 'fit_auto'
+  validation$cpu_seconds <- validation$cuda_seconds <- NA_real_
+  expect_identical(tulpa:::.device_thresholds(rbind(measured,validation)),
+    tulpa:::.device_thresholds(measured))
+})
+
 test_that("likelihood policy requires the compiler and BLAS libraries", {
   info <- gpu_info()
   reasons <- c(if (!isTRUE(info$available)) info$reason,

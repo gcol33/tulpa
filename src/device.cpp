@@ -493,7 +493,35 @@ std::shared_ptr<Policy> current_policy() {
 std::shared_ptr<Policy> exchange_policy(std::shared_ptr<Policy> policy) {
     return std::atomic_exchange(&active_policy, std::move(policy));
 }
-Policy::Policy(Choice choice, const std::vector<Threshold>& thresholds) : choice_(choice), thresholds_(thresholds) {}
+Policy::Policy(Choice choice, const std::vector<Threshold>& thresholds) : choice_(choice), thresholds_(thresholds) {
+    const char* profile = std::getenv("TULPA_DEVICE_PROFILE");
+    profiling_ = profile && std::string(profile) == "true";
+}
+void Policy::time(const std::string& stage, double seconds) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto& timing = timings_[stage];
+    timing.stage = stage; ++timing.calls; timing.seconds += seconds;
+}
+std::vector<Timing> Policy::timings() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<Timing> out;
+    for (const auto& item : timings_) out.push_back(item.second);
+    return out;
+}
+thread_local StageTimer* StageTimer::active_ = nullptr;
+StageTimer::StageTimer(Policy& policy, const char* stage) : stage_(stage) {
+    if (!policy.profiling() || (active_ && active_->policy_ == &policy &&
+        std::string(active_->stage_) == stage)) return;
+    policy_ = &policy; parent_ = active_; active_ = this;
+    start_ = std::chrono::steady_clock::now();
+}
+StageTimer::~StageTimer() {
+    if (!policy_) return;
+    const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now()-start_).count();
+    active_ = parent_;
+    if (parent_) parent_->children_ += elapsed;
+    policy_->time(stage_, std::max(0.0, elapsed-children_));
+}
 bool Policy::select(const std::string& name, std::size_t size, int variant, Status& status) const {
     if (!registered_operation(name)) { status = Status::read("policy", -1, "select", "unregistered operation " + name); return false; }
     if (choice_ == Choice::Cpu || cell_cpu() || !size) return false;

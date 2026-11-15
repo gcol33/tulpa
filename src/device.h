@@ -10,6 +10,7 @@
 #include <functional>
 #include <thread>
 #include <tuple>
+#include <chrono>
 
 namespace tulpa { namespace device {
 
@@ -41,6 +42,11 @@ struct Stage {
     std::string operation;
     std::size_t cpu = 0, cuda = 0;
 };
+struct Timing {
+    std::string stage;
+    std::size_t calls = 0;
+    double seconds = 0;
+};
 
 // A policy belongs to one fit; its counters and first failure are shared by
 // the fit's outer-grid workers. No worker calls the R API.
@@ -50,6 +56,8 @@ class Policy {
     mutable std::mutex mutex_;
     std::vector<Stage> stages_;
     Status failure_;
+    bool profiling_ = false;
+    std::map<std::string, Timing> timings_;
     std::map<std::tuple<std::thread::id, const void*, const void*, std::string>, std::shared_ptr<void>> workspaces_;
 public:
     Policy(Choice choice, const std::vector<Threshold>& thresholds);
@@ -61,9 +69,28 @@ public:
     void fail(const Status& status);
     Status failure() const;
     std::vector<Stage> stages() const;
+    bool profiling() const { return profiling_; }
+    void time(const std::string& stage, double seconds);
+    std::vector<Timing> timings() const;
     Choice choice() const { return choice_; }
     std::shared_ptr<void> workspace(const void* owner, const void* context,
         const std::string& kind, const std::function<std::shared_ptr<void>()>& create);
+};
+
+// Nested timings are exclusive; selected inversion excludes its host factor,
+// and a nested solve is counted only once.
+class StageTimer {
+    Policy* policy_ = nullptr;
+    StageTimer* parent_ = nullptr;
+    const char* stage_;
+    std::chrono::steady_clock::time_point start_;
+    double children_ = 0;
+    static thread_local StageTimer* active_;
+public:
+    StageTimer(Policy& policy, const char* stage);
+    ~StageTimer();
+    StageTimer(const StageTimer&) = delete;
+    StageTimer& operator=(const StageTimer&) = delete;
 };
 
 std::shared_ptr<Policy> current_policy();

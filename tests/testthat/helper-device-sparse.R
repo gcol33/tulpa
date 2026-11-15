@@ -100,6 +100,8 @@ device_sparse_door_inputs <- function(n, kind, choice, family = 'gaussian', oute
 device_sparse_door <- function(...) do.call(tulpa_nested_laplace_joint, device_sparse_door_inputs(...))
 
 device_sparse_fit_inputs <- function(nodes, kind, choice, cells = 2L) {
+  stopifnot(length(nodes)==1L,nodes>=2L,nodes==as.integer(nodes),
+    kind!='joint' || nodes%%2L==0L)
   n <- as.integer(nodes %/% if (kind == 'joint') 2L else 1L)
   input <- device_sparse_door_inputs(n, if (kind == 'icar') 'areal' else kind,
     choice, family = 'poisson', areal_grid = TRUE,
@@ -136,7 +138,8 @@ device_sparse_factor_gate <- function() {
 
 device_sparse_fit_sizes <- function() {
   gate <- device_sparse_factor_gate()
-  unique(as.integer(c(2000L,if(length(gate) && is.finite(gate)) max(15000,gate*1.5) else 15000L)))
+  upper <- if(length(gate) && is.finite(gate)) max(15000,gate*1.5) else 15000L
+  unique(as.integer(c(2000L,ceiling(upper/2)*2)))
 }
 
 device_sparse_latent_variance <- function(fit, choice) {
