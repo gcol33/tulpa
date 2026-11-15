@@ -3,7 +3,24 @@ device_gpu_processes <- function() {
   if (!is.null(attr(lines, 'status'))) stop('nvidia-smi failed')
   compute <- lines[grepl('^[|].*\\sC\\s', lines, perl=TRUE)]
   pids <- as.integer(sub('^.*?([0-9]+)\\s+C\\s.*$', '\\1', compute, perl=TRUE))
-  list(lines=lines, busy=compute[is.na(pids) | pids != Sys.getpid()])
+  load <- device_process_gpu_load()
+  load <- load[names(load) != as.character(Sys.getpid())]
+  idle_compute <- !is.na(pids) & (pids == Sys.getpid() | !(as.character(pids) %in% names(load)[load > 1]))
+  heavy <- names(load)[load > 10]
+  list(lines=c(lines, sprintf('engine utilization pid %s: %.1f%%', names(load)[load > 1], load[load > 1])),
+       busy=c(compute[!idle_compute], sprintf('pid %s engine utilization %.1f%%', heavy, load[heavy])))
+}
+
+device_process_gpu_load <- function() {
+  script <- paste0("$s = (Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -SampleInterval 1 -MaxSamples 3).CounterSamples; ",
+    "$s | Where-Object { $_.InstanceName -match '^pid_(\\d+)_' } | ForEach-Object { '{0} {1}' -f ",
+    "($_.InstanceName -replace '^pid_(\\d+)_.*$','$1'), $_.CookedValue }")
+  out <- system2('powershell', c('-NoProfile', '-Command', shQuote(script, type = 'cmd')), stdout = TRUE, stderr = TRUE)
+  parts <- strsplit(trimws(out[grepl('^[0-9]+ ', out)]), ' ')
+  if (!length(parts)) stop('GPU engine counters unavailable')
+  pid <- vapply(parts, `[`, '', 1L); value <- as.numeric(vapply(parts, `[`, '', 2L))
+  load <- tapply(value, pid, max)
+  stats::setNames(as.numeric(load), names(load))
 }
 
 device_wait_for_gpu <- function(log = NULL) {
@@ -49,17 +66,34 @@ device_fit_benchmark <- function(append_row, table_file, sizes = c(1000L, 3000L,
   for(entry in entries) trace(entry,where=asNamespace('tulpa'),print=FALSE,exit=tracer)
   on.exit(for(entry in entries) untrace(entry,where=asNamespace('tulpa')),add=TRUE)
   references <- list()
+  done <- read.csv(table_file, stringsAsFactors = FALSE)
+  measured_pair <- function(model, size) {
+    if (!all(c('model', 'scope') %in% names(done))) return(FALSE)
+    sum(done$calibration == calibration & done$operation == 'sparse_cholesky' & done$size == size &
+      done$model %in% model & done$scope %in% 'fit') >= trials
+  }
   for (model in models) for (size in as.integer(sizes)) {
+    if (measured_pair(model, size)) {
+      cat(sprintf('fit %s nodes=%d already measured in calibration %d
+', model, size, calibration))
+      next
+    }
     input <- device_sparse_fit_inputs(size, model, 'cpu')
     run <- function(choice) {
-      device_wait_for_gpu(paste0(table_file, '.gpu.txt'))
-      tulpa:::cpp_device_configure(if (choice == 'factor_cuda') candidate else settings, sources)
-      input$control$device <- if (choice == 'factor_cuda') 'auto' else choice
-      capture$cells <- capture$newton <- capture$calls <- 0L
-      start <- proc.time()[['elapsed']]
-      fit <- device_sparse_fit(input, if(model=='spde') 'joint' else 'registry')
-      seconds <- proc.time()[['elapsed']] - start
-      if (length(device_gpu_processes()$busy)) stop('GPU contention invalidated this fit timing')
+      repeat {
+        device_wait_for_gpu(paste0(table_file, '.gpu.txt'))
+        tulpa:::cpp_device_configure(if (choice == 'factor_cuda') candidate else settings, sources)
+        input$control$device <- if (choice == 'factor_cuda') 'auto' else choice
+        capture$cells <- capture$newton <- capture$calls <- 0L
+        start <- proc.time()[['elapsed']]
+        fit <- device_sparse_fit(input, if(model=='spde') 'joint' else 'registry')
+        seconds <- proc.time()[['elapsed']] - start
+        contention <- device_gpu_processes()$busy
+        if (!length(contention)) break
+        cat(sprintf('discarded %s %s nodes=%d timing: GPU contention %s\n', model, choice, size,
+          paste(contention, collapse = '; ')))
+        flush.console()
+      }
       expected_cells <- prod(vapply(input$prior,function(block)
         max(1L,lengths(block[endsWith(names(block),'_grid')])),0))
       stopifnot(all(fit$converged), !any(fit$device_cpu_recovered),
@@ -127,6 +161,7 @@ device_fit_benchmark <- function(append_row, table_file, sizes = c(1000L, 3000L,
     for(model in models) for(size in as.integer(sizes)) {
       input <- device_sparse_fit_inputs(size,model,'auto')
       reference <- references[[paste(model,size)]]
+      if (is.null(reference)) reference <- run('cpu')$fit[c('log_marginal','modes','fitted_eta_var')]
       for(trial in seq_len(trials)) {
         result <- run('auto')
         for(q in names(reference)) {

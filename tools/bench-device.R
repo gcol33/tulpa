@@ -19,10 +19,12 @@ if (file.exists(output)) {
   if (!'library_md5' %in% names(existing)) existing$library_md5 <- NA_character_
   if (!'calibration' %in% names(existing)) existing$calibration <- 0L
   calibration <- max(existing$calibration) + 1L
+  resume <- Sys.getenv('TULPA_BENCH_CALIBRATION')
+  if (nzchar(resume)) calibration <- as.integer(resume)
   rows <- split(existing, seq_len(nrow(existing)))
 }
 append_row <- function(operation, variant, size, cpu, cuda, stream = Inf, extra = list()) {
-  if (length(device_gpu_processes()$busy)) stop('GPU contention invalidated this benchmark sample')
+  if (is.null(extra$scope) && length(device_gpu_processes()$busy)) stop('GPU contention invalidated this benchmark sample')
   if (identical(extra$scope,'fit_auto')) {
     stopifnot(is.na(cpu),is.na(cuda),is.finite(extra$auto_seconds),extra$auto_seconds>0)
   } else stopifnot(is.finite(cpu), cpu > 0, is.finite(cuda), cuda > 0)
@@ -102,6 +104,8 @@ runners <- list(
     source('tests/testthat/helper-device-sparse.R')
     stages <- list()
     for (size in c(1000L, 3000L, 10000L, 30000L, 100000L)) {
+      if (sum(vapply(rows, function(r) identical(r$operation, 'sparse_selected_inverse') &&
+        r$size == size && r$calibration == calibration, logical(1))) >= 3L) next
       fixture <- device_sparse_fixture(size, 'spde')
       stopifnot(nrow(fixture$matrix) == size, nrow(fixture$b) == size)
       cat(sprintf('SPDE mesh: %d nodes, %d stored lower entries\n', size, length(fixture$i)))
