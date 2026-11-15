@@ -24,7 +24,9 @@ if (file.exists(output)) {
   rows <- split(existing, seq_len(nrow(existing)))
 }
 append_row <- function(operation, variant, size, cpu, cuda, stream = Inf, extra = list()) {
-  if (is.null(extra$scope) && length(device_gpu_processes()$busy)) stop('GPU contention invalidated this benchmark sample')
+  if (is.null(extra$scope) && length(device_gpu_processes()$busy))
+    stop(structure(class = c('bench_contention', 'error', 'condition'),
+      list(message = 'GPU contention invalidated this benchmark sample', call = NULL)))
   if (identical(extra$scope,'fit_auto')) {
     stopifnot(is.na(cpu),is.na(cuda),is.finite(extra$auto_seconds),extra$auto_seconds>0)
   } else stopifnot(is.finite(cpu), cpu > 0, is.finite(cuda), cuda > 0)
@@ -119,9 +121,20 @@ runners <- list(
       }
       for (trial in seq_len(3L)) {
         order <- if (trial %% 2L) c('cpu','cuda') else c('cuda','cpu')
-        measured <- lapply(order, run); names(measured) <- order
-        append_row('sparse_selected_inverse', 0L, size,
-          measured$cpu$factor_seconds + measured$cpu$inverse_seconds, measured$cuda$inverse_seconds)
+        repeat {
+          device_wait_for_gpu(paste0(output, '.gpu.txt'))
+          measured <- lapply(order, run); names(measured) <- order
+          kept <- tryCatch({
+            append_row('sparse_selected_inverse', 0L, size,
+              measured$cpu$factor_seconds + measured$cpu$inverse_seconds, measured$cuda$inverse_seconds)
+            TRUE
+          }, bench_contention = function(e) {
+            cat(sprintf('discarded sparse_selected_inverse size=%d trial=%d: contention
+', size, trial))
+            FALSE
+          })
+          if (kept) break
+        }
         for (choice in order) {
           r <- measured[[choice]]
           stages[[length(stages) + 1L]] <- data.frame(size = size, trial = trial,
