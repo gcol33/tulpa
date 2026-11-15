@@ -7,8 +7,23 @@ device_gpu_processes <- function() {
   load <- load[names(load) != as.character(Sys.getpid())]
   idle_compute <- !is.na(pids) & (pids == Sys.getpid() | !(as.character(pids) %in% names(load)[load > 1]))
   heavy <- names(load)[load > 10]
-  list(lines=c(lines, sprintf('engine utilization pid %s: %.1f%%', names(load)[load > 1], load[load > 1])),
-       busy=c(compute[!idle_compute], sprintf('pid %s engine utilization %.1f%%', heavy, load[heavy])))
+  cpu <- device_foreign_cpu_cores()
+  cores_free <- parallel::detectCores() * 0.1
+  list(lines=c(lines, sprintf('engine utilization pid %s: %.1f%%', names(load)[load > 1], load[load > 1]),
+                sprintf('foreign CPU load: %.1f cores', cpu)),
+       busy=c(compute[!idle_compute], sprintf('pid %s engine utilization %.1f%%', heavy, load[heavy]),
+              if (cpu > cores_free) sprintf('foreign CPU load %.1f cores', cpu)))
+}
+
+device_foreign_cpu_cores <- function() {
+  own <- function() sum(proc.time()[c('user.self', 'sys.self')], na.rm = TRUE)
+  script <- "(Get-Counter '\\Processor(_Total)\\% Processor Time' -SampleInterval 3 -MaxSamples 1).CounterSamples[0].CookedValue"
+  before <- own(); start <- proc.time()[['elapsed']]
+  out <- system2('powershell', c('-NoProfile', '-Command', shQuote(script, type = 'cmd')), stdout = TRUE, stderr = TRUE)
+  total <- suppressWarnings(as.numeric(tail(out[nzchar(trimws(out))], 1L)))
+  if (!is.finite(total)) stop('processor counter unavailable')
+  mine <- (own() - before) / max(proc.time()[['elapsed']] - start, 1)
+  max(0, total / 100 * parallel::detectCores() - mine)
 }
 
 device_process_gpu_load <- function() {
