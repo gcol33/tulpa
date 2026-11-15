@@ -14,6 +14,7 @@
 #                                             coverage aggregates, multi-recovery loops.
 #                                             Minutes. Opt-in; skipped by default
 #                                             everywhere (including CRAN).
+#   Large device fit equivalence (thousands of latent nodes) uses tier 3.
 #
 # Fast smoke mode: set TULPA_FAST=1 to collapse the suite to tier 1 only. Every
 # tier-2 fit and tier-3 sampler then skips (reported as skips, never silently

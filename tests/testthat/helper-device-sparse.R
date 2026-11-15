@@ -98,3 +98,47 @@ device_sparse_door_inputs <- function(n, kind, choice, family = 'gaussian', oute
 }
 
 device_sparse_door <- function(...) do.call(tulpa_nested_laplace_joint, device_sparse_door_inputs(...))
+
+device_sparse_fit_inputs <- function(nodes, kind, choice, cells = 2L) {
+  n <- as.integer(nodes %/% if (kind == 'joint') 2L else 1L)
+  input <- device_sparse_door_inputs(n, if (kind == 'icar') 'areal' else kind,
+    choice, family = 'poisson', areal_grid = TRUE,
+    extra_control = list(progress = FALSE))
+  if (kind == 'icar') {
+    input$prior[[1L]]$type <- 'icar'
+    input$prior[[1L]]$rho_grid <- NULL
+  }
+  for (b in seq_along(input$prior)) for (axis in intersect(
+    c('range_grid', 'sigma_grid', 'tau_grid', 'rho_grid'), names(input$prior[[b]]))) {
+    input$prior[[b]][[axis]] <- input$prior[[b]][[axis]][seq_len(cells)]
+  }
+  input
+}
+
+device_sparse_fit <- function(input, door = 'joint') {
+  if (door == 'joint') return(do.call(tulpa_nested_laplace_joint, input))
+  stopifnot(door == 'registry', length(input$responses) == 1L)
+  prior <- lapply(input$prior, function(block) {
+    for (index in intersect(c('spatial_idx','temporal_idx'),names(block)))
+      block[[index]] <- block[[index]][[1L]]
+    block
+  })
+  control <- input$control
+  control$force_sparse <- control$store_Q <- NULL
+  do.call(tulpa_nested_laplace, c(input$responses[[1L]][c('y','n_trials','X','family','phi')],
+    list(prior = if(length(prior)==1L) prior[[1L]] else prior, control = control)))
+}
+
+device_sparse_latent_variance <- function(fit, choice) {
+  session <- tulpa:::cpp_device_begin(choice, inherit = FALSE)
+  on.exit(tulpa:::cpp_device_end(session))
+  nx <- ncol(fit$modes)
+  idx <- seq.int(3L, nx)
+  tulpa:::cpp_loading_marginal_var(fit$Q_csc_p_per_grid,
+    fit$Q_csc_i_per_grid, fit$Q_csc_x_per_grid, nx,
+    as.integer(idx), seq.int(0L, length(idx)),
+    matrix(1, nrow(fit$modes), length(idx)),
+    tulpa:::.constraint_rows_for_cpp(fit$constraint_cols), 1L,
+    if (!is.null(fit$Q_soft_D_per_grid)) tulpa:::.constraint_rows_for_cpp(fit$Q_soft_cols),
+    fit$Q_soft_D_per_grid)
+}
