@@ -37,6 +37,7 @@
   }
   gb$consumed <- TRUE
   if (identical(gb$mode, "capture")) {
+    gb$device <- cpp_device_snapshot()$requested
     cp <- getOption("tulpa.nl_checkpoint", NULL)
     gb$checkpoint <- if (is.list(cp)) as.character(cp$path) else ""
     signalCondition(structure(
@@ -51,6 +52,7 @@
       "a replayed fit issued a different grid request from the one it issued ",
       "when captured, so the batched result does not belong to it."))
   }
+  cpp_device_replay_stages(gb$stages)
   gb$result
 }
 
@@ -86,6 +88,8 @@
 #' fit makes (placement, refinement, diagnostics) runs as it always does, so
 #' each returned fit is the object its ordinary fit would have returned,
 #' built by the same code.
+#' Device stage counters in each result include the shared solve's calls for
+#' the complete response batch. The fits use one common device policy.
 #'
 #' The fits replay one after another from the random number state the batch
 #' was called at, so they draw the same stream the same fits called in
@@ -149,6 +153,7 @@ tulpa_joint_grid_batch <- function(fits) {
 .joint_grid_batch_run <- function(fits, seed0) {
   B <- length(fits)
   requests <- vector("list", B)
+  devices <- character(B)
   for (s in seq_len(B)) {
     .joint_grid_batch_restore_seed(seed0)
     gb <- new.env(parent = emptyenv())
@@ -175,9 +180,13 @@ tulpa_joint_grid_batch <- function(fits) {
     # first one's request answers for the batch.
     if (s == 1L) .joint_grid_request_check(captured)
     requests[[s]] <- captured
+    devices[s] <- gb$device
   }
 
-  results <- .cpp_joint_multi_batch(requests)
+  if (any(devices != devices[1L]))
+    .joint_grid_batch_ineligible("fits require the same device policy.")
+  shared <- .joint_grid_batch_solve(requests, devices[1L])
+  results <- shared$results
 
   .joint_grid_batch_restore_seed(seed0)
   lapply(seq_len(B), function(s) {
@@ -186,6 +195,7 @@ tulpa_joint_grid_batch <- function(fits) {
     gb$consumed <- FALSE
     gb$request <- requests[[s]]
     gb$result <- results[[s]]
+    gb$stages <- shared$stages
     gb$mismatch <- FALSE
     fit <- tryCatch(.joint_with_grid_batch(gb, fits[[s]]), error = function(e) {
       if (isTRUE(gb$mismatch)) {
@@ -206,6 +216,13 @@ tulpa_joint_grid_batch <- function(fits) {
     }
     fit
   })
+}
+
+.joint_grid_batch_solve <- function(requests, device) {
+  session <- cpp_device_begin(device, inherit = FALSE)
+  on.exit(cpp_device_end(session))
+  results <- .cpp_joint_multi_batch(requests)
+  list(results = results, stages = cpp_device_snapshot()$stages)
 }
 
 .joint_grid_batch_seed <- function() {

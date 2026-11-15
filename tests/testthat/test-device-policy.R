@@ -86,6 +86,40 @@ test_that("nested policies restore the enclosing choice and isolate fit counters
   expect_identical(tulpa:::cpp_device_snapshot()$stages$device, "cpu")
 })
 
+test_that("an isolated shared solve replays its measured calls into its caller", {
+  outer <- tulpa:::cpp_device_begin('cpu',inherit=FALSE)
+  on.exit(tulpa:::cpp_device_end(outer))
+  shared <- tulpa:::cpp_device_begin('cpu',inherit=FALSE)
+  tulpa:::cpp_device_replay_stages(data.frame(stage='sparse_inverse_host_factor',
+    cpu_calls=3,cuda_calls=0))
+  measured <- tulpa:::cpp_device_snapshot()$stages
+  tulpa:::cpp_device_end(shared)
+  before <- tulpa:::cpp_device_snapshot()$stages
+  expect_false('sparse_inverse_host_factor' %in% before$stage)
+  tulpa:::cpp_device_replay_stages(measured)
+  after <- tulpa:::cpp_device_snapshot()$stages
+  expect_identical(after$cpu_calls[after$stage=='sparse_inverse_host_factor'],3)
+  malformed <- data.frame(stage=c('laplace_dense','sparse_selected_inverse'),
+    cpu_calls=c(1,-1),cuda_calls=0)
+  expect_error(tulpa:::cpp_device_replay_stages(malformed),'non-negative integers')
+  expect_identical(tulpa:::cpp_device_snapshot()$stages,after)
+})
+
+test_that("replaying device counters preserves an absent random seed", {
+  had_seed <- exists('.Random.seed',envir=globalenv(),inherits=FALSE)
+  if(had_seed) seed <- get('.Random.seed',envir=globalenv())
+  session <- tulpa:::cpp_device_begin('cpu',inherit=FALSE)
+  on.exit(tulpa:::cpp_device_end(session))
+  on.exit({
+    if(had_seed) assign('.Random.seed',seed,envir=globalenv())
+    else if(exists('.Random.seed',envir=globalenv(),inherits=FALSE))
+      rm('.Random.seed',envir=globalenv())
+  },add=TRUE)
+  if(exists('.Random.seed',envir=globalenv(),inherits=FALSE))rm('.Random.seed',envir=globalenv())
+  tulpa:::cpp_device_replay_stages(data.frame(stage='laplace_dense',cpu_calls=1,cuda_calls=0))
+  expect_false(exists('.Random.seed',envir=globalenv(),inherits=FALSE))
+})
+
 test_that("diagnostic tables retain the fit's device record", {
   device <- list(requested = "cpu", stages = data.frame(stage = "inference",
     device = "cpu", cpu_calls = 1, cuda_calls = 0))

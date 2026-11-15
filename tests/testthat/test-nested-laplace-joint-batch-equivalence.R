@@ -248,12 +248,12 @@ test_that("the batched entry refuses a family whose arms are not cell-coupled", 
   }
 }
 
-.nlb_occ_front_door <- function(sim, s, sigma_grid) {
+.nlb_occ_front_door <- function(sim, s, sigma_grid, device = "auto") {
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = coupled_occ_arms(sim$d[[s]]),
     prior     = .nlb_occ_prior(sim, sigma_grid),
     cell_coupling = "test_occupancy_mixture",
-    control = list(max_iter = 60L, tol = 1e-8, integration = "grid",
+    control = list(device = device, max_iter = 60L, tol = 1e-8, integration = "grid",
                    prune = FALSE, diagnose_k = FALSE, k_quality = "none",
                    adaptive_grid = FALSE, var_of_means_consistency = FALSE,
                    auto_recenter = FALSE, store_Q = TRUE)))
@@ -619,6 +619,39 @@ test_that("a grid-batched fit is the fit its front-door call returns", {
                          paste("species", s))
   }
   expect_false(isTRUE(all.equal(fits[[1L]]$log_marginal, fits[[2L]]$log_marginal)))
+})
+
+test_that("a grid batch carries shared covariance calls and a common device policy", {
+  skip_on_cran()
+  coupled_occ_register()
+  sim <- .nlb_occ_sim(seed=7102L,n_batch=2L,n_cells=40L,n_visits=3L)
+  one <- function(s,device) function() .nlb_occ_front_door(sim,s,c(.4,.6,1.5),device)
+  fits <- tulpa_joint_grid_batch(list(one(1L,'cpu'),one(2L,'cpu')))
+  for(fit in fits) {
+    stage <- fit$device$stages
+    expect_identical(fit$device$requested,'cpu')
+    expect_true(any(stage$stage=='sparse_inverse_host_factor' & stage$cpu_calls>0))
+    expect_true(all(stage$cuda_calls==0))
+  }
+  expect_error(tulpa_joint_grid_batch(list(one(1L,'cpu'),one(2L,'auto'))),
+    'same device policy',class='tulpa_grid_batch_ineligible')
+})
+
+test_that("a grid batch executes its captured CUDA policy", {
+  skip_on_cran()
+  skip_if_no_cuda(c('cusolver','nvrtc','cudss'))
+  coupled_occ_register()
+  sim <- .nlb_occ_sim(seed=7102L,n_batch=2L,n_cells=20L,n_visits=3L)
+  run <- function(device)tulpa_joint_grid_batch(lapply(seq_len(sim$n_batch),function(s)
+    function() .nlb_occ_front_door(sim,s,c(.4,.6,1.5),device)))
+  cpu <- run('cpu');cuda <- run('cuda')
+  for(s in seq_along(cpu)) {
+    expect_identical(cuda[[s]]$device$requested,'cuda')
+    stage <- cuda[[s]]$device$stages
+    expect_true(any(stage$stage=='laplace_dense' & stage$cuda_calls>0))
+    for(q in c('log_marginal','modes','fitted_eta'))
+      expect_device_equal(cuda[[s]][[q]],cpu[[s]][[q]],1e-7,paste('grid batch CUDA',s,q))
+  }
 })
 
 # The engine's own defaults screen the grid, and the fused solve walks one grid

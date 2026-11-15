@@ -16,10 +16,10 @@ void device_check(const Status& status) { if (!status) Rcpp::stop(status.message
 struct DeviceSession {
     std::shared_ptr<tulpa::device::Policy> policy, previous;
     bool closed = false;
-    explicit DeviceSession(tulpa::device::Choice choice) {
+    explicit DeviceSession(tulpa::device::Choice choice, bool inherit = true) {
         policy = std::make_shared<tulpa::device::Policy>(choice, tulpa::device::thresholds());
         previous = tulpa::device::exchange_policy(policy);
-        if (previous && (choice == tulpa::device::Choice::Auto || choice == previous->choice())) {
+        if (inherit && previous && (choice == tulpa::device::Choice::Auto || choice == previous->choice())) {
             policy = previous;
             tulpa::device::exchange_policy(policy);
         } else policy->record("inference", false);
@@ -405,8 +405,30 @@ void cpp_device_configure(Rcpp::DataFrame table, Rcpp::List sources) {
 }
 
 // [[Rcpp::export]]
-SEXP cpp_device_begin(std::string choice) {
-    return Rcpp::XPtr<DeviceSession>(new DeviceSession(tulpa::device::parse_choice(choice)), true);
+SEXP cpp_device_begin(std::string choice, bool inherit = true) {
+    return Rcpp::XPtr<DeviceSession>(new DeviceSession(tulpa::device::parse_choice(choice), inherit), true);
+}
+
+// [[Rcpp::export(rng = false)]]
+void cpp_device_replay_stages(Rcpp::DataFrame stages) {
+    Rcpp::CharacterVector names = stages["stage"];
+    Rcpp::NumericVector cpu = stages["cpu_calls"], cuda = stages["cuda_calls"];
+    if (cpu.size() != names.size() || cuda.size() != names.size())
+        Rcpp::stop("device stage columns must have equal lengths");
+    const double maximum = static_cast<double>(std::numeric_limits<std::size_t>::max());
+    for (R_xlen_t i = 0; i < names.size(); ++i) {
+        if (Rcpp::CharacterVector::is_na(names[i]) || Rcpp::as<std::string>(names[i]).empty())
+            Rcpp::stop("device stage names must be nonempty");
+        for (double count : {cpu[i], cuda[i]})
+            if (!std::isfinite(count) || count < 0 || count >= maximum || count != std::floor(count))
+                Rcpp::stop("device call counts must be non-negative integers");
+        if (cpu[i] == 0 && cuda[i] == 0)
+            Rcpp::stop("device stages must include a call");
+    }
+    auto policy = tulpa::device::current_policy();
+    for (R_xlen_t i = 0; i < names.size(); ++i)
+        policy->record(Rcpp::as<std::string>(names[i]),
+            static_cast<std::size_t>(cpu[i]), static_cast<std::size_t>(cuda[i]));
 }
 
 // [[Rcpp::export]]

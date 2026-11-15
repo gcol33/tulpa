@@ -42,6 +42,11 @@ on the main thread. Numerical workers never call R error handlers.
 `Policy::select`, `record`, and `fail` are the API later numerical backends call.
 The drivers themselves pass through the numerical helper. The fit's
 `device$stages` table records operation names and CPU/CUDA call counts.
+The multi-response grid runner captures the fits' device choice, runs its
+shared numerical solve in an isolated policy, and replays that solve's actual
+counters into each served fit. Counts include the complete shared response
+batch. `Policy::record` adds counters in one operation, so replay retains every
+operation without repeating numerical work or random-number state changes.
 
 ## Context and resources
 

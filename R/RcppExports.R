@@ -149,8 +149,12 @@ cpp_device_configure <- function(table, sources) {
     invisible(.Call(`_tulpa_cpp_device_configure`, table, sources))
 }
 
-cpp_device_begin <- function(choice) {
-    .Call(`_tulpa_cpp_device_begin`, choice)
+cpp_device_begin <- function(choice, inherit = TRUE) {
+    .Call(`_tulpa_cpp_device_begin`, choice, inherit)
+}
+
+cpp_device_replay_stages <- function(stages) {
+    invisible(.Call(`_tulpa_cpp_device_replay_stages`, stages))
 }
 
 cpp_device_end <- function(session) {

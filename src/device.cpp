@@ -519,10 +519,14 @@ bool Policy::batch_selected(const std::string& name, std::size_t size, int varia
     return setting != thresholds_.end() && std::isfinite(setting->batch_size) && size >= setting->batch_size;
 }
 void Policy::record(const std::string& name, bool cuda) {
+    record(name, cuda ? 0 : 1, cuda ? 1 : 0);
+}
+void Policy::record(const std::string& name, std::size_t cpu, std::size_t cuda) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto stage = std::find_if(stages_.begin(), stages_.end(), [&](const Stage& x) { return x.operation == name; });
     if (stage == stages_.end()) { stages_.push_back({name, 0, 0}); stage = stages_.end() - 1; }
-    if (cuda) ++stage->cuda; else ++stage->cpu;
+    stage->cpu += cpu;
+    stage->cuda += cuda;
 }
 void Policy::fail(const Status& status) { cell_status(status); std::lock_guard<std::mutex> lock(mutex_); failure_.absorb(status); }
 Status Policy::failure() const { std::lock_guard<std::mutex> lock(mutex_); return failure_; }

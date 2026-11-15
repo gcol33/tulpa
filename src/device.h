@@ -57,6 +57,7 @@ public:
                 Status& status) const;
     bool batch_selected(const std::string& operation, std::size_t size, int variant) const;
     void record(const std::string& operation, bool cuda);
+    void record(const std::string& operation, std::size_t cpu, std::size_t cuda);
     void fail(const Status& status);
     Status failure() const;
     std::vector<Stage> stages() const;

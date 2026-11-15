@@ -3,6 +3,8 @@
 * Inner Laplace Newton solves accept near-mode steps within the objective's
   relative numerical resolution and check the Newton decrement in curvature
   units. Large temporal fields retain full Newton steps at tight tolerances.
+* Multi-response joint grid batches preserve the requested device policy and
+  include the shared solve's numerical operation counters in each fit.
 * Sparse factorization and selected inversion have separate measured device
   gates. Automatic fits can combine CUDA Newton steps with a CHOLMOD factor
   and Takahashi selected inverse at the converged Hessian.

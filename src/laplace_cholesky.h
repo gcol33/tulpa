@@ -63,6 +63,7 @@ struct DenseCholeskyScratch {
     std::vector<double> L;   // column-major, capacity >= n*n
     std::vector<double> z;   // capacity >= n
     int n_alloc = 0;
+    int outer_width = 0; // Standalone spec factors use zero.
 
     void ensure(int n) {
         if (n_alloc < n) {
@@ -261,8 +262,9 @@ inline bool dense_cholesky_log_det_raw(
 ) {
     scratch.ensure(n);
     if (!scratch.factor) scratch.factor.reset(new device::DenseFactor);
-    const bool ok = scratch.factor->factorize(H.data(), n, true, device::current_batch() ? "laplace_dense" : "dense_spec",
-        0.0, device::current_batch() ? device::current_batch()->width() : 0);
+    const int width = device::current_batch() ? device::current_batch()->width() : scratch.outer_width;
+    const bool ok = scratch.factor->factorize(H.data(), n, true,
+        width > 0 ? "laplace_dense" : "dense_spec", 0.0, width);
     log_det_out = scratch.factor->log_determinant();
     return ok && scratch.factor->lower(scratch.L.data());
 }

@@ -550,14 +550,24 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_device_begin
-SEXP cpp_device_begin(std::string choice);
-RcppExport SEXP _tulpa_cpp_device_begin(SEXP choiceSEXP) {
+SEXP cpp_device_begin(std::string choice, bool inherit);
+RcppExport SEXP _tulpa_cpp_device_begin(SEXP choiceSEXP, SEXP inheritSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_device_begin(choice));
+    Rcpp::traits::input_parameter< bool >::type inherit(inheritSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_device_begin(choice, inherit));
     return rcpp_result_gen;
+END_RCPP
+}
+// cpp_device_replay_stages
+void cpp_device_replay_stages(Rcpp::DataFrame stages);
+RcppExport SEXP _tulpa_cpp_device_replay_stages(SEXP stagesSEXP) {
+BEGIN_RCPP
+    Rcpp::traits::input_parameter< Rcpp::DataFrame >::type stages(stagesSEXP);
+    cpp_device_replay_stages(stages);
+    return R_NilValue;
 END_RCPP
 }
 // cpp_device_end
@@ -4399,7 +4409,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_device_operations", (DL_FUNC) &_tulpa_cpp_device_operations, 0},
     {"_tulpa_cpp_device_validate", (DL_FUNC) &_tulpa_cpp_device_validate, 1},
     {"_tulpa_cpp_device_configure", (DL_FUNC) &_tulpa_cpp_device_configure, 2},
-    {"_tulpa_cpp_device_begin", (DL_FUNC) &_tulpa_cpp_device_begin, 1},
+    {"_tulpa_cpp_device_begin", (DL_FUNC) &_tulpa_cpp_device_begin, 2},
+    {"_tulpa_cpp_device_replay_stages", (DL_FUNC) &_tulpa_cpp_device_replay_stages, 1},
     {"_tulpa_cpp_device_end", (DL_FUNC) &_tulpa_cpp_device_end, 1},
     {"_tulpa_cpp_device_snapshot", (DL_FUNC) &_tulpa_cpp_device_snapshot, 0},
     {"_tulpa_cpp_device_probe", (DL_FUNC) &_tulpa_cpp_device_probe, 4},
