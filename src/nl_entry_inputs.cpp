@@ -32,7 +32,7 @@ Rcpp::List nl_run_joint_sparse_entry(
         /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
         /*n_cells=*/0,
         JointPDMode::LM, StepCurvature::Observed,
-        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
+        /*hessian_refresh=*/1, in.n_threads_outer,
         run.progress.get(), run.ckpt.get(),
         /*x_init_per_cell=*/std::vector<double>(),
         in.compute_skew, run.skew_idx_ptr,

@@ -261,7 +261,7 @@ extern "C" void tulpa_nested_laplace_icar_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_icar")
 }
@@ -309,7 +309,7 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
                 R_NilValue /* node_prec: one scale for the graph */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_bym2")
 }
@@ -354,7 +354,7 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_car_proper")
 }
@@ -400,7 +400,7 @@ extern "C" void tulpa_nested_laplace_temporal_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_temporal")
 }
@@ -452,7 +452,7 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_nngp")
 }
@@ -496,7 +496,7 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_hsgp")
 }
@@ -560,7 +560,7 @@ extern "C" void tulpa_nested_laplace_st_icar_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_icar")
 }
@@ -617,7 +617,7 @@ extern "C" void tulpa_nested_laplace_st_car_proper_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_car_proper")
 }
@@ -677,7 +677,7 @@ extern "C" void tulpa_nested_laplace_st_bym2_impl(
                 R_NilValue /* node_prec: one scale for the graph */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_bym2")
 }
@@ -732,7 +732,7 @@ extern "C" void tulpa_nested_laplace_st_hsgp_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_hsgp")
 }
@@ -793,7 +793,7 @@ extern "C" void tulpa_nested_laplace_st_nngp_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_nngp")
 }
@@ -868,7 +868,7 @@ extern "C" void tulpa_nested_laplace_spde_impl(
                 R_NilValue /* screen_log_offset */,
                 R_NilValue /* beta_prior */,
                 false /* progress */, 0 /* progress_every */,
-                2.0 /* progress_throttle */, "" /* progress_file */);
+                2.0 /* progress_throttle */, "" /* progress_file */, 1);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_spde")
 }

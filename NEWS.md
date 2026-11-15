@@ -3,6 +3,23 @@
 * Inner Laplace Newton solves accept near-mode steps within the objective's
   relative numerical resolution and check the Newton decrement in curvature
   units. Large temporal fields retain full Newton steps at tight tolerances.
+* Sparse factorization and selected inversion have separate measured device
+  gates. Automatic fits can combine CUDA Newton steps with a CHOLMOD factor
+  and Takahashi selected inverse at the converged Hessian.
+* Outer-grid workers coalesce dense Cholesky and cuDSS uniform-batch requests.
+  Uniform sparse batches share symbolic analysis. Each cell retains its own
+  line search and convergence state; device failures restart the affected cell
+  on CPU and are recorded. `control$n_threads_outer` reaches the registry door.
+  Grid checkpoints retain the per-cell CPU recovery flags.
+  Uniform-batch log-determinants use the host factor shared with selected
+  inversion. Device stages report this CPU computation.
+* Dense observation designs are retained within each Laplace cell. The shared
+  spec scatter uses one weighted-design operation with vectorized CPU and
+  batched CUDA implementations, preserving signed likelihood curvatures.
+  The shared timing table selects CPU, independent CUDA streams or batched
+  launches for each measured operation and worker width.
+* Proper-CAR prior normalizers reuse sparse symbolic factors across outer
+  cells and store the adjacency precision in sparse form.
 
 * Sparse Laplace factorizations use one CPU/cuDSS interface for symbolic
   analysis, numeric refactorization, log-determinants, multiple right-hand

@@ -13,6 +13,7 @@ Rcpp::List nl_pack_grid_results(
 ) {
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
+    Rcpp::LogicalVector device_cpu_recovered(n_grid);
     // Per-cell solve health. log_det_Q and score_max are the inner solve's own
     // log|H| and achieved joint-score residual at the returned mode; `converged`
     // is its stopping-rule flag. Reported per cell so a grid fit can see which
@@ -97,6 +98,7 @@ Rcpp::List nl_pack_grid_results(
         const LaplaceResult& res = cell_results[k];
         log_marginals[k] = res.log_marginal;
         n_iters[k] = res.n_iter;
+        device_cpu_recovered[k] = res.device_cpu_recovered;
         log_det_Qs[k] = res.log_det_Q;
         score_maxs[k] = res.score_max;
         convergeds[k] = res.converged;
@@ -197,6 +199,7 @@ Rcpp::List nl_pack_grid_results(
         Rcpp::Named("n_grid") = n_grid
     );
     out["log_det_Q"] = log_det_Qs;
+    out["device_cpu_recovered"] = device_cpu_recovered;
     out["score_max"] = score_maxs;
     out["converged"] = convergeds;
     out["start_infeasible"] = start_infeasibles;
@@ -323,6 +326,10 @@ Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
         Rcpp::Named("score_max")        = score_max[k],
         Rcpp::Named("start_infeasible") = cell_infeasible
     );
+    if (grid.containsElementNamed("device_cpu_recovered")) {
+        Rcpp::LogicalVector recovered = grid["device_cpu_recovered"];
+        out["device_cpu_recovered"] = static_cast<bool>(recovered[k]);
+    }
 
     // Inner-Laplace skewness diagnostic, under the names the single-fit
     // contract uses (laplace_result_to_list). The grid emits it for the one

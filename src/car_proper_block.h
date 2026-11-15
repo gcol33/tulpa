@@ -32,6 +32,12 @@
 
 namespace tulpa {
 
+struct CarPriorState {
+    SparseCholeskySolver solver;
+    std::vector<double> values;
+    double logdet = 0.0;
+};
+
 // Fill `block`'s prep / add_prior / add_prior_sparse / log_prior /
 // add_prior_pattern for a proper CAR over [start, start + size).
 //
@@ -53,24 +59,31 @@ inline void set_car_proper_block_priors(
     Rcpp::IntegerVector adj_col_idx,
     Rcpp::IntegerVector n_neighbors
 ) {
-    // The dense log|Q(rho)| helper takes plain int vectors; owned by
-    // shared_ptr so the prep closure carries no reference to a caller local.
-    auto adj_rp_v = std::make_shared<std::vector<int>>(adj_row_ptr.begin(),
-                                                       adj_row_ptr.end());
-    auto adj_ci_v = std::make_shared<std::vector<int>>(adj_col_idx.begin(),
-                                                       adj_col_idx.end());
-    auto n_nbr_v  = std::make_shared<std::vector<int>>(n_neighbors.begin(),
-                                                       n_neighbors.end());
-    auto log_det_Q_rho = std::make_shared<NlCellCache<double>>();
+    auto p = std::make_shared<std::vector<int>>(size + 1, 0);
+    auto i = std::make_shared<std::vector<int>>();
+    for (int col = 0; col < size; ++col) {
+        (*p)[col] = i->size();
+        i->push_back(col);
+        for (int e = adj_row_ptr[col]; e < adj_row_ptr[col + 1]; ++e)
+            if (adj_col_idx[e] > col) i->push_back(adj_col_idx[e]);
+        std::sort(i->begin() + (*p)[col], i->end());
+        i->erase(std::unique(i->begin() + (*p)[col], i->end()), i->end());
+    }
+    (*p)[size] = i->size();
+    auto log_det_Q_rho = std::make_shared<NlCellCache<CarPriorState>>();
 
-    block.prep = [size, rho_at, adj_rp_v, adj_ci_v, n_nbr_v,
+    block.prep = [size, rho_at, p, i, n_neighbors,
                   log_det_Q_rho](int k) -> bool {
-        std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
-            size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_at(k));
-        const double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
-        log_det_Q_rho->claim() = ld_val;
+        auto& state = log_det_Q_rho->claim();
+        state.values.assign(i->size(), -rho_at(k));
+        for (int col = 0; col < size; ++col)
+            state.values[(*p)[col]] = n_neighbors[col];
+        auto A = cholmod_lower_view(size, p->data(), i->data(),
+                                    state.values.data(), state.values.size());
+        if (!state.solver.analyzed()) state.solver.analyze(&A);
+        state.logdet = state.solver.factorize(&A) ? state.solver.log_determinant() : -INFINITY;
         log_det_Q_rho->publish(k);
-        return std::isfinite(ld_val);
+        return std::isfinite(state.logdet);
     };
     block.add_prior = [start, size, tau_at, rho_at,
                        adj_row_ptr, adj_col_idx, n_neighbors](
@@ -90,7 +103,7 @@ inline void set_car_proper_block_priors(
                        n_neighbors, log_det_Q_rho](
         const Rcpp::NumericVector& x, int k) -> double {
         return log_prior_car_proper(x, start, size, tau_at(k), rho_at(k),
-                                    log_det_Q_rho->find(k),
+                                    log_det_Q_rho->find(k).logdet,
                                     adj_row_ptr, adj_col_idx, n_neighbors);
     };
     block.add_prior_pattern = [start, size, adj_row_ptr, adj_col_idx](

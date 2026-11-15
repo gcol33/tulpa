@@ -225,7 +225,8 @@ Rcpp::List cpp_nested_laplace_icar(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -288,7 +289,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -347,7 +349,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -492,7 +495,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_grid", sigma2_grid, {{"phi_gp_grid", &phi_gp_grid}});
@@ -583,7 +587,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_grid", sigma2_grid, {{"lengthscale_grid", &lengthscale_grid}});
@@ -916,7 +921,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     tulpa::nl_grid_axes_positive({{"tau_grid", &tau_grid}});
     int n_grid = tau_grid.size();
@@ -976,7 +982,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -1042,7 +1049,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -1113,7 +1121,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::NumericVector> node_prec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, static_cast<int>(y.size()),
@@ -1185,7 +1194,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_spatial_grid", sigma2_spatial_grid,
@@ -1274,7 +1284,8 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_spatial_grid", sigma2_spatial_grid,

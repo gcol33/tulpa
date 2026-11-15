@@ -605,7 +605,8 @@ Rcpp::List cpp_nested_laplace_multi(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
-    bool compute_fitted_var = true
+    bool compute_fitted_var = true,
+    int n_threads_outer = 1
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -739,7 +740,7 @@ Rcpp::List cpp_nested_laplace_multi(
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, x_init,
         store_Q,
-        /*n_threads_outer=*/1,
+        n_threads_outer,
         prune_tol,
         ext_spec, ext_response,
         gp.get(), ckpt.get(),

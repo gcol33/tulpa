@@ -1,4 +1,5 @@
 #include "device_dense.h"
+#include "device_batch.h"
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
@@ -42,6 +43,7 @@ struct Memory {
         return reinterpret_cast<Fn>(context.symbol(capability, name, status));
     }
     bool finish(const std::shared_ptr<Policy>& policy) {
+        cell_status(status);
         policy->fail(status);
         return static_cast<bool>(status);
     }
@@ -79,6 +81,7 @@ bool select(const std::string& operation, std::size_t size, int variant,
             const std::shared_ptr<Policy>& policy, bool& cuda) {
     Status status;
     cuda = policy->select(operation, size, variant, status);
+    cell_status(status);
     policy->fail(status);
     return static_cast<bool>(status);
 }
@@ -120,19 +123,63 @@ struct DenseFactor::Impl {
     std::unique_ptr<DenseBasis> projection;
     dense_detail::Address factor_address = 0;
     int n = 0;
-    bool cuda = false, valid = false;
+    bool cuda = false, valid = false, laplace = false;
+    std::string operation;
+    void* solver = nullptr;
+    void* stream = nullptr;
+
+    ~Impl() {
+        if (!solver && !stream) return;
+        Status status;
+        auto& context = memory.context;
+        status = context.push();
+        if (status) {
+            status.absorb(context.synchronize_stream(stream));
+            if (solver) status.absorb(context.destroy_solver(solver));
+            if (stream) status.absorb(context.destroy_stream(stream));
+            context.pop();
+        }
+    }
     double determinant = std::numeric_limits<double>::quiet_NaN();
 
     bool begin(int order, const std::string& operation, int variant = 0) {
+        memory.status = Status{};
         valid = false;
         determinant = std::numeric_limits<double>::quiet_NaN();
         lower_cache.resize(0, 0);
         factor_address = 0;
         n = order;
+        this->operation = operation;
+        laplace = operation.compare(0, 8, "laplace_") == 0;
         policy = current_policy();
         return n > 0 && dense_detail::select(operation, n, variant, policy, cuda);
     }
     bool factor_device() {
+        if (laplace) {
+            if (!stream && memory.status) memory.status = memory.context.create_stream(stream);
+            if (!solver && memory.status) memory.status = memory.context.create_solver(solver, stream);
+            bool positive = false;
+            if (memory.status) {
+                if (auto* batch = current_batch())
+                    memory.status = batch->factor(factor_address, n, positive, solver, stream, operation);
+                else {
+                    BatchScope singleton(1);
+                    memory.status = singleton.factor(factor_address, n, positive, solver, stream, operation);
+                }
+            }
+            if (!memory.status || !positive) return false;
+            lower_cache.resize(n, n);
+            memory.status = memory.context.download(lower_cache.data(), factor_address, sizeof(double)*n*n);
+            if (!memory.status) return false;
+            lower_cache.triangularView<Eigen::StrictlyUpper>().setZero();
+            determinant = 0;
+            for (int j = 0; j < n; ++j) {
+                const double pivot = lower_cache(j,j);
+                if (!(pivot > 0) || !std::isfinite(pivot)) return false;
+                determinant += 2*std::log(pivot);
+            }
+            return std::isfinite(determinant);
+        }
         using SizeFn = int (TULPA_DENSE_CALL*)(void*, int, int, double*, int, int*);
         using FactorFn = int (TULPA_DENSE_CALL*)(void*, int, int, double*, int, double*, int, int*);
         auto size = memory.symbol<SizeFn>(Capability::Solver, "cusolverDnDpotrf_bufferSize");
@@ -177,9 +224,9 @@ struct DenseFactor::Impl {
 DenseFactor::DenseFactor() : impl_(new Impl) {}
 DenseFactor::~DenseFactor() = default;
 bool DenseFactor::factorize(const double* data, int n, bool row_major,
-                            const std::string& operation, double nugget) {
+                            const std::string& operation, double nugget, int variant) {
     auto& p = *impl_;
-    if (!p.begin(n, operation)) return false;
+    if (!p.begin(n, operation, variant)) return false;
     Eigen::MatrixXd matrix = dense_detail::read_matrix(data, n, n, row_major);
     matrix = matrix.selfadjointView<Eigen::Lower>();
     matrix.diagonal().array() += nugget;
@@ -187,11 +234,20 @@ bool DenseFactor::factorize(const double* data, int n, bool row_major,
     if (!p.cuda) p.valid = p.factor_cpu(matrix);
     else {
         auto& m = p.memory;
-        {
-            Lease lease(m.context, m.status);
+        auto factor = [&] {
             auto& input = m.reserve(0, sizeof(double) * matrix.size());
+            p.factor_address = input.address();
             if (m.status) m.status = input.upload(matrix.data(), sizeof(double) * matrix.size());
             if (m.status) p.valid = p.factor_device();
+        };
+        if (p.laplace) {
+            const auto pushed = m.context.push();
+            m.status.absorb(pushed);
+            if (m.status) factor();
+            if (pushed) m.status.absorb(m.context.pop());
+        } else {
+            Lease lease(m.context, m.status);
+            factor();
         }
         if (!m.finish(p.policy)) return false;
     }
@@ -260,7 +316,13 @@ bool DenseFactor::solve(const double* rhs, double* out, int columns, DenseSystem
         auto& b = m.reserve(5, sizeof(double) * p.n * columns);
         if (m.status) m.status = b.upload(rhs, sizeof(double) * p.n * columns);
         const auto a = p.factor_address;
-        if (system != DenseSystem::Symmetric) {
+        if (p.laplace && system == DenseSystem::Symmetric) {
+            auto factor = a, rhs_address = b.address();
+            Launch shape; shape.grid_x = columns; shape.block_x = 128; shape.stream = p.stream;
+            void* args[] = {&factor, &rhs_address, &p.n};
+            if (m.status) m.status = m.context.launch(kernel_source("laplace_dense"), "laplace_dense_solve", shape, args);
+            if (m.status) m.status = m.context.synchronize_stream(p.stream);
+        } else if (system != DenseSystem::Symmetric) {
             if (m.status) m.status = dense_detail::triangular_solve(m, false,
                 system == DenseSystem::LowerTranspose, p.n, columns, a, p.n, b.address());
         } else {
@@ -277,7 +339,9 @@ bool DenseFactor::solve(const double* rhs, double* out, int columns, DenseSystem
         }
         if (m.status) m.status = b.download(out, sizeof(double) * p.n * columns);
     }
-    return m.finish(p.policy) && Eigen::Map<Eigen::MatrixXd>(out, p.n, columns).allFinite();
+    if (m.status && !Eigen::Map<Eigen::MatrixXd>(out, p.n, columns).allFinite())
+        m.status = Status::read("CUDA", -1, "dense solve", "nonfinite solution");
+    return m.finish(p.policy);
 }
 
 bool DenseFactor::lower(double* out, bool row_major) {

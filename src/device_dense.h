@@ -19,7 +19,8 @@ public:
     DenseFactor(const DenseFactor&) = delete;
     DenseFactor& operator=(const DenseFactor&) = delete;
     bool factorize(const double* matrix, int n, bool row_major,
-                   const std::string& operation, double nugget = 0.0);
+                   const std::string& operation, double nugget = 0.0,
+                   int variant = 0);
     bool covariance(const std::vector<double>& times, double sigma2, double phi,
                     int kind, double period, double nugget,
                     const std::string& operation, int variant = 0);

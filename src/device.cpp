@@ -1,4 +1,5 @@
 #include "device.h"
+#include "device_batch.h"
 #include "linalg_fast.h"
 #include <algorithm>
 #include <atomic>
@@ -139,6 +140,7 @@ struct Context::Impl {
                      const double*, int, const double*, double*, int));
     DEVICE_FN(solver_create, (Handle*));
     DEVICE_FN(solver_destroy, (Handle));
+    DEVICE_FN(solver_stream, (Handle, Handle));
     DEVICE_FN(potrf, (Handle, int, int, double**, int, int*, int));
     DEVICE_FN(program_create, (Handle*, const char*, const char*, int,
                                const char* const*, const char* const*));
@@ -215,6 +217,7 @@ struct Context::Impl {
         libraries[4].open(sparse_names);
         resolve(solver_create, 1, "cusolverDnCreate", capability[1]);
         resolve(solver_destroy, 1, "cusolverDnDestroy", capability[1]);
+        resolve(solver_stream, 1, "cusolverDnSetStream", capability[1]);
         resolve(potrf, 1, "cusolverDnDpotrfBatched", capability[1]);
         if (capability[1]) capability[1] = Status::read("cuSOLVER", solver_create(&solver), "cusolverDnCreate");
         resolve(blas_create, 2, "cublasCreate_v2", capability[2]);
@@ -320,9 +323,18 @@ Status Context::gemv(Address matrix, Address x, Address y, int rows, int cols,
         s.absorb(Status::read("cuBLAS", impl_->blas_stream(impl_->blas, nullptr), "cublasSetStream_v2"));
     return s;
 }
-Status Context::factor(Address pointers, int n, int batch, Address info) {
-    return Status::read("cuSOLVER", impl_->potrf(impl_->solver, 0, n,
+Status Context::factor(Address pointers, int n, int batch, Address info, void* solver) {
+    return Status::read("cuSOLVER", impl_->potrf(solver ? solver : impl_->solver, 0, n,
         reinterpret_cast<double**>(pointers), n, reinterpret_cast<int*>(info), batch), "cusolverDnDpotrfBatched");
+}
+Status Context::create_solver(void*& solver, void* stream) {
+    auto status = supports(Capability::Solver);
+    if (status) status.absorb(Status::read("cuSOLVER", impl_->solver_create(&solver), "cusolverDnCreate"));
+    if (status) status.absorb(Status::read("cuSOLVER", impl_->solver_stream(solver, stream), "cusolverDnSetStream"));
+    return status;
+}
+Status Context::destroy_solver(void* solver) {
+    return solver ? Status::read("cuSOLVER", impl_->solver_destroy(solver), "cusolverDnDestroy") : Status{};
 }
 
 Lease::Lease(Context& context, Status& status) : context_(context), status_(status),
@@ -432,7 +444,13 @@ const std::vector<Operation>& operations() {
         {"hsgp_transpose", {Capability::Blas}},
         {"hsgp_crossprod", {Capability::Blas, Capability::Compiler}},
         {"hsgp_cross", {Capability::Blas}},
-        {"dense_adjoint", {Capability::Blas, Capability::Compiler}}
+        {"dense_adjoint", {Capability::Blas, Capability::Compiler}},
+        {"sparse_selected_inverse", {Capability::Sparse, Capability::Compiler}},
+        {"laplace_dense", {Capability::Solver, Capability::Compiler}},
+        {"laplace_full_csc", {Capability::Solver, Capability::Compiler}},
+        {"laplace_dense_inverse", {Capability::Solver, Capability::Compiler}},
+        {"laplace_scatter", {Capability::Compiler}},
+        {"sparse_uniform", {Capability::Sparse}}
     };
     return table;
 }
@@ -478,7 +496,7 @@ std::shared_ptr<Policy> exchange_policy(std::shared_ptr<Policy> policy) {
 Policy::Policy(Choice choice, const std::vector<Threshold>& thresholds) : choice_(choice), thresholds_(thresholds) {}
 bool Policy::select(const std::string& name, std::size_t size, int variant, Status& status) const {
     if (!registered_operation(name)) { status = Status::read("policy", -1, "select", "unregistered operation " + name); return false; }
-    if (choice_ == Choice::Cpu || !size) return false;
+    if (choice_ == Choice::Cpu || cell_cpu() || !size) return false;
     if (choice_ == Choice::Auto) {
         auto threshold = std::find_if(thresholds_.begin(), thresholds_.end(), [&](const Threshold& x) {
             return x.operation == name && x.variant == variant;
@@ -492,13 +510,21 @@ bool Policy::select(const std::string& name, std::size_t size, int variant, Stat
     }
     return true;
 }
+bool Policy::batch_selected(const std::string& name, std::size_t size, int variant) const {
+    if (choice_ == Choice::Cpu || cell_cpu()) return false;
+    if (choice_ == Choice::Cuda) return true;
+    auto setting = std::find_if(thresholds_.begin(), thresholds_.end(), [&](const Threshold& x) {
+        return x.operation == name && x.variant == variant;
+    });
+    return setting != thresholds_.end() && std::isfinite(setting->batch_size) && size >= setting->batch_size;
+}
 void Policy::record(const std::string& name, bool cuda) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto stage = std::find_if(stages_.begin(), stages_.end(), [&](const Stage& x) { return x.operation == name; });
     if (stage == stages_.end()) { stages_.push_back({name, 0, 0}); stage = stages_.end() - 1; }
     if (cuda) ++stage->cuda; else ++stage->cpu;
 }
-void Policy::fail(const Status& status) { std::lock_guard<std::mutex> lock(mutex_); failure_.absorb(status); }
+void Policy::fail(const Status& status) { cell_status(status); std::lock_guard<std::mutex> lock(mutex_); failure_.absorb(status); }
 Status Policy::failure() const { std::lock_guard<std::mutex> lock(mutex_); return failure_; }
 std::vector<Stage> Policy::stages() const { std::lock_guard<std::mutex> lock(mutex_); return stages_; }
 std::shared_ptr<void> Policy::workspace(const void* owner, const void* context,

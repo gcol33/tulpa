@@ -636,6 +636,121 @@ inline SparseSpecSink spec_sink(SparseHessianBuilder& H) {
     return SparseSpecSink{H};
 }
 
+inline void spec_block_contributions(const SpecLatentLayout& L,
+    const std::vector<double>& amplitude, int k_grid, int i,
+    std::vector<std::pair<int,double>>& out,
+    std::vector<std::pair<int,double>>& multi, std::vector<double>& basis) {
+    out.clear();
+    for (int b = 0; b < L.n_blocks; ++b) {
+        const auto& blk = (*L.blocks)[b];
+        const double d = amplitude[b]*block_row_weight(blk, i, 0);
+        const int offset = L.block_latent_offset[b], size = L.block_size[b];
+        if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+            blk.fill_obs_indices(i, 0, multi);
+            for (const auto& nw : multi) if (nw.first >= 1 && nw.first <= size)
+                out.emplace_back(offset+nw.first-1, d*nw.second);
+        } else if (blk.contrib_kind == BlockContribKind::DENSE_BASIS) {
+            basis.assign(size, 0.0);
+            blk.basis_eval(i, 0, k_grid, basis.data());
+            for (int j = 0; j < size; ++j) if (basis[j] != 0.0)
+                out.emplace_back(offset+j, d*basis[j]);
+        } else {
+            const int j = blk.idx(i, 0);
+            if (j >= 1 && j <= size) out.emplace_back(offset+j-1, d);
+        }
+    }
+}
+
+inline void spec_re_row(const SpecLatentLayout& L, const ModelData& data,
+    const std::vector<TermDesign>& designs, int i, int n_terms,
+    std::vector<int>& groups, std::vector<std::vector<double>>& slopes) {
+    for (std::size_t t = 0; t < L.re_terms.size(); ++t) {
+        const auto& term = L.re_terms[t];
+        int g = re_group_at(data, i, t, n_terms);
+        if (g >= term.n_groups) g = -1;
+        groups[t] = g;
+        if (g >= 0) for (int c = 0; c < term.n_coefs; ++c) slopes[t][c] = designs[t].z(i,c);
+    }
+}
+
+inline void spec_observation_weights(int i, int np,
+    const std::vector<double>& params, const std::vector<double>& eta,
+    const ModelData& data, const ParamLayout& layout, const LikelihoodSpec& spec,
+    const void* response, const double* cached_g, const double* cached_w,
+    double* g, double* w) {
+    if (cached_g) {
+        std::copy_n(cached_g + static_cast<std::ptrdiff_t>(i)*np, np, g);
+        std::copy_n(cached_w + static_cast<std::ptrdiff_t>(i)*np*np,
+                    static_cast<std::ptrdiff_t>(np)*np, w);
+    } else {
+        std::fill_n(g, np, 0.0); std::fill_n(w, static_cast<std::size_t>(np)*np, 0.0);
+        spec.eta_weights_fn(i, eta.data() + static_cast<std::ptrdiff_t>(i)*np,
+            0.0, 0.0, params, data, layout, response, g, w);
+    }
+}
+
+inline bool spec_dense_pattern(const DenseSpecSink&) { return true; }
+inline bool spec_dense_pattern(const SparseSpecSink& sink) {
+    return static_cast<std::size_t>(sink.H.nnz) ==
+        static_cast<std::size_t>(sink.H.n)*(sink.H.n+1ULL)/2;
+}
+
+// The weights a fused log-likelihood pass (LikelihoodSpec::ll_eta_weights_fn)
+// produced, and the eta they belong to. The Newton loop's next scatter is at
+// the eta of its last objective evaluation, so it reads them here instead of
+// calling eta_weights_fn; the key is eta's bits, so a hit hands the scatter
+// exactly the weights the call would have returned.
+struct SpecFusedWeights {
+    std::vector<double> eta;        // the key, N * np
+    std::vector<double> grad;       // N * np
+    std::vector<double> neg_hess;   // N * np * np
+
+    bool matches(const std::vector<double>& eta_flat) const {
+        return !eta.empty() && eta.size() == eta_flat.size() &&
+               std::memcmp(eta.data(), eta_flat.data(),
+                           eta.size() * sizeof(double)) == 0;
+    }
+};
+
+struct SpecObservationState {
+    SpecFusedWeights fused;
+    std::shared_ptr<device::LikelihoodWorkspace> workspace;
+    double log_lik = 0;
+    bool ready = false;
+    std::vector<double> design, scores, weights, gradient, hessian;
+    std::shared_ptr<device::DenseScatter>& scatter;
+    explicit SpecObservationState(std::shared_ptr<device::DenseScatter>& s) : scatter(s) {}
+    void prepare(const SpecLatentLayout& L, const ModelData& data,
+        const std::vector<TermDesign>& designs, const std::vector<double>& amplitude,
+        int N, int k_grid, bool shared, int n_terms,
+        std::vector<int>& groups, std::vector<std::vector<double>>& slopes,
+        std::vector<std::pair<int,double>>& contributions,
+        std::vector<std::pair<int,double>>& multi, std::vector<double>& basis) {
+        if (ready) return;
+        design.assign(static_cast<std::size_t>(N)*L.n_x, 0.0);
+        const auto& process = data.processes[0];
+        for (int i = 0; i < N; ++i) {
+            double* row = design.data()+static_cast<std::size_t>(i)*L.n_x;
+            for (int j = 0; j < process.p; ++j)
+                row[L.latent_offset[0]+j] = process.X_flat[static_cast<std::size_t>(i)*process.p+j];
+            if (!shared) continue;
+            spec_re_row(L, data, designs, i, n_terms, groups, slopes);
+            for (std::size_t t = 0; t < L.re_terms.size(); ++t) if (groups[t] >= 0) {
+                const auto& term = L.re_terms[t];
+                for (int c = 0; c < term.n_coefs; ++c)
+                    row[term.latent_offset+groups[t]*term.n_coefs+c] += slopes[t][c];
+            }
+            spec_block_contributions(L, amplitude, k_grid, i, contributions, multi, basis);
+            for (const auto& entry : contributions) row[entry.first] += entry.second;
+        }
+        scores.resize(N); weights.resize(N); gradient.resize(L.n_x);
+        hessian.resize(static_cast<std::size_t>(L.n_x)*L.n_x);
+        if (!scatter) scatter = std::make_shared<device::DenseScatter>();
+        scatter->bind(design.data(), N, L.n_x);
+        ready = true;
+    }
+};
+
 // Per-observation gradient + neg-Hessian assembled into the latent gradient
 // and Hessian in (beta_0..beta_{np-1}, re_term_0..re_term_{K-1}) space.
 // eta_weights_fn writes
@@ -676,7 +791,8 @@ inline void scatter_spec(
     // (SpecFusedWeights), N * np and N * np * np, or null to call
     // spec.eta_weights_fn.
     const double* cached_grad_eta = nullptr,
-    const double* cached_neg_hess_eta = nullptr
+    const double* cached_neg_hess_eta = nullptr,
+    SpecObservationState* dense = nullptr
 ) {
     const int np = L.np;
     std::vector<double> grad_eta(np, 0.0);
@@ -693,7 +809,10 @@ inline void scatter_spec(
     std::vector<int>     q_term(K, 0);     // q_t cached
     // Slope-row z_{t,i,c} for c = 0..q_t-1 packed contiguously per term.
     std::vector<std::vector<double>> z_term(K);
-    for (int t = 0; t < K; t++) z_term[t].assign(L.re_terms[t].n_coefs, 0.0);
+    for (int t = 0; t < K; t++) {
+        q_term[t] = L.re_terms[t].n_coefs;
+        z_term[t].assign(q_term[t], 0.0);
+    }
 
     // Block grid-mixing coefficients d_fac(k_grid) (cached once) and per-obs
     // active-unit scratch (compacted latent index of the unit obs i loads onto,
@@ -703,7 +822,6 @@ inline void scatter_spec(
         const LatentBlock& blk = (*L.blocks)[b];
         blk_dfac[b] = blk.d_fac_at(k_grid);
     }
-    std::vector<int> blk_active_idx(L.n_blocks, -1);
     // Per-obs flat list of latent contributions (compacted latent index,
     // effective weight d_fac * a). One entry per INDEXED_SINGLE block (weight
     // d_fac), several per INDEXED_MULTI block (one per FEM mesh node, weight
@@ -712,10 +830,11 @@ inline void scatter_spec(
     std::vector<std::pair<int,double>> blk_contrib;
     std::vector<std::pair<int,double>> blk_multi_scratch;
     std::vector<double> blk_basis_scratch;
+    const bool dense_design = dense && spec_dense_pattern(H);
     std::vector<DenseBasisView> basis_views(L.n_blocks);
     std::vector<int> basis_owner(L.n_x, -1);
     bool has_dense_basis = false;
-    for (int b = 0; b < L.n_blocks; ++b) {
+    for (int b = 0; !dense_design && b < L.n_blocks; ++b) {
         const auto& block = (*L.blocks)[b];
         if (block.contrib_kind != BlockContribKind::DENSE_BASIS) continue;
         basis_views[b] = dense_basis_view(block, N, 0, k_grid);
@@ -726,35 +845,29 @@ inline void scatter_spec(
     }
     Eigen::VectorXd basis_score(has_dense_basis ? N : 0), basis_weight(has_dense_basis ? N : 0);
 
-    for (int i = 0; i < N; i++) {
-        if (cached_grad_eta) {
-            std::copy_n(cached_grad_eta + (std::ptrdiff_t)i * np, np,
-                        grad_eta.begin());
-            std::copy_n(cached_neg_hess_eta + (std::ptrdiff_t)i * np * np,
-                        (std::ptrdiff_t)np * np, neg_hess_eta.begin());
-        } else {
-            std::fill(grad_eta.begin(), grad_eta.end(), 0.0);
-            std::fill(neg_hess_eta.begin(), neg_hess_eta.end(), 0.0);
-
-            spec.eta_weights_fn(
-                i, &eta_flat[(std::ptrdiff_t)i * np], 0.0, 0.0,
-                params, data, layout, response_data,
-                grad_eta.data(), neg_hess_eta.data()
-            );
+    if (dense_design) {
+        dense->prepare(L, data, designs, blk_dfac, N, k_grid, shared[0], n_terms_unified,
+            g_term, z_term, blk_contrib, blk_multi_scratch, blk_basis_scratch);
+        for (int i = 0; i < N; ++i)
+            spec_observation_weights(i, 1, params, eta_flat, data, layout, spec,
+                response_data, cached_grad_eta, cached_neg_hess_eta,
+                dense->scores.data()+i, dense->weights.data()+i);
+        auto status = dense->scatter->apply(dense->scores.data(), dense->weights.data(),
+                                            dense->gradient.data(), dense->hessian.data());
+        device::cell_status(status);
+        if (!status) { device::current_policy()->fail(status); return; }
+        for (int r = 0; r < L.n_x; ++r) {
+            grad[r] += dense->gradient[r];
+            for (int c = 0; c <= r; ++c)
+                H.add(r, c, dense->hessian[static_cast<std::size_t>(r)*L.n_x+c]);
         }
+    } else for (int i = 0; i < N; i++) {
+        spec_observation_weights(i, np, params, eta_flat, data, layout, spec,
+            response_data, cached_grad_eta, cached_neg_hess_eta,
+            grad_eta.data(), neg_hess_eta.data());
 
         // Resolve per-term groups + slope rows once.
-        for (int t = 0; t < K; t++) {
-            const ReTermSlot& s = L.re_terms[t];
-            int g = re_group_at(data, i, t, n_terms_unified);
-            if (g >= s.n_groups) g = -1;
-            g_term[t] = g;
-            q_term[t] = s.n_coefs;
-            if (g < 0) continue;
-            for (int c = 0; c < s.n_coefs; c++) {
-                z_term[t][c] = designs[t].z(i, c);
-            }
-        }
+        spec_re_row(L, data, designs, i, n_terms_unified, g_term, z_term);
 
         // ============= GRADIENT scatter =============
         // Per-process beta gradient: g_{beta_k_j} += X_k(i, j) * grad_eta[k]
@@ -926,48 +1039,8 @@ inline void scatter_spec(
         //                                the diagonal and cross-node SPDE terms)
         // The block prior Q(theta) is added once, after the observation loop.
         if (L.n_blocks > 0) {
-            blk_contrib.clear();
-            for (int b = 0; b < L.n_blocks; b++) {
-                const LatentBlock& blk = (*L.blocks)[b];
-                // The per-row SVC weight rides the block amplitude, so the
-                // contribution weight a_c is d_fac * weight[i] on every kind:
-                // grad scales by weight and the block x block Hessian by
-                // weight^2 through the existing chain rule, exactly as the
-                // joint multi-arm scatter does. Unset -> 1.0.
-                const double d_b = blk_dfac[b] * block_row_weight(blk, i, 0);
-                if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
-                    blk.fill_obs_indices(i, /*k_arm=*/0, blk_multi_scratch);
-                    for (const auto& nw : blk_multi_scratch) {
-                        int l = nw.first;
-                        if (l >= 1 && l <= L.block_size[b]) {
-                            blk_contrib.emplace_back(
-                                L.block_latent_offset[b] + l - 1,
-                                d_b * nw.second);
-                        }
-                    }
-                } else if (blk.contrib_kind == BlockContribKind::DENSE_BASIS) {
-                    // Obs i touches every block coefficient l with weight
-                    // basis_eval(i)[l]; the block x beta / RE / block scatter
-                    // below walks the resulting contribution list, so the dense
-                    // rank-N data fill shares the indexed path (the O(size^2)
-                    // block x block inner loop is the intended dense update).
-                    const int sz = L.block_size[b];
-                    blk_basis_scratch.assign(sz, 0.0);
-                    blk.basis_eval(i, /*k_arm=*/0, k_grid,
-                                   blk_basis_scratch.data());
-                    const int off = L.block_latent_offset[b];
-                    for (int l = 0; l < sz; l++) {
-                        const double w = blk_basis_scratch[l];
-                        if (w != 0.0) blk_contrib.emplace_back(off + l, d_b * w);
-                    }
-                } else {
-                    int l = blk.idx(i, /*k_arm=*/0);
-                    if (l >= 1 && l <= L.block_size[b]) {
-                        blk_contrib.emplace_back(
-                            L.block_latent_offset[b] + l - 1, d_b);
-                    }
-                }
-            }
+            spec_block_contributions(L, blk_dfac, k_grid, i, blk_contrib,
+                                     blk_multi_scratch, blk_basis_scratch);
             const int n_contrib = static_cast<int>(blk_contrib.size());
             for (int c = 0; c < n_contrib; c++) {
                 const int    idx_c = blk_contrib[c].first;
@@ -1017,7 +1090,7 @@ inline void scatter_spec(
         }
     }
 
-    for (int b = 0; b < L.n_blocks; ++b) {
+    for (int b = 0; !dense_design && b < L.n_blocks; ++b) {
         const auto& block = (*L.blocks)[b];
         if (block.contrib_kind != BlockContribKind::DENSE_BASIS) continue;
         auto& product = basis_products[b];
@@ -1225,23 +1298,6 @@ inline double total_log_lik_spec(
     });
 }
 
-// The weights a fused log-likelihood pass (LikelihoodSpec::ll_eta_weights_fn)
-// produced, and the eta they belong to. The Newton loop's next scatter is at
-// the eta of its last objective evaluation, so it reads them here instead of
-// calling eta_weights_fn; the key is eta's bits, so a hit hands the scatter
-// exactly the weights the call would have returned.
-struct SpecFusedWeights {
-    std::vector<double> eta;        // the key, N * np
-    std::vector<double> grad;       // N * np
-    std::vector<double> neg_hess;   // N * np * np
-
-    bool matches(const std::vector<double>& eta_flat) const {
-        return !eta.empty() && eta.size() == eta_flat.size() &&
-               std::memcmp(eta.data(), eta_flat.data(),
-                           eta.size() * sizeof(double)) == 0;
-    }
-};
-
 // total_log_lik_spec through the fused callback, recording each observation's
 // weights in `fw`. Each value is ll_double's for the same arguments and the
 // reduction is the same, so the sum is total_log_lik_spec's bit for bit.
@@ -1429,8 +1485,10 @@ LaplaceResult spec_inner_solve(
     std::vector<double> params_work = base_params;   // pinned hyperparams + warm start
     const std::vector<SpecRePrior> re_priors = spec_re_priors(base_params, L);
     std::vector<double> eta_flat((size_t)n_eta, 0.0);
-    SpecFusedWeights fused_weights;
-    std::shared_ptr<device::LikelihoodWorkspace> device_workspace;
+    SpecObservationState observations(scratch.observation_scatter);
+    auto& fused_weights = observations.fused;
+    auto& device_workspace = observations.workspace;
+    auto& device_log_lik = observations.log_lik;
     auto device_policy=device::current_policy();
     device::Status device_status;
     DeviceLikelihood device_kernel;
@@ -1470,10 +1528,14 @@ LaplaceResult spec_inner_solve(
         if (!created) device_status=device_workspace->refresh_projection(std::move(plan));
     }
     if (!device_status) {
+        device::cell_status(device_status);
         device_policy->fail(device_status); throw std::runtime_error(device_status.message);
     }
-    double device_log_lik=0;
     std::vector<DenseBasisProducts> basis_products(L.n_blocks);
+    const bool has_dense_design = np == 1 && N > 0 && L.n_blocks > 0 &&
+        std::any_of(L.blocks->begin(), L.blocks->end(), [](const LatentBlock& block) {
+            return block.contrib_kind == BlockContribKind::DENSE_BASIS;
+        });
 
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta_out) {
         scatter_compacted_latent(L, x.begin(), params_work);
@@ -1481,7 +1543,7 @@ LaplaceResult spec_inner_solve(
             spec.device_fn(data,layout,response_data,false,device_workspace->kernel());
             device::LikelihoodResult result;
             const auto status=device_workspace->evaluate(params_work,1,true,true,result);
-            if (!status) { device_policy->fail(status); throw std::runtime_error(status.message); }
+            if (!status) { device::cell_status(status); device_policy->fail(status); throw std::runtime_error(status.message); }
             device_policy->record("likelihood_weights",true);
             device_log_lik=result.value[0];
             const int channels=device_workspace->plan().np;
@@ -1515,7 +1577,8 @@ LaplaceResult spec_inner_solve(
                      data, layout, spec, response_data, N, k_grid,
                      &x, 1.0, grad, spec_sink(H), n_threads, beta_prior, re_priors, basis_products,
                      cached ? fused_weights.grad.data() : nullptr,
-                     cached ? fused_weights.neg_hess.data() : nullptr);
+                     cached ? fused_weights.neg_hess.data() : nullptr,
+                     has_dense_design ? &observations : nullptr);
     };
     auto center_effects_fn = [&](Rcpp::NumericVector& x) {
         for (int b = 0; b < L.n_blocks; b++) {

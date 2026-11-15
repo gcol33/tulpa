@@ -193,7 +193,7 @@ tulpa_check_control <- function(control, allowed, where) {
   progress <- c("progress", "progress.every", "progress.file",
                 "progress.throttle")
   keys <- list(
-    nested_laplace = c("max_iter", "tol", "n_threads", "x_init",
+    nested_laplace = c("max_iter", "tol", "n_threads", "n_threads_outer", "x_init",
                        "integration", "qmc_nodes", "qmc_tol", "outer_design",
                        "quad_max_level", "quad_read_nodes", "quad_read_max_nodes",
                        "quad_tol", "quad_evidence_tol",
@@ -236,7 +236,7 @@ tulpa_check_control <- function(control, allowed, where) {
                   "rho_spatial", "sigma_lower", "sigma_upper",
                   "max_iter", "tol", "n_threads",
                   "auto_recenter", "within_cell"),
-    spde = c("method", "n_grid", "max_iter", "tol", "n_threads",
+    spde = c("method", "n_grid", "max_iter", "tol", "n_threads", "n_threads_outer",
              "diagnose_k", "k_samples", "k_tail_points", "checkpoint",
              "mode_find",
              # Reachable since the SPDE grid entry went through the shared

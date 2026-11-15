@@ -262,7 +262,8 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,
     Rcpp::Nullable<Rcpp::List> beta_prior = R_NilValue,
     bool progress = false, int progress_every = 0,
-    double progress_throttle = 2.0, std::string progress_file = ""
+    double progress_throttle = 2.0, std::string progress_file = "",
+    int n_threads_outer = 1
 ) {
     int N = n_obs;
     int p = X.ncol();

@@ -55,6 +55,7 @@ struct NlEntryInputs {
     int                 max_iter     = 0;
     double              tol          = 0.0;
     int                 n_threads    = 1;
+    int                 n_threads_outer = 1;
     Rcpp::NumericVector x_init;
     bool                store_Q      = false;
     std::string         checkpoint_path;
@@ -149,7 +150,7 @@ inline Rcpp::List nl_run_multi_block_entry(
         blocks,
         in.family, in.phi, in.max_iter, in.tol, in.n_threads,
         /*store_modes=*/true, in.x_init,
-        in.store_Q, /*n_threads_outer=*/1, in.prune_tol,
+        in.store_Q, in.n_threads_outer, in.prune_tol,
         /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
         run.progress.get(), run.ckpt.get(),
         in.compute_skew, run.skew_idx_ptr,
@@ -198,6 +199,7 @@ Rcpp::List nl_run_joint_sparse_entry(
         nl_in_.max_iter        = max_iter;                                 \
         nl_in_.tol             = tol;                                      \
         nl_in_.n_threads       = n_threads;                                \
+        nl_in_.n_threads_outer = n_threads_outer;                          \
         nl_in_.x_init          = tulpa::nl_unwrap_x_init(x_init_nullable); \
         nl_in_.store_Q         = store_Q;                                  \
         nl_in_.checkpoint_path = checkpoint_path;                          \

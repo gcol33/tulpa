@@ -50,7 +50,7 @@ Rcpp::List cpp_nested_laplace_icar(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::NumericVector y,
@@ -90,7 +90,7 @@ Rcpp::List cpp_nested_laplace_bym2(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::NumericVector y,
@@ -128,7 +128,7 @@ Rcpp::List cpp_nested_laplace_car_proper(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::NumericVector y,
@@ -166,7 +166,7 @@ Rcpp::List cpp_nested_laplace_temporal(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::NumericVector y,
@@ -207,7 +207,7 @@ Rcpp::List cpp_nested_laplace_nngp(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::NumericVector y,
@@ -243,7 +243,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::NumericVector y,
@@ -287,7 +287,7 @@ Rcpp::List cpp_nested_laplace_st_icar(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::NumericVector y,
@@ -332,7 +332,7 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::NumericVector y,
@@ -379,7 +379,7 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::NumericVector y,
@@ -421,7 +421,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::NumericVector y,
@@ -468,7 +468,7 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 Rcpp::List cpp_nested_laplace_spde(
     Rcpp::NumericVector y,
@@ -513,6 +513,6 @@ Rcpp::List cpp_nested_laplace_spde(
     bool progress,
     int progress_every,
     double progress_throttle,
-    std::string progress_file);
+    std::string progress_file, int n_threads_outer);
 
 #endif // TULPA_NESTED_LAPLACE_ENTRIES_H

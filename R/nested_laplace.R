@@ -80,6 +80,8 @@
 #'   * `max_iter` (`50L`), `tol` (`1e-6`) -- inner Newton iteration budget and
 #'     tolerance.
 #'   * `n_threads` (`1L`) -- inner-loop OpenMP threads.
+#'   * `n_threads_outer` (`1L`) -- concurrent outer-grid cells, each retaining
+#'     its own Newton state. Equal-order CUDA factors can share batched launches.
 #'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
 #'   * `keep_grid_hessians` (`TRUE`) -- when `TRUE`, retain per-grid-point
 #'     fixed-effects marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}}
@@ -761,7 +763,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     x_init = x_init, store_Q = isTRUE(keep_grid_hessians),
     checkpoint_path = .ckpt$path, prune_tol = prune_tol_eff,
     screen_iters = screen_iters, fitted_var = fitted_var,
-    beta_prior = beta_prior, hyperprior = hyperprior)
+    beta_prior = beta_prior, hyperprior = hyperprior,
+    n_threads_outer = .nl_outer_threads(control$n_threads_outer %||% 1L, "tulpa_nested_laplace()")$realised)
 
   # cargs without the checkpoint, for the k-hat diagnostic re-evaluations, and
   # without the prune: a screened cell carries `log_marginal = -Inf`, which is
@@ -2137,7 +2140,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                             checkpoint_path = "", prune_tol = 0,
                             screen_iters = .nl_screen("iters"),
                             fitted_var = TRUE, beta_prior = NULL,
-                            hyperprior = .hp_choice("proper")) {
+                            hyperprior = .hp_choice("proper"), n_threads_outer = 1L) {
   list(
     y = as.numeric(y),
     n = as.integer(n_trials),
@@ -2151,6 +2154,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     max_iter = as.integer(max_iter),
     tol = as.numeric(tol),
     n_threads = as.integer(n_threads),
+    n_threads_outer = as.integer(n_threads_outer),
     x_init_nullable = x_init,
     store_Q = isTRUE(store_Q),
     checkpoint_path = checkpoint_path,
@@ -3269,7 +3273,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                           .nl_screen_log_offset(joint_grid, hp_parts,
                                                 screen = cargs$screen_refine),
     beta_prior        = cargs$beta_prior,
-    compute_fitted_var = isTRUE(cargs$compute_fitted_var %||% TRUE)
+    compute_fitted_var = isTRUE(cargs$compute_fitted_var %||% TRUE),
+    n_threads_outer = as.integer(cargs$n_threads_outer %||% 1L)
   )
 
   out$theta_grid   <- joint_grid

@@ -6,6 +6,7 @@
 
 #include "laplace_types.h"
 #include "device_dense.h"
+#include "device_batch.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <cstddef>
@@ -149,6 +150,8 @@ inline void cholesky_factorize_impl_raw(
 
 } // namespace detail
 
+
+
 // Solve (L L') out = rhs for an already-computed column-major lower-triangular
 // factor L_data (L(j,k) at L_data[j + k*n], k <= j). z_work is caller-supplied
 // scratch of length >= n. Pure forward/back substitution — does NOT factorize.
@@ -245,27 +248,6 @@ inline void dense_cholesky_factorize(
 }
 
 
-// Raw-buffer solve: writes delta_out in-place, uses scratch.L/z, no Rcpp alloc.
-// Returns true if the back-substituted delta is finite. cholesky_factorize_impl_raw
-// carries no pivot clamp: a non-positive pivot leaves a NaN in L and propagates
-// through the substitution, so the finiteness test below is what reports a
-// factorization of a matrix that is not PD.
-inline bool dense_cholesky_solve_raw(
-    const DenseMat& H, const DenseVec& rhs, int n,
-    DenseCholeskyScratch& scratch,
-    std::vector<double>& delta_out,
-    double& log_det_out
-) {
-    scratch.ensure(n);
-    if (static_cast<int>(delta_out.size()) < n) delta_out.assign(n, 0.0);
-
-    if (!scratch.factor) scratch.factor.reset(new device::DenseFactor);
-    const bool ok = scratch.factor->factorize(H.data(), n, true, "dense_spec");
-    log_det_out = scratch.factor->log_determinant();
-    return ok && scratch.factor->lower(scratch.L.data()) &&
-        scratch.factor->solve(rhs.data(), delta_out.data());
-}
-
 // Raw-buffer factorize-for-log-det: no solve, no Rcpp alloc. Returns true when
 // the log-determinant is finite, which is the factorization reporting that H was
 // PD: an indefinite H leaves a NaN pivot and an exactly singular one a zero
@@ -279,9 +261,25 @@ inline bool dense_cholesky_log_det_raw(
 ) {
     scratch.ensure(n);
     if (!scratch.factor) scratch.factor.reset(new device::DenseFactor);
-    const bool ok = scratch.factor->factorize(H.data(), n, true, "dense_spec");
+    const bool ok = scratch.factor->factorize(H.data(), n, true, device::current_batch() ? "laplace_dense" : "dense_spec",
+        0.0, device::current_batch() ? device::current_batch()->width() : 0);
     log_det_out = scratch.factor->log_determinant();
     return ok && scratch.factor->lower(scratch.L.data());
+}
+
+// Raw-buffer solve: writes delta_out in-place, uses scratch.L/z, no Rcpp alloc.
+// Returns true for a positive-definite factor and a finite solution.
+inline bool dense_cholesky_solve_raw(
+    const DenseMat& H, const DenseVec& rhs, int n,
+    DenseCholeskyScratch& scratch,
+    std::vector<double>& delta_out,
+    double& log_det_out
+) {
+    if (static_cast<int>(delta_out.size()) < n) delta_out.assign(n, 0.0);
+    const bool ok = dense_cholesky_log_det_raw(H, n, scratch, log_det_out) &&
+        scratch.factor->solve(rhs.data(), delta_out.data());
+    if (!ok) std::fill_n(delta_out.begin(), n, std::numeric_limits<double>::quiet_NaN());
+    return ok;
 }
 
 // Extract a symmetric DenseMat into raw CSC lower-triangle arrays

@@ -139,6 +139,7 @@ the relative-reduction stop in units of \code{.Machine$double.eps} (default
 \item \code{max_iter}: maximum Newton iterations. Default 100.
 \item \code{tol}: Newton convergence tolerance. Default 1e-6.
 \item \code{n_threads}: OpenMP threads. Default 1.
+\item \code{n_threads_outer}: concurrent outer-grid cells. Default 1.
 \item \code{checkpoint}: grid-cell checkpoint/resume spec
 \code{list(path =, resume =)}. Each solved \verb{(range, sigma)} cell is appended
 to \code{path}; a \code{resume = TRUE} run loads the finished cells and re-solves

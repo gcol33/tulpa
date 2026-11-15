@@ -165,6 +165,8 @@ arguments stay top-level), following the \code{control} convention of
 \item \code{max_iter} (\code{50L}), \code{tol} (\code{1e-6}) -- inner Newton iteration budget and
 tolerance.
 \item \code{n_threads} (\code{1L}) -- inner-loop OpenMP threads.
+\item \code{n_threads_outer} (\code{1L}) -- concurrent outer-grid cells, each retaining
+its own Newton state. Equal-order CUDA factors can share batched launches.
 \item \code{x_init} (\code{NULL}) -- warm-start for the first grid point's inner solve.
 \item \code{keep_grid_hessians} (\code{TRUE}) -- when \code{TRUE}, retain per-grid-point
 fixed-effects marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}}

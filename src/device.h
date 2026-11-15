@@ -35,6 +35,7 @@ struct Threshold {
     std::string operation;
     int variant;
     double size;
+    double batch_size = 0.0;
 };
 struct Stage {
     std::string operation;
@@ -54,6 +55,7 @@ public:
     Policy(Choice choice, const std::vector<Threshold>& thresholds);
     bool select(const std::string& operation, std::size_t size, int variant,
                 Status& status) const;
+    bool batch_selected(const std::string& operation, std::size_t size, int variant) const;
     void record(const std::string& operation, bool cuda);
     void fail(const Status& status);
     Status failure() const;
@@ -116,7 +118,9 @@ public:
                 unsigned long long y, int rows, int cols, bool transpose,
                 double beta = 0, void* stream = nullptr);
     Status factor(unsigned long long pointers, int n, int batch,
-                  unsigned long long info);
+                  unsigned long long info, void* solver = nullptr);
+    Status create_solver(void*& solver, void* stream);
+    Status destroy_solver(void* solver);
     Status launch(const std::string& source, const std::string& name,
                   const Launch& shape, void** arguments);
     Status compile(const std::string& source, const std::string& name,

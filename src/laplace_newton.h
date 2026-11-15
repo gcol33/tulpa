@@ -78,6 +78,7 @@ struct NewtonScratch {
     DenseMat  H;                 // n_x x n_x — Newton Hessian, zeroed per iter
     DenseVec  delta;             // size n_x — Newton step, zeroed per iter
     DenseCholeskyScratch chol;   // raw L/z buffers for dense fallback
+    std::shared_ptr<device::DenseScatter> observation_scatter;
     // Structural-pattern Hessian for a caller whose scatter can assemble
     // sparsely (laplace_newton_solve_ll's `sparse_H`). The caller installs the
     // pattern; it persists across solves on this scratch, so a pattern is built

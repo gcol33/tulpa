@@ -23,6 +23,7 @@ namespace tulpa {
 // solver can populate it inside an OpenMP parallel region — Rf_allocVector
 // is not thread-safe (run_nested_laplace_grid relies on this).
 struct LaplaceResult {
+  bool device_cpu_recovered = false;
   // Initialized in-class, not by each construction site: NoCheapEval
   // (nested_laplace_grid.h) default-constructs one and sets log_marginal
   // alone, leaving three fields read from indeterminate storage

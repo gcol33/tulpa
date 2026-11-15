@@ -61,6 +61,7 @@ unity_core.o: \
   family_terms_export.cpp \
   fastmath_data.cpp \
   device.cpp \
+  device_batch.cpp \
   device_sparse.cpp \
   device_likelihood.cpp \
   device_likelihood_exports.cpp \
@@ -89,6 +90,7 @@ unity_core.o: \
   density_probe.h \
   fastmath.h \
   device.h \
+  device_batch.h \
   linalg_fast.h \
   device_sparse.h \
   device_likelihood.h \
@@ -104,6 +106,7 @@ unity_core.o: \
   dense_basis_products.h \
   gpu_nngp_laplace.h \
   cholmod_view.h \
+  laplace_cholesky.h \
   pc_prior.h \
   multinomial_logit.h \
   sobol.h \
@@ -222,6 +225,7 @@ unity_exports.o: \
   hmc_sampler_funcs.h \
   hmc_sampler_config.h \
   device_sparse.h \
+  device_batch.h \
   mclmc.h \
   smc_sampler.h \
   shim_guard.h \
@@ -244,6 +248,7 @@ unity_exports.o: \
   simp/scheme.h \
   hmc_mass_lowrank.h \
   device.h \
+  device_dense.h \
   laplace_cholesky.h \
   laplace_newton.h \
   inner_cila.h \
@@ -252,7 +257,6 @@ unity_exports.o: \
   omp_threads.h \
   glmm_family_elt.h \
   coordinate_linalg.h \
-  device_dense.h \
   ../inst/device/dense_covariance.cu \
   st_null_space.h \
   laplace_cholesky_dispatch.h \
@@ -400,6 +404,7 @@ unity_glmm.o: \
   inv_block_extract.h \
   laplace_newton_loop.h \
   linear_constraint_rows.h \
+  device_batch.h \
   sobol_direction_numbers.h \
   device_sparse.h \
   laplace_cholesky_dispatch.h \
@@ -516,6 +521,7 @@ unity_hmc.o: \
   device.h \
   laplace_types.h \
   device_sparse.h \
+  device_batch.h \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
@@ -630,6 +636,7 @@ unity_laplace.o: \
   scatter_indexed_cache.h \
   nl_cell_cache.h \
   device_dense.h \
+  device_batch.h \
   linear_constraint_rows.h \
   fastmath.h \
   device_likelihood.h \
@@ -806,6 +813,7 @@ unity_nl.o: \
   builtin_family_zi.h \
   fastmath.h \
   device_dense.h \
+  device_batch.h \
   inner_laplace_probe.h \
   rwmh.h \
   curvature3_contract.h \
@@ -874,6 +882,7 @@ unity_nl_joint.o: \
   small_dense_sym.h \
   laplace_types.h \
   device_sparse.h \
+  device_batch.h \
   laplace_profile.h \
   coupled_scatter_plan.h \
   laplace_family_link.h \
@@ -1179,6 +1188,7 @@ unity_spatial.o: \
   subspace_debias.h \
   checkpoint_io.h \
   device_sparse.h \
+  device_batch.h \
   joint_pd_step.h \
   laplace_cholesky_dispatch.h \
   laplace_newton_loop.h \

@@ -90,6 +90,7 @@
 #'     \item `max_iter`: maximum Newton iterations. Default 100.
 #'     \item `tol`: Newton convergence tolerance. Default 1e-6.
 #'     \item `n_threads`: OpenMP threads. Default 1.
+#'     \item `n_threads_outer`: concurrent outer-grid cells. Default 1.
 #'     \item `checkpoint`: grid-cell checkpoint/resume spec
 #'       `list(path =, resume =)`. Each solved `(range, sigma)` cell is appended
 #'       to `path`; a `resume = TRUE` run loads the finished cells and re-solves
@@ -201,6 +202,8 @@ fit_spde <- function(y, X, spatial,
   max_iter   <- as.integer(control$max_iter %||% 100L)
   tol        <- control$tol %||% 1e-6
   n_threads  <- as.integer(control$n_threads %||% 1L)
+  n_threads_outer <- .nl_outer_threads(control$n_threads_outer %||% 1L,
+                                     "fit_spde()")$realised
   checkpoint <- control$checkpoint
   # The cheap screen, the per-row predictive-variance loop and the two
   # correction requests, resolved exactly as tulpa_nested_laplace() resolves
@@ -337,6 +340,7 @@ fit_spde <- function(y, X, spatial,
       offset = offset, solve = solve, range_vec = range_vec,
       sigma_vec = sigma_vec, n_threads = n_threads, store_Q = isTRUE(keep_Q),
       extra = list(
+        n_threads_outer = n_threads_outer,
         checkpoint_path = .ckpt$path,
         debias = debias_req, cila = cila_req,
         prune_tol = prune_tol_eff, screen_iters = screen_it,

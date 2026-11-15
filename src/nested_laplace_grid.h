@@ -491,10 +491,22 @@ inline Rcpp::List run_nested_laplace_grid(
     // per solved cell whichever branch ran it. The scope encloses the inner
     // Newton phases the solve itself records, and runs on the worker thread
     // around the whole solve rather than inside any worksharing loop.
-    auto solve_at_theta = [&solve_at_theta_fn](
+    device::BatchScope device_batch(tulpa_omp_team_size_req(n_threads_outer, std::max(1, n_grid)));
+    std::vector<unsigned char> cell_cpu_recovery(std::max(0, n_grid), 0);
+    auto solve_at_theta = [&solve_at_theta_fn, &device_batch, &cell_cpu_recovery](
         int k, const std::vector<double>& warm, SparseCholeskySolver* solver) {
         TULPA_PROFILE_PHASE(PHASE_OUTER_CELL);
-        return solve_at_theta_fn(k, warm, solver);
+        auto result = device::run_cell(device_batch,
+            [&] { return solve_at_theta_fn(k, warm, solver); }, "outer_cell_cpu_recovery");
+        result.device_cpu_recovered = result.device_cpu_recovered || cell_cpu_recovery[k];
+        cell_cpu_recovery[k] = result.device_cpu_recovered;
+        return result;
+    };
+    auto cheap_at = [&](int k, const std::vector<double>& warm, int steps, int worker) {
+        auto result = device::run_cell(device_batch,
+            [&] { return cheap_eval(k, warm, steps, worker); }, "outer_screen_cpu_recovery");
+        cell_cpu_recovery[k] = cell_cpu_recovery[k] || result.device_cpu_recovered;
+        return result;
     };
     // At least one step: a zero-step screen would rank every cell at the
     // warm-start it inherited rather than at its own quasi-mode.
@@ -748,7 +760,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 for (int k = 0; k < n_grid; k++) {
                     if (ckpt_done[k]) { use_loaded_for_chain(k, warm); continue; }
                     LaplaceResult cr =
-                        cheap_eval(k, warm, screen_steps, /*worker=*/0);
+                        cheap_at(k, warm, screen_steps, /*worker=*/0);
                     record_screen(k, cr);
                     // Chain the warm-start only across feasible cells; an
                     // infeasible cell (prep failed, log_marginal = -inf) leaves
@@ -799,7 +811,7 @@ inline Rcpp::List run_nested_laplace_grid(
                             continue;
                         }
                         LaplaceResult cr =
-                            cheap_eval(kp, warm, screen_steps, /*worker=*/0);
+                            cheap_at(kp, warm, screen_steps, /*worker=*/0);
                         record_screen(kp, cr);
                         if (std::isfinite(cr.log_marginal) &&
                             static_cast<int>(cr.mode.size()) == n_x) {
@@ -834,7 +846,7 @@ inline Rcpp::List run_nested_laplace_grid(
                                 continue;
                             }
                             LaplaceResult cr =
-                                cheap_eval(k, warm, screen_steps, worker);
+                                cheap_at(k, warm, screen_steps, worker);
                             record_screen(k, cr);
                             if (std::isfinite(cr.log_marginal) &&
                                 static_cast<int>(cr.mode.size()) == n_x) {
@@ -1342,6 +1354,8 @@ inline Rcpp::List run_nested_laplace_grid(
 
     if (progress) progress->finish();
 
+    for (int k = 0; k < n_grid; ++k)
+        cell_results[k].device_cpu_recovered = cell_results[k].device_cpu_recovered || cell_cpu_recovery[k];
     Rcpp::List out = nl_pack_grid_results(cell_results, n_grid, n_x,
                                           store_modes,
                                           n_threads_outer_realised);

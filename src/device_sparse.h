@@ -9,7 +9,9 @@ namespace tulpa { namespace device {
 // analysis; callers retain ownership of an explicitly supplied stream.
 class SparseFactor {
     struct Impl;
-    std::unique_ptr<Impl> impl_;
+    std::shared_ptr<Impl> impl_;
+    int slot_ = -1;
+    void release_slot();
 public:
     SparseFactor();
     ~SparseFactor();
@@ -25,6 +27,7 @@ public:
                            const std::vector<int>& perm, std::vector<double>& z);
     Status inverse_diagonal(const std::vector<int>& indices, std::vector<double>& z);
     double log_determinant() const;
+    bool has_log_determinant() const;
     std::size_t factor_bytes() const;
     std::size_t analyses() const;
     const std::vector<int>& permutation() const;

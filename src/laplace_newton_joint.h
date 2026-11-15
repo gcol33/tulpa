@@ -468,7 +468,7 @@ struct NewtonScratchJoint {
     void allocate(int n_x, const std::vector<JointArm>& arms,
                   bool want_extract = false) {
         if (want_extract && !extract_solver) {
-            extract_solver.reset(new SparseCholeskySolver());
+            extract_solver.reset(new SparseCholeskySolver(SparseCholeskySolver::Purpose::SelectedInverse));
         }
         x       = Rcpp::NumericVector(n_x, 0.0);
         x_try   = Rcpp::NumericVector(n_x, 0.0);

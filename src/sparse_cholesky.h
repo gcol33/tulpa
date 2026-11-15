@@ -13,6 +13,7 @@
 #include <cmath>
 #include "laplace_types.h"  // for tulpa::DenseMat
 #include "device_sparse.h"
+#include "device_batch.h"
 
 // CHOLMOD types from Matrix package.
 // Matrix/cholmod.h defines cholmod_sparse, cholmod_factor, etc.
@@ -39,7 +40,8 @@ namespace tulpa {
 
 class SparseCholeskySolver {
 public:
-    SparseCholeskySolver();
+    enum class Purpose { Solve, SelectedInverse };
+    explicit SparseCholeskySolver(Purpose purpose = Purpose::Solve);
     ~SparseCholeskySolver();
 
     // Non-copyable (owns CHOLMOD resources)
@@ -172,7 +174,7 @@ public:
     // Log-determinant of the factored matrix: log|A| = log|LL'| = 2*sum(log(diag(L))).
     // Uses Matrix package's M_cholmod_factor_ldetA which handles both
     // simplicial and supernodal factors correctly.
-    double log_determinant() const;
+    double log_determinant();
 
     // Selected inversion (Takahashi equations): compute diagonal of A^{-1}
     // from the Cholesky factor. Costs what the recursion below costs; see the
@@ -226,7 +228,7 @@ public:
 
     // Whether factorize() succeeded
     bool factored() const { return factored_; }
-    bool uses_cuda() const { return device_factor_ != nullptr; }
+    bool uses_cuda() const { return device_factor_ != nullptr || dense_factor_ != nullptr; }
     // Bind before analysis. A supplied stream remains owned by the caller.
     void set_stream(void* stream);
     void* stream() const;
@@ -279,10 +281,20 @@ public:
 
 private:
     bool device_result(const device::Status& status);
-    bool host_factor();
+    bool host_factor(const char* operation = "sparse_square_root");
+    bool inverse_on_device();
+    const char* inverse_operation() const {
+        return dense_factor_ ? "laplace_dense_inverse" : "sparse_selected_inverse";
+    }
+    bool device_inverse(const std::vector<int>& p, const std::vector<int>& i,
+                        const std::vector<int>& perm, std::vector<double>& out);
     void inverse_pattern();
+    Purpose purpose_;
     std::shared_ptr<device::Policy> policy_;
     std::unique_ptr<device::SparseFactor> device_factor_;
+    std::unique_ptr<device::DenseFactor> dense_factor_;
+    std::vector<double> dense_values_, dense_lower_;
+    double dense_logdet_ = 0.0;
     void* stream_ = nullptr;
     bool host_factored_ = false;
     std::size_t analysis_count_ = 0;
