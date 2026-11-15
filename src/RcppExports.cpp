@@ -1375,8 +1375,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_joint_inner_vcov_blocks
-Rcpp::List cpp_joint_inner_vcov_blocks(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector idx, int n_dense, Rcpp::List A_cols_list, bool field_marginal, int n_threads, Rcpp::Nullable<Rcpp::List> soft_cols_list, Rcpp::Nullable<Rcpp::List> soft_D_per_grid);
-RcppExport SEXP _tulpa_cpp_joint_inner_vcov_blocks(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP idxSEXP, SEXP n_denseSEXP, SEXP A_cols_listSEXP, SEXP field_marginalSEXP, SEXP n_threadsSEXP, SEXP soft_cols_listSEXP, SEXP soft_D_per_gridSEXP) {
+Rcpp::List cpp_joint_inner_vcov_blocks(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector idx, int n_dense, Rcpp::List A_cols_list, bool field_marginal, int n_threads, Rcpp::Nullable<Rcpp::List> soft_cols_list, Rcpp::Nullable<Rcpp::List> soft_D_per_grid, bool compact);
+RcppExport SEXP _tulpa_cpp_joint_inner_vcov_blocks(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP idxSEXP, SEXP n_denseSEXP, SEXP A_cols_listSEXP, SEXP field_marginalSEXP, SEXP n_threadsSEXP, SEXP soft_cols_listSEXP, SEXP soft_D_per_gridSEXP, SEXP compactSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1391,7 +1391,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type soft_cols_list(soft_cols_listSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type soft_D_per_grid(soft_D_per_gridSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_joint_inner_vcov_blocks(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads, soft_cols_list, soft_D_per_grid));
+    Rcpp::traits::input_parameter< bool >::type compact(compactSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_joint_inner_vcov_blocks(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads, soft_cols_list, soft_D_per_grid, compact));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4467,7 +4468,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_hsgp_sum_projection", (DL_FUNC) &_tulpa_cpp_hsgp_sum_projection, 3},
     {"_tulpa_cpp_hyperprior_log_density", (DL_FUNC) &_tulpa_cpp_hyperprior_log_density, 7},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
-    {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 11},
+    {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 12},
     {"_tulpa_cpp_loading_marginal_var", (DL_FUNC) &_tulpa_cpp_loading_marginal_var, 11},
     {"_tulpa_cpp_joint_inner_vcov_mixture", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_mixture, 13},
     {"_tulpa_cpp_constrained_cell_draw", (DL_FUNC) &_tulpa_cpp_constrained_cell_draw, 8},

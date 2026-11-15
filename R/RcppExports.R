@@ -381,8 +381,8 @@ cpp_spde_laplace_gradient <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_me
     .Call(`_tulpa_cpp_spde_laplace_gradient`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu, family, phi, max_iter, tol, n_threads, x_init_nullable)
 }
 
-cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal = TRUE, n_threads = 1L, soft_cols_list = NULL, soft_D_per_grid = NULL) {
-    .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads, soft_cols_list, soft_D_per_grid)
+cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal = TRUE, n_threads = 1L, soft_cols_list = NULL, soft_D_per_grid = NULL, compact = FALSE) {
+    .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads, soft_cols_list, soft_D_per_grid, compact)
 }
 
 cpp_loading_marginal_var <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, load_idx, load_ptr, load_w, A_cols_list, n_threads = 1L, soft_cols_list = NULL, soft_D_per_grid = NULL) {

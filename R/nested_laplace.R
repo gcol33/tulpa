@@ -2332,17 +2332,18 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   n_sel <- length(sel_idx)
   solved <- vapply(Q_p, function(qp) length(qp) == n_x + 1L, logical(1))
   blocks_k <- vector("list", n_grid)
+  compact <- n_var > 0L && !keep_cov
   if (any(solved)) {
     blocks_k[solved] <- cpp_joint_inner_vcov_blocks(
       Q_p_per_grid = Q_p[solved], Q_i_per_grid = Q_i[solved],
       Q_x_per_grid = Q_x[solved], n_x = as.integer(n_x),
-      idx = as.integer(sel_idx), n_dense = n_sel,
+      idx = as.integer(sel_idx), n_dense = if(compact) p_fixed else n_sel,
       A_cols_list = ccpp$A_cols_list,
-      field_marginal = FALSE,
+      field_marginal = compact,
       n_threads = 1L,
       soft_cols_list = ccpp$soft_cols_list,
       soft_D_per_grid = if (!is.null(ccpp$soft_D_per_grid))
-        ccpp$soft_D_per_grid[solved])
+        ccpp$soft_D_per_grid[solved], compact = compact)
   }
 
   for (k in seq_len(n_grid)) {
@@ -2365,11 +2366,11 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     # moments drop it the way they drop a pruned cell.
     S <- blocks_k[[k]]
     if (is.null(S)) next
-    Sigma_bb <- S[seq_len(p_fixed), seq_len(p_fixed), drop = FALSE]
+    Sigma_bb <- if(compact) S$fixed else S[seq_len(p_fixed), seq_len(p_fixed), drop = FALSE]
     grid_hessians[[k]] <- .spd_inverse(Sigma_bb)
     if (n_var) {
       fi <- p_fixed + seq_len(n_var)
-      field_var[k, ] <- diag(S)[fi]
+      field_var[k, ] <- if(compact) S$field_diag else diag(S)[fi]
       if (keep_cov) {
         Sf <- S[fi, fi, drop = FALSE]
         field_cov[[k]] <- (Sf + t(Sf)) / 2

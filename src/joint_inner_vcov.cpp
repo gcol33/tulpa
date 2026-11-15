@@ -590,7 +590,8 @@ inline int omp_tid() {
 // soft_cols_list, soft_D_per_grid : the soft rows and each cell's precision
 //                for them (read_vcov_grid_inputs); NULL for none.
 // field_marginal : cheap recipe (TRUE, the default) vs full p x p block (FALSE).
-// Returns a list of length n_grid: each element NULL or a p x p NumericMatrix.
+// Each cell returns a covariance block, or its fixed block and field diagonal
+// under compact extraction. An unavailable cell returns NULL.
 //
 // [[Rcpp::export]]
 Rcpp::List cpp_joint_inner_vcov_blocks(
@@ -598,8 +599,10 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     int n_x, Rcpp::IntegerVector idx, int n_dense,
     Rcpp::List A_cols_list, bool field_marginal = true, int n_threads = 1,
     Rcpp::Nullable<Rcpp::List> soft_cols_list = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> soft_D_per_grid = R_NilValue
+    Rcpp::Nullable<Rcpp::List> soft_D_per_grid = R_NilValue,
+    bool compact = false
 ) {
+    if (compact && !field_marginal) Rcpp::stop("compact extraction requires field_marginal = TRUE");
     const VcovGridInputs in = read_vcov_grid_inputs(
         Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list,
         soft_cols_list, soft_D_per_grid);
@@ -610,7 +613,8 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     const int nthr = tulpa_omp_team_size_req(n_threads, n_grid);
     auto pool = solver_pool(nthr);
 
-    std::vector<std::vector<double>> results(n_grid);
+    std::vector<std::vector<double>> results(compact ? 0 : n_grid);
+    std::vector<tulpa::InnerVcovStrip> strips(compact ? n_grid : 0);
     std::vector<char> ok(n_grid, 0);
 
 #ifdef _OPENMP
@@ -618,7 +622,10 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
 #endif
     for (int k = 0; k < n_grid; k++) {
         if (!in.has_cell[k]) continue;
-        bool good = tulpa::extract_inner_vcov_block_cell(
+        bool good = compact ? tulpa::extract_inner_vcov_strip_cell(
+            in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(), n_x, in.nnz(k),
+            in.idx0, n_dense, in.cons[k], field_marginal,
+            *pool[omp_tid()], strips[k]) : tulpa::extract_inner_vcov_block_cell(
             in.Qp[k].data(), in.Qi[k].data(), in.Qx[k].data(), n_x, in.nnz(k),
             in.idx0, n_dense, in.cons[k], field_marginal,
             *pool[omp_tid()], results[k]);
@@ -629,6 +636,15 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     Rcpp::List out(n_grid);
     for (int k = 0; k < n_grid; k++) {
         if (!ok[k]) { out[k] = R_NilValue; continue; }
+        if (compact) {
+            const auto& strip = strips[k];
+            Rcpp::NumericMatrix fixed(strip.s,strip.s);
+            for (int b = 0; b < strip.s; ++b) for (int a = b; a < strip.s; ++a)
+                fixed(a,b) = fixed(b,a) = strip.strip[static_cast<std::size_t>(b)*strip.p+a];
+            out[k] = Rcpp::List::create(Rcpp::Named("fixed")=fixed,
+                Rcpp::Named("field_diag")=Rcpp::wrap(strip.diag));
+            continue;
+        }
         Rcpp::NumericMatrix Mk(p, p);
         std::copy(results[k].begin(), results[k].end(), Mk.begin());
         out[k] = Mk;

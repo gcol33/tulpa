@@ -129,6 +129,16 @@ device_sparse_fit <- function(input, door = 'joint') {
     list(prior = if(length(prior)==1L) prior[[1L]] else prior, control = control)))
 }
 
+device_sparse_factor_gate <- function() {
+  gates <- tulpa:::.device_thresholds(read.csv(system.file('device','benchmarks.csv',package='tulpa')))
+  gates$threshold[gates$operation=='sparse_cholesky' & gates$variant==0L]
+}
+
+device_sparse_fit_sizes <- function() {
+  gate <- device_sparse_factor_gate()
+  unique(as.integer(c(2000L,if(length(gate) && is.finite(gate)) max(15000,gate*1.5) else 15000L)))
+}
+
 device_sparse_latent_variance <- function(fit, choice) {
   session <- tulpa:::cpp_device_begin(choice, inherit = FALSE)
   on.exit(tulpa:::cpp_device_end(session))

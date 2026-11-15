@@ -3,6 +3,8 @@
 * Sparse GPU fit equivalence covers SPDE, ICAR, proper CAR, AR1 and joint
   CAR/AR1 grids at 2,000 and 15,000 latent nodes. CPU, automatic and forced
   CUDA execution agree on log marginals, modes and latent marginal variances.
+* Large temporal fields retain coefficient covariances and latent marginal
+  variances with storage linear in the number of field coordinates.
 
 * Inner Laplace Newton solves accept near-mode steps within the objective's
   relative numerical resolution and check the Newton decrement in curvature
