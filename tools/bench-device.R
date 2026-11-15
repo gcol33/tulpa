@@ -1,24 +1,62 @@
 args <- commandArgs(trailingOnly = TRUE)
 output <- if (length(args)) args[[1L]] else "inst/device/benchmarks.csv"
 library(tulpa)
+library_md5 <- unname(tools::md5sum(getLoadedDLLs()[['tulpa']][['path']]))
 info <- gpu_info()
 if (!info$available) stop(info$reason)
 source("tests/testthat/helper-device.R")
 ladder <- c(50L, 100L, 250L, 500L, 1000L, 2500L, 5000L, 10000L,
             25000L, 50000L, 100000L)
 rows <- list()
+batch_rows <- list()
+calibration <- 1L
 if (file.exists(output)) {
   existing <- utils::read.csv(output)
+  if (!'stream_seconds' %in% names(existing)) existing$stream_seconds <- Inf
+  if (!'library_md5' %in% names(existing)) existing$library_md5 <- NA_character_
+  if (!'calibration' %in% names(existing)) existing$calibration <- 0L
+  calibration <- max(existing$calibration) + 1L
   rows <- split(existing, seq_len(nrow(existing)))
 }
-append_row <- function(operation, variant, size, cpu, cuda) {
+append_row <- function(operation, variant, size, cpu, cuda, stream = Inf) {
   stopifnot(is.finite(cpu), cpu > 0, is.finite(cuda), cuda > 0)
   rows[[length(rows) + 1L]] <<- data.frame(operation = operation,
-    variant = variant, size = size, cpu_seconds = cpu, cuda_seconds = cuda)
+    variant = variant, size = size, cpu_seconds = cpu, cuda_seconds = cuda, stream_seconds = stream,
+    library_md5 = library_md5, calibration = calibration)
   utils::write.csv(do.call(rbind, rows), output, row.names = FALSE)
   cat(sprintf("%s variant=%d size=%d CPU=%.6fs CUDA=%.6fs\n",
               operation, variant, size, cpu, cuda))
   flush.console()
+}
+check_device_run <- function(result) {
+  stopifnot(all(result$errors==''),!any(result$recovered))
+  if(!is.null(result$positive))stopifnot(all(result$positive))
+}
+measure_batch <- function(operation, variant, size, run, quantities=c('solution','logdet')) {
+  cpu <- run('cpu'); cuda <- run('cuda')
+  stream_warm <- run('cuda',FALSE)
+  for(z in list(cpu,cuda,stream_warm))check_device_run(z)
+  for (q in quantities) {
+    for(z in list(cuda,stream_warm))stopifnot(length(cpu[[q]])>0L,
+      length(cpu[[q]])==length(z[[q]]),identical(dim(cpu[[q]]),dim(z[[q]])),
+      all(is.finite(cpu[[q]])),all(is.finite(z[[q]])))
+    if(q=='diagonal')for(z in list(cpu,cuda,stream_warm))stopifnot(all(z[[q]]>0))
+    scale <- max(1,abs(cpu[[q]]))
+    cat(sprintf('%s variant=%d size=%d %s scale=%.17g tolerance=1e-8\n',operation,variant,size,q,scale))
+    stopifnot(max(c(0,abs(cpu[[q]]-cuda[[q]]))) <= 1e-8*scale)
+    stopifnot(max(c(0,abs(cpu[[q]]-stream_warm[[q]]))) <= 1e-8*scale)
+  }
+  for (trial in seq_len(3L)) {
+    order <- if(trial %% 2L) c('cpu','cuda') else c('cuda','cpu')
+    measured <- lapply(order,run); names(measured) <- order
+    streams <- run('cuda',FALSE)
+    for(z in c(measured,list(streams)))check_device_run(z)
+    append_row(operation,variant,size,measured$cpu$seconds,measured$cuda$seconds,streams$seconds)
+    batch_rows[[length(batch_rows)+1L]] <<- data.frame(operation=operation,variant=variant,
+      size=size,trial=trial,cpu=measured$cpu$seconds,cuda_streams=streams$seconds,
+      cuda_batched=measured$cuda$seconds)
+    utils::write.csv(do.call(rbind,batch_rows),paste0(output,'.batch-stages.csv'),row.names=FALSE)
+  }
 }
 runners <- list(
   nngp_cholesky = function() {
@@ -47,7 +85,7 @@ runners <- list(
       gc(FALSE)
     }
   },
-  sparse_cholesky = function() {
+  sparse = function() {
     source('tests/testthat/helper-device-sparse.R')
     stages <- list()
     for (size in c(1000L, 3000L, 10000L, 30000L, 100000L)) {
@@ -65,7 +103,8 @@ runners <- list(
       for (trial in seq_len(3L)) {
         order <- if (trial %% 2L) c('cpu','cuda') else c('cuda','cpu')
         measured <- lapply(order, run); names(measured) <- order
-        append_row('sparse_cholesky', 0L, size, measured$cpu$seconds, measured$cuda$seconds)
+        append_row('sparse_selected_inverse', 0L, size,
+          measured$cpu$factor_seconds + measured$cpu$inverse_seconds, measured$cuda$inverse_seconds)
         for (choice in order) {
           r <- measured[[choice]]
           stages[[length(stages) + 1L]] <- data.frame(size = size, trial = trial,
@@ -74,6 +113,124 @@ runners <- list(
         }
         utils::write.csv(do.call(rbind, stages), paste0(output, '.sparse-stages.csv'), row.names = FALSE)
       }
+    }
+    gates <- tulpa:::.device_thresholds(do.call(rbind, rows))
+    gates <- gates[gates$operation != 'sparse_cholesky', ]
+    candidate <- rbind(gates, data.frame(operation = 'sparse_cholesky', variant = 0L,
+                                        threshold = 1, batch_threshold = 0))
+    files <- list.files('inst/device', pattern = '\\.cu$', full.names = TRUE)
+    sources <- lapply(files, function(x) paste(readLines(x, warn = FALSE), collapse = '\n'))
+    names(sources) <- tools::file_path_sans_ext(basename(files))
+    tulpa:::cpp_device_configure(candidate, sources)
+    on.exit(tulpa:::cpp_device_configure(tulpa:::.device_thresholds(do.call(rbind, rows)), sources), add = TRUE)
+    capture <- new.env(parent = emptyenv())
+    capture$values <- list()
+    entries <- grep('^cpp_nested_laplace_joint', ls(asNamespace('tulpa')), value = TRUE)
+    tracer <- substitute({
+      z <- returnValue()
+      sink <- SINK
+      if (!is.null(z$n_iter)) sink$values[[length(sink$values) + 1L]] <- z$n_iter
+    }, list(SINK = capture))
+    for (entry in entries) trace(entry, where = asNamespace('tulpa'), print = FALSE, exit = tracer)
+    on.exit(for (entry in entries) untrace(entry, where = asNamespace('tulpa')), add = TRUE)
+    fits <- list()
+    for (size in c(1000L, 3000L, 10000L, 30000L, 100000L)) {
+      input <- device_sparse_door_inputs(size, 'spde', 'cpu', family = 'poisson',
+        extra_control = list(progress = FALSE))
+      run <- function(choice) {
+        capture$values <- list()
+        input$control$device <- choice
+        timing <- system.time(fit <- do.call(tulpa_nested_laplace_joint, input))
+        stopifnot(all(fit$converged))
+        stopifnot(!any(grepl('cpu_recovery$', fit$device$stages$stage)))
+        list(fit = fit, seconds = timing[['elapsed']], iterations = capture$values)
+      }
+      cpu <- run('cpu'); hybrid <- run('auto')
+      for (q in c('log_marginal', 'modes', 'fitted_eta', 'fitted_eta_var')) {
+        scale <- max(1, abs(cpu$fit[[q]]))
+        error <- max(abs(cpu$fit[[q]] - hybrid$fit[[q]]))
+        cat(sprintf('whole SPDE size=%d %s scale=%.17g error=%.17g relative tolerance=1e-7\n',
+                    size, q, scale, error))
+        stopifnot(error <= 1e-7 * scale)
+      }
+      for (trial in seq_len(3L)) {
+        order <- if (trial %% 2L) c('cpu', 'auto') else c('auto', 'cpu')
+        measured <- lapply(order, run); names(measured) <- order
+        append_row('sparse_cholesky', 0L, size, measured$cpu$seconds, measured$auto$seconds)
+        for (choice in order) {
+          r <- measured[[choice]]
+          fits[[length(fits) + 1L]] <- list(size = size, trial = trial, device = choice,
+            seconds = r$seconds, n_iter_per_native_call = r$iterations,
+            stages = r$fit$device$stages)
+        }
+        saveRDS(fits, paste0(output, '.whole-fits.rds'))
+      }
+    }
+  },
+  laplace_dense = function() {
+    source('tests/testthat/helper-device-laplace-batch.R')
+    for (width in c(1L,4L,8L)) for (size in c(8L,32L,74L,128L,202L,256L,512L,1024L)) {
+      fixture <- device_laplace_fixture(size,128L)
+      measure_batch('laplace_dense',width,size,function(choice,batched=TRUE)
+        device_laplace_run(fixture,choice,width,batched))
+      csc <- device_full_csc_fixture(fixture)
+      measure_batch('laplace_full_csc',width,size,function(choice,batched=TRUE)
+        do.call(tulpa:::cpp_device_sparse_batch,c(csc,list(choice=choice,workers=width,
+          batched=batched,selected_inverse=FALSE))))
+      rm(fixture,csc);gc(FALSE)
+    }
+  },
+  laplace_dense_inverse = function() {
+    source('tests/testthat/helper-device-laplace-batch.R')
+    for(width in c(1L,4L,8L))for(size in c(31L,74L,128L,202L,252L,256L,512L)) {
+      fixture <- device_full_csc_fixture(device_laplace_fixture(size,16L))
+      fixture$b <- matrix(numeric(),size,0L)
+      measure_batch('laplace_dense_inverse',width,size,function(choice,batched=TRUE)
+        do.call(tulpa:::cpp_device_sparse_batch,c(fixture,list(choice=choice,workers=width,
+          batched=batched,selected_inverse=TRUE))),c('logdet','diagonal'))
+    }
+  },
+  laplace_scatter = function() {
+    source('tests/testthat/helper-device-laplace-batch.R')
+    stages <- list()
+    for (width in c(1L,4L,8L)) for (n in c(120L,250L,1000L))
+      for (p in c(8L,32L,74L,128L,202L,256L,512L)) {
+        fixture <- device_scatter_fixture(n,p,128L)
+        run <- function(choice,batched=TRUE)device_scatter_run(fixture,choice,width,batched)
+        cpu <- run('cpu');cuda <- run('cuda')
+        stream_warm <- run('cuda',FALSE)
+        for(z in list(cpu,cuda,stream_warm))check_device_run(z)
+        for(q in c('gradient','hessian')) {
+          scale <- max(1,abs(cpu[[q]]));error <- max(abs(cpu[[q]]-cuda[[q]]))
+          cat(sprintf('scatter rows=%d columns=%d width=%d %s scale=%.17g error=%.17g tolerance=1e-9\n',
+                      n,p,width,q,scale,error))
+          stopifnot(error<=1e-9*scale)
+          stopifnot(max(abs(cpu[[q]]-stream_warm[[q]]))<=1e-9*scale)
+        }
+        for(trial in seq_len(3L)) {
+          order <- if(trial%%2L)c('cpu','cuda')else c('cuda','cpu')
+          measured <- lapply(order,run);names(measured)<-order
+          streams <- run('cuda',FALSE)
+          for(z in c(measured,list(streams)))check_device_run(z)
+          append_row('laplace_scatter',width,as.double(n)*p*p,
+                     measured$cpu$seconds,measured$cuda$seconds,streams$seconds)
+          stages[[length(stages)+1L]] <- data.frame(rows=n,columns=p,width=width,trial=trial,
+            cpu=measured$cpu$seconds,streams=streams$seconds,batch=measured$cuda$seconds,
+            launches=sum(measured$cuda$stages$cuda_calls[measured$cuda$stages$stage=='laplace_scatter_launch']))
+          utils::write.csv(do.call(rbind,stages),paste0(output,'.scatter-stages.csv'),row.names=FALSE)
+        }
+        rm(fixture,cpu,cuda);gc(FALSE)
+      }
+  },
+  sparse_uniform = function() {
+    source('tests/testthat/helper-device-sparse.R')
+    for (width in c(4L,8L)) for(size in c(1000L,3000L,10000L,30000L,100000L)) {
+      fixture <- device_sparse_fixture(size,'spde')
+      values <- outer(fixture$values[,1L],1+seq_len(16L)/100)
+      stopifnot(nrow(values)==length(fixture$i),ncol(values)==16L)
+      measure_batch('sparse_uniform',width,size,function(choice,batched=TRUE)
+        tulpa:::cpp_device_sparse_batch(fixture$p,fixture$i,values,fixture$b,
+          choice,width,batched,FALSE))
     }
   },
   axpy = function() {
@@ -104,13 +261,19 @@ source("tools/bench-device-dense.R")
 basis_columns <- if (length(args) > 2L) as.integer(strsplit(args[[3L]], ",", fixed = TRUE)[[1L]]) else
   c(16L, 64L, 144L, 225L, 256L, 400L, 900L)
 runners <- c(runners, device_dense_runners(append_row, basis_columns))
-stopifnot(setequal(names(runners), registered))
-selected <- if (length(args) > 1L) strsplit(args[[2L]], ",", fixed = TRUE)[[1L]] else registered
-stopifnot(all(selected %in% registered))
+groups <- c(nngp_cholesky='nngp_cholesky',axpy='axpy',sparse_cholesky='sparse',
+  sparse_selected_inverse='sparse',laplace_dense='laplace_dense',laplace_full_csc='laplace_dense',
+  laplace_dense_inverse='laplace_dense_inverse',
+  laplace_scatter='laplace_scatter',sparse_uniform='sparse_uniform')
+extra <- setdiff(registered, names(groups))
+groups <- c(groups, stats::setNames(extra, extra))
+stopifnot(setequal(names(groups),registered),setequal(unname(groups),names(runners)))
 dir.create(dirname(output), showWarnings = FALSE, recursive = TRUE)
 cat(sprintf("Device: %s; driver=%d; threads=%s\n", info$name,
             info$driver_version, Sys.getenv("OMP_NUM_THREADS", "default")))
-for (operation in selected) runners[[operation]]()
+selected <- if (length(args) >= 2L) strsplit(args[[2L]], ',', fixed = TRUE)[[1L]] else registered
+stopifnot(all(selected %in% registered))
+for (group in unique(unname(groups[selected]))) runners[[group]]()
 print(tulpa:::.device_thresholds(do.call(rbind, rows)))
 writeLines(c(capture.output(print(info)), capture.output(sessionInfo())),
            paste0(output, ".session.txt"))

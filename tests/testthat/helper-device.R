@@ -30,15 +30,21 @@ expect_device_equal <- function(actual, expected, tolerance, quantity) {
   testthat::expect_identical(dim(actual), dim(expected), info = quantity)
   if (length(actual) != length(expected) || !identical(dim(actual), dim(expected)))
     return(invisible(NULL))
-  scale <- max(abs(expected), 1)
+  values <- as.numeric(actual); reference <- as.numeric(expected)
+  finite <- is.finite(reference)
+  testthat::expect_identical(is.finite(values), finite, info = quantity)
+  if (!identical(is.finite(values), finite)) return(invisible(NULL))
+  testthat::expect_identical(values[!finite], reference[!finite], info = quantity)
+  scale <- max(abs(reference[finite]), 1)
+  error <- max(c(0, abs(values[finite] - reference[finite])))
   output <- Sys.getenv("TULPA_DEVICE_EQUIVALENCE", "")
   if (nzchar(output)) {
     row <- data.frame(quantity = quantity, scale = scale,
-      absolute_error = max(abs(actual - expected)), relative_tolerance = tolerance)
+      absolute_error = error, relative_tolerance = tolerance)
     utils::write.table(row, output, sep = ",", append = file.exists(output),
       row.names = FALSE, col.names = !file.exists(output), quote = TRUE)
   }
-  testthat::expect_true(max(abs(actual - expected)) <= tolerance * scale,
+  testthat::expect_true(error <= tolerance * scale,
     info = sprintf("%s: reference scale %.17g, relative tolerance %.3g",
                    quantity, scale, tolerance))
 }

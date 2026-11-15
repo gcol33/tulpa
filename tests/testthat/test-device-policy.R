@@ -51,6 +51,31 @@ test_that("likelihood policy requires the compiler and BLAS libraries", {
   }
 })
 
+test_that("the measured plan selects CPU, streams and batches independently", {
+  timings <- data.frame(operation='laplace_scatter',variant=4L,size=c(50,100,200),
+    cpu_seconds=1,cuda_seconds=c(2,0.8,0.7),stream_seconds=c(0.9,0.7,0.6))
+  plan <- tulpa:::.device_thresholds(timings)
+  expect_identical(plan$threshold,50)
+  expect_identical(plan$batch_threshold,Inf)
+  timings$stream_seconds <- c(1.5,0.9,0.8)
+  plan <- tulpa:::.device_thresholds(timings)
+  expect_identical(plan$threshold,100)
+  expect_identical(plan$batch_threshold,100)
+  expect_error(tulpa:::.device_thresholds(transform(timings,stream_seconds=-1)),
+               'positive or infinite')
+})
+
+test_that("each operation uses its latest complete calibration without mixing binaries", {
+  timings <- data.frame(operation=c('laplace_dense','laplace_dense','axpy'),
+    variant=0L,size=100,cpu_seconds=c(2,0.5,2),cuda_seconds=1,
+    calibration=c(0L,1L,0L))
+  plan <- tulpa:::.device_thresholds(timings)
+  expect_identical(plan$threshold[plan$operation=='laplace_dense'],Inf)
+  expect_identical(plan$threshold[plan$operation=='axpy'],100)
+  expect_error(tulpa:::.device_thresholds(transform(timings,calibration=0.5)),
+    'non-negative integers')
+})
+
 test_that("nested policies restore the enclosing choice and isolate fit counters", {
   outer <- tulpa:::cpp_device_begin("cpu")
   on.exit(tulpa:::cpp_device_end(outer), add = TRUE)
@@ -77,7 +102,7 @@ test_that("every device control reaches a completed front-door fit", {
   d <- data.frame(y = c(-0.2, 0.1, 0.3, 0.5, 0.8), x = seq_len(5))
   info <- gpu_info()
   cuda <- isTRUE(info$available) &&
-    !any(nzchar(info$library_reasons[c("nvrtc", "cublas")]))
+    !any(nzchar(info$library_reasons[c("cusolver", "nvrtc", "cublas")]))
   choices <- c("cpu", "auto", if (cuda) "cuda")
   for (choice in choices) {
     fit <- tulpa(y ~ x, d, family = "gaussian", phi = 1, mode = "laplace",

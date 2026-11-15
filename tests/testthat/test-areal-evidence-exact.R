@@ -51,6 +51,22 @@
   C - tcrossprod(c1) / sum(c1)
 }
 
+test_that("proper-CAR evidence agrees with the Gaussian covariance formula", {
+  skip_on_cran()
+  fx <- .ae_fixture(4)
+  for (tau in c(0.7, 3)) for (rho in c(0.2, 0.8)) {
+    Q <- tau * (diag(rowSums(fx$A)) - rho * fx$A)
+    expected <- .ae_exact(fx, solve(Q))
+    fit <- tulpa_nested_laplace(fx$y, rep(1L, fx$n), fx$X,
+      prior = .ae_block(fx, type = "car_proper", tau_grid = tau, rho_grid = rho),
+      family = "gaussian", phi = 1, hyperprior = "flat",
+      control = c(.ae_ctl, list(device = "cpu")))
+    scale <- max(1, abs(expected))
+    expect_true(abs(fit$log_marginal - expected) <= 1e-7 * scale,
+      info = sprintf("proper-CAR Gaussian evidence scale %.17g, relative tolerance 1e-7", scale))
+  }
+})
+
 test_that("the ICAR normalizer carries the graph's generalized determinant", {
   # Path, cycle and a disconnected pair: |Q|_+ = J * (spanning trees) per
   # component, so a path of J nodes gives J, a cycle J^2, and components add.

@@ -57,7 +57,7 @@ test_that("threaded workers reuse independent dense storage", {
   expect_device_equal(cuda, cpu, 1e-10, "threaded dense operations")
 })
 
-test_that("fixed-hyperparameter HSGP fits use the shared basis products", {
+test_that("fixed-hyperparameter HSGP fits use the shared dense observation design", {
   skip_on_cran()
   n <- 37L; m <- 16L
   basis <- matrix(sin(seq_len(n * m) * .031), n, m)
@@ -71,7 +71,7 @@ test_that("fixed-hyperparameter HSGP fits use the shared basis products", {
   }
   cpu <- run("cpu")
   expect_true(cpu$fit$converged)
-  expect_true(all(c("hsgp_product", "hsgp_crossprod") %in% cpu$device$stage))
+  expect_true(all(c("hsgp_product", "laplace_scatter") %in% cpu$device$stage))
   skip_if_no_cuda("cusolver")
   skip_if_no_cuda("cublas")
   skip_if_no_cuda("nvrtc")
@@ -83,7 +83,7 @@ test_that("fixed-hyperparameter HSGP fits use the shared basis products", {
   # the forward basis product runs only when that route is not taken.
   on_cuda <- function(operation) any(cuda$device$stage == operation & cuda$device$cuda_calls > 0)
   predictor <- if (on_cuda("likelihood_weights")) "likelihood_weights" else "hsgp_product"
-  for (operation in c(predictor, "hsgp_crossprod", "dense_spec"))
+  for (operation in c(predictor, "laplace_scatter", "dense_spec"))
     expect_true(on_cuda(operation), info = operation)
 })
 
