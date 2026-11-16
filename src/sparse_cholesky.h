@@ -233,6 +233,10 @@ public:
     void set_stream(void* stream);
     void* stream() const;
     std::size_t analysis_count() const { return analysis_count_; }
+    // Floating-point operations of the numeric factorization under the chosen
+    // fill-reducing ordering, from the host symbolic analysis; zero when the
+    // pattern went to the device without one.
+    double factor_flops() const { return factor_flops_; }
 
     // Bytes the numeric Cholesky factor will occupy once factorize() runs, read
     // from the analyzed symbolic factor -- no numeric factorization required.
@@ -298,6 +302,7 @@ private:
     void* stream_ = nullptr;
     bool host_factored_ = false;
     std::size_t analysis_count_ = 0;
+    double factor_flops_ = 0.0;
     std::vector<int> pattern_p_, pattern_i_, inverse_p_, inverse_i_, permutation_;
     std::vector<double> host_values_;
     // Allocate A_owned_ over the union of `keep`'s pattern (null for the first

@@ -41,6 +41,7 @@ struct Threshold {
 struct Stage {
     std::string operation;
     std::size_t cpu = 0, cuda = 0;
+    double work = 0;
 };
 struct Timing {
     std::string stage;
@@ -66,6 +67,8 @@ public:
     bool batch_selected(const std::string& operation, std::size_t size, int variant) const;
     void record(const std::string& operation, bool cuda);
     void record(const std::string& operation, std::size_t cpu, std::size_t cuda);
+    // Largest work (the operation's gate unit) seen for the operation in this fit.
+    void work(const std::string& operation, double amount);
     void fail(const Status& status);
     Status failure() const;
     std::vector<Stage> stages() const;

@@ -74,7 +74,8 @@ struct SparseFactor::Impl {
         Status status;
     };
     Context& context = Context::instance();
-    std::shared_ptr<Policy> policy = current_policy();
+    // Weak: an analyzed state is kept in its fit's policy workspace for reuse.
+    std::weak_ptr<Policy> policy = current_policy();
     sparse_detail::Api api;
     Status status;
     void *handle = nullptr, *config = nullptr, *data = nullptr, *matrix = nullptr;
@@ -159,7 +160,8 @@ struct SparseFactor::Impl {
         if (handle) read(api.destroy(handle), "cudssDestroy");
         p.reset(); i.reset(); values.reset(); b.reset(); x.reset();
         if (own_stream) status.absorb(context.destroy_stream(stream));
-        if (!status && !recovery_managed) policy->fail(status);
+        auto owner = policy.lock();
+        if (!status && !recovery_managed && owner) owner->fail(status);
     }
 };
 
@@ -191,15 +193,26 @@ Status SparseFactor::analyze(int n, const int* p, const int* i, const double* x,
         auto state = std::static_pointer_cast<Impl>(ptr);
         std::lock_guard<std::mutex> lock(state->occupied_mutex);
         for (int j = 0; j < state->batch; ++j) if (!state->occupied[j]) {
-            state->occupied[j] = 1; slot_ = j; return true;
+            state->occupied[j] = 1; state->slot_factored[j] = 0; slot_ = j; return true;
         }
         return false;
     };
-    if (uniform) {
+    auto pattern = [&]() {
         std::string key(reinterpret_cast<const char*>(&n), sizeof(int));
         key.append(reinterpret_cast<const char*>(p), (n+1ULL)*sizeof(int));
         key.append(reinterpret_cast<const char*>(i), p[n]*sizeof(int));
-        impl_ = std::static_pointer_cast<Impl>(batch->claim(key, create, acquire));
+        return key;
+    };
+    if (uniform) {
+        impl_ = std::static_pointer_cast<Impl>(batch->claim(pattern(), create, acquire));
+    } else if (!stream) {
+        // One fit refactors the same few patterns across its cells and outer
+        // calls; the symbolic analysis and the cuDSS handle are built once per
+        // pattern and thread, as the reordering of a fixed graph does not change.
+        auto ptr = current_policy()->workspace(nullptr, nullptr, "sparse_factor" + pattern(), create);
+        auto cached = std::static_pointer_cast<Impl>(ptr);
+        if (!cached->status || !acquire(ptr)) { ptr = create(); acquire(ptr); }
+        impl_ = std::static_pointer_cast<Impl>(ptr);
     } else {
         auto ptr = create(); acquire(ptr); impl_ = std::static_pointer_cast<Impl>(ptr);
     }
@@ -261,7 +274,8 @@ Status SparseFactor::Impl::initialize(int n, const int* p, const int* i, const d
         s.permutation.resize(n);
         if (s.status) s.read(s.api.get(s.handle, s.data, 4, s.permutation.data(), n * sizeof(int), &written), "cudssDataGet(permutation)");
         ++s.count;
-        s.policy->record(s.batch > 1 ? "sparse_uniform_analysis" : "sparse_analysis", true);
+        if (auto owner = s.policy.lock())
+            owner->record(s.batch > 1 ? "sparse_uniform_analysis" : "sparse_analysis", true);
     }
     return s.status;
 }
@@ -305,8 +319,10 @@ void SparseFactor::Impl::refactor_requests(const std::vector<void*>& requests) {
         slot_factored[r.slot] = r.positive;
         logdets[r.slot] = std::numeric_limits<double>::quiet_NaN();
     }
-    policy->record("sparse_uniform_launch", true);
-    if (requests.size() > 1) policy->record("sparse_uniform_batched_launch", true);
+    if (auto owner = policy.lock()) {
+        owner->record("sparse_uniform_launch", true);
+        if (requests.size() > 1) owner->record("sparse_uniform_batched_launch", true);
+    }
 }
 Status SparseFactor::refactor(const double* x, bool& positive_definite) {
     auto& s = *impl_;

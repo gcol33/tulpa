@@ -36,6 +36,8 @@ print.tulpa_gpu_info <- function(x, ...) {
 
 # A crossover is the first measured size whose fastest CUDA median and every
 # larger measured median beat CPU. Batch preference has its own crossover.
+# Sparse factor sizes are factorization flop counts, so fits of different
+# models are ordered on one axis and the slowest model at a size decides it.
 .device_thresholds <- function(timings) {
   required <- c("operation", "variant", "size", "cpu_seconds", "cuda_seconds")
   if (!all(required %in% names(timings))) stop("invalid device timing columns")
@@ -68,8 +70,6 @@ print.tulpa_gpu_info <- function(x, ...) {
       medians <- function(x) c(cpu=stats::median(x$cpu_seconds), batch=stats::median(x$cuda_seconds),
         stream=stats::median(x$stream_seconds))
       if (!by_model) return(medians(rows))
-      if (!setequal(unique(rows$model), unique(g$model)))
-        stop('device fit calibration must cover every model at every size')
       models <- vapply(split(rows, rows$model), medians, c(cpu=0,batch=0,stream=0))
       c(cpu=1, batch=max(models['batch',] / models['cpu',]),
         stream=max(models['stream',] / models['cpu',]))

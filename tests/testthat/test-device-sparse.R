@@ -52,7 +52,8 @@ test_that('cuDSS refactors and selects the inverse on both sides of the measured
   skip_if_no_cuda('cudss')
   table <- tulpa:::.device_thresholds(utils::read.csv(system.file('device', 'benchmarks.csv', package = 'tulpa')))
   gate <- table$threshold[table$operation == 'sparse_cholesky' & table$variant == 0L]
-  sizes <- if (length(gate) && is.finite(gate)) unique(as.integer(c(max(2, gate - 1), gate + 1))) else c(63L, 257L)
+  sizes <- if (length(gate) && is.finite(gate)) c(257L, 30000L) else c(63L, 257L)
+  sides <- logical()
   for (kind in c('spde', 'areal', 'temporal', 'joint')) for (n in sizes) {
     f <- device_sparse_fixture(n, kind)
     cpu <- device_sparse_run(f, 'cpu', TRUE)
@@ -76,7 +77,11 @@ test_that('cuDSS refactors and selects the inverse on both sides of the measured
       expect_device_equal(cuda$inverse_x, expected, 1e-8, paste(kind, 'all selected entries'))
     }
     auto <- device_sparse_run(f, 'auto')
-    expect_identical(auto$used_cuda, identical(tulpa:::cpp_device_probe('sparse_cholesky', n, 0L, 'auto')$device, 'cuda'))
+    expect_gt(cpu$factor_flops, 0)
+    expect_identical(auto$used_cuda, identical(tulpa:::cpp_device_probe('sparse_cholesky', cpu$factor_flops, 0L, 'auto')$device, 'cuda'))
+    expect_identical(auto$used_cuda, length(gate) == 1L && cpu$factor_flops >= gate)
+    sides <- c(sides, auto$used_cuda)
     expect_device_equal(auto$diagonal, cpu$diagonal, 1e-8, paste(kind, 'automatic inverse diagonal'))
   }
+  if (length(gate) && is.finite(gate)) expect_setequal(sides, c(FALSE, TRUE))
 })

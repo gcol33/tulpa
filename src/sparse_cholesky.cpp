@@ -13,6 +13,8 @@
 #include "hessian_pattern_guard.h"
 #include "cholmod_view.h"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 
 // Include the Matrix stubs — this defines the actual function bodies
@@ -220,6 +222,7 @@ bool SparseCholeskySolver::ensure_analyzed(cholmod_sparse* A,
 
 void SparseCholeskySolver::analyze(cholmod_sparse* A,
                                    unsigned long long pattern_tag) {
+    device::StageTimer timer(*policy_, "analysis");
     dense_factor_.reset();
     device_factor_.reset();
     host_factored_ = false;
@@ -230,6 +233,7 @@ void SparseCholeskySolver::analyze(cholmod_sparse* A,
     }
     analyzed_ = false;
     factored_ = false;
+    factor_flops_ = 0.0;
     inverse_p_.clear(); inverse_i_.clear(); permutation_.clear();
     device::Status status;
     const bool inverse = purpose_ == Purpose::SelectedInverse;
@@ -239,15 +243,29 @@ void SparseCholeskySolver::analyze(cholmod_sparse* A,
         A->xtype == CHOLMOD_REAL && A->dtype == CHOLMOD_DOUBLE && A->nrow == A->ncol &&
         (A == A_owned_ || static_cast<const int*>(A->p)[A->nrow] == A->nrow*(A->nrow + 1)/2) &&
         device::dense_laplace_selected(A->nrow, dense_operation);
-    const bool cuda = !device::cell_cpu() && !dense && common_.supernodal != CHOLMOD_SIMPLICIAL &&
-        policy_->select(inverse ? "sparse_selected_inverse" : "sparse_cholesky", A->nrow, 0, status);
-    if (!device_result(status)) { analyzed_ = false; return; }
-    if (!cuda && !dense) {
+    // The device gate compares the factorization's flop count with the calibrated
+    // threshold: each device refactorization pays a fixed cost that only enough
+    // arithmetic amortizes.
+    const char* operation = inverse ? "sparse_selected_inverse" : "sparse_cholesky";
+    const bool candidate = !device::cell_cpu() && !dense && common_.supernodal != CHOLMOD_SIMPLICIAL;
+    if (!dense && (!candidate || policy_->choice() != device::Choice::Cuda)) {
         factor_ = M_cholmod_analyze(A, &common_);
-        analyzed_ = (factor_ != nullptr);
-        if (analyzed_) ++analysis_count_;
+        if (!factor_) { analyzed_ = false; return; }
+        factor_flops_ = common_.fl;
+        policy_->work(operation, factor_flops_);
+    }
+    const bool cuda = candidate && policy_->select(operation,
+        static_cast<std::size_t>(std::ceil(std::max(factor_flops_, 1.0))), 0, status);
+    if (!device_result(status)) {
+        if (factor_) { M_cholmod_free_factor(&factor_, &common_); factor_ = nullptr; }
+        analyzed_ = false; return;
+    }
+    if (!cuda && !dense) {
+        analyzed_ = true;
+        ++analysis_count_;
         return;
     }
+    if (factor_) { M_cholmod_free_factor(&factor_, &common_); factor_ = nullptr; }
     if (A->stype != -1 || A->itype != CHOLMOD_INT || !A->packed ||
         !A->sorted || A->xtype != CHOLMOD_REAL || A->dtype != CHOLMOD_DOUBLE ||
         A->nrow != A->ncol) {

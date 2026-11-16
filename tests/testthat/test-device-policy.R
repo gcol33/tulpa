@@ -35,15 +35,17 @@ test_that("the status reader turns library status into an R boundary error", {
                "CUDA::test_status failed \\(status 1\\): invalid value")
 })
 
-test_that('fit calibration requires a sustained win for every measured model', {
-  timings <- expand.grid(model=c('spde','temporal'),size=c(1000,10000))
+test_that('fit calibration requires a sustained win in factor work for every model', {
+  timings <- data.frame(model=c('temporal','temporal','spde','spde'),size=c(1e5,1e6,1e7,1e8))
   timings$operation <- 'sparse_cholesky'; timings$variant <- 0L
   timings$cpu_seconds <- 1
-  timings$cuda_seconds <- c(.5,1.5,.5,.8)
-  expect_identical(tulpa:::.device_thresholds(timings)$threshold,10000)
+  timings$cuda_seconds <- c(1.5,1.2,.6,.5)
+  expect_identical(tulpa:::.device_thresholds(timings)$threshold,1e7)
   timings$cuda_seconds[4L] <- 1.1
   expect_identical(tulpa:::.device_thresholds(timings)$threshold,Inf)
-  expect_error(tulpa:::.device_thresholds(timings[-4L,]),'every model at every size')
+  shared <- timings[c(3L,3L),]
+  shared$model <- c('spde','areal'); shared$cuda_seconds <- c(.6,1.2)
+  expect_identical(tulpa:::.device_thresholds(shared)$threshold,Inf)
 })
 
 test_that('automatic fit validation contributes no unmeasured crossover samples', {

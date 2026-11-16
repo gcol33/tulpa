@@ -5,6 +5,7 @@ test_that('complete sparse fits agree below and above the automatic factor gate'
   skip_if_no_cuda(c('cudss', 'nvrtc', 'cublas'))
   gate <- device_sparse_factor_gate()
   sizes <- device_sparse_fit_sizes()
+  sides <- logical()
   for (kind in c('spde', 'icar', 'areal', 'temporal', 'joint')) for (nodes in sizes) {
     run <- function(choice) do.call(tulpa_nested_laplace_joint,
       device_sparse_fit_inputs(nodes, kind, choice))
@@ -28,14 +29,17 @@ test_that('complete sparse fits agree below and above the automatic factor gate'
       expect_device_equal(actual, variance, 1e-7, label)
       stages <- fit$device$stages
       used <- any(stages$stage == 'sparse_cholesky' & stages$cuda_calls > 0)
-      expect_identical(used, choice == 'cuda' || (length(gate) == 1L && ncol(fit$modes) >= gate))
+      above <- device_sparse_above_gate(stages, gate)
+      expect_identical(used, choice == 'cuda' || above)
       if (choice == 'auto') {
+        sides <- c(sides, above)
         expect_true(any(stages$stage == 'sparse_selected_inverse' & stages$cpu_calls > 0))
         expect_false(any(stages$stage == 'sparse_selected_inverse' & stages$cuda_calls > 0))
       }
     }
     rm(cpu, fit, variance, actual); gc(FALSE)
   }
+  if (length(gate) == 1L && is.finite(gate)) expect_setequal(sides, c(FALSE, TRUE))
 })
 
 test_that('registry areal and temporal fits retain equivalent latent marginals across the gate', {
@@ -54,7 +58,7 @@ test_that('registry areal and temporal fits retain equivalent latent marginals a
       expect_false(any(fit$device_cpu_recovered))
       stages <- fit$device$stages
       used <- any(stages$stage=='sparse_cholesky' & stages$cuda_calls>0)
-      expect_identical(used,choice=='cuda' || (length(gate)==1L && ncol(fit$modes)>=gate))
+      expect_identical(used,choice=='cuda' || device_sparse_above_gate(stages,gate))
       for(q in c('log_marginal','modes',variance)) {
         label <- paste('registry',kind,nodes,choice,q)
         cat(sprintf('%s scale=%.17g relative_tolerance=1e-7\n',label,max(1,abs(cpu[[q]]))))

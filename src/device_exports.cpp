@@ -30,15 +30,15 @@ struct DeviceSession {
 
 Rcpp::DataFrame device_stages(const tulpa::device::Policy& policy) {
     Rcpp::CharacterVector name, device;
-    Rcpp::NumericVector cpu, cuda;
+    Rcpp::NumericVector cpu, cuda, work;
     for (const auto& stage : policy.stages()) {
         name.push_back(stage.operation);
         device.push_back(stage.cuda ? (stage.cpu ? "cpu,cuda" : "cuda") : "cpu");
-        cpu.push_back(stage.cpu); cuda.push_back(stage.cuda);
+        cpu.push_back(stage.cpu); cuda.push_back(stage.cuda); work.push_back(stage.work);
     }
     return Rcpp::DataFrame::create(Rcpp::Named("stage") = name,
         Rcpp::Named("device") = device, Rcpp::Named("cpu_calls") = cpu,
-        Rcpp::Named("cuda_calls") = cuda);
+        Rcpp::Named("cuda_calls") = cuda, Rcpp::Named("work") = work);
 }
 
 void device_sparse_inputs(const Rcpp::IntegerVector& p, const Rcpp::IntegerVector& i,
@@ -337,6 +337,7 @@ Rcpp::List cpp_device_sparse(Rcpp::IntegerVector p, Rcpp::IntegerVector i,
         Rcpp::Named("inverse_x") = inverse.Zx, Rcpp::Named("permutation_inverse") = inverse.perm_inv,
         Rcpp::Named("analyses") = static_cast<double>(solver.analysis_count()),
         Rcpp::Named("factor_bytes") = static_cast<double>(solver.analyzed_factor_bytes()),
+        Rcpp::Named("factor_flops") = solver.factor_flops(),
         Rcpp::Named("analysis_seconds") = analyze_seconds,
         Rcpp::Named("factor_seconds") = factor_seconds/calls,
         Rcpp::Named("solve_seconds") = solve_seconds/calls,

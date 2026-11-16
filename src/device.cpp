@@ -556,6 +556,12 @@ void Policy::record(const std::string& name, std::size_t cpu, std::size_t cuda) 
     stage->cpu += cpu;
     stage->cuda += cuda;
 }
+void Policy::work(const std::string& name, double amount) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto stage = std::find_if(stages_.begin(), stages_.end(), [&](const Stage& x) { return x.operation == name; });
+    if (stage == stages_.end()) { stages_.push_back({name, 0, 0}); stage = stages_.end() - 1; }
+    stage->work = std::max(stage->work, amount);
+}
 void Policy::fail(const Status& status) { cell_status(status); std::lock_guard<std::mutex> lock(mutex_); failure_.absorb(status); }
 Status Policy::failure() const { std::lock_guard<std::mutex> lock(mutex_); return failure_; }
 std::vector<Stage> Policy::stages() const { std::lock_guard<std::mutex> lock(mutex_); return stages_; }

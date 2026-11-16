@@ -7,10 +7,11 @@ test_that('sparse stage profiling counts nested work once and is opt in', {
   result <- device_sparse_run(device_sparse_fixture(31L, 'temporal'), 'cpu')
   expect_true(result$ok)
   timing <- tulpa:::cpp_device_snapshot()$timings
-  expect_setequal(timing$stage, c('factor', 'solve', 'selected_inverse'))
+  expect_setequal(timing$stage, c('analysis', 'factor', 'solve', 'selected_inverse'))
   expect_true(all(timing$calls > 0 & timing$seconds >= 0))
+  expect_identical(timing$calls[timing$stage == 'analysis'],1)
   expect_identical(timing$calls[timing$stage == 'selected_inverse'],2)
-  expect_lt(sum(timing$seconds), result$seconds + 0.01)
+  expect_lt(sum(timing$seconds), result$seconds + result$analysis_seconds + 0.01)
   tulpa:::cpp_device_end(session)
   Sys.unsetenv('TULPA_DEVICE_PROFILE')
   session <- tulpa:::cpp_device_begin('cpu', inherit = FALSE)

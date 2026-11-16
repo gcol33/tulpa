@@ -83,8 +83,8 @@ device_fit_benchmark <- function(append_row, table_file, sizes = c(1000L, 3000L,
   references <- list()
   done <- read.csv(table_file, stringsAsFactors = FALSE)
   measured_pair <- function(model, size) {
-    if (!all(c('model', 'scope') %in% names(done))) return(FALSE)
-    sum(done$calibration == calibration & done$operation == 'sparse_cholesky' & done$size == size &
+    if (!all(c('model', 'scope', 'nodes') %in% names(done))) return(FALSE)
+    sum(done$calibration == calibration & done$operation == 'sparse_cholesky' & done$nodes %in% size &
       done$model %in% model & done$scope %in% 'fit') >= trials
   }
   for (model in models) for (size in as.integer(sizes)) {
@@ -114,15 +114,20 @@ device_fit_benchmark <- function(append_row, table_file, sizes = c(1000L, 3000L,
       stopifnot(all(fit$converged), !any(fit$device_cpu_recovered),
         ncol(fit$modes) == size + 2L, length(fit$log_marginal) == expected_cells,
         capture$cells >= length(fit$log_marginal),capture$newton >= sum(fit$n_iter))
-      measured <- stats::setNames(rep(0, 4L), c('factor', 'solve', 'selected_inverse', 'inverse_factor'))
+      measured <- stats::setNames(rep(0, 5L), c('analysis', 'factor', 'solve', 'selected_inverse', 'inverse_factor'))
       timing <- fit$device$timings
       stopifnot(!is.null(timing), all(timing$stage %in% names(measured)))
       measured[timing$stage] <- timing$seconds
       stopifnot(sum(measured) <= seconds + .01)
       other <- max(0, seconds - sum(measured))
-      row <- data.frame(model = model, size = size, device = choice, seconds = seconds,
+      stages <- fit$device$stages
+      work <- stages$work[stages$stage == 'sparse_cholesky']
+      work <- if (length(work)) max(work) else NA_real_
+      stopifnot(choice == 'cuda' || (is.finite(work) && work > 0))
+      row <- data.frame(model = model, size = size, device = choice, seconds = seconds, work = work,
         cells = capture$cells, newton_steps = capture$newton, native_calls = capture$calls,
         returned_cells = length(fit$log_marginal), returned_newton_steps = sum(fit$n_iter),
+        analysis = measured[['analysis']], analysis_calls = sum(timing$calls[timing$stage == 'analysis']),
         factor = measured[['factor']] + measured[['inverse_factor']], solve = measured[['solve']],
         inverse_factor = measured[['inverse_factor']],
         selected_inverse = measured[['selected_inverse']], other = other,
@@ -136,7 +141,7 @@ device_fit_benchmark <- function(append_row, table_file, sizes = c(1000L, 3000L,
     }
     reference <- run('cpu')
     quantities <- c('log_marginal','modes','fitted_eta_var')
-    references[[paste(model,size)]] <- reference$fit[quantities]
+    references[[paste(model,size)]] <- c(reference$fit[quantities], list(work = reference$row$work))
     for (choice in c('auto', 'cuda', 'factor_cuda')) {
       warm <- run(choice)
       for (q in c('log_marginal', 'modes', 'fitted_eta_var')) {
@@ -152,14 +157,14 @@ device_fit_benchmark <- function(append_row, table_file, sizes = c(1000L, 3000L,
       order <- c('cpu', 'auto', 'cuda', 'factor_cuda')
       order <- order[((seq_along(order) + trial - 2L) %% length(order)) + 1L]
       results <- lapply(order, run); names(results) <- order
-      extra <- list(model = model, scope = 'fit', trial = trial,
+      extra <- list(nodes = size, model = model, scope = 'fit', trial = trial,
         auto_seconds = results$auto$row$seconds, forced_cuda_seconds = results$cuda$row$seconds,
         auto_threshold = settings$threshold[settings$operation=='sparse_cholesky' & settings$variant==0L])
       for (choice in order) for (stage in setdiff(names(results[[choice]]$row),
-        c('model', 'size', 'device', 'seconds'))) {
+        c('model', 'size', 'device', 'seconds', 'work'))) {
         extra[[paste(choice, stage, sep = '_')]] <- results[[choice]]$row[[stage]]
       }
-      append_row('sparse_cholesky', 0L, size,
+      append_row('sparse_cholesky', 0L, results$cpu$row$work,
         results$cpu$row$seconds, results$factor_cuda$row$seconds,
         extra = extra)
       cat(sprintf('fit %s nodes=%d trial=%d cpu=%.6f auto=%.6f cuda=%.6f factor_cuda=%.6f\n',
@@ -176,18 +181,21 @@ device_fit_benchmark <- function(append_row, table_file, sizes = c(1000L, 3000L,
     for(model in models) for(size in as.integer(sizes)) {
       input <- device_sparse_fit_inputs(size,model,'auto')
       reference <- references[[paste(model,size)]]
-      if (is.null(reference)) reference <- run('cpu')$fit[c('log_marginal','modes','fitted_eta_var')]
+      if (is.null(reference)) {
+        base <- run('cpu')
+        reference <- c(base$fit[c('log_marginal','modes','fitted_eta_var')], list(work = base$row$work))
+      }
       for(trial in seq_len(trials)) {
         result <- run('auto')
-        for(q in names(reference)) {
+        for(q in c('log_marginal','modes','fitted_eta_var')) {
           scale <- max(1,abs(reference[[q]]))
           stopifnot(max(abs(result$fit[[q]]-reference[[q]])) <= 1e-7*scale)
         }
-        extra <- list(model=model,scope='fit_auto',trial=trial,
+        extra <- list(nodes=size,model=model,scope='fit_auto',trial=trial,
           auto_seconds=result$row$seconds,auto_threshold=gate(settings))
-        for(stage in setdiff(names(result$row),c('model','size','device','seconds')))
+        for(stage in setdiff(names(result$row),c('model','size','device','seconds','work')))
           extra[[paste0('auto_',stage)]] <- result$row[[stage]]
-        append_row('sparse_cholesky',0L,size,NA_real_,NA_real_,extra=extra)
+        append_row('sparse_cholesky',0L,reference$work,NA_real_,NA_real_,extra=extra)
       }
     }
   }

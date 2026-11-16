@@ -41,7 +41,7 @@ append_row <- function(operation, variant, size, cpu, cuda, stream = Inf, extra 
   }
   rows <<- lapply(c(rows, list(row)), complete)
   utils::write.csv(do.call(rbind, rows), output, row.names = FALSE)
-  cat(sprintf("%s variant=%d size=%d CPU=%.6fs CUDA=%.6fs\n",
+  cat(sprintf("%s variant=%d size=%.10g CPU=%.6fs CUDA=%.6fs\n",
               operation, variant, size, cpu, cuda))
   flush.console()
 }
@@ -107,7 +107,7 @@ runners <- list(
     stages <- list()
     for (size in c(1000L, 3000L, 10000L, 30000L, 100000L)) {
       if (sum(vapply(rows, function(r) identical(r$operation, 'sparse_selected_inverse') &&
-        r$size == size && r$calibration == calibration, logical(1))) >= 3L) next
+        isTRUE(r$nodes == size) && r$calibration == calibration, logical(1))) >= 3L) next
       fixture <- device_sparse_fixture(size, 'spde')
       stopifnot(nrow(fixture$matrix) == size, nrow(fixture$b) == size)
       cat(sprintf('SPDE mesh: %d nodes, %d stored lower entries\n', size, length(fixture$i)))
@@ -125,8 +125,9 @@ runners <- list(
           device_wait_for_gpu(paste0(output, '.gpu.txt'))
           measured <- lapply(order, run); names(measured) <- order
           kept <- tryCatch({
-            append_row('sparse_selected_inverse', 0L, size,
-              measured$cpu$factor_seconds + measured$cpu$inverse_seconds, measured$cuda$inverse_seconds)
+            append_row('sparse_selected_inverse', 0L, cpu$factor_flops,
+              measured$cpu$factor_seconds + measured$cpu$inverse_seconds, measured$cuda$inverse_seconds,
+              extra = list(nodes = size))
             TRUE
           }, bench_contention = function(e) {
             cat(sprintf('discarded sparse_selected_inverse size=%d trial=%d: contention

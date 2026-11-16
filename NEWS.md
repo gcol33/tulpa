@@ -37,8 +37,10 @@
   analysis, numeric refactorization, log-determinants, multiple right-hand
   sides and selected inverse entries. cuDSS loads at run time; each factor
   owns its stream and reusable symbolic state. Exact blocked device solves
-  supply marginal variances. Automatic dispatch reads the shared benchmark
-  table.
+  supply marginal variances. Automatic dispatch compares each pattern's
+  factorization flop count, read from the host symbolic analysis, with the
+  crossover measured on complete SPDE, proper-CAR and AR1 fits; a fit builds
+  the device analysis of each pattern once and reuses it across its cells.
 * Gaussian, binomial, Poisson, negative-binomial, gamma, beta, beta-binomial,
   and truncated-count likelihoods have resident fused CUDA value, score, and
   curvature kernels for NUTS and spec-driven Laplace, including their supported
