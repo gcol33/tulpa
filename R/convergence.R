@@ -283,7 +283,7 @@
   if (!is.list(fit)) return(fit)
   if (!.tulpa_is_chain(fit)) return(.tulpa_check_mode_convergence(fit, caller))
   diag <- tryCatch(suppressWarnings(suppressMessages(
-    diagnostics(fit, measures = c("rhat", "ess_bulk")))),
+    .tulpa_diagnostics(fit, measures = c("rhat", "ess_bulk")))),
     error = function(e) NULL)
   if (is.null(diag) || !NROW(diag)) return(fit)
   diag <- diag[diag$parameter %in% select_main_params(diag$parameter), ,

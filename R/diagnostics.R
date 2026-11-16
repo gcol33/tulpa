@@ -421,6 +421,17 @@ diagnostics <- function(fit, ...) {
 diagnostics.default <- function(fit, pars = NULL,
                                 measures = c("rhat", "ess_bulk", "ess_tail"),
                                 probs = c(0.05, 0.95), sbc = NULL, ...) {
+  out <- .tulpa_diagnostics(fit, pars = pars, measures = measures,
+                            probs = probs, sbc = sbc)
+  .print_device(fit$device)
+  out
+}
+
+# The diagnostics table without the device announcement, for callers that
+# read the table rather than show it to the user.
+.tulpa_diagnostics <- function(fit, pars = NULL,
+                               measures = c("rhat", "ess_bulk", "ess_tail"),
+                               probs = c(0.05, 0.95), sbc = NULL) {
   measures <- match.arg(measures, names(.tulpa_diag_measures), several.ok = TRUE)
   if (!is.null(sbc) && !inherits(sbc, "tulpa_sbc")) {
     stop("sbc = takes a `tulpa_sbc` result from sbc().", call. = FALSE)
@@ -440,7 +451,6 @@ diagnostics.default <- function(fit, pars = NULL,
   }
 
   out <- entry$fn(fit, pars = pars, measures = measures, probs = probs)
-  .print_device(fit$device)
   if (!is.null(out) && !is.null(fit$device)) {
     attr(out, "device") <- fit$device
   }

@@ -167,7 +167,7 @@ plot_rhat <- function(fit, threshold = 1.01, pars = NULL) {
 
   # Get diagnostics
 
-  diag <- diagnostics(fit, pars = pars)
+  diag <- .tulpa_diagnostics(fit, pars = pars)
 
   # Filter to main parameters if not specified
   if (is.null(pars)) {
@@ -265,7 +265,7 @@ plot_ess <- function(fit, type = c("bulk", "tail"), threshold = 400, pars = NULL
   }
 
   # Get diagnostics
-  diag <- diagnostics(fit, pars = pars)
+  diag <- .tulpa_diagnostics(fit, pars = pars)
 
   # Filter to main parameters if not specified
   if (is.null(pars)) {
@@ -366,7 +366,7 @@ plot_acf <- function(fit, pars = NULL, lags = 25, n_pars = 6) {
   # Select parameters
   if (is.null(pars)) {
     # Select worst ESS parameters
-    diag <- diagnostics(fit)
+    diag <- .tulpa_diagnostics(fit)
     main_pars <- select_main_params(diag$parameter)
     diag <- diag[diag$parameter %in% main_pars, ]
     diag <- diag[order(diag$ess_bulk), ]
@@ -1063,7 +1063,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
   # decides, so every chain backend -- hmc, gibbs, mala, imh_laplace, ess, ...
   # -- is covered, and no approximation fit gets a vacuous Rhat/ESS table).
   if (.tulpa_is_chain(fit) || cell_chains) {
-    diag <- tryCatch(diagnostics(fit), error = function(e) NULL)
+    diag <- tryCatch(.tulpa_diagnostics(fit), error = function(e) NULL)
 
     if (!is.null(diag)) {
       # Filter to main parameters
@@ -1517,7 +1517,7 @@ plot_diagnostics <- function(fit, pars = NULL) {
   p_ess <- plot_ess(fit) + ggplot2::ggtitle("ESS (bulk)")
 
   # Trace plot for worst parameter
-  diag <- tryCatch(diagnostics(fit), error = function(e) NULL)
+  diag <- tryCatch(.tulpa_diagnostics(fit), error = function(e) NULL)
   if (!is.null(diag)) {
     main_pars <- select_main_params(diag$parameter)
     diag <- diag[diag$parameter %in% main_pars, ]
@@ -1830,7 +1830,7 @@ check_diagnostics <- function(fit, rhat_threshold = 1.01, ess_threshold = 400,
   }
 
   issues <- character(0)
-  diag <- tryCatch(diagnostics(fit), error = function(e) NULL)
+  diag <- tryCatch(.tulpa_diagnostics(fit), error = function(e) NULL)
   if (is.null(diag)) {
     # A chain fit too short to diagnose (< 4 draws/chain) yields no Rhat/ESS;
     # do not fall through to a spurious "checks passed" on divergences alone.

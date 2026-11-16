@@ -354,9 +354,12 @@ test_that("tulpa_nested_laplace() reports the inner k-hat and leaves the draws u
   # record derived from gamma_3 (gcol33/tulpa#302) -- a diagnostic-derived
   # field, so it belongs on the stripped side alongside `inner_*`
   # (gcol33/tulpa#313). The solve record's `key` names the fit in the
-  # session's cache of solved cells, so it differs between any two fits.
+  # session's cache of solved cells, so it differs between any two fits. The
+  # device record counts every factorization the fit ran, the diagnostic's
+  # probe solves included, so only its stage-to-device assignment is compared.
   strip <- function(f) {
     if (!is.null(f$field_solve)) f$field_solve$key <- NULL
+    if (!is.null(f$device$stages)) f$device$stages <- f$device$stages[c("stage", "device")]
     f[!grepl("^inner_|^timing$|^skew_correction$", names(f))]
   }
   expect_identical(strip(on_fit), strip(off_fit))

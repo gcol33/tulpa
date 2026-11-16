@@ -956,7 +956,7 @@ coef.summary.tulpa_fit <- function(object, ...) object$coefficients
 .fit_reliability <- function(object) {
   kind <- .tulpa_draws_kind(object)
   if (is.na(kind)) kind <- "chain"
-  d <- tryCatch(suppressMessages(diagnostics(object)),
+  d <- tryCatch(suppressMessages(.tulpa_diagnostics(object)),
                 error = function(e) NULL)
   num_or_null <- function(v) if (is.numeric(v) && length(v)) v
   extreme <- function(v, f) {

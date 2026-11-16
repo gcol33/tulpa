@@ -57,7 +57,9 @@
 
 * `control$device` selects `auto`, `cpu`, or `cuda` through one runtime-loaded
   CUDA layer. `gpu_info()` reports the device and library availability.
-  Fits record device use per stage for `print()` and `diagnostics()`.
+  Fits record device use per stage for `print()` and `diagnostics()`; the
+  convergence check after a chain fit and the diagnostic plots read the
+  table without printing that record.
   Automatic NNGP batch dispatch reads measured crossovers from the device
   benchmark table. Custom kernels compile at run time through NVRTC and the
   CUDA driver; installation requires no CUDA toolkit.
