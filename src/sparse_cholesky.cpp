@@ -252,7 +252,6 @@ void SparseCholeskySolver::analyze(cholmod_sparse* A,
         factor_ = M_cholmod_analyze(A, &common_);
         if (!factor_) { analyzed_ = false; return; }
         factor_flops_ = common_.fl;
-        policy_->work(operation, factor_flops_);
     }
     const bool cuda = candidate && policy_->select(operation,
         static_cast<std::size_t>(std::ceil(std::max(factor_flops_, 1.0))), 0, status);
@@ -324,15 +323,20 @@ bool SparseCholeskySolver::factorize(cholmod_sparse* A) {
             ok = positive && dense_factor_->lower(dense_lower_.data());
         } else ok = device_result(device_factor_->refactor(host_values_.data(), positive));
         factored_ = ok && positive;
-        policy_->record(dense_factor_ ? (purpose_ == Purpose::SelectedInverse ?
+        record_factor(dense_factor_ ? (purpose_ == Purpose::SelectedInverse ?
             "laplace_inverse_factor" : "laplace_full_csc") : "sparse_cholesky", true);
         return factored_;
     }
     int ok = M_cholmod_factorize(A, factor_, &common_);
     factored_ = (ok != 0) && (common_.status == CHOLMOD_OK);
     host_factored_ = factored_;
-    policy_->record(purpose_ == Purpose::SelectedInverse ? "sparse_inverse_host_factor" : "sparse_cholesky", false);
+    record_factor(purpose_ == Purpose::SelectedInverse ? "sparse_inverse_host_factor" : "sparse_cholesky", false);
     return factored_;
+}
+
+void SparseCholeskySolver::record_factor(const char* stage, bool cuda) {
+    policy_->record(stage, cuda);
+    if (factor_flops_ > 0) policy_->work(stage, factor_flops_);
 }
 
 bool SparseCholeskySolver::device_result(const device::Status& status) {
@@ -356,7 +360,7 @@ bool SparseCholeskySolver::host_factor(const char* operation) {
     if (!factor_) return false;
     const int ok = M_cholmod_factorize(&A, factor_, &common_);
     host_factored_ = ok && common_.status == CHOLMOD_OK;
-    policy_->record(operation, false);
+    record_factor(operation, false);
     return host_factored_;
 }
 

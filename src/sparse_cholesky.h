@@ -285,6 +285,10 @@ public:
 
 private:
     bool device_result(const device::Status& status);
+    // Records one factorization on its stage together with the flop count of
+    // the symbolic analysis it ran from, so the measured work and the device
+    // that did it stay on the same stage.
+    void record_factor(const char* stage, bool cuda);
     bool host_factor(const char* operation = "sparse_square_root");
     bool inverse_on_device();
     const char* inverse_operation() const {

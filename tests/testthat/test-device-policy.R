@@ -113,8 +113,8 @@ test_that("an isolated shared solve replays its measured calls into its caller",
   outer <- tulpa:::cpp_device_begin('cpu',inherit=FALSE)
   on.exit(tulpa:::cpp_device_end(outer))
   shared <- tulpa:::cpp_device_begin('cpu',inherit=FALSE)
-  tulpa:::cpp_device_replay_stages(data.frame(stage='sparse_inverse_host_factor',
-    cpu_calls=3,cuda_calls=0))
+  tulpa:::cpp_device_replay_stages(data.frame(stage=c('sparse_inverse_host_factor','sparse_cholesky'),
+    cpu_calls=c(3,2),cuda_calls=0,work=c(0,2.5e6)))
   measured <- tulpa:::cpp_device_snapshot()$stages
   tulpa:::cpp_device_end(shared)
   before <- tulpa:::cpp_device_snapshot()$stages
@@ -122,6 +122,7 @@ test_that("an isolated shared solve replays its measured calls into its caller",
   tulpa:::cpp_device_replay_stages(measured)
   after <- tulpa:::cpp_device_snapshot()$stages
   expect_identical(after$cpu_calls[after$stage=='sparse_inverse_host_factor'],3)
+  expect_identical(after$work[after$stage=='sparse_cholesky'],2.5e6)
   malformed <- data.frame(stage=c('laplace_dense','sparse_selected_inverse'),
     cpu_calls=c(1,-1),cuda_calls=0)
   expect_error(tulpa:::cpp_device_replay_stages(malformed),'non-negative integers')

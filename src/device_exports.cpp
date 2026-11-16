@@ -414,7 +414,9 @@ SEXP cpp_device_begin(std::string choice, bool inherit = true) {
 void cpp_device_replay_stages(Rcpp::DataFrame stages) {
     Rcpp::CharacterVector names = stages["stage"];
     Rcpp::NumericVector cpu = stages["cpu_calls"], cuda = stages["cuda_calls"];
-    if (cpu.size() != names.size() || cuda.size() != names.size())
+    Rcpp::NumericVector work = stages.containsElementNamed("work") ?
+        Rcpp::NumericVector(stages["work"]) : Rcpp::NumericVector(names.size());
+    if (cpu.size() != names.size() || cuda.size() != names.size() || work.size() != names.size())
         Rcpp::stop("device stage columns must have equal lengths");
     const double maximum = static_cast<double>(std::numeric_limits<std::size_t>::max());
     for (R_xlen_t i = 0; i < names.size(); ++i) {
@@ -425,11 +427,15 @@ void cpp_device_replay_stages(Rcpp::DataFrame stages) {
                 Rcpp::stop("device call counts must be non-negative integers");
         if (cpu[i] == 0 && cuda[i] == 0)
             Rcpp::stop("device stages must include a call");
+        if (!std::isfinite(work[i]) || work[i] < 0)
+            Rcpp::stop("device stage work must be finite and non-negative");
     }
     auto policy = tulpa::device::current_policy();
-    for (R_xlen_t i = 0; i < names.size(); ++i)
-        policy->record(Rcpp::as<std::string>(names[i]),
-            static_cast<std::size_t>(cpu[i]), static_cast<std::size_t>(cuda[i]));
+    for (R_xlen_t i = 0; i < names.size(); ++i) {
+        const std::string name = Rcpp::as<std::string>(names[i]);
+        policy->record(name, static_cast<std::size_t>(cpu[i]), static_cast<std::size_t>(cuda[i]));
+        if (work[i] > 0) policy->work(name, work[i]);
+    }
 }
 
 // [[Rcpp::export]]
