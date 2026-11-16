@@ -1,4 +1,4 @@
-# tulpa 0.7.8
+# tulpa 0.8.0
 
 * Sparse GPU fit equivalence covers SPDE, ICAR, proper CAR, AR1 and joint
   CAR/AR1 grids at 2,000 and 15,000 latent nodes. CPU, automatic and forced
@@ -173,20 +173,6 @@
   definitions. Each temporal GP coefficient carries its own variance and
   lengthscale coordinates (#1172).
 
-* A NUTS chain resumes with the step size it adapted: the generic R entries
-  and both C entries (`nuts_api.h`) take `epsilon_init`, and with
-  `n_warmup = 0` a supplied value is used unchanged, so a continuation runs
-  the reference kernel. Previously a zero-warmup run re-searched its step
-  under the identity metric, reported that value and sampled with a larger
-  one (on the issue's fixture: reported 0.031, used 4, acceptance 0.14).
-  Every step search now runs under the active metric with one restart rule
-  (`mu = log(10 * epsilon)`), and a warmup shorter than its adaptation
-  windows keeps the metric fixed in a single fast phase. The C signatures
-  changed (ABI 58), so consumer packages must be rebuilt (#1164).
-
-* Article fit caches are stamped independently of the R version that wrote
-  them, so the shipped vignettes build under any R release (#1165).
-
 * Stirling remainder values and derivatives use fixed polynomial approximations
   and short asymptotic expansions with platform-independent accuracy. The
   relative deviance uses a stable transformed series near zero (#1168).
@@ -212,6 +198,24 @@
   zero, so a gradient no longer depends on the order positions were evaluated
   in (differences up to 4.5e-13). Exported struct layouts changed (ABI 59), so
   consumer packages must be rebuilt (gcol33/tulpaRatio#176).
+
+# tulpa 0.7.8
+
+## Models and inference
+
+* A NUTS chain resumes with the step size it adapted: the generic R entries
+  and both C entries (`nuts_api.h`) take `epsilon_init`, and with
+  `n_warmup = 0` a supplied value is used unchanged, so a continuation runs
+  the reference kernel. Previously a zero-warmup run re-searched its step
+  under the identity metric, reported that value and sampled with a larger
+  one (on the issue's fixture: reported 0.031, used 4, acceptance 0.14).
+  Every step search now runs under the active metric with one restart rule
+  (`mu = log(10 * epsilon)`), and a warmup shorter than its adaptation
+  windows keeps the metric fixed in a single fast phase. The C signatures
+  changed (ABI 58), so consumer packages must be rebuilt (#1164).
+
+* Article fit caches are stamped independently of the R version that wrote
+  them, so the shipped vignettes build under any R release (#1165).
 
 # tulpa 0.7.7
 
