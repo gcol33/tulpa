@@ -4,8 +4,8 @@
 # Per seed, one fit of the four-axis crossed recovery fixture (`LCCD_SIM`,
 # `LCCD_CFG`, seed offset 8100) at four, five and six levels per axis
 # (`recov_fit_joint_coarse()`), all four arms read off each fit through
-# `lccd_arms()` / `lccd_arm_read()` with the within-cell read held at `within`
-# (`chord`, as `lccd_arm_sweep()` reads them, or `box_uniform`, the engine's).
+# `lccd_arms()` / `lccd_arm_read()` with the within-cell read held at `within`,
+# one of the engine's `.NL_WITHIN_CELL` (`lccd_arm_sweep()` reads `chord`).
 #
 #   Rscript coverage331.R <lib> <repo> <hyperprior> <within> <n_seed> <out.csv> [workers=8]
 #
@@ -15,12 +15,12 @@ args <- commandArgs(trailingOnly = TRUE)
 lib <- args[1L]; repo <- args[2L]; hyperprior <- args[3L]; within <- args[4L]
 n_seed <- as.integer(args[5L]); out <- args[6L]
 workers <- if (length(args) >= 7L) as.integer(args[7L]) else 8L
-stopifnot(hyperprior %in% c("flat", "proper"),
-          within %in% c("chord", "box_uniform"))
+stopifnot(hyperprior %in% c("flat", "proper"))
 
 source(file.path(repo, "dev_notes", "harness", "load_harness.R"))
 REC_FILE <- "test-nested-laplace-recovery.R"
 invisible(harness_load(lib, repo, REC_FILE))
+stopifnot(within %in% tulpa:::.NL_WITHIN_CELL)
 id <- harness_identity(lib, hyperprior, within)
 harness_print_identity(id)
 
