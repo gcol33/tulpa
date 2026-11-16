@@ -106,7 +106,8 @@ test_that("the joint converter names the missing field too", {
 .nlreq_guarded <- function(src, f) {
   any(vapply(c(sprintf("is.null(p$%s)", f),
                sprintf("p$%s %%||%%", f),
-               sprintf("isTRUE(p$%s)", f)),
+               sprintf("isTRUE(p$%s)", f),
+               sprintf("identical(p$%s,", f)),
              function(pat) grepl(pat, src, fixed = TRUE), logical(1)))
 }
 
