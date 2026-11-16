@@ -312,17 +312,20 @@
 # cells get a node budget, which is settled above, and it costs nothing to ask:
 # both corrections are post-processing of the same `(g, A)`.
 #
-# The truncation does separate the two descriptors, and it is the only thing
-# that does. On an UNBOUNDED quadratic both reduce to functions of `A^-1 g`, and
-# in that metric they are near-collinear here (Spearman 0.9495 pooled, 0.9830 on
-# the four-level grids); read as the box quantities they actually are, the
-# correlation falls to 0.8496 with 0.3881 of cells off the quartile diagonal.
-# The separation is one-sided, though, and that is the shape of everything
-# below: `R_L` is the share of its own half-cell an atom moves, so it saturates
-# below `sqrt(d)` -- measured 0.2261 to 1.6336 against a bound of 1.7321, no
-# cell within 1% of it -- while `R_M` is a log mass ratio and spans 0.0208 to
-# 78.2587 nats over the same cells. The two off-diagonal regimes the plane
-# exists for are therefore the sparse ones.
+# Within a resolution, the truncation is what separates the two descriptors. On
+# an UNBOUNDED quadratic both reduce to functions of `A^-1 g`, and in that
+# metric Spearman is 0.9558 at four levels and 0.9307 at five; read as the box
+# quantities they actually are, it falls to 0.9211 and 0.9251 (flat prior,
+# 840 cells; proper within 0.003). Pooled over the three grid spreads the order
+# reverses, 0.9139 in the A metric against 0.9225 as boxes, because grids of
+# different steepness add a separation of their own. Either way the second
+# dimension is thin: 0.2738 of cells sit off the quartile diagonal. It is also
+# one-sided, and that is the shape of everything below: `R_L` is the share of
+# its own half-cell an atom moves, so it saturates below `sqrt(d)` -- measured
+# 0.0776 to 1.5950 against a bound of 1.7321, no cell above 0.95 of it -- while
+# `R_M` is a log mass ratio and spans 0.0085 to 44.3781 nats over the same
+# cells. The two off-diagonal regimes the plane exists for are therefore the
+# sparse ones.
 #
 # What a cell's best correction IS cannot be read from that cell's own
 # contribution, because the reported summary is a weighted QUANTILE: moving one
