@@ -1311,10 +1311,16 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #    its own arguments, so `factr` is the only value it needs from here. It is
 #    recorded in this table anyway so every L-BFGS-B stop tolerance in the
 #    package is set in one place.
+#  * `hyper_ccd` -- the mode-centred CCD design's outer mode-find over the
+#    transformed hyperparameter axes. Its evaluation cap is the caller's
+#    `max_modefind`. `ndeps` 5e-2 is a step on the log or linear axis scale,
+#    wide against the inner solve's tolerance because every evaluation is a
+#    full inner Laplace fit.
 .NL_MODE_FIND <- list(
     spde       = list(factr = 1e5, ndeps = 1e-2, maxit = 300L),
     st         = list(factr = 1e7, ndeps = 1e-3, maxit = 300L),
-    pathfinder = list(factr = 1e7)
+    pathfinder = list(factr = 1e7),
+    hyper_ccd  = list(factr = 1e7, ndeps = 5e-2)
 )
 
 .nl_mode_find <- function(consumer, par) {

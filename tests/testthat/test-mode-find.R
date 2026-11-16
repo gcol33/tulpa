@@ -12,7 +12,7 @@ skip_on_cran_budget()
 
 test_that(".NL_MODE_FIND pins the shipped tuning for both consumers", {
   skip_on_cran_budget()
-  expect_setequal(names(tulpa:::.NL_MODE_FIND), c("spde", "st", "pathfinder"))
+  expect_setequal(names(tulpa:::.NL_MODE_FIND), c("spde", "st", "pathfinder", "hyper_ccd"))
   # The two helper consumers carry the full knob set. pathfinder takes only
   # factr: it is unbounded, gradient-aware, and carries maxit / pgtol as its
   # own arguments, so it reads this table without sharing the helper.
@@ -22,6 +22,10 @@ test_that(".NL_MODE_FIND pins the shipped tuning for both consumers", {
   }
   expect_setequal(names(tulpa:::.NL_MODE_FIND$pathfinder), "factr")
   expect_identical(tulpa:::.nl_mode_find("pathfinder", "factr"), 1e7)
+  # The CCD design's mode-find takes its evaluation cap from its caller.
+  expect_setequal(names(tulpa:::.NL_MODE_FIND$hyper_ccd), c("factr", "ndeps"))
+  expect_identical(tulpa:::.nl_mode_find("hyper_ccd", "factr"), 1e7)
+  expect_identical(tulpa:::.nl_mode_find("hyper_ccd", "ndeps"), 5e-2)
   expect_false("optim" %in% all.names(body(tulpa:::.nl_mode_find_tuning)))
 
   # The SPDE step is the one gcol33/tulpa#403 measured. A change here moves

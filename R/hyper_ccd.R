@@ -67,8 +67,9 @@ tulpa_ccd_outer_grid <- function(eval_logm, axes, f0_mult = 1.1,
   # Gaussian approximation and the node log marginals carry the integrand.
   op <- tryCatch(
     stats::optim(u0, neg, method = "L-BFGS-B", lower = lower, upper = upper,
-                 control = list(factr = 1e7, maxit = as.integer(max_modefind),
-                                ndeps = rep(5e-2, k))),
+                 control = list(factr = .nl_mode_find("hyper_ccd", "factr"),
+                                maxit = as.integer(max_modefind),
+                                ndeps = rep(.nl_mode_find("hyper_ccd", "ndeps"), k))),
     error = function(e) NULL)
   if (is.null(op) || !op$convergence %in% c(0L, 1L) || any(!is.finite(op$par)))
     return(decline("mode-find failed"))
