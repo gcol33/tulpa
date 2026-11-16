@@ -272,17 +272,19 @@
 # refining at all: the two rankings differ on 190 of the 468, and the gap
 # between their totals is under a tenth of what refining buys at all.
 # Through the one-cell harness on 24 four-axis fits (8 seeds x 3 budgets,
-# four-level base against a six-level reference, flat outer prior, `chord` read)
-# the two arms' endpoint reads differ by 0.7602 summed against a noise floor of
-# 6.1914 and their widths by 1.7641 against 12.3249, above the floor in 0 of 24
-# configurations either way, so that grid does not resolve the choice on the
-# interval. The MEDIAN it does resolve, above the floor in 16 of 24, and there
-# the predicted-movement ranking scores 1.2976 against the weight ranking's
-# 0.5698 and is nearer the reference in none of the 16. Under the shipped
-# `box_uniform` read the grid resolves the endpoints in 2, the widths in 2 and
-# the median in 7 of 24, and the predicted-movement ranking is nearer in none of
-# them. So the criterion stands as it is, and the box ratio stays a per-cell
-# reading.
+# four-level base against a six-level reference, flat outer prior, the shipped
+# `log_quadratic` read) the two arms differ by more than the grid's noise floor
+# in 21 of 24 configurations on the endpoints, 21 on the widths and 20 on the
+# median, so the grid resolves the choice on every part of the read. Summed
+# distance to the reference is 1.5285 ranking by weight against 2.6227 by
+# predicted mass movement on the endpoints, 2.8156 against 4.7853 on the widths
+# and 0.5501 against 1.2648 on the median, and the predicted-movement ranking is
+# nearer in 8, 10 and 1 of the 24. The proper prior gives 20 / 20 / 19 resolved
+# and 8 / 9 / 1 nearer. Under `chord` the weight ranking keeps the endpoints
+# (3.3359 against 3.7882) and the median (0.5699 against 1.2972, the
+# predicted-movement ranking nearer in 1 of 24) and the widths are even (6.5823 against 6.5361, the predicted-movement
+# ranking nearer in 11 of 24). So the criterion stands as it is, and the box
+# ratio stays a per-cell reading.
 #
 # Two further readings of the same measurement, both about `mode_gain`. It is
 # the unbounded quadratic gain and the box ratio is the truncated one, so their
@@ -330,50 +332,56 @@
 # cell `c` alone corrected, re-read whole through `.nl_axis_quantiles()` and
 # scored against a fine-grid reference fit of the same model
 # (`outer_grid_one_cell()` restricts a whole-grid
-# candidate to one cell). Measured that way over 2520 cells from 216 fits (1680
-# cells from 144 gaussian-arm fits at three grid spreads, 840 from 72
-# binomial-arm fits, four- and five-level bases against twelve-level
-# references), on each of the three parts of the read separately, since the
-# parts disagreed on the whole-grid winner and disagree per cell too:
+# candidate to one cell). Measured that way under the shipped read over 840
+# cells from 72 gaussian-arm fits at three grid spreads per outer prior, and the
+# same layout on a binomial arm (four- and five-level bases against twelve-level
+# references, `dev_notes/issue333/`), on each of the three parts of the read
+# separately, since the parts disagreed on the whole-grid winner and disagree
+# per cell too. An intervention clears the grid's noise floor often at both
+# resolutions on the gaussian arm -- in 62.5 / 50.5% of four- / five-level
+# cells on the endpoints, 60.9 / 53.2% on the widths, 92.2 / 79.9% on the
+# median, flat -- and rarely on the binomial one, whose interval it moves past
+# the floor in under 6% of cells:
 #
-#   * The plane position selects nothing. The best label per quadrant buys
-#     +0.0000 over the single best label overall in 23 of the 30 scored
-#     combinations (three readings of `R_L` -- L2 of the shares, the largest
-#     share, the A metric -- by two resolvability gates by the parts with enough
-#     resolved cells) and never more than +0.0256; a 3 x 3 tercile partition
-#     reaches +0.0408 once, on 98 cells. The plane does shift the MIX -- the
-#     median contingency is significant at both resolutions, Cramer V 0.2078 and
-#     0.1882 -- but the argmax is the same in every quadrant, and the argmax is
-#     what a rule would switch on.
+#   * The plane position selects in one stratum. The best label per quadrant
+#     buys +0.0000 over the single best label overall in 12 of the 18 scored
+#     combinations under either prior (three readings of `R_L` -- L2 of the
+#     shares, the largest share, the A metric -- by the three parts at two
+#     resolutions), and the binomial arm scores zero on all six it can score.
+#     The exception is the four-level median, +0.1073 / +0.1073 / +0.1695 flat
+#     and +0.1271 / +0.1215 / +0.1823 proper at permutation p < 0.001, where the
+#     argmax is `none` in the low-`R_M`, low-`R_L` quadrant and `both` in the
+#     other three: a cell steep in neither descriptor is best left alone. At
+#     five levels the argmax is `none` in every quadrant, though the plane still
+#     shifts the mix (median contingency Cramer V 0.2503 / 0.1442 at four /
+#     five levels, flat).
 #
-#   * Where the direction is strongest it is the wrong one. Spearman between a
+#   * The direction is weak and not shared across families. Spearman between a
 #     cell's relative position (`rank R_L - rank R_M`) and which single
-#     correction helps it more is +0.1835 / +0.0283 on the endpoints, -0.0595 /
-#     +0.1303 on the widths and +0.1230 / -0.3178 on the median at four / five
-#     levels: the largest, the five-level median, says cells with relatively
-#     more location displacement prefer the MASS correction, and the binomial
-#     arm reproduces it (-0.3057). Partialling `R_M` out leaves no stable sign
-#     either (+0.031, +0.063, -0.280, +0.012, +0.144, -0.269).
+#     correction helps it more is +0.1979 / +0.1191 on the endpoints, +0.1707 /
+#     +0.0915 on the widths and +0.2760 / +0.1064 on the median at four / five
+#     levels, flat (largest +0.3014 proper), all leaning the way the partition
+#     proposes; the binomial arm's five-level median leans the other way,
+#     -0.2491 / -0.2028.
 #
 # So the resolution-dependent ranking is not a region of this plane. The two
-# base grids occupy the same part of it -- median `R_M` 11.7853 against 10.2645
-# (Mann-Whitney 0.1424), median `R_L` 1.1694 against 1.2105 on a 3.5% shift, and
-# quadrant occupancy 43.2 / 2.6 / 12.8 / 41.4 percent against 41.0 / 10.3 / 7.3 /
-# 41.5, the two populated quadrants holding the same share at both resolutions
-# and only the sparse ones trading. Where they differ is not WHERE the cells sit
-# but how much weight sits on the steep ones: integration-weighted mean `R_M` is
-# 3.3417 at four levels against 1.0483 at five. That is the one-dimensional
-# steepness statement again, not a second descriptor.
+# base grids occupy the same part of it -- median `R_M` 5.2490 against 5.0401
+# (Mann-Whitney 0.9219), median `R_L` 1.0994 against 1.0982, and quadrant
+# occupancy 44.3 / 5.7 / 5.7 / 44.3 percent against 44.9 / 5.1 / 5.1 / 44.9.
+# Where they differ is not WHERE the cells sit but how much weight sits on the
+# steep ones: integration-weighted mean `R_M` is 2.4486 at four levels against
+# 0.7656 at five. That is the one-dimensional steepness statement again, not a
+# second descriptor.
 #
 # One more property closes it off. A per-cell label could not have been composed
 # into a grid rule even had the partition been clean, because the same quantile
 # nonlinearity that makes the intervention the right measurement makes the
-# measurements non-additive: the sum of the per-cell `both` improvements exceeds
-# the whole-grid `both` improvement by 8.48x / 33.11x on the endpoints, 9.15x /
-# 68.58x on the widths and 6.23x on the four-level median, and at five levels
-# the median's two carry OPPOSITE SIGNS (-0.0548 summed against +0.0040 whole
-# grid). Correcting every cell and correcting each cell are different
-# operations.
+# measurements non-additive: the sum of the per-cell `both` improvements is
+# 6.61x / 11.63x the whole-grid `both` improvement on the endpoints at four /
+# five levels, 8.31x / 5.52x on the widths and 4.31x on the four-level median,
+# and at five levels the median's two carry OPPOSITE SIGNS (-0.4300 summed
+# against +0.0046 whole grid, flat). Correcting every cell and correcting each
+# cell are different operations.
 #
 # Two bounds on what a favourable plane could have licensed, both from the
 # coverage measurement of the whole-grid barycentre rule, and
@@ -382,10 +390,12 @@
 # the peak in every cell, so applying the barycentre everywhere moves every atom
 # inward at once and the atom SET contracts, which moving one atom does not do.
 # That rule covers `sigma_1` on 128 / 129 / 118 of 200 seeds at four / five /
-# six levels against the shipped 200 of 200, at a width ratio of 0.4776 /
-# 0.5840 / 0.4465 -- flat in resolution, the signature of a systematic
-# contraction rather than a discretisation correction -- and 71 of its 72 misses
-# at four levels are high. A per-cell reading that a cell's atom is
+# six levels against 200 of 200 without it under the `chord` read, at a width
+# ratio of 0.4776 / 0.5840 / 0.4465 -- flat in resolution, the signature of a
+# systematic contraction rather than a discretisation correction -- and 71 of
+# its 72 misses at four levels are high. Under the shipped read, which on that
+# pinned grid is the box read, it covers 122 / 127 / 122 against 200 / 140 /
+# 199. A per-cell reading that a cell's atom is
 # mispositioned and a whole-grid rule that ruins coverage are both true; they
 # answer different questions.
 #

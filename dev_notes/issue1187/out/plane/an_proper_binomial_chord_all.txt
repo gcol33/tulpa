@@ -1,0 +1,104 @@
+---- sweep identity ----
+build         head_sha=c9b7437c | compiled from a clean git archive export: objects before build = 0
+tulpa_path    C:/Users/collingg/run1187/lib/tulpa
+tulpa_version 0.8.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    proper
+within_cell   chord
+started       2026-11-16 12:04:57 +0100
+family        binomial
+seeds         1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+spreads       2 | 3 | 4
+------------------------
+hyperprior proper  family binomial  spreads 2,3,4  seeds 1-8
+cells 840  fits 72  coarse fits 48 
+
+== separation ==
+rho(R_M,R_L) pooled 0.9094  L4 0.8445  L5 0.9284 
+per-fit median 0.8810 
+off quartile diagonal 0.2762 
+R_M range 0.0011 6.4276  R_L range 0.0677 1.1918  bound 1.7321  max R_L/bound 0.6881  max R_L_max 0.8568 
+rho(R_M,R_L_A) pooled 0.7622  L4 0.7637  L5 0.7885 
+
+== resolutions ==
+median R_M 0.5410 0.5562  MW p 0.7432 
+median R_L 0.6395 0.6430  MW p 0.4225  shift 0.0055 
+q
+M+L+ M+L- M-L+ M-L- 
+46.4  3.6  3.6 46.4 
+q
+M+L+ M+L- M-L+ M-L- 
+46.6  3.4  3.4 46.6 
+weighted R_M 0.3937 0.2516  ratio 1.5649  weighted R_L 0.4705 0.4162 
+
+== resolvable ==
+endpoints  L4 0.0208  L5 0.0401 
+widths  L4 0.0208  L5 0.0401 
+median  L4 0.5000  L5 0.3333 
+
+== quadrant gain against its permutation null (seed 327, 999 shuffles) ==
+endpoints 4 n resolved 4 (not scored)
+widths 4 n resolved 4 (not scored)
+      part lv      rl   n   gain      p null_mean null_q95
+ endpoints  5     R_L  26 0.2692 0.0050    0.1072   0.1923
+ endpoints  5 R_L_max  26 0.3846 0.0000    0.1166   0.1923
+ endpoints  5   R_L_A  26 0.3462 0.0010    0.1023   0.1923
+    widths  5     R_L  26 0.1538 0.1061    0.0783   0.1538
+    widths  5 R_L_max  26 0.2692 0.0020    0.0866   0.1923
+    widths  5   R_L_A  26 0.1538 0.1221    0.0740   0.1538
+    median  4     R_L  96 0.0000 1.0000    0.0002   0.0000
+    median  4 R_L_max  96 0.0000 1.0000    0.0003   0.0000
+    median  4   R_L_A  96 0.0000 1.0000    0.0000   0.0000
+    median  5     R_L 216 0.0000 1.0000    0.0000   0.0000
+    median  5 R_L_max 216 0.0000 1.0000    0.0000   0.0000
+    median  5   R_L_A 216 0.0000 1.0000    0.0000   0.0000
+scored 12  gain exactly 0 in 6 
+median contingency L 4  n 96  p 0.109  V 0.2235 
+      
+       both loc mass none
+  M-L-    1   3    0   40
+  M-L+    0   1    0    3
+  M+L-    0   1    0    3
+  M+L+    5   1    4   34
+argmax per quadrant: M-L- none; M-L+ none; M+L- none; M+L+ none 
+median contingency L 5  n 216  p 0.652  V 0.0984 
+      
+       both loc none
+  M-L-    1   2   88
+  M-L+    0   0   17
+  M+L-    0   0   17
+  M+L+    0   0   91
+argmax per quadrant: M-L- none; M-L+ none; M+L- none; M+L+ none 
+labels L 4 endpoints  n 4 : loc 0.5 none 0.5 
+labels L 4 widths  n 4 : loc 0.5 none 0.5 
+labels L 4 median  n 96 : both 0.062 loc 0.062 mass 0.042 none 0.833 
+labels L 5 endpoints  n 26 : both 0.346 loc 0.269 none 0.385 
+labels L 5 widths  n 26 : both 0.308 loc 0.423 none 0.269 
+labels L 5 median  n 216 : both 0.005 loc 0.009 none 0.986 
+
+== loc versus mass ==
+L4 endpoints n=4 rho=-0.3162 p=0.684 partial(R_L | R_M)=NA
+L4 widths    n=4 rho=-0.3162 p=0.684 partial(R_L | R_M)=-0.111
+L4 median    n=89 rho=-0.0884 p=0.41 partial(R_L | R_M)=-0.128  [scored by the test]
+L5 endpoints n=26 rho=+0.0375 p=0.856 partial(R_L | R_M)=+0.139  [scored by the test]
+L5 widths    n=26 rho=+0.1373 p=0.503 partial(R_L | R_M)=+0.415  [scored by the test]
+L5 median    n=212 rho=-0.1276 p=0.0637 partial(R_L | R_M)=-0.220  [scored by the test]
+test-scored strata 4  max |rho| 0.1373  median |rho| 0.1080 
+
+== composition (per-seed means of summed one-cell against whole-grid) ==
+endpoints L4 per +0.1309 whole +0.1238 ratio 1.06
+endpoints L5 per +0.3084 whole +0.0683 ratio 4.51
+widths    L4 per +0.4229 whole +0.2780 ratio 1.52
+widths    L5 per +0.8387 whole +0.1531 ratio 5.48
+median    L4 per -0.1279 whole -0.0086 ratio 14.79
+median    L5 per -0.3627 whole -0.0232 ratio 15.64
+Rscript.exe : Warning message:
+At C:\Users\collingg\run1187\plane1187.ps1:23 char:7
++       & $Rs "$N\issue333\analyse333.R" "$Lib" "$Repo" "$Out\dp_$tag.r ...
++       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Warning message::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+In stats::cor(stats::resid(stats::lm(rl ~ rm)), stats::resid(stats::lm(ry ~  :
+  the standard deviation is zero

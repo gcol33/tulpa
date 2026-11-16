@@ -394,38 +394,40 @@ test_that("the box rule's read is reported against what this grid can resolve", 
   expect_gt(sum(d5$weights[b5$bm$computed]), 0.999)
 
   r5 <- outer_grid_weight_report(d5, b5$w)
-  # Measured under the read the engine ships (`dev_notes/issue744/boxmass744.R`):
-  # at five levels the rule moves no part of the read by as much as one step of
-  # coarsening moves it -- endpoints 0.1043 against a floor of 0.1496, widths
-  # 0.2085 against 0.2297, median 0.0072 against 0.0219. On this grid the
-  # correction is not resolved.
+  # Measured under the read the engine ships (`dev_notes/issue1187/floor1187.R`):
+  # at five levels the rule moves the interval by more than one step of
+  # coarsening moves it -- endpoints 0.1043 against a floor of 0.0436, widths
+  # 0.2085 against 0.0735 -- and the median by less, 0.0072 against 0.0249. On
+  # this grid the correction reaches the interval and not the centre.
   #
-  # Whether a part is resolved at this resolution is a property of the
-  # within-cell read, not of the rule (gcol33/tulpa#599). Under `chord` the same
-  # fit resolves the median (0.0127 against a floor of 0.0043) and still neither
-  # half of the interval (0.0287 against 0.2414, 0.0573 against 0.4827). Both
-  # reads place the same mass in the same cells and differ in where inside a
-  # cell they place it, and on a five-level grid that is a half-cell -- the
-  # resolution these parts are read at. The floor moves with the read for the
-  # same reason (median 0.0043 -> 0.0219), so this is the resolution of the
-  # reported read changing rather than the rule's effect.
-  expect_false(any(r5$above_floor))
-  expect_lt(r5$diff$widths, r5$floor$widths)
+  # Which part is resolved at this resolution is a property of the within-cell
+  # read, not of the rule (gcol33/tulpa#599). Under `chord` the same fit answers
+  # the other way round: the median clears its floor (0.0127 against 0.0020)
+  # and neither half of the interval does (0.0287 against 0.0862, 0.0573
+  # against 0.1723). Both reads place the same mass in the same cells and
+  # differ in where inside a cell they place it, and on a five-level grid that
+  # is a half-cell -- the resolution these parts are read at. The floor moves
+  # with the read for the same reason (median 0.0020 under `chord`, 0.0249
+  # under the shipped read), so this is the resolution of the reported read
+  # changing rather than the rule's effect.
+  expect_true(r5$above_floor[["endpoints"]])
+  expect_true(r5$above_floor[["widths"]])
+  expect_false(r5$above_floor[["median"]])
+  expect_gt(r5$diff$widths, 2 * r5$floor$widths)
 
   # Coarser, which is where a cell carries a real gradient: at four levels the
-  # same rule moves the endpoints 0.2453 against a floor of 0.1308 and the
-  # median 0.2503 against 0.0797, above what the grid resolves, and the widths
-  # 0.2032 against 0.2196, not. The multiplier is not a small correction there
-  # -- the steepest cell's log multiplier is 15.5 nats -- because a four-level
-  # grid puts whole nats of log-marginal across a single cell. Under `chord` all
-  # three parts clear their floors at four levels.
+  # same rule moves all three parts above what the grid resolves -- the
+  # endpoints 0.2453 against a floor of 0.0468, the median 0.2503 against
+  # 0.0360 and the widths 0.2032 against 0.0907. The multiplier is not a small
+  # correction there -- the steepest cell's log multiplier is 15.5 nats --
+  # because a four-level grid puts whole nats of log-marginal across a single
+  # cell. Under `chord` all three parts clear their floors at four levels too.
   d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
   b4 <- .bxm_weights(d4)
   expect_identical(sum(b4$bm$computed), 8L)
   r4 <- outer_grid_weight_report(d4, b4$w)
   expect_gt(r4$diff$endpoints, r4$floor$endpoints)
-  expect_true(r4$above_floor[["endpoints"]])
-  expect_true(r4$above_floor[["median"]])
+  expect_true(all(r4$above_floor))
   expect_gt(max(b4$bm$log_box_ratio), 10)
 })
 

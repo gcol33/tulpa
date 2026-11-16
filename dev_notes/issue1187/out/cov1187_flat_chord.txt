@@ -1,0 +1,55 @@
+---- sweep identity ----
+build         head_sha=c9b7437c | compiled from a clean git archive export: objects before build = 0
+tulpa_path    C:/Users/collingg/run1187/lib/tulpa
+tulpa_version 0.8.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    flat
+within_cell   chord
+started       2026-11-16 11:37:08 +0100
+------------------------
+worker pids: 616 24416 21812 10540 28608 13804 18208 20960 8468 13044 26380 21048 
+200 seeds in 5.9 min -> C:\Users\collingg\run1187\out\cov1187_flat_chord.csv
+
+hyperprior flat, 200 seeds; coverage count and mean width
+  sigma_1 
+    shipped    200  1.0593  200  0.8786  200  0.6399
+    mass       200  1.1006  200  0.9090  200  0.6951
+    location   128  0.5092  129  0.5389  118  0.3078
+    pair       172  0.4775  174  0.4967  151  0.3562
+  intercept 
+    shipped    191  0.6375  193  0.6269  190  0.6059
+    mass       190  0.6034  192  0.6040  190  0.6034
+    location   191  0.6375  193  0.6269  190  0.6059
+    pair       190  0.6034  192  0.6040  190  0.6034
+  slope 
+    shipped    191  0.0853  191  0.0853  191  0.0853
+    mass       191  0.0854  191  0.0854  191  0.0854
+    location   191  0.0853  191  0.0853  191  0.0853
+    pair       191  0.0854  191  0.0854  191  0.0854
+
+discordance against shipped on sigma_1 (lost / gained), and misses high / low
+  mass      L4  -0 / +0  (misses high 0, low 0)  exact p NA  width ratio 1.0390
+  mass      L5  -0 / +0  (misses high 0, low 0)  exact p NA  width ratio 1.0346
+  mass      L6  -0 / +0  (misses high 0, low 0)  exact p NA  width ratio 1.0864
+  location  L4  -72 / +0  (misses high 71, low 1)  exact p 4.24e-22  width ratio 0.4807
+  location  L5  -71 / +0  (misses high 36, low 35)  exact p 8.47e-22  width ratio 0.6134
+  location  L6  -82 / +0  (misses high 19, low 63)  exact p 4.14e-25  width ratio 0.4811
+  pair      L4  -28 / +0  (misses high 12, low 16)  exact p 7.45e-09  width ratio 0.4508
+  pair      L5  -26 / +0  (misses high 4, low 22)  exact p 2.98e-08  width ratio 0.5653
+  pair      L6  -49 / +0  (misses high 15, low 34)  exact p 3.55e-15  width ratio 0.5567
+
+fixed-effect discordance, mass against shipped
+  L4 intercept 1  slope 0  | se ratio intercept 0.9466 slope 1.0009
+  L5 intercept 1  slope 0  | se ratio intercept 0.9634 slope 1.0004
+  L6 intercept 0  slope 0  | se ratio intercept 0.9959 slope 1.0002
+
+per-seed |width - six-level shipped width|
+  L4 shipped   sigma_1 0.4194  intercept 0.04261
+  L4 mass      sigma_1 0.4610  intercept 0.03422
+  L4 location  sigma_1 0.3576  intercept 0.04261
+  L4 pair      sigma_1 0.3919  intercept 0.03422
+  L5 shipped   sigma_1 0.2678  intercept 0.04451
+  L5 mass      sigma_1 0.2889  intercept 0.03032
+  L5 location  sigma_1 0.3532  intercept 0.04451
+  L5 pair      sigma_1 0.2974  intercept 0.03032

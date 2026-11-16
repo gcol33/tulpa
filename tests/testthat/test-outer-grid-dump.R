@@ -449,14 +449,15 @@ test_that("a candidate weight rule is reported against the floor, not on its own
   expect_equal(same$diff$endpoints, 0, tolerance = 1e-12)
   expect_false(any(same$above_floor))
 
-  # One step of coarsening moves this fit's endpoints by 0.0326. Tempering the
-  # integrand by 1.5, which concentrates the posterior, moves them by 0.0268:
+  # One step of coarsening moves this fit's endpoints by 0.0267. Tempering the
+  # integrand by 1.3, which concentrates the posterior, moves them by 0.0185:
   # reported on its own that reads as a difference, against the floor it reads
   # as a grid too coarse to tell, which is the whole point of carrying the
-  # floor. Tempering by 3 moves them by 0.0985 on the same fit and the same
-  # floor, and is resolved (`dev_notes/issue744/ogd744.R`).
+  # floor. Tempering by 1.5 lands on the floor itself (0.0269), and by 3 moves
+  # the endpoints 0.0985 on the same fit and the same floor, resolved
+  # (`dev_notes/issue1187/floor1187.R`).
   warm <- outer_grid_weight_report(
-    d, outer_grid_weights(d, dnode = d$dnode, log_marginal = 1.5 * d$log_marginal),
+    d, outer_grid_weights(d, dnode = d$dnode, log_marginal = 1.3 * d$log_marginal),
     floor = same$floor)
   expect_gt(warm$diff$endpoints, 0)
   expect_false(warm$above_floor[["endpoints"]])
@@ -466,8 +467,8 @@ test_that("a candidate weight rule is reported against the floor, not on its own
   expect_true(hot$above_floor[["endpoints"]])
 
   # Where the grid does resolve the read, the same rule is reported as the
-  # difference it is: at 81 levels the floor is 0.0135 and tempering moves the
-  # endpoints by 0.825.
+  # difference it is: at 81 levels the floor is 0.0058 and tempering moves the
+  # endpoints by 0.828.
   fine <- .ogd_fake_dump(81L)
   loud <- outer_grid_weight_report(
     fine, outer_grid_weights(fine, log_marginal = 3 * fine$log_marginal))

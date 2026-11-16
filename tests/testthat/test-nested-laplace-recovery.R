@@ -1073,6 +1073,34 @@ test_that("a weight rule and a placement rule reach different halves of the read
 # are shipped 1.0592 / 0.8763 / 0.6352, mass 1.1039 / 0.9091 / 0.6932, location
 # 0.5071 / 0.5221 / 0.2915 and pair 0.4692 / 0.4752 / 0.3421.
 #
+# The table above is the `chord` read. The engine ships `log_quadratic`, which
+# joins quadratics only on rows whose conditional it resolves (h / sd <= 2), and
+# on this pinned grid it resolves none: every axis at every resolution sits at
+# h / sd 2.7 to 6.4 and is declined `unresolved`, so the shipped read here is
+# the box read, and `box_uniform` reproduces it in every count and width. Same
+# sweep, same seeds, flat prior:
+#
+#                  4 levels (256)    5 levels (625)    6 levels (1296)
+#   sigma_1
+#     shipped      200   0.5140      140   0.5377      199   0.3942
+#     mass         199   0.6275      184   0.5971      199   0.4753
+#     location     122   0.2702      127   0.3816      122   0.2456
+#     pair         171   0.3242      172   0.3793      154   0.3033
+#
+# (proper: shipped 200 / 137 / 199, mass 199 / 186 / 199, location 122 / 127 /
+# 117, pair 168 / 173 / 153). At five levels the box read misses 60 seeds and
+# the mass rule recovers 44 of them while losing none (49 and none proper,
+# exact p below 1e-12), at an 11% wider interval. The dip is the box read's
+# sensitivity to where the truth falls inside a cell the grid does not resolve,
+# the shape the four-axis test below pins. It is a property of the pinned grid:
+# fitted the way a user fits it, every `sigma_grid` left out so the placement
+# pass lays each axis at the SD the mode-find measured, the same 200 seeds land
+# at h / sd 1.25 on every axis, no axis is declined, and sigma_1 covers 189 of
+# 200 at a mean width of 0.3251 (0.3215 proper, also 189), its 11 misses 4 high
+# and 7 low; the intercept and the slope cover 191 each
+# (`dev_notes/issue1187/default1187.R`). So the mass rule's gain answers a grid
+# the engine does not lay, and it is not a default either.
+#
 # COVERAGE ALONE IS THE WRONG STATISTIC HERE and the table is read two-sided:
 # the shipped arm is at or above nominal everywhere, so an arm earns promotion
 # only by being SHARPER without dropping below nominal. That framing is what

@@ -1,0 +1,26 @@
+---- sweep identity ----
+build         head_sha=c9b7437c | compiled from a clean git archive export: objects before build = 0
+tulpa_path    C:/Users/collingg/run1187/lib/tulpa
+tulpa_version 0.8.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    flat
+within_cell   chord
+started       2026-11-16 12:07:21 +0100
+------------------------
+seed 1 done, 15s
+seed 2 done, 15s
+seed 3 done, 15s
+seed 4 done, 15s
+seed 5 done, 15s
+seed 6 done, 15s
+seed 7 done, 15s
+seed 8 done, 15s
+
+=== totals over 24 configurations ( 8 seeds x 3 budgets ), hyperprior flat ===
+ep  base  2.4469  5-level  1.8564  weight  3.3359  mass_moved  3.7882  floor  0.1015 | arm-to-arm difference above floor in 21 of 24, mass_moved nearer in 9
+wd  base  3.5944  5-level  1.8681  weight  6.5823  mass_moved  6.5361  floor  0.2030 | arm-to-arm difference above floor in 22 of 24, mass_moved nearer in 11
+md  base  2.0104  5-level  1.8415  weight  0.5699  mass_moved  1.2972  floor  0.0254 | arm-to-arm difference above floor in 21 of 24, mass_moved nearer in 1
+ max_cells 2: identical grids 0/8
+ max_cells 4: identical grids 0/8
+ max_cells 8: identical grids 0/8

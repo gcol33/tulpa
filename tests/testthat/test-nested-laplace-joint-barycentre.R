@@ -442,40 +442,37 @@ test_that("the barycentre's read is reported against what this grid can resolve"
 
   r4 <- outer_grid_weight_report(d4, joint_grid = bc4$joint_grid)
   # Measured under the read the engine ships (see `ogd_fixture_fit()`, which
-  # states it rather than inheriting it -- gcol33/tulpa#599). Endpoints 0.2560
-  # against a floor of 0.1276 and widths 0.5121 against 0.1971: the placement
-  # moves the interval by more than one step of coarsening moves it. The median
-  # moves 0.0904 against a floor of 0.0946, the same size, so this grid does not
-  # separate the two and no verdict on the location is read off it. Under the
-  # proper prior: 0.2581 / 0.1308, 0.5161 / 0.2196, 0.0863 / 0.0797. What it does
-  # show is the ordering: the placement reaches the interval and not the centre.
-  expect_true(r4$above_floor[["endpoints"]])
-  expect_true(r4$above_floor[["widths"]])
-  expect_lt(r4$diff[["median"]], 1.2 * r4$floor[["median"]])
+  # states it rather than inheriting it -- gcol33/tulpa#599), by
+  # `dev_notes/issue1187/floor1187.R`. Endpoints 0.2560 against a floor of
+  # 0.0684, widths 0.5121 against 0.1334 and the median 0.0904 against 0.0402:
+  # the placement moves every part by more than one step of coarsening moves
+  # it, the interval by 3.7x / 3.8x its floor and the median by 2.2x. Under the
+  # proper prior: 0.2581 / 0.0468, 0.5161 / 0.0907, 0.0863 / 0.0360. What the
+  # margins show is the ordering: the placement reaches the interval further
+  # than the centre.
+  expect_true(all(r4$above_floor))
   expect_gt(r4$diff[["widths"]] / r4$floor[["widths"]],
             r4$diff[["median"]] / r4$floor[["median"]])
 
-  # Five levels, where the same grid already places its atoms close enough that
-  # the interval barely notices.
+  # Five levels.
   d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L, hyperprior = .BAR_HYPERPRIOR))
   bc5 <- .bar_place_g(d5)
   expect_identical(sum(bc5$computed), 27L)
   r5 <- outer_grid_weight_report(d5, joint_grid = bc5$joint_grid)
-  # Measured: the widths and the median clear their floors and the endpoints do
-  # not, and the margins say which part the placement reaches -- widths 0.2485
-  # against 0.0922, 2.7 times the resolution, against 1.75x on the median
-  # (0.0376 against 0.0215) and 0.90x on the endpoints (0.1242 against 0.1385).
-  # Under the proper prior the same three are 1.24x (0.2850 against 0.2297),
-  # 1.65x and 0.95x.
-  expect_true(r5$above_floor[["widths"]])
-  expect_true(r5$above_floor[["median"]])
-  expect_false(r5$above_floor[["endpoints"]])
+  # Measured: all three parts clear their floors, and the margins say which part
+  # the placement reaches -- widths 0.2485 against 0.0605, 4.1 times the
+  # resolution, and endpoints 0.1242 against 0.0343 (3.6x), against 1.3x on the
+  # median (0.0376 against 0.0290). Under the proper prior the same three are
+  # 3.9x (0.2850 against 0.0735), 3.3x and 1.4x.
+  expect_true(all(r5$above_floor))
   expect_gt(r5$diff$widths, 2.5 * r5$floor$widths)
+  expect_gt(r5$diff[["widths"]] / r5$floor[["widths"]],
+            r5$diff[["median"]] / r5$floor[["median"]])
   # Which part carries the margin is a property of the within-cell read, not of
   # the placement. Under `chord` the same fit answers the other way round: the
-  # median clears its floor 7.6x (0.0371 against 0.0049) while the endpoints and
-  # widths clear theirs 1.8x and 1.9x; 9.0x and 1.2x under the proper prior. Both
-  # reads put the same mass in the same cells and differ by half a cell in where
+  # median clears its floor 28x (0.0371 against 0.0013) while the endpoints and
+  # widths clear theirs 4.5x; 20x and 3.4x under the proper prior. Both reads
+  # put the same mass in the same cells and differ by half a cell in where
   # inside one they place it, which on a grid this coarse is the scale the
   # median is resolved at.
 })

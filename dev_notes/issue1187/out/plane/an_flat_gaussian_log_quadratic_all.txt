@@ -1,0 +1,99 @@
+---- sweep identity ----
+build         head_sha=c9b7437c | compiled from a clean git archive export: objects before build = 0
+tulpa_path    C:/Users/collingg/run1187/lib/tulpa
+tulpa_version 0.8.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    flat
+within_cell   log_quadratic
+started       2026-11-16 12:01:08 +0100
+family        gaussian
+seeds         1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+spreads       2 | 3 | 4
+------------------------
+hyperprior flat  family gaussian  spreads 2,3,4  seeds 1-8
+cells 840  fits 72  coarse fits 48 
+
+== separation ==
+rho(R_M,R_L) pooled 0.9225  L4 0.9211  L5 0.9251 
+per-fit median 0.9286 
+off quartile diagonal 0.2738 
+R_M range 0.0085 44.3781  R_L range 0.0776 1.5950  bound 1.7321  max R_L/bound 0.9209  max R_L_max 0.9510 
+rho(R_M,R_L_A) pooled 0.9139  L4 0.9558  L5 0.9307 
+
+== resolutions ==
+median R_M 5.2490 5.0401  MW p 0.9219 
+median R_L 1.0994 1.0982  MW p 0.2408  shift -0.0012 
+q
+M+L+ M+L- M-L+ M-L- 
+44.3  5.7  5.7 44.3 
+q
+M+L+ M+L- M-L+ M-L- 
+44.9  5.1  5.1 44.9 
+weighted R_M 2.4486 0.7656  ratio 3.1983  weighted R_L 0.7787 0.5940 
+
+== resolvable ==
+endpoints  L4 0.6250  L5 0.5046 
+widths  L4 0.6094  L5 0.5324 
+median  L4 0.9219  L5 0.7994 
+
+== quadrant gain against its permutation null (seed 327, 999 shuffles) ==
+      part lv      rl   n   gain      p null_mean null_q95
+ endpoints  4     R_L 120 0.0000 1.0000    0.0038   0.0250
+ endpoints  4 R_L_max 120 0.0000 1.0000    0.0037   0.0250
+ endpoints  4   R_L_A 120 0.0250 0.0691    0.0057   0.0250
+ endpoints  5     R_L 327 0.0000 1.0000    0.0000   0.0000
+ endpoints  5 R_L_max 327 0.0000 1.0000    0.0000   0.0000
+ endpoints  5   R_L_A 327 0.0000 1.0000    0.0000   0.0000
+    widths  4     R_L 117 0.0000 1.0000    0.0083   0.0342
+    widths  4 R_L_max 117 0.0256 0.1672    0.0093   0.0342
+    widths  4   R_L_A 117 0.0085 0.6046    0.0098   0.0256
+    widths  5     R_L 345 0.0000 1.0000    0.0000   0.0000
+    widths  5 R_L_max 345 0.0000 1.0000    0.0002   0.0000
+    widths  5   R_L_A 345 0.0000 1.0000    0.0001   0.0000
+    median  4     R_L 177 0.1073 0.0000    0.0065   0.0282
+    median  4 R_L_max 177 0.1073 0.0000    0.0067   0.0282
+    median  4   R_L_A 177 0.1695 0.0000    0.0068   0.0282
+    median  5     R_L 518 0.0000 1.0000    0.0000   0.0000
+    median  5 R_L_max 518 0.0000 1.0000    0.0000   0.0000
+    median  5   R_L_A 518 0.0000 1.0000    0.0000   0.0000
+scored 18  gain exactly 0 in 12 
+median contingency L 4  n 177  p 0.00012  V 0.2503 
+      
+       both loc mass none
+  M-L-   25   4    5   44
+  M-L+    5   0    1    5
+  M+L-    9   0    2    0
+  M+L+   53   2    6   16
+argmax per quadrant: M-L- none; M-L+ both; M+L- both; M+L+ both 
+median contingency L 5  n 518  p 0.000174  V 0.1442 
+      
+       both loc mass none
+  M-L-   14  14    3  196
+  M-L+    4   1    2   25
+  M+L-    7   0    1   24
+  M+L+   37  27    1  162
+argmax per quadrant: M-L- none; M-L+ none; M+L- none; M+L+ none 
+labels L 4 endpoints  n 120 : both 0.642 loc 0.033 none 0.325 
+labels L 4 widths  n 117 : both 0.436 loc 0.256 mass 0.197 none 0.111 
+labels L 4 median  n 177 : both 0.52 loc 0.034 mass 0.079 none 0.367 
+labels L 5 endpoints  n 327 : both 0.153 loc 0.098 mass 0.006 none 0.743 
+labels L 5 widths  n 345 : both 0.22 loc 0.122 mass 0.006 none 0.652 
+labels L 5 median  n 518 : both 0.12 loc 0.081 mass 0.014 none 0.786 
+
+== loc versus mass ==
+L4 endpoints n=119 rho=+0.1979 p=0.0309 partial(R_L | R_M)=+0.174  [scored by the test]
+L4 widths    n=114 rho=+0.1707 p=0.0695 partial(R_L | R_M)=+0.101  [scored by the test]
+L4 median    n=177 rho=+0.2760 p=0.0002 partial(R_L | R_M)=+0.190  [scored by the test]
+L5 endpoints n=323 rho=+0.1191 p=0.0324 partial(R_L | R_M)=+0.219  [scored by the test]
+L5 widths    n=342 rho=+0.0915 p=0.0911 partial(R_L | R_M)=+0.206  [scored by the test]
+L5 median    n=517 rho=+0.1064 p=0.0155 partial(R_L | R_M)=+0.143  [scored by the test]
+test-scored strata 6  max |rho| 0.2760  median |rho| 0.1449 
+
+== composition (per-seed means of summed one-cell against whole-grid) ==
+endpoints L4 per +0.5556 whole +0.0841 ratio 6.61
+endpoints L5 per -0.2397 whole -0.0206 ratio 11.63
+widths    L4 per +1.0547 whole +0.1270 ratio 8.31
+widths    L5 per -0.3110 whole -0.0563 ratio 5.52
+median    L4 per +0.3970 whole +0.0922 ratio 4.31
+median    L5 per -0.4300 whole +0.0046 ratio -93.48

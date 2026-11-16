@@ -350,32 +350,30 @@ test_that("the two base resolutions occupy the same region of the plane", {
 # The three colour planes                                                     #
 # --------------------------------------------------------------------------- #
 
-test_that("a one-cell intervention on the interval is resolvable on the coarse grid only", {
+test_that("a one-cell intervention is resolvable at both base resolutions", {
   skip_on_cran()
   # gcol33/tulpa#328 found the four-level grid resolves a whole RANKING change
-  # on the interval rarely: under the `chord` read in none of 24 configurations
-  # on the endpoints or the widths while resolving the median in 16 of 24 (15
-  # proper), under the shipped read the endpoints in 2 / 1, the widths in 2 / 5
-  # and the median in 7 / 8 of 24 (`dev_notes/issue_328/measure_fit_ranking.R`).
-  # A one-cell intervention reaches the interval far more often on that grid,
-  # because a four-level base has only eight interior cells and moving one of
-  # eight is not a small perturbation: over the test sweep 29.7% / 39.1% /
-  # 90.6% of four-level cells (endpoints / widths / median) have at least one
-  # resolvable intervention against 0.0% / 0.5% / 69.9% of five-level ones
-  # (proper: 32.8% / 34.4% / 90.6% against 0.0% / 0.5% / 69.0%; three-spread
-  # sweep 27.1% / 31.3% / 80.7% against 0.9% / 1.1% / 71.0% flat). So the
-  # interval is read at four levels only, and the median at both. Under `chord`
-  # the five-level median is resolvable in 16.2% / 12.5% of test-sweep cells and
-  # 22.7% of three-spread cells (flat), which is where a coarse-grid-only reading
-  # of the median comes from.
+  # on every part of the read: under the shipped read in 21 of 24
+  # configurations on the endpoints, 21 on the widths and 20 on the median
+  # (proper 20 / 20 / 19), under `chord` in 21 / 22 / 21 (23 / 23 / 21)
+  # (`dev_notes/issue_328/measure_fit_ranking.R`). A one-cell intervention
+  # reaches the read about as often: over the test sweep 85.9% / 79.7% / 96.9%
+  # of four-level cells (endpoints / widths / median) have at least one
+  # resolvable intervention against 61.1% / 68.1% / 89.8% of five-level ones
+  # (proper: 84.4% / 81.3% / 100.0% against 60.2% / 61.1% / 88.4%; three-spread
+  # sweep 62.5% / 60.9% / 92.2% against 50.5% / 53.2% / 79.9% flat). So every
+  # part is read at both resolutions, the median most often. Under `chord` the
+  # order of the parts at five levels reverses (73.2% / 73.2% / 54.2% of
+  # test-sweep cells flat, 64.4% / 64.4% / 61.6% proper).
   D <- .dp_sweep()$cells
   res <- function(s, p) mean(s[[paste0("res_mass_", p)]] |
                              s[[paste0("res_loc_", p)]] |
                              s[[paste0("res_both_", p)]])
   d4 <- D[D$levels == 4L, ]; d5 <- D[D$levels == 5L, ]
-  expect_gt(res(d4, "endpoints"), 0.2)
+  expect_gt(res(d4, "endpoints"), 0.5)
+  expect_gt(res(d5, "endpoints"), 0.4)
   expect_gt(res(d4, "median"), 0.8)
-  expect_lt(res(d5, "endpoints"), 0.2)
+  expect_gt(res(d4, "median"), res(d4, "endpoints"))
   expect_gt(res(d5, "median"), res(d5, "endpoints"))
 })
 
@@ -385,40 +383,41 @@ test_that("the plane position does not select which correction a cell wants", {
 
   # The colour is PER PART: the three parts of the read disagreed on the winner
   # for the whole grid in gcol33/tulpa#327 and they disagree per cell here too.
-  # Over the sweep the best label per quadrant buys nothing over the single best
-  # label overall: the gain is exactly +0.0000 in 4 of the 9 scored
-  # combinations of the test sweep (three `R_L` variants x the
-  # part-by-resolution strata with at least 20 resolved cells: the widths and
-  # the median at four levels, the median at five; the four-level endpoints
-  # resolve 19 cells), 7 of 12 under the proper prior, where they resolve 21.
+  # Over the sweep the best label per quadrant mostly buys nothing over the
+  # single best label overall: the gain is exactly +0.0000 in 10 of the 18
+  # scored combinations of the test sweep (three `R_L` variants x the six
+  # part-by-resolution strata, each with at least 20 resolved cells), 10 of 18
+  # under the proper prior.
   #
   # `gain` is scored IN SAMPLE -- the per-quadrant argmax is read off the same
   # cells -- so its null is not 0 and it grows as the stratum shrinks and as the
-  # labels even out: on `widths` at four levels, four quadrants over 25 resolved
-  # cells, picking the best label in each bin buys 0.0746 from noise alone on
-  # average and the null's 95th percentile is 0.1600. A fixed ceiling cannot
-  # separate that from signal at one n and be meaningful at another, so each
-  # gain is scored against ITS OWN permutation null (quadrant labels shuffled,
-  # winners held). Measured: the non-zero gains are on the four-level widths --
-  # 0.1600 / 0.0800 / 0.0800 under `R_L` / `R_L_max` / `R_L_A` at p = 0.13 /
-  # 0.51 / 0.21 -- and the four-level median, 0.0345 / 0.0517 under `R_L_max` /
-  # `R_L_A` at p = 0.17 / 0.067, flat; under the proper prior the smallest p is
-  # 0.008 (the four-level median under `R_L_A`, gain 0.0690). The three-spread
-  # sweep has one stratum where the plane does select: the four-level median,
-  # gain 0.0968 / 0.0710 / 0.1355 flat and 0.1220 / 0.1220 / 0.1890 proper, each
-  # at permutation p < 0.001; its other scored strata are zero or
-  # non-significant but one (0.0022 on the five-level median under `R_L_A`,
-  # proper), and the binomial arm scores zero on all six.
+  # labels even out: on `widths` at four levels, four quadrants over 51 resolved
+  # cells, picking the best label in each bin buys 0.0505 to 0.0633 from noise
+  # alone on average and the null's 95th percentile is 0.0980 to 0.1176. A fixed
+  # ceiling cannot separate that from signal at one n and be meaningful at
+  # another, so each gain is scored against ITS OWN permutation null (quadrant
+  # labels shuffled, winners held). Measured: the non-zero gains are on the
+  # four-level endpoints -- 0.0364 / 0.0364 / 0.0545 under `R_L` / `R_L_max` /
+  # `R_L_A` at p = 0.49 / 0.37 / 0.22 -- the four-level widths, 0.1176 / 0.1176 /
+  # 0.1765 at p = 0.10 / 0.046 / 0.004, and the four-level median, 0.0323 under
+  # `R_L_max` and `R_L_A` at p = 0.13 / 0.15, flat; the smallest p sits just
+  # above the Bonferroni line of 0.05 / 18 = 0.0028. Under the proper prior the
+  # smallest p is 0.021 (the five-level endpoints under `R_L_A`, gain 0.0077).
+  # The three-spread sweep has one stratum where the plane does select: the
+  # four-level median, gain 0.1073 / 0.1073 / 0.1695 flat and 0.1271 / 0.1215 /
+  # 0.1823 proper, each at permutation p < 0.001; its other scored strata are
+  # zero or non-significant at that line, and the binomial arm scores zero on
+  # all six it can score.
   #
   # What the plane does carry is a shift in the MIX -- over the three-spread
   # sweep the median plane's contingency is significant at both resolutions
-  # (chi-square p 3.1e-04 / 2.4e-05 at four levels, Cramer V 0.2577 / 0.2750;
-  # p 8.1e-04 / 1.0e-03 at five, V 0.1435 / 0.1424) -- but at five levels the
+  # (chi-square p 1.2e-04 / 3.6e-05 at four levels, Cramer V 0.2503 / 0.2584;
+  # p 1.7e-04 / 3.8e-04 at five, V 0.1442 / 0.1421) -- but at five levels the
   # argmax is `none` in every quadrant, which is what a per-cell rule would have
   # to move. At four levels it is `none` in the low-`R_M`, low-`R_L` quadrant
   # and `both` in the other three under either prior, which is the selecting
-  # stratum above. The test sweep shows no significant shift in the mix
-  # (p 0.576 / 0.167 at four levels and 0.512 / 0.070 at five).
+  # stratum above. The test sweep shows no significant shift in the mix at four
+  # levels (p 0.719 / 0.413) and a marginal one at five (0.189 / 0.034).
   gain_at <- function(q, wins) {
     tb <- table(q, wins)
     sum(apply(tb, 1L, max)) / sum(tb) - max(table(wins)) / length(wins)
@@ -444,14 +443,18 @@ test_that("the plane position does not select which correction a cell wants", {
   expect_gte(length(p_perm), 9L)
   expect_gt(min(p_perm), 0.05 / length(p_perm))
 
-  # And the winner is dominated by one label wherever the grid resolves the
-  # question at all. At four levels that label is `both` on the endpoints
-  # (1.000 / 0.952 of resolved cells over the test sweep) and the median
-  # (0.586 / 0.586); on the widths it is `mass` (0.48) flat and `both` (0.591)
-  # proper. At five levels the interval has at most one resolved cell per part
-  # and the median's label is `none` (0.775 / 0.758).
+  # And one label holds the majority of the resolved cells in most strata. At
+  # four levels that label is `both` on the endpoints (0.564 / 0.667 of resolved
+  # cells over the test sweep, against 0.400 / 0.296 `none`) and the median
+  # (0.613 / 0.562); on the widths `both` leads at 0.333 / 0.327, ahead of `mass`
+  # at 0.275 / 0.269. At five levels the label is `none` on every part (0.833 /
+  # 0.777 on the endpoints, 0.864 / 0.864 on the widths, 0.763 / 0.780 on the
+  # median): a one-cell correction the five-level grid resolves mostly moves
+  # the read away from the reference.
   s4 <- D[D$levels == 4L & D$win_endpoints != "unresolved", ]
-  expect_gt(mean(s4$win_endpoints == "both"), 0.7)
+  expect_gt(mean(s4$win_endpoints == "both"), 0.5)
+  s5 <- D[D$levels == 5L & D$win_endpoints != "unresolved", ]
+  expect_gt(mean(s5$win_endpoints == "none"), 0.7)
 })
 
 test_that("the loc-versus-mass preference does not partition the plane", {
@@ -463,19 +466,20 @@ test_that("the loc-versus-mass preference does not partition the plane", {
   #
   # It does so only weakly, and not with one sign. Over the test sweep, among
   # cells where either single correction is resolved, Spearman(rank R_L - rank
-  # R_M, dL_loc - dL_mass) is -0.1246 / +0.1174 on the endpoints (17 / 17 cells,
-  # p 0.63 / 0.65), -0.3234 / -0.3257 on the widths (18 / 11 cells, p 0.19 /
-  # 0.33) and +0.2965 / +0.2544 on the median (55 / 57 cells, p 0.028 / 0.056)
-  # at four levels, and +0.0681 / +0.0519 on the median at five (150 / 146
-  # cells, p 0.41 / 0.53). The strongest, the four-level median, runs the way
-  # the partition proposes, and the widths run the other way. The rank of `R_L`
-  # with `R_M` partialled out leaves a residual signal that changes sign too
-  # (-0.165, -0.231, +0.245, +0.106 flat over the same four strata). Under the
-  # `chord` read with the flat prior the three-spread sweep's five-level median
-  # runs AGAINST the partition, -0.1235 (p 0.15), against +0.1163 at the
-  # four-level median; under the proper prior the two are -0.1451 (p 0.092) and
-  # +0.1592. The binomial arm gives -0.1283 / -0.1158 on the five-level median
-  # (p 0.079 / 0.082) under the shipped read.
+  # R_M, dL_loc - dL_mass) is +0.0317 / +0.1552 on the endpoints (54 / 53
+  # cells, p 0.82 / 0.27), -0.0114 / -0.0388 on the widths (50 / 52 cells,
+  # p 0.94 / 0.79) and +0.2157 / +0.2443 on the median (62 / 64 cells, p 0.092 /
+  # 0.052) at four levels, and +0.1335 / +0.1385 on the endpoints (130 / 130,
+  # p 0.13 / 0.12), +0.2175 / +0.2766 on the widths (146 / 132, p 0.008 /
+  # 0.001) and +0.0840 / +0.0514 on the median (193 / 188, p 0.25 / 0.48) at
+  # five. The strongest run the way the partition proposes and the four-level
+  # widths sit at zero. The rank of `R_L` with `R_M` partialled out leaves
+  # -0.038, -0.073, +0.159, +0.231, +0.318 and +0.184 over the same six strata,
+  # flat. Under the `chord` read the test sweep's five-level median runs
+  # AGAINST the partition, -0.0552 / -0.0842, and its largest stratum, the
+  # five-level endpoints, reaches +0.3411 / +0.3108. The binomial arm of the
+  # three-spread sweep gives -0.2491 / -0.2028 on the five-level median
+  # (p 0.0007 / 0.0024) under the shipped read.
   D <- .dp_sweep()$cells
   rho <- function(s, p) {
     s <- s[s[[paste0("res_mass_", p)]] | s[[paste0("res_loc_", p)]], ]
@@ -489,17 +493,15 @@ test_that("the loc-versus-mass preference does not partition the plane", {
   got <- got[is.finite(got)]
   # Measured under the read the engine ships (`ogd_fixture_fit()` states it
   # rather than inheriting it -- gcol33/tulpa#599), the log-quadratic one since
-  # gcol33/tulpa#932: +0.313 on the four-level median and +0.109 on the
-  # five-level median, with the other four part-by-resolution cells carrying
-  # fewer than 25 scorable rows (+0.297 and +0.068 under the box read). No cell
+  # gcol33/tulpa#932: all six part-by-resolution cells carry at least 25
+  # scorable rows, and the largest is +0.2175 on the five-level widths. No cell
   # is a usable rule on its own.
   expect_gte(length(got), 2L)
   expect_lt(max(abs(got)), 0.4)
   # Which way the small ones lean moves with the within-cell read: the row
   # filter is the per-part floor, and the floor is read-dependent. Under `chord`
-  # two cells clear the row count and the pair spans zero (+0.179 on the
-  # four-level median, -0.032 on the five-level one); under the shipped read
-  # both lean positive. What survives both reads is the magnitude, which is the
+  # the five-level median leans negative (-0.0552) where the shipped read leans
+  # positive (+0.0840). What survives both reads is the magnitude, which is the
   # claim: a per-cell label that correlates with the preferred correction at
   # |rho| < 0.4 does not partition the grid.
 })
@@ -514,16 +516,16 @@ test_that("one-cell improvements do not add up to the whole-grid improvement", {
   # is not a sum over its atoms, so the improvements of the individual one-cell
   # interventions have no reason to compose -- and they do not. Over the test
   # sweep, averaged over seeds, the sum of the per-cell `both` improvements is
-  # 6.26x / 16.65x the whole-grid `both` improvement on the endpoints at four /
-  # five levels (proper 6.32x / 16.68x), 10.89x / 14.29x on the widths (11.26x /
-  # 14.30x; at five levels both are losses, -0.3357 against -0.0202 and -1.0144
-  # against -0.0710 flat), and 4.35x (4.21x) at four levels on the median, where
-  # at five levels the two carry OPPOSITE SIGNS (-0.3889 summed against +0.0140
-  # whole-grid flat, -0.3851 against +0.0132 proper). The three-spread sweep
-  # repeats the five-level median sign split (-0.3956 against +0.0075 flat), and
-  # its binomial arm carries opposite signs on the five-level interval, -21.2x
-  # on the endpoints and -6.4x on the widths flat (-241.5x and -14.6x
-  # proper).
+  # 5.75x / 20.76x the whole-grid `both` improvement on the endpoints at four /
+  # five levels (proper 5.73x / 21.12x), 7.68x / 17.62x on the widths (7.75x /
+  # 18.17x; at five levels both are losses, -0.3172 against -0.0153 and -0.9465
+  # against -0.0537 flat), and 4.34x (4.22x) at four levels on the median, where
+  # at five levels the two carry OPPOSITE SIGNS (-0.4188 summed against +0.0111
+  # whole-grid flat, -0.4238 against +0.0098 proper). The three-spread sweep
+  # repeats the five-level median sign split (-0.4300 against +0.0046 flat), and
+  # its binomial arm carries opposite signs on the four-level read, -9.56x on
+  # the endpoints, -4.67x on the widths and -32.43x on the median flat (-3.94x,
+  # -0.94x and -40.23x proper).
   #
   # So a clean per-cell partition, had there been one, still could not have been
   # applied cell by cell and read off as a grid rule.

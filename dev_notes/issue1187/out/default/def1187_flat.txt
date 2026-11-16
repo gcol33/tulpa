@@ -1,0 +1,21 @@
+---- sweep identity ----
+build         head_sha=c9b7437c | compiled from a clean git archive export: objects before build = 0
+tulpa_path    C:/Users/collingg/run1187/lib/tulpa
+tulpa_version 0.8.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    flat
+within_cell   engine default
+started       2026-11-16 13:17:58 +0100
+------------------------
+worker pids: 27128 12824 12032 476 26632 27496 18272 20796 
+200 seeds in 5.6 min -> C:\Users\collingg\run1187\out\default\def1187_flat.csv
+
+hyperprior flat, 200 seeds, engine default path
+  sigma_1    189  width 0.3251  (misses high 4, low 7)
+  intercept  191  width 0.6095
+  slope      191  width 0.0853
+  cells median 625 [625, 625]; h/sd axis 1 median 1.25, max over axes median 1.25
+           declined_1
+integration  NA
+       grid 200

@@ -405,7 +405,10 @@ outer_grid_read_diff <- function(a, b) {
 # along the axis and consecutive runs of `stride` are merged into a single atom
 # at their weighted mean carrying their summed weight -- a weight-preserving
 # halving (or thirding) of the axis resolution. `offset` shifts where the runs
-# start, so which atoms end up merged together is not one fixed choice.
+# start, so which atoms end up merged together is not one fixed choice. A run
+# whose atoms all sit at one level is that level exactly, and runs landing on
+# the same value are one atom: a weighted mean of equal values carries rounding
+# in its last bits, and atoms a few ulps apart read as cells of zero width.
 .ogd_axis_read <- function(dump, w, j, stride = 1L, offset = 0L) {
   use <- .ogd_axis_use(dump, j)
   if (!any(use)) return(rep(NA_real_, length(dump$probs)))
@@ -431,8 +434,11 @@ outer_grid_read_diff <- function(a, b) {
     v <- v[ord]; ws <- ws[ord]
     grp <- ((seq_along(v) + as.integer(offset) - 1L) %/% as.integer(stride)) + 1L
     tot <- as.numeric(tapply(ws, grp, sum))
-    v   <- as.numeric(tapply(ws * v, grp, sum)) / tot
-    ws  <- tot
+    lo  <- as.numeric(tapply(v, grp, min))
+    hi  <- as.numeric(tapply(v, grp, max))
+    v   <- ifelse(lo == hi, lo, as.numeric(tapply(ws * v, grp, sum)) / tot)
+    ws  <- as.numeric(tapply(tot, match(v, unique(v)), sum))
+    v   <- unique(v)
     keep <- is.finite(v) & is.finite(ws) & ws > 0
     v <- v[keep]; ws <- ws[keep]
     if (!length(v) || sum(ws) <= 0) return(rep(NA_real_, length(dump$probs)))
