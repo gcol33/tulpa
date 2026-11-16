@@ -4,27 +4,28 @@
 # Per seed, one fit of the four-axis crossed recovery fixture (`LCCD_SIM`,
 # `LCCD_CFG`, seed offset 8100) at four, five and six levels per axis
 # (`recov_fit_joint_coarse()`), all four arms read off each fit through
-# `lccd_arms()` / `lccd_arm_read()` with the within-cell read held at `chord`,
-# exactly as `lccd_arm_sweep()` reads them.
+# `lccd_arms()` / `lccd_arm_read()` with the within-cell read held at `within`
+# (`chord`, as `lccd_arm_sweep()` reads them, or `box_uniform`, the engine's).
 #
-#   Rscript coverage331.R <lib> <repo> <hyperprior> <n_seed> <out.csv> [workers=8]
+#   Rscript coverage331.R <lib> <repo> <hyperprior> <within> <n_seed> <out.csv> [workers=8]
 #
 # Writes one row per seed x resolution x arm, stamped with the prior arm, the
 # within-cell read and the build, then prints the table.
 args <- commandArgs(trailingOnly = TRUE)
-lib <- args[1L]; repo <- args[2L]; hyperprior <- args[3L]
-n_seed <- as.integer(args[4L]); out <- args[5L]
-workers <- if (length(args) >= 6L) as.integer(args[6L]) else 8L
-stopifnot(hyperprior %in% c("flat", "proper"))
+lib <- args[1L]; repo <- args[2L]; hyperprior <- args[3L]; within <- args[4L]
+n_seed <- as.integer(args[5L]); out <- args[6L]
+workers <- if (length(args) >= 7L) as.integer(args[7L]) else 8L
+stopifnot(hyperprior %in% c("flat", "proper"),
+          within %in% c("chord", "box_uniform"))
 
 source(file.path(repo, "dev_notes", "harness", "load_harness.R"))
 REC_FILE <- "test-nested-laplace-recovery.R"
 invisible(harness_load(lib, repo, REC_FILE))
-id <- harness_identity(lib, hyperprior, "chord")
+id <- harness_identity(lib, hyperprior, within)
 harness_print_identity(id)
 
-one_seed <- function(s, hyperprior) {
-  env <- list2env(list(s = s, hyperprior = hyperprior),
+one_seed <- function(s, hyperprior, within) {
+  env <- list2env(list(s = s, hyperprior = hyperprior, within = within),
                   parent = get(".cov_env", envir = globalenv()))
   eval(quote({
     sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
@@ -34,7 +35,7 @@ one_seed <- function(s, hyperprior) {
       dm <- outer_grid_dump(recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG,
                                                    levels = lev,
                                                    hyperprior = hyperprior))
-      dm$within <- "chord"
+      dm$within <- within
       A <- lccd_arms(dm)
       do.call(rbind, lapply(names(A), function(a) {
         r <- lccd_arm_read(dm, A[[a]])
@@ -57,9 +58,10 @@ invisible(parallel::clusterEvalQ(cl, {
 }))
 t0 <- Sys.time()
 R <- do.call(rbind, parallel::parLapplyLB(cl, seq_len(n_seed), one_seed,
-                                          hyperprior = hyperprior))
+                                          hyperprior = hyperprior,
+                                          within = within))
 parallel::stopCluster(cl)
-R$hyperprior <- hyperprior; R$within_cell <- "chord"; R$build <- harness_build_tag(id)
+R$hyperprior <- hyperprior; R$within_cell <- within; R$build <- harness_build_tag(id)
 utils::write.csv(R, out, row.names = FALSE)
 cat(sprintf("%d seeds in %.1f min -> %s\n", n_seed,
             as.numeric(difftime(Sys.time(), t0, units = "mins")), out))
