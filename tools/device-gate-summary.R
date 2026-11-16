@@ -30,6 +30,9 @@ device_gate_summary <- function(csv) {
   rows <- list(); pass <- !length(missing) && complete
   auto_safe_all <- TRUE
   sparse_gate <- gates$threshold[gates$operation=='sparse_cholesky' & gates$variant==0L]
+  # Fit seconds are elapsed proc.time differences, which advance in 10 ms
+  # steps, so one step is the smallest difference the timer can resolve.
+  tick <- 0.01
   gate_matches <- nrow(fits)>0L && 'auto_threshold' %in% names(fits) && all(fits$auto_threshold == sparse_gate)
   if(!gate_matches) pass <- FALSE
   if(nrow(fits)) for(key in unique(paste(fits$model,fits$nodes))) {
@@ -37,7 +40,7 @@ device_gate_summary <- function(csv) {
     med <- function(name) stats::median(g[[name]])
     spread <- function(x) (max(x)-min(x))/stats::median(x)
     noise <- max(spread(g$cpu_seconds),spread(g$auto_seconds),spread(g$cuda_seconds))
-    safe <- med('auto_seconds') <= med('cpu_seconds')*(1+noise)
+    safe <- med('auto_seconds') <= med('cpu_seconds')*(1+noise) + tick
     auto_safe_all <- auto_safe_all && safe
     if(g$size[1L]>=sparse_gate && !all(g$auto_sparse_cuda)) pass <- FALSE
     if(nrow(g)<3L || !safe) pass <- FALSE
@@ -52,7 +55,7 @@ device_gate_summary <- function(csv) {
       factor_cuda=med('cuda_seconds'),noise=noise,auto_safe=safe,inverse_share=share)
   }
   lines <- c(lines,'',
-    'Noise is the largest observed repetition range divided by its median across CPU, auto and factor-CUDA fits at that model and size. The gate checks auto against CPU with that measured range. These are numerical equivalence benchmarks; they do not establish parameter recovery or coverage.',
+    'Noise is the largest observed repetition range divided by its median across CPU, auto and factor-CUDA fits at that model and size. The gate checks auto against CPU with that measured range widened by the 10 ms resolution of the elapsed timer. These are numerical equivalence benchmarks; they do not establish parameter recovery or coverage.',
     '', '## Fit stages','', '| Model | Nodes | Device | Symbolic analysis | Factor and logdet | Solve | Selected inverse | Other |',
     '| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |')
   if(nrow(fits)) for(key in unique(paste(fits$model,fits$nodes))) {
@@ -73,8 +76,8 @@ device_gate_summary <- function(csv) {
       format(g$threshold,scientific=FALSE),format(g$batch_threshold,scientific=FALSE),n))
   }
   row_table <- if(length(rows)) do.call(rbind,rows) else data.frame()
-  available <- nrow(row_table)>0L && any(row_table$factor_cuda < row_table$cpu*(1-row_table$noise))
-  delivered <- nrow(row_table)>0L && any(row_table$work>=sparse_gate & row_table$auto < row_table$cpu*(1-row_table$noise))
+  available <- nrow(row_table)>0L && any(row_table$factor_cuda < row_table$cpu*(1-row_table$noise) - tick)
+  delivered <- nrow(row_table)>0L && any(row_table$work>=sparse_gate & row_table$auto < row_table$cpu*(1-row_table$noise) - tick)
   if(available && !delivered) pass <- FALSE
   lines <- c(lines,'',paste('Operations lacking benchmark rows:',if(length(missing)) paste(missing,collapse=', ') else 'none'),
     paste('Complete fit ladder:',complete),paste('Auto measured at the calibrated gate:',gate_matches),
