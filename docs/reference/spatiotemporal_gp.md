@@ -6,14 +6,11 @@ C_t\\, non-separable models allow for direct space-time interaction in
 the covariance.
 
 No tulpa backend fits a joint space-time covariance, so this constructor
-errors. A spatial GP alongside a temporal field is fitted directly by
+errors. A separable additive model, a spatial GP plus a temporal field,
+is fitted by `tulpa(spatial = spatial_gp(...), temporal = )` (NNGP or
+HSGP) and by
 [`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)
-(`spatial_type = "hsgp"` or `"nngp"`);
-[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)'s
-formula front door does not yet route a continuous spatial field
-together with a temporal field (it does for an areal one –
-icar/bym2/car_proper – via `tulpa(spatial = , temporal = )`;
-gcol33/tulpa#812).
+(`spatial_type = "hsgp"` or `"nngp"`).
 
 ## Usage
 
@@ -104,5 +101,5 @@ Statistical Association, 94(448), 1330-1340.
 ``` r
 # No backend fits a joint space-time covariance, so the constructor refuses:
 try(spatiotemporal_gp(~ lon + lat, "year", nonsep_type = "gneiting"))
-#> Error : Non-separable spatiotemporal GP fields are not fitted by any tulpa backend: no solver carries a joint space-time covariance, and tulpa() has no `spatiotemporal =` argument. A spatial GP alongside a temporal field is fitted directly by fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...); tulpa()'s formula front door routes spatial + temporal jointly only for an areal spatial field (icar/bym2/car_proper) via tulpa(spatial = , temporal = ).
+#> Error : Non-separable spatiotemporal GP fields are not fitted by any tulpa backend: no solver carries a joint space-time covariance. The additive model, a spatial GP plus a temporal field, is fitted by tulpa(spatial = spatial_gp(...), temporal = ) (NNGP or HSGP) and by fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...).
 ```

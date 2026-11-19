@@ -26,6 +26,13 @@ point summaries
 no sample to diagnose; returns NULL with a
 message naming the backend.
 
+resampled within-cell chains
+the original cell-chain diagnostic
+table, including cell indices and weights. The
+subspace_outer_correction attribute contains per-cell IS diagnostics;
+pareto_k and scope describe the stratified outer correction.
+Monte Carlo uncertainty depends on those source chains and estimates.
+
 
 
 
@@ -59,6 +66,13 @@ point summaries
 no sample to diagnose; returns NULL with a
 message naming the backend.
 
+resampled within-cell chains
+the original cell-chain diagnostic
+table, including cell indices and weights. The
+subspace_outer_correction attribute contains per-cell IS diagnostics;
+pareto_k and scope describe the stratified outer correction.
+Monte Carlo uncertainty depends on those source chains and estimates.
+
 
 
 
@@ -86,7 +100,7 @@ fit is never silently refused."><meta property="og:image" content="https://gille
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -111,14 +125,18 @@ fit is never silently refused."><meta property="og:image" content="https://gille
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -176,6 +194,13 @@ this table and its attributes.</p></dd>
 <dt>point summaries</dt>
 <dd><p>no sample to diagnose; returns <code>NULL</code> with a
 message naming the backend.</p></dd>
+
+<dt>resampled within-cell chains</dt>
+<dd><p>the original cell-chain diagnostic
+table, including cell indices and weights. The
+<code>subspace_outer_correction</code> attribute contains per-cell IS diagnostics;
+<code>pareto_k</code> and <code>scope</code> describe the stratified outer correction.
+Monte Carlo uncertainty depends on those source chains and estimates.</p></dd>
 
 
 </dl><p>Provenance is read from <code>$draws_kind</code> (stamped by <code>tulpa_dispatch</code>), falling
@@ -592,21 +617,38 @@ above for the i.i.d.-fit table in full, <code><a href="tulpa_draws_array.html">t
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">60</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">60</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.5</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># chain fit -&gt; Rhat / ESS</span></span>
-<span><span class="va">hmc</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"hmc"</span>,</span>
-<span>             control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span>, n_chains <span class="op">=</span> <span class="fl">2L</span>,</span>
-<span>                            seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu">diagnostics</span><span class="op">(</span><span class="va">hmc</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># deterministic fit -&gt; PSIS approximation reliability</span></span>
-<span><span class="va">smc</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"smc"</span><span class="op">)</span></span>
-<span><span class="fu">diagnostics</span><span class="op">(</span><span class="va">smc</span><span class="op">)</span></span>
-<span><span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">60</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">60</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.5</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># chain fit -&gt; Rhat / ESS</span></span></span>
+<span class="r-in"><span><span class="va">hmc</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"hmc"</span>,</span></span>
+<span class="r-in"><span>             control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span>, n_chains <span class="op">=</span> <span class="fl">2L</span>,</span></span>
+<span class="r-in"><span>                            seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">diagnostics</span><span class="op">(</span><span class="va">hmc</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Device: inference=cpu, likelihood=cpu</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     parameter     rhat ess_bulk ess_tail</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 (Intercept) 1.021024 122.4128 159.6886</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2           x 1.013575 227.3432 180.9505</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># deterministic fit -&gt; PSIS approximation reliability</span></span></span>
+<span class="r-in"><span><span class="va">smc</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"smc"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">diagnostics</span><span class="op">(</span><span class="va">smc</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Device: inference=cpu, likelihood=cpu</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Sequential Monte Carlo approximation reliability (i.i.d. draws)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   scope: the draws are the particle population after the final tempering</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     stage, resampled to equal weights and moved by MCMC mutation steps; no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     pareto_k or other reliability quantity is computed for this backend.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   2 parameters, 1000 draws; mcse_mean below is the i.i.d.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Monte-Carlo error of each reported mean (not chain mixing:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Rhat and ESS are not defined for these draws).</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     parameter      mean        sd n_draws   mcse_mean moment_source</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 (Intercept) 0.5325424 0.1029663    1000 0.003256082         draws</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2           x 0.3107521 0.1185866    1000 0.003750039         draws</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

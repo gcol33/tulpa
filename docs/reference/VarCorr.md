@@ -42,8 +42,13 @@ the residual SD `sqrt(phi)`, labelled `"estimated"` under
 `estimate_phi = TRUE` and `"conditioned"` otherwise; it has no entry in
 `"cov"`. Correlated terms additionally carry the covariance matrices in
 the `"cov"` attribute, one per term, each with a `"correlation"`
-attribute. Returns an empty data frame when the fit has no random
-effects.
+attribute. A fit with no random effects returns the gaussian residual
+row alone, or an empty data frame for any other family. The
+hyperparameters of a spatial or temporal field (its SD, range,
+autocorrelation) are not random-effect covariances and are not listed
+here;
+[`summary.tulpa_fit()`](https://gillescolling.com/tulpa/reference/summary.tulpa_fit.md)
+reports them in its `hyperparameters` table.
 
 ## See also
 

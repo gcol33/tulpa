@@ -41,12 +41,13 @@ print(x, ...)
 
 ## Value
 
-Invisibly, a `tulpa_adjacency_check` list with the per-check results
-(`square`, `finite`, `symmetric`, `zero_diag`, `binary`, `nonneg`,
-isolated-node indices, `n_components` and `component_sizes`, edge count)
-and an overall `ok` flag. Issues are reported via
-[`warning()`](https://rdrr.io/r/base/warning.html) and printed; the
-function does not stop, so every problem surfaces in one pass.
+A `tulpa_adjacency_check` list with the per-check results (`square`,
+`finite`, `symmetric`, `zero_diag`, `binary`, `nonneg`, isolated-node
+indices, `n_components` and `component_sizes`, edge count) and an
+overall `ok` flag, which prints as a report when it is not assigned.
+Issues are reported via
+[`warning()`](https://rdrr.io/r/base/warning.html); the function does
+not stop, so every problem surfaces in one pass.
 
 ## See also
 

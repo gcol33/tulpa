@@ -33,7 +33,11 @@ A list with:
 
 - `response`: character, the response variable label (`NULL` if none)
 
-- `response_expr`: language object, the LHS of `~` (`NULL` if none)
+- `response_expr`: language object, the response (`NULL` if none); for
+  `y | cens(lower, upper)` / `y | trunc(lb, ub)` the `y`
+
+- `response_bounds`: for a censored / truncated response, its kind and
+  unevaluated bound expressions; `NULL` otherwise
 
 - `fixed_formula`: formula, the fixed-effects-only formula
 
@@ -57,5 +61,5 @@ pf$response        # "y"
 #> [1] "y"
 pf$fixed_formula   # y ~ x1 + x2
 #> y ~ x1 + x2
-#> <environment: 0x0000028d45ca31c0>
+#> <environment: 0x000001fa23a24350>
 ```

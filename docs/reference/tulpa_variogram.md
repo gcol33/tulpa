@@ -11,7 +11,8 @@ tulpa_variogram(
   coords,
   n_bins = 15L,
   max_dist = NULL,
-  resid_type = "pearson"
+  resid_type = "pearson",
+  effects = c("conditional", "population")
 )
 
 # S3 method for class 'tulpa_variogram'
@@ -42,6 +43,11 @@ print(x, ...)
 - resid_type:
 
   Residual type if extracting from model (default `"pearson"`)
+
+- effects:
+
+  `"conditional"` (default) or `"population"`, as for
+  [`moran_i()`](https://gillescolling.com/tulpa/reference/moran_i.md).
 
 - x:
 

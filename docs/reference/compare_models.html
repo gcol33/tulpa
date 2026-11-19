@@ -9,7 +9,21 @@ log-likelihood (a deterministic / point approximation) yields NA criterion
 columns rather than an error, so the table always has one row per model.
 &quot;wbic&quot; ranks by wbic(), an estimate of each fit's negative log evidence,
 and needs every fit to carry its tempered draws (mode = &quot;smc&quot;,
-control = list(wbic = TRUE)); a fit without them gets an NA row."><meta property="og:description" content="Rank fitted models best-first by an information criterion. &quot;waic&quot; and
+control = list(wbic = TRUE)); a fit without them gets an NA row.
+An evidence (&quot;wbic&quot;, and &quot;loglik&quot; wherever logLik() reports a log
+marginal likelihood) integrates the likelihood against the prior, so it
+moves with the prior's width in a way the posterior hardly does: widening a
+prior SD by a factor c on a parameter the data pin down lowers the log
+evidence by about log(c) per parameter. Two model types fitted under
+different default priors are therefore compared with their priors, not only
+their likelihoods. An ordinal fit, for instance, puts a N(0, 10^2) ridge
+on its cutpoint parameters (the first cutpoint and the log gaps,
+cut_prior_sd of tulpa_ordinal()) where a multinomial fit's class
+intercepts carry the fixed-effect N(0, 2.5^2), so part of the evidence gap
+between the two is the gap between those priors. Set the priors to
+statements you would defend for both models before ranking by evidence, or
+rank by &quot;waic&quot; / &quot;loo&quot;, which read the posterior predictive and depend
+on the prior only through the posterior."><meta property="og:description" content="Rank fitted models best-first by an information criterion. &quot;waic&quot; and
 &quot;loo&quot; use the native pointwise log-likelihood layer (tulpa_criteria() /
 tulpa_psis()) – WAIC and PSIS-LOO respectively, computed from each fit's
 [n_draws x n_obs] pointwise log-likelihood (fit$draws$log_lik), with no
@@ -19,7 +33,21 @@ log-likelihood (a deterministic / point approximation) yields NA criterion
 columns rather than an error, so the table always has one row per model.
 &quot;wbic&quot; ranks by wbic(), an estimate of each fit's negative log evidence,
 and needs every fit to carry its tempered draws (mode = &quot;smc&quot;,
-control = list(wbic = TRUE)); a fit without them gets an NA row."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
+control = list(wbic = TRUE)); a fit without them gets an NA row.
+An evidence (&quot;wbic&quot;, and &quot;loglik&quot; wherever logLik() reports a log
+marginal likelihood) integrates the likelihood against the prior, so it
+moves with the prior's width in a way the posterior hardly does: widening a
+prior SD by a factor c on a parameter the data pin down lowers the log
+evidence by about log(c) per parameter. Two model types fitted under
+different default priors are therefore compared with their priors, not only
+their likelihoods. An ordinal fit, for instance, puts a N(0, 10^2) ridge
+on its cutpoint parameters (the first cutpoint and the log gaps,
+cut_prior_sd of tulpa_ordinal()) where a multinomial fit's class
+intercepts carry the fixed-effect N(0, 2.5^2), so part of the evidence gap
+between the two is the gap between those priors. Set the priors to
+statements you would defend for both models before ranking by evidence, or
+rank by &quot;waic&quot; / &quot;loo&quot;, which read the posterior predictive and depend
+on the prior only through the posterior."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
 (function () {
   var D = String.fromCharCode(36);
   window.MathJax = {
@@ -40,7 +68,7 @@ control = list(wbic = TRUE)); a fit without them gets an NA row."><meta property
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -53,21 +81,44 @@ control = list(wbic = TRUE)); a fit without them gets an NA row."><meta property
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -97,6 +148,20 @@ columns rather than an error, so the table always has one row per model.</p>
 <p><code>"wbic"</code> ranks by <code><a href="wbic.html">wbic()</a></code>, an estimate of each fit's negative log evidence,
 and needs every fit to carry its tempered draws (<code>mode = "smc"</code>,
 <code>control = list(wbic = TRUE)</code>); a fit without them gets an <code>NA</code> row.</p>
+<p>An evidence (<code>"wbic"</code>, and <code>"loglik"</code> wherever <code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code> reports a log
+marginal likelihood) integrates the likelihood against the prior, so it
+moves with the prior's width in a way the posterior hardly does: widening a
+prior SD by a factor <code>c</code> on a parameter the data pin down lowers the log
+evidence by about <code>log(c)</code> per parameter. Two model types fitted under
+different default priors are therefore compared with their priors, not only
+their likelihoods. An ordinal fit, for instance, puts a <code>N(0, 10^2)</code> ridge
+on its cutpoint parameters (the first cutpoint and the log gaps,
+<code>cut_prior_sd</code> of <code><a href="tulpa_ordinal.html">tulpa_ordinal()</a></code>) where a multinomial fit's class
+intercepts carry the fixed-effect <code>N(0, 2.5^2)</code>, so part of the evidence gap
+between the two is the gap between those priors. Set the priors to
+statements you would defend for both models before ranking by evidence, or
+rank by <code>"waic"</code> / <code>"loo"</code>, which read the posterior predictive and depend
+on the prior only through the posterior.</p>
     </div>
 
     <div class="section level2">

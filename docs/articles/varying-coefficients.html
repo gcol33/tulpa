@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -381,7 +385,7 @@ fixed-effect draws are the <code>x</code> column of
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">slope_draws</span> <span class="op">&lt;-</span> <span class="va">fit_svc</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, <span class="st">"x"</span><span class="op">]</span> <span class="op">+</span> <span class="va">post</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, , <span class="fl">1</span><span class="op">]</span></span>
 <span><span class="va">slope</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  mean <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="va">slope_draws</span><span class="op">)</span>,</span>
+<span>  mean <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="va">slope_draws</span><span class="op">)</span>,</span>
 <span>  lo   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">slope_draws</span>, <span class="fl">2</span>, <span class="va">quantile</span>, <span class="fl">0.025</span><span class="op">)</span>,</span>
 <span>  hi   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">slope_draws</span>, <span class="fl">2</span>, <span class="va">quantile</span>, <span class="fl">0.975</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
@@ -420,6 +424,7 @@ summarised over the 204 coordinates (two fixed effects, two
 hyperparameters and 200 field values):</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dg</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_svc</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, likelihood=cpu</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>max_rhat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">dg</span><span class="op">$</span><span class="va">rhat</span><span class="op">)</span>, min_ess_bulk <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="va">dg</span><span class="op">$</span><span class="va">ess_bulk</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;     max_rhat min_ess_bulk </span></span>
 <span><span class="co">#&gt;     1.030589   159.131422</span></span>
@@ -676,8 +681,8 @@ and the structure. The spec goes through <code>temporal=</code>.</p>
 <span><span class="co">#&gt; (Intercept) 0.3837072 0.05353502 0.2795560 0.4822570</span></span>
 <span><span class="co">#&gt; x           0.4844206 0.05178281 0.3839078 0.5770521</span></span>
 <span><span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">fit_rw1</span><span class="op">)</span></span>
-<span><span class="co">#&gt;            mean       sd     q2.5    q97.5</span></span>
-<span><span class="co">#&gt; tau_tvc 37.4594 23.01272 8.867804 99.70661</span></span></code></pre></div>
+<span><span class="co">#&gt;         mean  sd     q2.5    q97.5</span></span>
+<span><span class="co">#&gt; tau_tvc  Inf Inf 8.867804 99.70661</span></span></code></pre></div>
 <p>The fixed slope interval holds
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.5</mn><annotation encoding="application/x-tex">0.5</annotation></semantics></math>.
 <code><a href="../reference/temporal_corr.html">temporal_corr()</a></code> reports the precision
@@ -701,7 +706,7 @@ varying term:</p>
 <div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">total_slope</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="va">d</span> <span class="op">&lt;-</span> <span class="va">fit</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, <span class="st">"x"</span><span class="op">]</span> <span class="op">+</span> <span class="fu"><a href="../reference/tvc.html">tvc</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">draws</span><span class="op">[</span>, , <span class="fl">1</span><span class="op">]</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>mean <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="va">d</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>mean <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="va">d</span><span class="op">)</span>,</span>
 <span>             lo <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">d</span>, <span class="fl">2</span>, <span class="va">quantile</span>, <span class="fl">0.025</span><span class="op">)</span>,</span>
 <span>             hi <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/apply.html" class="external-link">apply</a></span><span class="op">(</span><span class="va">d</span>, <span class="fl">2</span>, <span class="va">quantile</span>, <span class="fl">0.975</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span></span>
@@ -728,6 +733,7 @@ The largest Rhat is 1.018, the smallest bulk effective sample size is
 142, and the dispersion test has a p-value of 0.80:</p>
 <div class="sourceCode" id="cb28"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dg_t</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_rw1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, likelihood=cpu</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>max_rhat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">dg_t</span><span class="op">$</span><span class="va">rhat</span><span class="op">)</span>, min_ess_bulk <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="va">dg_t</span><span class="op">$</span><span class="va">ess_bulk</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;     max_rhat min_ess_bulk </span></span>
 <span><span class="co">#&gt;     1.018181   141.551650</span></span>
@@ -766,9 +772,9 @@ toward its mean at a rate set by
 <span><span class="co">#&gt; cor     0.9720211 0.988102 0.9667671</span></span>
 <span><span class="co">#&gt; mean_sd 0.1519968 0.116341 0.1631418</span></span>
 <span><span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">fit_ar1</span><span class="op">)</span></span>
-<span><span class="co">#&gt;               mean         sd      q2.5      q97.5</span></span>
-<span><span class="co">#&gt; tau_tvc 29.9522514 21.6608056 7.6531253 89.9686829</span></span>
-<span><span class="co">#&gt; rho_tvc  0.8653969  0.1280018 0.5373128  0.9989648</span></span></code></pre></div>
+<span><span class="co">#&gt;              mean        sd      q2.5      q97.5</span></span>
+<span><span class="co">#&gt; tau_tvc       Inf       Inf 7.6531253 89.9686829</span></span>
+<span><span class="co">#&gt; rho_tvc 0.8653969 0.1280018 0.5373128  0.9989648</span></span></code></pre></div>
 <p>The three estimated curves have correlations from 0.967 to 0.988 with
 the sine. The <code>rw2</code> curve has the highest displayed
 correlation, 0.988, with 0 divergent transitions among 600 retained
@@ -955,9 +961,9 @@ Markov chain in time.</p>
 <span>                                         structure <span class="op">=</span> <span class="st">"rw1"</span><span class="op">)</span>,</span>
 <span>                 mode <span class="op">=</span> <span class="st">"exact"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/temporal_corr.html">temporal_corr</a></span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span></span>
-<span><span class="co">#&gt;                          mean         sd     q2.5      q97.5</span></span>
-<span><span class="co">#&gt; sigma_tvc_gp        0.5557661  0.2386895 0.229160   1.111224</span></span>
-<span><span class="co">#&gt; lengthscale_tvc_gp 73.8363723 63.9734541 5.804744 234.589958</span></span></code></pre></div>
+<span><span class="co">#&gt;                          mean         sd      q2.5      q97.5</span></span>
+<span><span class="co">#&gt; sigma_tvc_gp        0.5369404  0.2278023 0.2200169   1.038673</span></span>
+<span><span class="co">#&gt; lengthscale_tvc_gp 69.4324211 60.6857981 5.5367978 224.920598</span></span></code></pre></div>
 <p><code><a href="../reference/temporal_corr.html">temporal_corr()</a></code> reports the GP’s marginal standard
 deviation and its lengthscale, the latter in days.</p>
 <div class="sourceCode" id="cb37"><pre class="downlit sourceCode r">
@@ -968,7 +974,7 @@ deviation and its lengthscale, the latter in days.</p>
 <span><span class="op">}</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>gp <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span>, rw1 <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">fit_gr1</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;           cor      rmse</span></span>
-<span><span class="co">#&gt; gp  0.9403402 0.1829894</span></span>
+<span><span class="co">#&gt; gp  0.9454118 0.1791685</span></span>
 <span><span class="co">#&gt; rw1 0.9109344 0.1941991</span></span></code></pre></div>
 <div class="sourceCode" id="cb38"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">s_gp</span> <span class="op">&lt;-</span> <span class="fu">total_slope</span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span></span>
@@ -978,12 +984,12 @@ deviation and its lengthscale, the latter in days.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"bottomleft"</span>, <span class="st">"rw1"</span>, bty <span class="op">=</span> <span class="st">"n"</span>, col <span class="op">=</span> <span class="st">"darkorange"</span>, lwd <span class="op">=</span> <span class="fl">2</span>, lty <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
 <p><img src="varying-coefficients_files/figure-html/gp-plot-1.png" class="r-plt" alt="True slope at 20 irregular survey dates with the GP and rw1 estimates and the GP's 95 percent band" width="576"></p>
 <p>The GP follows the truth more closely than the walk: a correlation of
-0.94 against 0.91 and a root-mean-square error of 0.183 against 0.194.
+0.95 against 0.91 and a root-mean-square error of 0.179 against 0.194.
 The walk penalises a change across a 25-day gap as much as one across a
-0.3-day gap. The lengthscale is estimated at 74 days with a wide
-interval, from 6 to 235 days. This GP run has zero divergent
-transitions, a maximum Rhat of 1.012 and a minimum bulk effective sample
-size of 218. Its 95% intervals contain 18 of the 20 planted slope
+0.3-day gap. The lengthscale is estimated at 69 days with a wide
+interval, from 6 to 225 days. This GP run has zero divergent
+transitions, a maximum Rhat of 1.011 and a minimum bulk effective sample
+size of 351. Its 95% intervals contain 17 of the 20 planted slope
 values. <code>cov = "matern"</code> with <code>nu = 1.5</code> or
 <code>2.5</code>, <code>cov = "gaussian"</code> and
 <code>cov = "periodic"</code> (with <code>period=</code> in the time

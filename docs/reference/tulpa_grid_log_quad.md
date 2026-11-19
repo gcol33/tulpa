@@ -20,7 +20,8 @@ tulpa_grid_log_quad(
   copy_slab = "exponential",
   close_domain = TRUE,
   folded_axes = NULL,
-  refining = NULL
+  refining = NULL,
+  axis_support = NULL
 )
 ```
 
@@ -59,6 +60,13 @@ tulpa_grid_log_quad(
   [`tulpa_hyper_slice_home()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_slice_home.md));
   when supplied, specs are rebuilt from the grid's declared cells only.
 
+- axis_support:
+
+  Optional named list of `c(lower, upper)` intervals a block defines its
+  axes on (see
+  [`?tulpa_joint_axis_specs_from_grid`](https://gillescolling.com/tulpa/reference/tulpa_joint_axis_specs_from_grid.md));
+  a fit carries its own as `fit$log_hyperprior_support`.
+
 ## Value
 
 Numeric vector of per-cell log quadrature weights, length
@@ -91,6 +99,6 @@ tg <- tulpa_theta_matrix(fit)
 lq <- tulpa_grid_log_quad(tg)
 # The fit's own cell weights, rebuilt from its log marginals:
 tulpa_normalise_weights_safe(fit$log_marginal, log_quad = lq)
-#> [1] 0.001157234 0.021253946 0.133119591 0.361654250 0.482814980
+#> [1] 0.001141215 0.021064567 0.132506016 0.361327924 0.483960279
 # }
 ```

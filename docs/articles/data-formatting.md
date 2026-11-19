@@ -1,26 +1,7 @@
 # Data formatting
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -118,8 +99,9 @@ fields the backends read.
 
 bundle <- tulpa_build_model_data(pf, df)
 names(bundle)
-#> [1] "y"           "n_trials"    "X"           "offset"      "re_terms"   
-#> [6] "n_obs"       "n_fixed"     "n_re_terms"  "fixed_names"
+#>  [1] "y"               "n_trials"        "X"               "offset"         
+#>  [5] "re_terms"        "n_obs"           "n_fixed"         "n_re_terms"     
+#>  [9] "fixed_names"     "response_bounds"
 ```
 
 The design matrix `X` is the ordinary `model.matrix` output for the

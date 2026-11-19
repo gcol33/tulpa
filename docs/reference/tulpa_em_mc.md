@@ -25,6 +25,11 @@ tulpa_em_mc(
   alpha = 0.25,
   n_consecutive = 3L,
   verbose = TRUE,
+  correction = c("none", "gibbs"),
+  n_gibbs = 2000L,
+  log_complete = NULL,
+  correction_control = list(),
+  beta_prior = NULL,
   ...
 )
 ```
@@ -96,6 +101,51 @@ tulpa_em_mc(
 
   Print per-iteration progress (default `TRUE`).
 
+- correction:
+
+  `"none"` (default) returns the Tier 2 Rubin estimator. `"gibbs"` adds
+  true-density MH-within-Gibbs, returning paired parameter and latent
+  draws from the joint posterior.
+
+- n_gibbs:
+
+  Total Gibbs sweeps including warmup (default `2000L`). Used when
+  `correction = "gibbs"`.
+
+- log_complete:
+
+  Optional function `function(fits, z, ...) -> numeric` returning
+  `log p(y, z, theta)`, with every complete-data likelihood normalizer,
+  parameter prior and transformation Jacobian. Each block of `fits`
+  carries the evaluated parameter vector in `mode` and its fixed effects
+  in `beta`. The posterior evidence `p(y)` is unnecessary. `NULL` uses
+  the engine density assembled from the complete-data GLMM blocks. The
+  callback must be deterministic and return one finite value or `-Inf`.
+  Used only with `correction = "gibbs"`.
+
+- correction_control:
+
+  List of Gibbs settings: `warmup` (default `n_gibbs %/% 2L`), `thin`
+  (default `1L`), `mh_steps` (conditional MH transitions per sweep,
+  default `1L`), and `scale` (t proposal scale inflation, default `1`).
+  Unknown entries are errors.
+
+- beta_prior:
+
+  Optional Gaussian prior on the fixed effects, applied to every block
+  fit via
+  [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+  (i.e. blocks without a `prior` field). `NULL` (default) takes the
+  engine default `N(0, 2.5^2)`. Otherwise a list with `sd` (required)
+  and optional `mean`; see
+  [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md).
+  The same prior flows into the MI / Gibbs correction refits, so
+  penalized corrections come for free. A block may override the default
+  by setting its own `beta_prior` field in `m_step_encode` (e.g.
+  different priors for the occupancy and detection submodels). Use
+  scalar `mean` / `sd` here when blocks differ in width; per-coefficient
+  vectors belong on the block.
+
 - ...:
 
   Forwarded to `e_step_sample` and `m_step_encode`.
@@ -111,8 +161,14 @@ A list with:
 - `fits` – the point estimate in the shape `e_step_sample` receives: per
   submodel, `mode`, `beta`, `se`.
 
-- `draws` – list of per-MC-draw fit lists from the *final* iteration,
-  each indexed by submodel name.
+- `draws` – with `correction = "none"`, per-MC-draw fit lists from the
+  final iteration, indexed by submodel. With `"gibbs"`, a matrix of full
+  parameter draws paired by row with `latent_draws`; `log_prob` stores
+  the corresponding complete-data log density and `final_fits` the last
+  sampled state in E-step form.
+
+- `em_draws`, `pooled_target` – with `"gibbs"`, the original final MCEM
+  refits and the Tier 2 target of the retained `pooled` summaries.
 
 - `n_iter` – iterations actually run.
 
@@ -121,7 +177,17 @@ A list with:
 - `converged` – logical.
 
 - `inference_mode`, `inference_tier`, `target` – `"structured"`, `2L`,
-  and `"Rubin-pooled complete-data Laplace estimates"`.
+  and `"Rubin-pooled complete-data Laplace estimates"` for `"none"`.
+  Gibbs reports `"exact"`, `1L`, and
+  `"joint posterior p(theta, Z | y), conditional on fixed block hyperparameters"`.
+
+- `accept_prob`, `mean_accept`, `draws_kind` – with `"gibbs"`,
+  conditional MH acceptance indicators on retained sweeps, their mean,
+  and `"chain"`.
+
+- `means`, `sds`, `vcov`, `se` – with `"gibbs"`, posterior means, SDs,
+  full parameter covariance and per-block fixed-effect SDs from the
+  chain.
 
 - `history` – `data.frame(iter, n_mc, delta, mcse, swamped)`: `delta`
   the standardized step, `mcse` the largest Monte Carlo standard error
@@ -175,11 +241,38 @@ fitted modes, Gaussian conditional approximations and Rubin pooling
 remain the inferential approximation. An exact E-step sampler alone
 supplies no posterior correction for those approximations.
 
+With `correction = "gibbs"`, the Rubin fit initializes a
+data-augmentation chain. Each sweep calls `e_step_sample(fits, 1L, ...)`
+for one exact latent draw and applies true-density MH to the full
+complete-data parameter vector with a Laplace t proposal.
+`fits[[k]]$mode` and `$beta` then contain the current sampled parameter
+values. The target is `p(theta, Z | y)`, conditional on fixed block
+dispersion and random-effect covariance, and the result is Tier 1. See
+[`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
+for the density contract, supported blocks, parameter layout,
+computational cost and convergence requirements.
+
 ## References
 
 Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation of
 the EM algorithm and the poor man's data augmentation algorithms.
 *Journal of the American Statistical Association*, 85(411), 699-704.
+[doi:10.1080/01621459.1990.10474930](https://doi.org/10.1080/01621459.1990.10474930)
+.
+
+Tanner, M. A., and Wong, W. H. (1987). The calculation of posterior
+distributions by data augmentation. *JASA*, 82(398), 528-540.
+[doi:10.1080/01621459.1987.10478458](https://doi.org/10.1080/01621459.1987.10478458)
+.
+
+Robert, C. P., and Casella, G. (1999). *Monte Carlo Statistical
+Methods*. Springer, sections 7.3.2-7.3.3.
+[doi:10.1007/978-1-4757-3071-5](https://doi.org/10.1007/978-1-4757-3071-5)
+.
+
+Andrieu, C., and Roberts, G. O. (2009). The pseudo-marginal approach for
+efficient Monte Carlo computations. *Annals of Statistics*, 37(2),
+697-725. [doi:10.1214/07-AOS574](https://doi.org/10.1214/07-AOS574) .
 
 Booth, J. G., & Hobert, J. P. (1999). Maximizing generalized linear
 mixed model likelihoods with an automated Monte Carlo EM algorithm.
@@ -226,6 +319,17 @@ m_step_encode <- function(weights, ...) {
 fit <- tulpa_em_mc(e_step_sample, m_step_encode, n_mc = 5L, max_iter = 8L,
                    verbose = FALSE)
 sapply(fit$pooled, function(p) p$mean)
+#>      comp0      comp1 
+#> -0.9868029  2.0396015 
 fit$history
+#>   iter n_mc      delta      mcse swamped
+#> 1    1    5        Inf 0.2545194      NA
+#> 2    2    5 3.72095902 0.2674963   FALSE
+#> 3    3    5 0.57057074 0.1697500   FALSE
+#> 4    4    5 0.23660514 0.2233103    TRUE
+#> 5    5    7 0.07377956 0.1868036    TRUE
+#> 6    6   10 0.28729681 0.1028114   FALSE
+#> 7    7   10 0.21766243 0.1472689    TRUE
+#> 8    8   14 0.22858400 0.1046445   FALSE
 # }
 ```

@@ -67,7 +67,9 @@ tulpa_hyper_draws(fit, cells = NULL, n = 1000, within = NULL)
 ## Value
 
 A numeric matrix `[n x n_axes]` with the outer grid's axis names as
-columns, or `NULL` when the fit carries no outer-grid axis. Carries
+columns, or `NULL` when the fit carries no outer-grid axis. A spatial
+lengthscale is in the units of the coordinates as supplied, also when
+the field was fitted on standardized coordinates. Carries
 `attr(., "cells")` – the cell each row's coordinates were drawn in –
 plus `attr(., "within_cell")` and `attr(., "within_cell_declined")`, the
 per-axis construction that ran and why a requested one did not, and

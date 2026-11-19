@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -267,10 +271,10 @@ on (0, 1). The panel also returns its headline numbers invisibly.</p>
 <span><span class="co">#&gt; correct      6.568746e-01   1.043197</span></span>
 <span><span class="co">#&gt; misspecified 1.654764e-08   1.848630</span></span></code></pre></div>
 <p>On the correct fit the PIT points lie on the diagonal
-(Kolmogorov-Smirnov p = 0.69) and the observed variance sits inside the
+(Kolmogorov-Smirnov p = 0.66) and the observed variance sits inside the
 simulated ones, at 1.04 times their median. On the misspecified fit the
-QQ plot bends away from the diagonal (p = 2.6e-08), and the observed
-variance, 1.86 times the simulated median, falls beyond the right edge
+QQ plot bends away from the diagonal (p = 1.7e-08), and the observed
+variance, 1.85 times the simulated median, falls beyond the right edge
 of the histogram, so its red line is not drawn. The correlogram reads
 Moran’s I between -0.075 and -0.04 on the correct fit: it is built from
 <code><a href="https://rdrr.io/r/stats/residuals.html" class="external-link">residuals()</a></code>, which include the fitted field (see <a href="#spatial-and-temporal-structure">Spatial and temporal
@@ -323,7 +327,7 @@ the PIT residuals against the uniform distribution.</p>
 <span><span class="co">#&gt; D = 0.12453, p-value = 1.655e-08</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two-sided</span></span></code></pre></div>
 <p>The largest gap between the empirical and the uniform distribution
-function, <code>D</code>, is 0.029 on the correct fit and 0.123 on the
+function, <code>D</code>, is 0.030 on the correct fit and 0.125 on the
 misspecified one; only the second is far outside what 600 uniform draws
 produce.</p>
 </div>
@@ -348,8 +352,8 @@ response by the median variance of the simulated datasets. A ratio above
 <span><span class="co">#&gt; data:  fit_od</span></span>
 <span><span class="co">#&gt; dispersion ratio = 1.8486, p-value &lt; 2.2e-16</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two.sided</span></span></code></pre></div>
-<p>The Poisson data give a ratio of 1.04 (p = 0.58), the overdispersed
-data 1.86 (p below 2.2e-16). The same comparison as a plot: simulate
+<p>The Poisson data give a ratio of 1.04 (p = 0.66), the overdispersed
+data 1.85 (p below 2.2e-16). The same comparison as a plot: simulate
 from the misspecified fit and place the observed variance among the
 simulated ones.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
@@ -395,7 +399,7 @@ test against that rate.</p>
 <span><span class="co">#&gt; probability of success </span></span>
 <span><span class="co">#&gt;             0.02166667</span></span></code></pre></div>
 <p>One of 600 Poisson counts falls outside its simulated range, against
-15 of 600 overdispersed counts (p = 0.00013).</p>
+13 of 600 overdispersed counts (p = 0.0013).</p>
 <p>The plot sorts the observations by their simulated median and draws
 the simulated range around each; observed counts outside it are marked
 in red.</p>
@@ -436,8 +440,11 @@ fit.</p>
 <span><span class="co">#&gt; zero-inflation ratio = 1.4632, observed zeros = 199, expected zeros =</span></span>
 <span><span class="co">#&gt; 136, p-value &lt; 2.2e-16</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two.sided</span></span></code></pre></div>
-<p>The Poisson data have 160 zeros against 142 expected (p = 0.10), the
-overdispersed data 199 against 137.</p>
+<p>The Poisson data have 160 zeros against 143 expected (p = 0.048), the
+overdispersed data 199 against 136 (p below 2.2e-16). The first model is
+the one that generated its data, so its p-value is a draw from a uniform
+distribution and falls below 0.05 in one dataset out of twenty; the
+ratio of 1.12 against 1.46 is what separates the two fits here.</p>
 <div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">z_sim</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colSums</a></span><span class="op">(</span><span class="va">sims_od</span> <span class="op">==</span> <span class="fl">0</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/hist.html" class="external-link">hist</a></span><span class="op">(</span><span class="va">z_sim</span>, breaks <span class="op">=</span> <span class="fl">20</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">z_sim</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y_od</span> <span class="op">==</span> <span class="fl">0</span><span class="op">)</span><span class="op">)</span>,</span>
@@ -487,8 +494,8 @@ with.</p>
 <span><span class="co">#&gt; data:  r</span></span>
 <span><span class="co">#&gt; D = 0.025462, p-value = 0.8314</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two-sided</span></span></code></pre></div>
-<p>The dispersion ratio drops to 1.03 (p = 0.79) and the PIT residuals
-pass the uniformity test (p = 0.85).</p>
+<p>The dispersion ratio drops to 1.06 (p = 0.74) and the PIT residuals
+pass the uniformity test (p = 0.83).</p>
 </div>
 </div>
 <div class="section level2">
@@ -543,7 +550,7 @@ first kept half a replicate away from the ends.</p>
 <span><span class="co">#&gt; data:  z_pit</span></span>
 <span><span class="co">#&gt; Moran's I = -0.00062299, Expected I = -0.0016694, p-value = 0.4487</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two.sided</span></span></code></pre></div>
-<p>On these residuals Moran’s I is -0.0006 (p = 0.46), the same
+<p>On these residuals Moran’s I is -0.0006 (p = 0.45), the same
 reading.</p>
 <p>An empirical semivariogram shows the same contrast as a function of
 distance. <code><a href="../reference/tulpa_variogram.html">tulpa_variogram()</a></code> bins half the squared
@@ -592,7 +599,7 @@ autocorrelation.</p>
 <span><span class="co">#&gt; DW = 1.9831, lag-1 r = 0.0084594, p-value = 0.8358</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two.sided</span></span></code></pre></div>
 <p>The year has no effect in the simulation, and the test finds no
-autocorrelation (DW = 1.98, p = 0.81). A trend over years that the model
+autocorrelation (DW = 1.98, p = 0.84). A trend over years that the model
 left out would push the statistic below 2; <a href="temporal-models.html">Temporal models</a> shows how to add
 one.</p>
 </div>
@@ -627,6 +634,7 @@ and bulk-ESS of at least 400 to the main parameters (the fixed effects
 and the field precision) and also counts divergences.</p>
 <div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dg_bad</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_bad</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, likelihood=cpu</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">dg_bad</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="op">-</span><span class="va">dg_bad</span><span class="op">$</span><span class="va">rhat</span><span class="op">)</span>, <span class="op">]</span>, <span class="fl">5</span><span class="op">)</span></span>
 <span><span class="co">#&gt;          parameter     rhat  ess_bulk  ess_tail</span></span>
 <span><span class="co">#&gt; 34 phi_spatial[31] 1.440025 21.807830  7.977189</span></span>
@@ -710,12 +718,14 @@ precision
 worked. The headline is a Pareto-smoothed importance sampling (PSIS)
 shape
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>k</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat k</annotation></semantics></math>
-that scores the integration grid against the Laplace-approximate marginal posterior of
+that scores the integration grid against the Laplace-approximate
+marginal posterior of
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>;
 below 0.5 is good, 0.5 to 0.7 usable, 0.7 or more unreliable. The table
 also reports how many grid cells carry the weight.</p>
 <div class="sourceCode" id="cb34"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_cholesky=cpu, sparse_selected_inverse=cpu</span></span>
 <span><span class="co">#&gt; Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)</span></span>
 <span><span class="co">#&gt;   two layers: the outer hyperparameter-grid integration, and the inner</span></span>
 <span><span class="co">#&gt;     Gaussian Laplace on the latent field</span></span>
@@ -733,8 +743,8 @@ also reports how many grid cells carry the weight.</p>
 <span><span class="co">#&gt;     the fit carries no posterior draws, so the per-parameter mean / sd / per-parameter columns are empty; tulpa_posterior_draws(fit) samples the retained outer-grid mixture if a sample is wanted</span></span></code></pre></div>
 <p>The outer
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>k</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat k</annotation></semantics></math>
-is in the good band, and the quadrature effective sample size of 3.84
-over 12 grid cells says the weight is spread over several cells; a value
+is in the good band, and the quadrature effective sample size of 3.78
+over 14 grid cells says the weight is spread over several cells; a value
 near 1 would mean the grid had collapsed onto one. <a href="reliability-pareto-k.html">Reliability diagnostics</a> explains
 each line of this table, what a collapsed grid means, and when to widen
 the grid or switch to a sampler.</p>
@@ -782,8 +792,8 @@ because dropping observations breaks the field’s structure, and names
 PSIS-LOO as the alternative.</p>
 <div class="sourceCode" id="cb37"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_kfold.html">tulpa_kfold</a></span><span class="op">(</span><span class="va">fit</span>, data <span class="op">=</span> <span class="va">d</span>, K <span class="op">=</span> <span class="fl">5</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Refit-based K-fold is not supported for spatial / temporal-field fits: subsetting the observations breaks the field structure. Use tulpa_criteria() (PSIS-LOO) for those.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Refit-based K-fold is not supported for spatial / temporal-field fits: subsetting the observations breaks the field structure. Use tulpa_criteria() (PSIS-LOO) for those.</span></span></code></pre></div>
 <p>On a fixed-effect fit it runs:</p>
 <div class="sourceCode" id="cb38"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">cv0</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_kfold.html">tulpa_kfold</a></span><span class="op">(</span><span class="va">fit0</span>, data <span class="op">=</span> <span class="va">d</span>, K <span class="op">=</span> <span class="fl">5</span>, seed <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>

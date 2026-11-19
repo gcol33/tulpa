@@ -210,14 +210,11 @@ than papering over the change.
 
 ## The R-callable backends
 
-A backend is the concrete algorithm a mode resolves to. tulpa registers
-more backends than it exposes from R: several ship a C++ kernel reachable
-by model packages that link against tulpa, with no R entry point yet. The
-`inference_mode_info()` map tags each one, `[R]` for callable from R and
-`[C-ABI]` for the kernel-only ones. Asking for a C-ABI backend by name from
-R errors with a message that names the missing entry point rather than
-pretending to dispatch. This section covers the backends you can drive
-from R today.
+A backend is the concrete algorithm a mode resolves to. The
+`inference_mode_info()` map tags each one: `[R]` when `tulpa(mode = )`
+dispatches to it, and `[C-ABI]` when only a model package that links against
+tulpa can reach its C++ kernel. In this version every backend carries the
+`[R]` tag. This section covers them.
 
 ### laplace (Tier 2)
 
@@ -573,8 +570,8 @@ needs, move up a tier and pay for the stronger guarantee on purpose.
 
 ## See also
 
-- `inference_mode_info()` prints the full tier and backend map, with the
-  R-callable and C-ABI-only backends tagged.
+- `inference_mode_info()` prints the full tier and backend map, with each
+  backend's entry point tagged.
 - The Get started article covers the fitting workflow.
 
 - The `tgmrf()` vignette runs the same tier ladder on a user-defined latent

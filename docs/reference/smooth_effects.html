@@ -26,7 +26,7 @@ hyperparameter grid weights."><meta property="og:image" content="https://gillesc
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,21 +39,44 @@ hyperparameter grid weights."><meta property="og:image" content="https://gillesc
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -115,6 +138,10 @@ effects.</p></div>
 <span class="r-in"><span><span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="fl">300</span>, <span class="op">-</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">d</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">300</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.3</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="fl">2</span> <span class="op">*</span> <span class="va">d</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="fu">s</span><span class="op">(</span><span class="va">x</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span>
 <span class="r-in"><span><span class="va">sm</span> <span class="op">&lt;-</span> <span class="fu">smooth_effects</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">sm</span><span class="op">$</span><span class="va">x</span>, <span class="va">sm</span><span class="op">$</span><span class="va">estimate</span>, type <span class="op">=</span> <span class="st">"l"</span><span class="op">)</span></span></span>
 <span class="r-plt img"><img src="smooth_effects-1.png" alt="" width="700" height="433"></span>

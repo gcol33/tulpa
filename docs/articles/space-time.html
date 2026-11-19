@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -421,9 +425,9 @@ and switches off the progress lines.</p>
 <span><span class="co">#&gt;   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Hyperparameters:</span></span>
-<span><span class="co">#&gt;  parameter   mean    sd median ci_lo  ci_hi</span></span>
-<span><span class="co">#&gt;     b1.tau  5.015 1.614  4.814 2.437  8.703</span></span>
-<span><span class="co">#&gt;     b2.tau 11.042 5.848  9.936 3.028 25.431</span></span>
+<span><span class="co">#&gt;  parameter mean  sd median ci_lo  ci_hi</span></span>
+<span><span class="co">#&gt;     b1.tau  Inf Inf  4.814 2.437  8.703</span></span>
+<span><span class="co">#&gt;     b2.tau  Inf Inf  9.936 3.028 25.431</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Fixed-effect prior: normal(0, 2.5)</span></span>
 <span><span class="co">#&gt; </span></span>
@@ -484,23 +488,23 @@ Its default temporal field is an AR(1) process; with
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>tulpa <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">fit_add</span><span class="op">)</span>, fit_st_nested <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">fit_st</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         tulpa fit_st_nested </span></span>
 <span><span class="co">#&gt;     -594.6981     -594.7043</span></span></code></pre></div>
-<p>The two doors agree on the coefficients to the fourth decimal and on
-the log evidence to 0.05. The AR(1) variant replaces the random walk by
-a stationary process whose correlation <code>rho</code> is integrated on
+<p>The two doors agree on the coefficients to within 0.0001 and on the
+log evidence to 0.01. The AR(1) variant replaces the random walk by a
+stationary process whose correlation <code>rho</code> is integrated on
 its own grid axis.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_ar1</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/fit_st_nested.html">fit_st_nested</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">d</span><span class="op">$</span><span class="va">x</span><span class="op">)</span>, <span class="va">d</span><span class="op">$</span><span class="va">region</span>, <span class="va">W</span>, <span class="va">d</span><span class="op">$</span><span class="va">time</span>, <span class="va">Tn</span>,</span>
 <span>                         temporal_type <span class="op">=</span> <span class="st">"ar1"</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>                         control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_ar1</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"mean"</span>, <span class="st">"sd"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;      parameter       mean        sd</span></span>
-<span><span class="co">#&gt; 1  tau_spatial  5.0298950 1.3176212</span></span>
-<span><span class="co">#&gt; 2 tau_temporal 10.9667305 4.0207765</span></span>
-<span><span class="co">#&gt; 3          rho  0.8121222 0.1655499</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_ar1</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;      parameter    median     ci_lo      ci_hi</span></span>
+<span><span class="co">#&gt; 1  tau_spatial 4.7842160 2.4489151  8.6629358</span></span>
+<span><span class="co">#&gt; 2 tau_temporal 9.6440459 3.0854052 23.9174361</span></span>
+<span><span class="co">#&gt; 3          rho 0.7624222 0.4854092  0.9786125</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>rw1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">fit_st</span><span class="op">)</span>, ar1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">fit_ar1</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;       rw1       ar1 </span></span>
 <span><span class="co">#&gt; -594.7043 -596.2453</span></span></code></pre></div>
-<p>The AR(1) fit puts the correlation’s posterior mean at 0.81 and its
+<p>The AR(1) fit puts the correlation’s posterior median at 0.76 and its
 log evidence 1.5 below the random walk’s. <code><a href="../reference/fit_st_nested.html">fit_st_nested()</a></code>
 also takes <code>spatial_type = "bym2"</code>,
 <code>"car_proper"</code>, <code>"hsgp"</code> and <code>"nngp"</code>;
@@ -521,15 +525,15 @@ serve as coordinates.</p>
 <span>                spatial <span class="op">=</span> <span class="fu"><a href="../reference/spatial_gp.html">spatial_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span><span class="op">)</span>,</span>
 <span>                temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"auto"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
 <span><span class="co">#&gt; GP: 25 unique locations from 250 observations</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"mean"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;   parameter       mean     ci_lo     ci_hi</span></span>
-<span><span class="co">#&gt; 1 b1.sigma2  0.4514785 0.1497793  1.278785</span></span>
-<span><span class="co">#&gt; 2 b1.phi_gp        Inf 2.5944811 31.592851</span></span>
-<span><span class="co">#&gt; 3    b2.tau 11.0962746 3.0739057 25.308792</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   parameter   median     ci_lo     ci_hi</span></span>
+<span><span class="co">#&gt; 1 b1.sigma2 0.375845 0.1497793  1.278785</span></span>
+<span><span class="co">#&gt; 2 b1.phi_gp 8.139318 2.5944811 31.592851</span></span>
+<span><span class="co">#&gt; 3    b2.tau 9.945808 3.0739057 25.308792</span></span></code></pre></div>
 <p>The grid now runs over the field variance <code>b1.sigma2</code>, its
 range <code>b1.phi_gp</code> and the trend precision
 <code>b2.tau</code>. With 25 locations the variance interval runs from
-0.16 to 4.53.</p>
+0.15 to 1.28.</p>
 </div>
 </div>
 <div class="section level2">
@@ -604,7 +608,7 @@ simulates checks the count distribution as a whole.</p>
 <span><span class="co">#&gt; data:  fit_add</span></span>
 <span><span class="co">#&gt; dispersion ratio = 1.0909, p-value = 0.44</span></span>
 <span><span class="co">#&gt; alternative hypothesis: two.sided</span></span></code></pre></div>
-<p>The dispersion ratio is 1.07 (p = 0.48). The counts show no excess
+<p>The dispersion ratio is 1.09 (p = 0.44). The counts show no excess
 spread overall, and the interaction is found only by the check that
 follows regions over time.</p>
 </div>
@@ -624,17 +628,17 @@ axis, <code>b3.sigma</code>.</p>
 <span>               family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>               spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span>,</span>
 <span>               temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"auto"</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_I</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"mean"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;   parameter       mean      ci_lo      ci_hi</span></span>
-<span><span class="co">#&gt; 1    b1.tau  5.0175724 2.43274466  8.7250870</span></span>
-<span><span class="co">#&gt; 2    b2.tau 11.6020633 3.18997099 26.7518898</span></span>
-<span><span class="co">#&gt; 3  b3.sigma  0.1660362 0.04583251  0.2656239</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_I</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   parameter     median      ci_lo      ci_hi</span></span>
+<span><span class="co">#&gt; 1    b1.tau  4.8093377 2.43274466  8.7250870</span></span>
+<span><span class="co">#&gt; 2    b2.tau 10.3525715 3.18997099 26.7518898</span></span>
+<span><span class="co">#&gt; 3  b3.sigma  0.1683318 0.04583251  0.2656239</span></span></code></pre></div>
 <p>tulpa warns when a multi-block grid takes more than 2 s to solve;
 this fit and the interaction fits below sit near that limit on the
 machine that built the article, and their warnings are not printed. The
 posterior of
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mi>δ</mi></msub><annotation encoding="application/x-tex">\sigma_\delta</annotation></semantics></math>
-sits at 0.17 with an interval from 0.08 to 0.26, against an interaction
+sits at 0.17 with an interval from 0.05 to 0.27, against an interaction
 whose true standard deviation is 0.107. <code><a href="../reference/ranef.html">ranef()</a></code> returns the
 250 cell effects with their posterior standard deviations and 95%
 intervals.</p>
@@ -670,11 +674,11 @@ additive model.</p>
 <span><span class="va">fit_II</span>  <span class="op">&lt;-</span> <span class="fu">fit_int</span><span class="op">(</span><span class="st">"II"</span><span class="op">)</span></span>
 <span><span class="va">fit_III</span> <span class="op">&lt;-</span> <span class="fu">fit_int</span><span class="op">(</span><span class="st">"III"</span><span class="op">)</span></span>
 <span><span class="va">fit_IV</span>  <span class="op">&lt;-</span> <span class="fu">fit_int</span><span class="op">(</span><span class="st">"IV"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_IV</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"mean"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;   parameter      mean     ci_lo      ci_hi</span></span>
-<span><span class="co">#&gt; 1    b1.tau  5.212854  2.531785   9.060296</span></span>
-<span><span class="co">#&gt; 2    b2.tau 12.297476  3.387975  28.175678</span></span>
-<span><span class="co">#&gt; 3    b3.tau 57.373271 13.118868 232.224116</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_IV</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   parameter    median     ci_lo      ci_hi</span></span>
+<span><span class="co">#&gt; 1    b1.tau  4.996203  2.531785   9.060296</span></span>
+<span><span class="co">#&gt; 2    b2.tau 10.973130  3.387975  28.175678</span></span>
+<span><span class="co">#&gt; 3    b3.tau 37.240421 13.118868 232.224116</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="extracting-the-interaction">Extracting the interaction<a class="anchor" aria-label="anchor" href="#extracting-the-interaction"></a>
@@ -797,7 +801,7 @@ returns a 90% predictive interval per region and held-out time.</p>
 <span><span class="co">#&gt;          covered of mean_width</span></span>
 <span><span class="co">#&gt; additive      42 50      6.801</span></span>
 <span><span class="co">#&gt; type_II       42 50      6.841</span></span></code></pre></div>
-<p>The additive model covers 41 and the type II model 42 of the 50
+<p>The additive model and the type II model each cover 42 of the 50
 held-out counts with their 90% intervals, and the two sets of intervals
 have the same mean width to within 0.1 counts. The plot shows the
 south-west corner region, where the hotspot grows, and the opposite
@@ -839,11 +843,11 @@ it.</p>
 <span><span class="co">#&gt; 5  type_IV -566.3235 13.55630 47.43733 1132.647 -1.5232962 3.600274 0.126245376</span></span>
 <span><span class="co">#&gt; 3  type_II -568.5760 13.84581 49.29449 1137.152 -3.7757999 2.695184 0.013272892</span></span>
 <span><span class="co">#&gt; 1 additive -570.7926 15.18072 32.56719 1141.585 -5.9924213 2.943358 0.001446436</span></span></code></pre></div>
-<p>Every interaction model ranks above the additive one, which sits 6.9
+<p>Every interaction model ranks above the additive one, which sits 6.0
 units of expected log predictive density (<code>elpd</code>) below the
-best, at a standard error of the difference of 3.4. Among the
-interaction types the differences reach 4.1 units, each within about 1.2
-standard errors. The ranking puts type III first and type I 0.15 behind
+best, at a standard error of the difference of 2.9. Among the
+interaction types the differences reach 3.8 units, each within about 1.4
+standard errors. The ranking puts type I first and type III 0.73 behind
 it, even though type IV recovered the interaction best: WAIC scores the
 fit to these 250 counts, and a free effect per cell can fit them as well
 as a smooth one.</p>
@@ -858,8 +862,8 @@ of all five carry a proper hyperprior.</p>
 <span><span class="co">#&gt; 3  type_II        2 -594.1770 log_evidence               </span></span>
 <span><span class="co">#&gt; 4 type_III        2 -593.4823 log_evidence               </span></span>
 <span><span class="co">#&gt; 5  type_IV        2 -592.6215 log_evidence</span></span></code></pre></div>
-<p>The type IV fit has the highest log evidence, 2.0 above the additive
-model, and the five fits lie within those 2.0 units of each other.</p>
+<p>The type IV fit has the highest log evidence, 2.1 above the additive
+model, and the five fits lie within those 2.1 units of each other.</p>
 </div>
 <div class="section level2">
 <h2 id="prior-sensitivity">Prior sensitivity<a class="anchor" aria-label="anchor" href="#prior-sensitivity"></a>
@@ -934,10 +938,10 @@ spatial values, the 10 temporal values, then the 250 interaction
 values.</p>
 <p>The tight prior moves the posterior mean of
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">log</mi><mo>⁡</mo></mrow><msub><mi>τ</mi><mi>δ</mi></msub></mrow><annotation encoding="application/x-tex">\log \tau_\delta</annotation></semantics></math>
-from 3.6 to 5.3. The estimated interaction keeps its shape, with a
+from 3.7 to 5.9. The estimated interaction keeps its shape, with a
 correlation with the truth of 0.84, but its standard deviation shrinks
-from 0.103 to 0.041 against a true 0.107: the hotspot is drawn at less
-than half its size. With one count per cell the data inform
+from 0.100 to 0.025 against a true 0.107: the hotspot is drawn at about
+a quarter of its size. With one count per cell the data inform
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>τ</mi><mi>δ</mi></msub><annotation encoding="application/x-tex">\tau_\delta</annotation></semantics></math>
 only weakly, and the prior on it decides the amplitude of the map’s
 change over time.</p>
@@ -948,13 +952,13 @@ penalised-complexity priors on the two precisions.</p>
 <code class="sourceCode R"><span><span class="va">fit_flat</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/fit_st_nested.html">fit_st_nested</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">d</span><span class="op">$</span><span class="va">x</span><span class="op">)</span>, <span class="va">d</span><span class="op">$</span><span class="va">region</span>, <span class="va">W</span>, <span class="va">d</span><span class="op">$</span><span class="va">time</span>, <span class="va">Tn</span>,</span>
 <span>                          temporal_type <span class="op">=</span> <span class="st">"rw1"</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>                          hyperprior <span class="op">=</span> <span class="st">"flat"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>proper <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_st</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">2</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mean"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span>,</span>
-<span>      flat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_flat</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">2</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mean"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="co">#&gt;               mean    ci_lo     ci_hi</span></span>
-<span><span class="co">#&gt; proper.1  5.031721 2.449798  8.666083</span></span>
-<span><span class="co">#&gt; proper.2 11.184132 3.134236 24.986985</span></span>
-<span><span class="co">#&gt; flat.1    5.109744 2.476467  8.809522</span></span>
-<span><span class="co">#&gt; flat.2   11.980574 3.371556 26.591536</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>proper <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_st</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">2</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span>,</span>
+<span>      flat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_flat</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">2</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="co">#&gt;             median    ci_lo     ci_hi</span></span>
+<span><span class="co">#&gt; proper.1  4.785948 2.449798  8.666083</span></span>
+<span><span class="co">#&gt; proper.2  9.800275 3.134236 24.986984</span></span>
+<span><span class="co">#&gt; flat.1    4.858475 2.476467  8.809522</span></span>
+<span><span class="co">#&gt; flat.2   10.518826 3.371556 26.591536</span></span></code></pre></div>
 <p>Both precisions move by less than a tenth of their interval
 width.</p>
 </div>
@@ -1049,8 +1053,8 @@ fits nothing; it stops with a message that names the additive doors
 above.</p>
 <div class="sourceCode" id="cb33"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/spatiotemporal_gp.html">spatiotemporal_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span>, <span class="st">"time"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Non-separable spatiotemporal GP fields are not fitted by any tulpa backend: no solver carries a joint space-time covariance. The additive model, a spatial GP plus a temporal field, is fitted by tulpa(spatial = spatial_gp(...), temporal = ) (NNGP or HSGP) and by fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...).</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Non-separable spatiotemporal GP fields are not fitted by any tulpa backend: no solver carries a joint space-time covariance. The additive model, a spatial GP plus a temporal field, is fitted by tulpa(spatial = spatial_gp(...), temporal = ) (NNGP or HSGP) and by fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...).</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="cost-against-regions-and-times">Cost against regions and times<a class="anchor" aria-label="anchor" href="#cost-against-regions-and-times"></a>
@@ -1081,17 +1085,17 @@ this article was built (two threads, Windows workstation).</p>
 <span>              <span class="fu">time_fit</span><span class="op">(</span><span class="fl">5</span>, <span class="fl">20</span>, <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">cost</span></span>
 <span><span class="co">#&gt;      regions times grid_cells seconds</span></span>
-<span><span class="co">#&gt; [1,]      25    10        126     0.4</span></span>
-<span><span class="co">#&gt; [2,]      36    10        156     0.6</span></span>
-<span><span class="co">#&gt; [3,]      25    20        144     0.5</span></span>
-<span><span class="co">#&gt; [4,]      25    10        944    31.0</span></span>
-<span><span class="co">#&gt; [5,]      36    10        693    44.2</span></span>
-<span><span class="co">#&gt; [6,]      25    20        662    58.2</span></span></code></pre></div>
+<span><span class="co">#&gt; [1,]      25    10        126     0.3</span></span>
+<span><span class="co">#&gt; [2,]      36    10        156     0.3</span></span>
+<span><span class="co">#&gt; [3,]      25    20        144     0.4</span></span>
+<span><span class="co">#&gt; [4,]      25    10        944    19.1</span></span>
+<span><span class="co">#&gt; [5,]      36    10        693    27.0</span></span>
+<span><span class="co">#&gt; [6,]      25    20        662    36.7</span></span></code></pre></div>
 <p>The additive fit stays under a second at every size. The type IV fit
 solves 662 to 944 grid cells, each over all
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>T</mi></mrow><annotation encoding="application/x-tex">S T</annotation></semantics></math>
-interaction values, and takes 31 s on 25 regions over 10 times, 44 s on
-36 regions over 10 times and 58 s on 25 regions over 20 times.</p>
+interaction values, and takes 19 s on 25 regions over 10 times, 27 s on
+36 regions over 10 times and 37 s on 25 regions over 20 times.</p>
 </div>
 <div class="section level3">
 <h3 id="rules-of-thumb">Rules of thumb<a class="anchor" aria-label="anchor" href="#rules-of-thumb"></a>
@@ -1107,22 +1111,22 @@ from one time point to the next, type IV a change that is smooth in
 both. On these data the smooth hotspot was recovered with correlation
 0.78 by type IV and 0.20 by type I.</li>
 <li>Do not choose among types I to IV on WAIC alone at this data size.
-With 250 counts the four interaction fits sat within 4.1
-<code>elpd</code> units of each other, inside about 1.2 standard
+With 250 counts the four interaction fits sat within 3.8
+<code>elpd</code> units of each other, inside about 1.4 standard
 errors.</li>
 <li>Report the prior on
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>τ</mi><mi>δ</mi></msub><annotation encoding="application/x-tex">\tau_\delta</annotation></semantics></math>
 with any interaction map. With one count per cell and a mean count near
 4.5, moving the prior centre from 3 to 6 on the log scale shrank the
-estimated interaction’s standard deviation from 0.10 to 0.04.</li>
+estimated interaction’s standard deviation from 0.100 to 0.025.</li>
 <li>Keep the additive model when the residual check over time finds
 nothing and the WAIC gain of an interaction is within its standard
 error. An interaction adds one value per region-time cell: here the type
-IV fit carried 250 of them for a WAIC gain of 5.1 over the additive
-model, and the type I estimate, which shares nothing between cells,
-correlated with the truth at 0.20.</li>
+IV fit carried 250 of them for a WAIC gain of 4.5 <code>elpd</code>
+units over the additive model, and the type I estimate, which shares
+nothing between cells, correlated with the truth at 0.20.</li>
 <li>Budget the interaction fit from the cost table: with a type IV
-interaction over 250 cells the fit took about 78 times as long as the
+interaction over 250 cells the fit took about 64 times as long as the
 additive fit on the same lattice.</li>
 </ul>
 </div>

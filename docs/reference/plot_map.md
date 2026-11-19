@@ -11,7 +11,7 @@ plot_map(
   x,
   coords = NULL,
   what = c("fitted", "uncertainty"),
-  summary = c("median", "mean", "q2.5", "q97.5", "sd"),
+  summary = c("mean", "median", "q2.5", "q97.5", "sd"),
   newdata = NULL,
   title = NULL,
   palette = "viridis",
@@ -36,7 +36,11 @@ plot_map(
 
   A data frame or matrix with spatial coordinates (columns named
   'x'/'y', 'X'/'Y', 'lon'/'lat', 'longitude'/'latitude', or
-  'Easting'/'Northing'). Required if `x` is a data frame.
+  'Easting'/'Northing'). Required if `x` is a data frame, and for a fit
+  whose spatial field records no coordinate columns (an areal field). A
+  fit with a continuous field is mapped at the coordinate columns it was
+  fitted with, read from `newdata` or, at the training rows, from the
+  fit.
 
 - what:
 
@@ -45,9 +49,13 @@ plot_map(
 
 - summary:
 
-  Which summary statistic for `what = "fitted"`: "median" (default) /
-  "mean" (both the point prediction), "q2.5" / "q97.5" (the credible
-  bounds), or "sd" (the link-scale standard error).
+  Which summary statistic for `what = "fitted"`: "mean" (default; for a
+  fit, the point prediction of
+  [`predict.tulpa_fit()`](https://gillescolling.com/tulpa/reference/predict.tulpa_fit.md),
+  the inverse link at the posterior mean of the linear predictor),
+  "q2.5" / "q97.5" (the credible bounds), "sd" (the link-scale standard
+  error), or "median" (a data frame's `median` column; a fit reports no
+  median).
 
 - newdata:
 

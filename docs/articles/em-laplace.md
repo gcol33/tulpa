@@ -1,114 +1,552 @@
 # EM + Laplace
 
-## Installation
+Some models carry a discrete latent variable that, once known, turns the
+fit into ordinary weighted GLMs: occupancy (was the site occupied?),
+N-mixture (what was the true count?), zero inflation (is this zero
+structural?).
+[`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
+runs the expectation-maximisation (EM) loop for that pattern. The model
+enters only through two callbacks, which supply the latent-variable
+posterior and the GLM blocks it implies, and the driver fits each block
+with
+[`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+and iterates to convergence. This article writes both callbacks for a
+zero-inflated Poisson model with a known truth, runs the driver, pools
+multiple imputations, and samples the joint posterior with
+Metropolis-Hastings (MH) within Gibbs. The EM and imputation intervals
+are also compared with maximum likelihood over 100 simulated datasets.
+Model packages such as tulpaObs build their occupancy and N-mixture
+fitters on this driver; the callbacks below are the whole contract.
 
-``` r
+1.  **Simulate** counts with known abundance and zero-inflation
+    coefficients.
+2.  **Write** the `e_step` and `m_step_encode` callbacks.
+3.  **Fit** with
+    [`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
+    and read convergence and estimates.
+4.  **Pool** imputations with `correction = "mi"` or sample the joint
+    posterior with `correction = "gibbs"`.
+5.  **Compare** intervals against the exact fit and the truth.
 
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
 library(tulpa)
 ```
 
-## What the driver is for
+## The model
 
-Some models have a latent variable that, once known, turns the fit into
-an ordinary weighted GLM: occupancy (was the site occupied?), N-mixture
-(what was the true count?), zero-inflation (is this a structural zero?).
-[`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
-is the generic engine for that pattern. It does not know your model –
-you supply two callbacks and it runs the EM loop, solving each M-step
-submodel with
-[`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
-and checking convergence.
+Each site $`i = 1, \dots, n`$ is either at risk ($`z_i = 1`$, the
+species can be counted there) or a structural zero ($`z_i = 0`$). The
+count is Poisson only at sites at risk:
 
-This is deliberately an engine door: model packages such as **tulpaObs**
-build their occupancy and N-mixture fitters on top of it. The callbacks
-below are the whole contract.
+``` math
+z_i \sim \mathrm{Bernoulli}(\psi_i), \qquad
+y_i \mid z_i \sim \mathrm{Poisson}(z_i \lambda_i),
+```
+
+``` math
+\operatorname{logit} \psi_i = \gamma_0 + \gamma_1 v_i, \qquad
+\log \lambda_i = \beta_0 + \beta_1 x_i ,
+```
+
+where $`\psi_i`$ is the probability that site $`i`$ is at risk,
+$`\lambda_i`$ its expected count when it is, $`v_i`$ a covariate of the
+zero-inflation part and $`x_i`$ a covariate of abundance. If $`z_i`$
+were observed, $`\gamma`$ would come from a logistic regression of $`z`$
+on $`v`$ and $`\beta`$ from a Poisson regression of $`y`$ on $`x`$ over
+the sites with $`z_i = 1`$.
+
+$`z_i`$ is not observed, so the E-step replaces it with its posterior
+probability under the current estimates. A positive count proves
+$`z_i = 1`$; a zero can come from either branch:
+
+``` math
+\omega_i = P(z_i = 1 \mid y_i) =
+\begin{cases}
+1, & y_i > 0, \\[4pt]
+\dfrac{\psi_i e^{-\lambda_i}}{\psi_i e^{-\lambda_i} + 1 - \psi_i}, & y_i = 0 .
+\end{cases}
+```
+
+The M-step maximises the expected complete-data log-likelihood. For the
+zero-inflation part that is
+$`\sum_i [\omega_i \log \psi_i + (1 - \omega_i) \log(1 - \psi_i)]`$, a
+weighted Bernoulli log-likelihood, entered as two rows per site:
+$`z = 1`$ at weight $`\omega_i`$ and $`z = 0`$ at weight
+$`1 - \omega_i`$. For the abundance part it is the Poisson
+log-likelihood of each count at weight $`\omega_i`$.
+
+## Simulating data
+
+300 sites, with $`\gamma = (0.8, -1.0)`$, so about 69% of sites are at
+risk at $`v = 0`$ and fewer where $`v`$ is large, and
+$`\beta = (1.0, 0.5)`$, an expected count of $`e^{1} \approx 2.7`$ at an
+average site at risk.
+
+``` r
+
+n          <- 300
+gamma_true <- c(0.8, -1.0)   # logit P(at risk): intercept, slope on v
+beta_true  <- c(1.0, 0.5)    # log expected count: intercept, slope on x
+
+sim_zip <- function(n) {
+  x <- rnorm(n)
+  v <- rnorm(n)
+  z <- rbinom(n, 1, plogis(gamma_true[1] + gamma_true[2] * v))
+  y <- z * rpois(n, exp(beta_true[1] + beta_true[2] * x))
+  list(y = y, X = cbind(1, x), Z = cbind(1, v), z = z)
+}
+
+set.seed(20261102)
+dat <- sim_zip(n)
+c(structural_zeros = mean(dat$z == 0), observed_zeros = mean(dat$y == 0))
+#> structural_zeros   observed_zeros 
+#>        0.3300000        0.4266667
+```
+
+A third of the sites are structural zeros, and the Poisson branch adds
+the rest of the 43% observed zeros. `dat$z` is kept for the simulation
+only; no fit below reads it.
 
 ## The two callbacks
 
-`e_step(fits, ...)` receives the current per-submodel fits and returns
-the latent-variable posterior as weights:
-
-``` r
-
-e_step <- function(fits, ...) {
-  # Use the current fits to compute the responsibility of each observation
-  # (e.g. the posterior probability that a zero is a Poisson zero, not a
-  # structural one). Return them as a `weights` element.
-  list(weights = responsibilities)
-}
-```
-
-`m_step_encode(weights, ...)` turns those weights into one or more
-weighted GLM submodels. Each block is a
-`list(y, n_trials, X, family, offset)`; the driver fits each with
+`e_step(fits, ...)` receives the current block fits, a named list of
 [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
-and threads the per-block `family` and `offset` through automatically:
+results whose `$mode` holds the coefficients, and returns
+`list(weights = ...)`. On the first iteration `fits` is an empty list,
+so the callback returns a starting guess: every zero at 0.5.
+`m_step_encode(weights, ...)` returns one block per GLM, each a list
+with `y`, `X`, `family` and here `weights`. A factory builds both from
+one dataset, so the same code serves the replication further down.
 
 ``` r
 
-m_step_encode <- function(weights, ...) {
-  list(
-    lambda = list(y = counts, n_trials = 1L, X = X_abund,
-                  family = "poisson", offset = log(weights)),
-    pi     = list(y = z,      n_trials = 1L, X = X_zero,
-                  family = "binomial", offset = NULL)
+zip_callbacks <- function(d) {
+  y <- d$y; X <- d$X; Z <- d$Z; n <- length(y)
+  e_step <- function(fits, ...) {
+    if (!length(fits)) return(list(weights = ifelse(y > 0, 1, 0.5)))
+    eta <- drop(Z %*% fits$occ$mode)
+    log_p0 <- plogis(eta, log.p = TRUE) - exp(drop(X %*% fits$abund$mode))
+    list(weights = ifelse(y > 0, 1,
+                         plogis(log_p0 - plogis(-eta, log.p = TRUE))))
+  }
+  m_step_encode <- function(weights, ...) list(
+    occ   = list(y = rep(c(1, 0), each = n), X = rbind(Z, Z),
+                 weights = c(weights, 1 - weights), family = "binomial"),
+    abund = list(y = y, X = X, weights = weights, family = "poisson")
   )
+  list(e_step = e_step, m_step_encode = m_step_encode)
 }
+cb <- zip_callbacks(dat)
 ```
 
-## Running it, and the bias correction
+The binomial block carries the soft labels in `weights`, never as a
+fractional `y`;
+[`?tulpa_em_laplace`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
+explains why a fractional response is a different objective and is
+refused.
+
+## Fitting
+
+[`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
+alternates the two callbacks until the largest relative change in any
+coefficient falls below `tol` (default `1e-4`). The E-step weights are
+damped between iterations, `(1 - d) * new + d * previous` with
+`damping = 0.3` by default.
 
 ``` r
 
-fit <- tulpa_em_laplace(
-  e_step        = e_step,
-  m_step_encode = m_step_encode,
-  max_iter      = 30L,
-  tol           = 1e-4
-)
-fit$fits        # the converged per-submodel Laplace fits
-fit$n_iter
-fit$converged
+fit <- tulpa_em_laplace(cb$e_step, cb$m_step_encode, verbose = FALSE)
+c(converged = fit$converged, iterations = fit$n_iter)
+#>  converged iterations 
+#>          1         19
 ```
 
-The EM point estimate is fast but its standard errors ignore the
-uncertainty in the imputed latent variable. Two post-EM corrections
-restore it, pooled by Rubin’s rules:
+`fit$history` records the change per iteration:
 
 ``` r
 
-# Multiple imputation: refit on several latent draws and pool.
-fit_mi <- tulpa_em_laplace(e_step, m_step_encode, correction = "mi")
-
-# Warm-started Gibbs from the EM mode, then pool.
-fit_gibbs <- tulpa_em_laplace(e_step, m_step_encode, correction = "gibbs")
+plot(fit$history$iter[-1], fit$history$delta[-1], log = "y", type = "b",
+     pch = 19, xlab = "EM iteration", ylab = "max relative change")
+abline(h = 1e-4, lty = 2)
 ```
 
-An optional `beta_prior = list(mean, sd)` threads a Gaussian
-fixed-effect prior into every M-step block and into the correction
-refits, and `m_step_extra(fits, weights, ...)` updates
-non-linear-predictor parameters (dispersions, mixing weights) between
-the M- and E-steps. See
-[`?tulpa_em_laplace`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md).
-For a Monte-Carlo E-step, use
-[`tulpa_em_mc()`](https://gillescolling.com/tulpa/reference/tulpa_em_mc.md).
+![Maximum relative change in the coefficients against EM iteration on a
+log scale, falling along a straight line from about 0.4 to below 1e-4
+over 19 iterations.](em-laplace_files/figure-html/history-1.png)
+
+The change falls by a nearly constant factor per iteration, the linear
+convergence of EM.
+
+Each block fit carries its mode and `H_beta`, the curvature of the
+weighted M-step objective at the mode. Its inverse gives a standard
+error that treats the final weights as known.
+
+``` r
+
+em_table <- function(fit) {
+  est <- c(fit$fits$occ$mode, fit$fits$abund$mode)
+  se  <- c(sqrt(diag(solve(fit$fits$occ$H_beta))),
+           sqrt(diag(solve(fit$fits$abund$H_beta))))
+  data.frame(est = est, se = se)
+}
+coef_names <- c("gamma0", "gamma1", "beta0", "beta1")
+truth <- c(gamma_true, beta_true)
+plain <- em_table(fit)
+round(data.frame(truth, plain, row.names = coef_names), 3)
+#>        truth    est    se
+#> gamma0   0.8  0.610 0.127
+#> gamma1  -1.0 -0.671 0.138
+#> beta0    1.0  1.021 0.045
+#> beta1    0.5  0.450 0.041
+```
+
+The abundance coefficients sit within 1.3 standard errors of the truth.
+The zero-inflation slope $`\gamma_1`$ is estimated at -0.67 against a
+truth of -1.0, more than two of its standard errors away; one dataset
+can do that by chance, and the replication below measures how often.
+
+## A reference: the exact maximum-likelihood fit
+
+The zero-inflated Poisson likelihood has a closed form,
+$`P(y_i = 0) = 1 - \psi_i + \psi_i e^{-\lambda_i}`$ and
+$`P(y_i = k) = \psi_i \,\mathrm{Poisson}(k; \lambda_i)`$ for $`k > 0`$,
+so it can be maximised directly and its standard errors read off the
+observed information of the marginal likelihood. That is the answer EM
+approximates.
+
+``` r
+
+zip_mle <- function(d) {
+  nll <- function(p) {
+    psi <- plogis(drop(d$Z %*% p[1:2]))
+    lam <- exp(drop(d$X %*% p[3:4]))
+    -sum(ifelse(d$y == 0, log(1 - psi + psi * exp(-lam)),
+                log(psi) + dpois(d$y, lam, log = TRUE)))
+  }
+  o <- optim(rep(0, 4), nll, method = "BFGS", hessian = TRUE)
+  data.frame(est = o$par, se = sqrt(diag(solve(o$hessian))))
+}
+exact <- zip_mle(dat)
+round(data.frame(em_est = plain$est, mle_est = exact$est,
+            em_se = plain$se, mle_se = exact$se, row.names = coef_names), 3)
+#>        em_est mle_est em_se mle_se
+#> gamma0  0.610   0.613 0.127  0.150
+#> gamma1 -0.671  -0.675 0.138  0.160
+#> beta0   1.021   1.021 0.045  0.051
+#> beta1   0.450   0.451 0.041  0.044
+```
+
+The EM estimates agree with the maximum-likelihood estimates to within
+0.004. The EM standard errors are smaller, 0.138 against 0.160 for
+$`\gamma_1`$: the weighted M-step treats each $`\omega_i`$ as data, so
+the uncertainty about which zeros are structural is missing from them.
+
+## Correcting the standard errors
+
+`correction = "mi"` draws independent hard labels
+$`z_i \sim \mathrm{Bernoulli}(\omega_i)`$ at the converged estimate and
+refits every block. Rubin’s rules
+([`rubins_pool()`](https://gillescolling.com/tulpa/reference/rubins_pool.md))
+add the mean within-imputation variance to $`(1 + 1/K)`$ times the
+variance between the $`K`$ estimates. The result in `$pooled` is a Tier
+2 approximation from complete-data Laplace fits.
+
+`correction = "gibbs"` alternates a label draw at the current sampled
+coefficients with an MH update of those coefficients. The complete-data
+Laplace mode and full precision define a multivariate-t proposal. The
+acceptance ratio uses the true complete-data likelihood and normalized
+Gaussian priors, together with the proposal density at both states. This
+composition has invariant posterior $`p(\theta, Z \mid y)`$, conditional
+on fixed block dispersion and random-effect covariance. It is Tier 1.
+
+Both modes retain the EM initialization in `$fits`. Gibbs returns a
+parameter matrix in `$draws` and a paired latent-state list in
+`$latent_draws`. Its E-step reads sampled parameter values from each
+block’s `mode` and `beta`. The chain needs warmup and enough iterations
+to estimate its Monte Carlo error.
+
+``` r
+
+set.seed(1)
+fit_mi <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
+                           correction = "mi", verbose = FALSE)
+set.seed(2)
+fit_gibbs <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
+                              correction = "gibbs", n_gibbs = 8000L,
+                              correction_control = list(warmup = 1000L),
+                              verbose = FALSE)
+pooled_table <- function(fit) with(fit$pooled, data.frame(
+  est = c(occ$mean, abund$mean), se = c(occ$se, abund$se)))
+chain_table <- function(fit) data.frame(
+  est = colMeans(fit$draws), se = apply(fit$draws, 2, sd),
+  lower = apply(fit$draws, 2, quantile, probs = .025),
+  upper = apply(fit$draws, 2, quantile, probs = .975))
+fit_mi$pooled$occ[c("V_within", "V_between")]
+#> $V_within
+#> [1] 0.01632402 0.01928938
+#> 
+#> $V_between
+#> [1] 0.005059718 0.005687418
+```
+
+For the zero-inflation block the between-draw variance is 31%
+(intercept) and 29% (slope) of the within-draw variance, the share of
+the uncertainty the plain EM standard error leaves out.
+
+``` r
+
+methods <- list(plain = plain, mi = pooled_table(fit_mi),
+                gibbs = chain_table(fit_gibbs), exact = exact)
+se_tab <- sapply(methods, `[[`, "se")
+rownames(se_tab) <- coef_names
+round(se_tab, 3)
+#>        plain    mi gibbs exact
+#> gamma0 0.127 0.147 0.151 0.150
+#> gamma1 0.138 0.159 0.163 0.160
+#> beta0  0.045 0.050 0.050 0.051
+#> beta1  0.041 0.044 0.043 0.044
+```
+
+The Gibbs column reports posterior standard deviations. The other
+columns report standard errors from the EM curvature, Rubin pooling and
+observed maximum-likelihood information. The fitted Gaussian prior also
+enters the Gibbs posterior. `fit_gibbs$mean_accept` reports conditional
+MH acceptance; `fit_gibbs$target` records the sampled distribution.
+
+## Comparing the intervals
+
+The plot shows Gibbs posterior quantiles and estimate $`\pm 1.96`$
+standard errors for the other methods, each relative to the simulated
+true value.
+
+``` r
+
+cols <- c(plain = "#B23A48", mi = "#2E86AB", gibbs = "#3B8B5A",
+          exact = "grey30")
+k <- length(methods)
+ypos <- outer((k:1 - (k + 1) / 2) * 0.18, 4:1 * 1, `+`)
+err <- sapply(methods, function(m) m$est - truth)
+lower <- sapply(methods, function(m) if (is.null(m$lower)) m$est - 1.96 * m$se else m$lower) - truth
+upper <- sapply(methods, function(m) if (is.null(m$upper)) m$est + 1.96 * m$se else m$upper) - truth
+par(mar = c(4.5, 5.5, 1, 1))
+plot(NA, xlim = range(lower, upper), ylim = c(0.5, 4.5),
+     yaxt = "n", xlab = "interval minus true value", ylab = "")
+axis(2, at = 4:1, labels = coef_names, las = 1)
+abline(v = 0, lty = 2)
+for (j in seq_len(k)) {
+  segments(lower[, j], ypos[j, ], upper[, j], ypos[j, ],
+           col = cols[j], lwd = 2)
+  points(err[, j], ypos[j, ], pch = 19, col = cols[j])
+}
+legend("bottomright", legend = names(methods), col = cols, lwd = 2,
+       pch = 19, bty = "n", cex = 0.8)
+```
+
+![Intervals relative to the simulated coefficients for EM, multiple
+imputation, Gibbs posterior sampling and maximum
+likelihood.](em-laplace_files/figure-html/interval-plot-1.png)
+
+The intervals describe uncertainty for this dataset. Repeated simulation
+measures the coverage of the standard-error intervals below.
+
+## How often the intervals cover
+
+One dataset shows the widths; coverage needs many. The chunk below
+repeats the simulation, EM, multiple imputation and maximum-likelihood
+fitting 100 times and counts how often each standard-error interval
+contains the truth.
+
+``` r
+
+one_run <- function(d) {
+  cb <- zip_callbacks(d)
+  f  <- tulpa_em_laplace(cb$e_step, cb$m_step_encode, verbose = FALSE)
+  mi <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
+                         correction = "mi", verbose = FALSE)
+  list(plain = em_table(f), mi = pooled_table(mi),
+       exact = zip_mle(d))
+}
+set.seed(99)
+runs <- replicate(100, one_run(sim_zip(n)), simplify = FALSE)
+```
+
+``` r
+
+coverage_methods <- c("plain", "mi", "exact")
+mean_se <- sapply(coverage_methods, function(m)
+  rowMeans(sapply(runs, function(r) r[[m]]$se)))
+coverage <- sapply(coverage_methods, function(m)
+  rowMeans(sapply(runs, function(r) abs(r[[m]]$est - truth) < 1.96 * r[[m]]$se)))
+sd_exact <- apply(sapply(runs, function(r) r$exact$est), 1, sd)
+rownames(mean_se) <- rownames(coverage) <- coef_names
+round(cbind(sd_exact, mean_se), 3)
+#>        sd_exact plain    mi exact
+#> gamma0    0.168 0.141 0.158 0.171
+#> gamma1    0.172 0.164 0.185 0.194
+#> beta0     0.045 0.045 0.048 0.050
+#> beta1     0.045 0.041 0.043 0.044
+coverage
+#>        plain   mi exact
+#> gamma0  0.91 0.95  0.96
+#> gamma1  0.97 0.98  0.98
+#> beta0   0.95 0.96  0.96
+#> beta1   0.93 0.93  0.93
+```
+
+`sd_exact` is the standard deviation of the exact estimate across the
+100 datasets, the spread a standard error should match; the other
+columns of the first table are the mean standard error per method.
+`coverage` reports the fraction of intervals containing each known
+coefficient. This experiment evaluates the three standard-error
+procedures. Gibbs sampling is validated separately against an
+independent joint posterior sampler on a sparse count mixture in the
+package tests.
+
+## A prior on the coefficients
+
+`beta_prior = list(mean, sd)` puts a Gaussian prior on the coefficients
+of every block, in the EM loop and in the correction refits alike. A
+tight prior at zero pulls the estimates toward zero:
+
+``` r
+
+fit_prior <- tulpa_em_laplace(cb$e_step, cb$m_step_encode,
+                              beta_prior = list(mean = 0, sd = 0.5),
+                              verbose = FALSE)
+round(data.frame(default_prior = plain$est, sd_0.5 = em_table(fit_prior)$est,
+            row.names = coef_names), 3)
+#>        default_prior sd_0.5
+#> gamma0         0.610  0.556
+#> gamma1        -0.671 -0.605
+#> beta0          1.021  1.018
+#> beta1          0.450  0.448
+```
+
+At 300 sites the abundance coefficients barely move; the zero-inflation
+coefficients, which rest on the ambiguous zeros, shrink by about a
+tenth. A block can also carry its own `beta_prior` field in
+`m_step_encode`, for a different prior per block.
+
+## A Monte Carlo E-step
+
+When $`\omega_i`$ has no closed form but $`z`$ can be sampled,
+[`tulpa_em_mc()`](https://gillescolling.com/tulpa/reference/tulpa_em_mc.md)
+takes an `e_step_sample(fits, n_mc, ...)` callback that returns `n_mc`
+label draws, fits each through the same `m_step_encode`, and pools them
+by Rubin’s rules at every iteration. Its `fits` argument has the shape
+the `e_step` of
+[`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
+receives: per submodel, `mode` (the mean of the per-draw modes of the
+previous iteration) beside the pooled `beta` and `se`. The sampler can
+therefore reuse the closed-form `e_step` and draw labels from its
+weights, which is enough to show the contract:
+
+``` r
+
+e_step_sample <- function(fits, n_mc, ...) {
+  w <- cb$e_step(fits)$weights
+  lapply(seq_len(n_mc), function(s) rbinom(length(w), 1, w))
+}
+set.seed(3)
+fit_mc <- tulpa_em_mc(e_step_sample, cb$m_step_encode, verbose = FALSE)
+mc_tab <- with(fit_mc$pooled, rbind(est = c(occ$mean, abund$mean),
+                                    se = c(occ$se, abund$se)))
+colnames(mc_tab) <- coef_names
+round(mc_tab, 3)
+#>     gamma0 gamma1 beta0 beta1
+#> est  0.619 -0.692 1.021 0.453
+#> se   0.145  0.162 0.049 0.043
+c(converged = fit_mc$converged, n_iter = fit_mc$n_iter,
+  n_mc_final = fit_mc$n_mc_final)
+#>  converged     n_iter n_mc_final 
+#>          1         13         35
+tail(fit_mc$history, 4)
+#>    iter n_mc      delta       mcse swamped
+#> 10   10   19 0.16292824 0.10640977   FALSE
+#> 11   11   19 0.09726740 0.10807802    TRUE
+#> 12   12   26 0.09524245 0.08018204    TRUE
+#> 13   13   35 0.04062732 0.08487217    TRUE
+```
+
+`history$delta` measures the step between iterations in units of each
+coefficient’s pooled standard error. Convergence requires the step to
+remain below `tol` for `n_consecutive` iterations. A step inside its
+Monte Carlo error is marked `swamped` and increases the next iteration’s
+draw count. `n_mc_max` caps that growth; a run that reaches the cap with
+the step still at the noise level warns. The Rubin estimator remains
+Tier 2 as `n_mc` grows. `tulpa_em_mc(..., correction = "gibbs")` uses
+the same true-density posterior composition as
+[`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md).
+The E-step then receives the current sampled coefficients and is called
+with `n_mc = 1L` for each sweep.
+
+## Practical guidance
+
+- The plain EM standard errors use complete-data curvature. Louis’
+  observed-information estimate, MI pooling and posterior sampling
+  account for the latent labels through their respective information and
+  density calculations.
+- Multiple imputation costs one refit per block per imputation. Gibbs
+  costs one E-step, one Laplace solve per block and `1 + mh_steps`
+  joint-density evaluations per sweep. Choose the chain length through
+  Monte Carlo error and convergence diagnostics.
+- A larger `damping` moves the weights less per iteration. The default
+  0.3 took 19 iterations here; raise it if the weights oscillate between
+  iterations.
+- A block with a random effect or a spatial field carries it as a
+  `re_list` or `spatial` field on the block itself; the driver refuses
+  them as its own arguments. `m_step_extra(fits, weights, ...)` updates
+  parameters outside the linear predictor (a negative binomial
+  dispersion, a Gamma shape) between the M-step and the next E-step.
+- Gibbs currently supports fixed dispersion and random-effect
+  covariance. It refuses nested and spatial blocks and deterministic
+  `m_step_extra` updates. `log_complete(fits, z, ...)` replaces the full
+  joint density for model-specific factors; include likelihood
+  normalizers and all priors.
+- `draw_z` replaces the default Bernoulli label draw for a latent
+  variable with more than two states.
+
+When not to use it:
+
+- The model has a front door. The zero-inflated Poisson fitted here is
+  `tulpa(y ~ x, ziformula = ~ v, family = "poisson")`, which fits the
+  mixture likelihood directly
+  ([`?tulpa`](https://gillescolling.com/tulpa/reference/tulpa.md),
+  argument `ziformula`); the driver suits latent structures tulpa does
+  not carry. For occupancy and N-mixture models, tulpaObs builds on this
+  driver already.
+- The latent variable is continuous and Gaussian, such as a random
+  effect or a spatial field: the nested Laplace front doors integrate it
+  directly.
+- The E-step has no closed form: sample it with
+  [`tulpa_em_mc()`](https://gillescolling.com/tulpa/reference/tulpa_em_mc.md).
+
+## See also
+
+- [Get started](https://gillescolling.com/tulpa/articles/tulpa.md): the
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) front
+  door.
+- [Model
+  comparison](https://gillescolling.com/tulpa/articles/model-comparison.md):
+  comparing fitted models.
+- [`?tulpa_em_laplace`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md),
+  [`?tulpa_em_mc`](https://gillescolling.com/tulpa/reference/tulpa_em_mc.md)
+  and
+  [`?rubins_pool`](https://gillescolling.com/tulpa/reference/rubins_pool.md)
+  for every argument.
+- [Tanner and Wong
+  (1987)](https://doi.org/10.1080/01621459.1987.10478458): data
+  augmentation.
+- [Wei and Tanner
+  (1990)](https://doi.org/10.1080/01621459.1990.10474930): Monte Carlo
+  EM and approximate data augmentation.
+- [Robert and Casella (1999), sections
+  7.3.2-7.3.3](https://doi.org/10.1007/978-1-4757-3071-5): invariant
+  kernel composition and MH-within-Gibbs.
+- [Andrieu and Roberts (2009)](https://doi.org/10.1214/07-AOS574):
+  unbiased-likelihood extended-state sampling when marginalization is
+  estimated.

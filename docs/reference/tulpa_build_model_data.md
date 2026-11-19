@@ -42,6 +42,9 @@ A list with:
 
 - `re_terms`: list of RE data structures (group indices, slope matrices)
 
+- `response_bounds`: for `y | cens()` / `y | trunc()`, the evaluated
+  bounds (`lower`, `upper`, open sides infinite); `NULL` otherwise
+
 ## Details
 
 Missing values pass through (`na.action = na.pass`), because a prior

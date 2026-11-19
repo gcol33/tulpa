@@ -54,7 +54,7 @@ therefore the simulation defaults, not the priors a fit ran under."><meta proper
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -67,21 +67,44 @@ therefore the simulation defaults, not the priors a fit ran under."><meta proper
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -210,8 +233,8 @@ P(phi &gt; 10) = 0.01.</p></dd>
 <li><p>Has interpretable parameters (tail probabilities)</p></li>
 <li><p>Prevents overfitting with sparse data</p></li>
 </ul><p>For other parameters, standard distributions are available via helper
-functions: <code><a href="prior_normal.html">prior_normal()</a></code>, <code><a href="prior_half_normal.html">prior_half_normal()</a></code>, <code><a href="prior_half_cauchy.html">prior_half_cauchy()</a></code>,
-<code><a href="prior_gamma.html">prior_gamma()</a></code>, <code><a href="prior_beta.html">prior_beta()</a></code>, <code><a href="prior_exponential.html">prior_exponential()</a></code>.</p>
+functions: <code><a href="prior_distributions.html">prior_normal()</a></code>, <code><a href="prior_distributions.html">prior_half_normal()</a></code>, <code><a href="prior_distributions.html">prior_half_cauchy()</a></code>,
+<code><a href="prior_distributions.html">prior_gamma()</a></code>, <code><a href="prior_distributions.html">prior_beta()</a></code>, <code><a href="prior_distributions.html">prior_exponential()</a></code>.</p>
     </div>
     <div class="section level2">
     <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>
@@ -245,7 +268,7 @@ constructing priors. Statistical Science, 32(1), 1-28.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Custom fixed effect prior</span></span></span>
-<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>beta <span class="op">=</span> <span class="fu"><a href="prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>beta <span class="op">=</span> <span class="fu"><a href="prior_distributions.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
@@ -267,7 +290,7 @@ constructing priors. Statistical Science, 32(1), 1-28.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Tighter random effect prior</span></span></span>
-<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_distributions.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
@@ -289,7 +312,7 @@ constructing priors. Statistical Science, 32(1), 1-28.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Half-Cauchy for random effect SD</span></span></span>
-<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_half_cauchy.html">prior_half_cauchy</a></span><span class="op">(</span><span class="fl">2.5</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_distributions.html">prior_half_cauchy</a></span><span class="op">(</span><span class="fl">2.5</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
@@ -310,7 +333,7 @@ constructing priors. Statistical Science, 32(1), 1-28.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Informative prior for temporal correlation</span></span></span>
-<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>rho_temporal <span class="op">=</span> <span class="fu"><a href="prior_beta.html">prior_beta</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span>  <span class="co"># Prior mode at ~0.8</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>rho_temporal <span class="op">=</span> <span class="fu"><a href="prior_distributions.html">prior_beta</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span>  <span class="co"># Prior mode at ~0.8</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>

@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -173,8 +177,8 @@ any work and says where the setting goes.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
 <span>      phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! unknown argument(s) to tulpa(): n_threads. Tuning knobs go in `control = list()`.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> unknown argument(s) to tulpa(): n_threads. Tuning knobs go in `control = list()`.</span></span></code></pre></div>
 <p>Move it into <code>control</code>.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
@@ -191,9 +195,9 @@ the message lists every name <code><a href="../reference/tulpa.html">tulpa()</a>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
 <span>      phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_thread <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Unknown control knob(s) for tulpa(): 'n_thread'.</span></span>
-<span><span class="co">#&gt; Allowed: adapt_delta, adaptive_grid, adaptive_grid_cutoff, adaptive_grid_edge_thresh, adaptive_grid_max_frac, adaptive_grid_max_passes, adaptive_grid_min_cells, adaptive_grid_stride, alpha, auto_recenter, axis_refine, batch_size, beta_init, ccd_budget, ccd_budget_floor, checkpoint, cila, copy_atom_mass, copy_slab, damping, diagnose_k, diagnose_skew, epsilon, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_proposal_sd, ess_joint_sigma_re, ess_threshold, fitted_var, force_sparse, hessian, inner_factorization, inner_refresh, integration, k_bootstrap, k_conf_bands, k_max_rounds, k_quality, k_refine, k_samples, k_tail_points, k_threads, keep_grid_hessians, L, local_ccd, marginal, marginal_richardson, marginal_step, mass_matrix, max_grid_cells, max_iter, max_sweeps, max_treedepth, mclmc_adjusted, method, mode_find, n_chains, n_draws, n_grid, n_iter, n_particles, n_per_axis, n_quad, n_threads, n_threads_outer, n_threads_scatter, n_warmup, noncenter, outer_design, outer_maxit, outer_reltol, progress, progress.every, progress.file, progress.throttle, prune, prune_log_gap, prune_tol, qmc_nodes, qmc_tol, quad_evidence_tol, quad_max_level, quad_read_max_nodes, quad_read_nodes, quad_tol, re_cov, recenter_pilot, scale, screen_iters, seed, sigma_init, skew_correct, skew_idx, smc_max_moves, smc_min_moves, span, store_Q, subspace_debias, thin, tile_warm, tol, var_of_means_consistency, var_of_means_min_ess, verbose, vi_max_grad_norm, vi_max_iter, vi_mc_samples, vi_patience, vi_tol_grad, vi_tol_rel_elbo, vi_variant, warmup, wbic, within_cell, x_init.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Unknown control knob(s) for tulpa(): 'n_thread'.</span></span>
+<span><span class="co">#&gt; Allowed: adapt_delta, adaptive_grid, adaptive_grid_cutoff, adaptive_grid_edge_thresh, adaptive_grid_max_frac, adaptive_grid_max_passes, adaptive_grid_min_cells, adaptive_grid_stride, alpha, auto_recenter, axis_refine, batch_size, beta_init, ccd_budget, ccd_budget_floor, checkpoint, cila, copy_atom_mass, copy_slab, damping, device, diagnose_k, diagnose_skew, epsilon, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_proposal_sd, ess_joint_sigma_re, ess_threshold, fitted_var, force_sparse, gradient_mode, hessian, inner_factorization, inner_refresh, integration, k_bootstrap, k_conf_bands, k_max_rounds, k_quality, k_refine, k_samples, k_tail_points, k_threads, keep_grid_hessians, L, local_ccd, marginal, marginal_richardson, marginal_step, mass_matrix, max_grid_cells, max_iter, max_sweeps, max_treedepth, mclmc_adjusted, method, mode_find, n_chains, n_draws, n_grid, n_iter, n_particles, n_per_axis, n_quad, n_threads, n_threads_outer, n_threads_scatter, n_warmup, noncenter, outer_design, outer_maxit, outer_reltol, progress, progress.every, progress.file, progress.throttle, prune, prune_log_gap, prune_tol, qmc_nodes, qmc_tol, quad_evidence_tol, quad_max_level, quad_read_max_nodes, quad_read_nodes, quad_tol, re_cov, recenter_pilot, scale, screen_iters, seed, sigma_init, skew_correct, skew_idx, smc_max_moves, smc_min_moves, span, store_Q, subspace_debias, thin, tile_warm, tol, var_of_means_consistency, var_of_means_min_ess, verbose, vi_max_grad_norm, vi_max_iter, vi_mc_samples, vi_patience, vi_tol_grad, vi_tol_rel_elbo, vi_variant, warmup, wbic, within_cell, x_init.</span></span></code></pre></div>
 <p>The list is long because it covers every backend; the fix is the
 spelling <code>n_threads</code> used in the previous entry.</p>
 </div>
@@ -202,14 +206,14 @@ spelling <code>n_threads</code> used in the previous entry.</p>
 </h3>
 <p>Once <code>mode</code> is fixed, <code>control</code> is checked
 against the backend that will run. A Laplace fit has no chain, so a
-chain length is refused, and the message lists the three knobs the
+chain length is refused, and the message lists the four knobs the
 Laplace backend reads.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
 <span>      sigma_re <span class="op">=</span> <span class="fl">0.6</span>, phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">2000</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Unknown control knob(s) for tulpa[mode = 'laplace'](): 'n_iter'.</span></span>
-<span><span class="co">#&gt; Allowed: max_iter, n_threads, tol.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Unknown control knob(s) for tulpa[mode = 'laplace'](): 'n_iter'.</span></span>
+<span><span class="co">#&gt; Allowed: device, max_iter, n_threads, tol.</span></span></code></pre></div>
 <p>Either drop the knob or pick a backend that reads it.
 <code>n_iter</code> and <code>warmup</code> belong to the samplers.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
@@ -223,16 +227,17 @@ Laplace backend reads.</p>
 <div class="section level3">
 <h3 id="a-variable-the-data-do-not-contain">A variable the data do not contain<a class="anchor" aria-label="anchor" href="#a-variable-the-data-do-not-contain"></a>
 </h3>
-<p>A covariate missing from <code>data</code> stops the fit with R’s own
-message. A missing grouping variable is named by tulpa.</p>
+<p>A covariate missing from <code>data</code> stops the fit with a
+message that names it and lists the columns of <code>data</code>. A
+missing grouping variable is named too.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">z</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! variable(s) 'z' in the formula are not columns of `data` and are not defined in the formula's environment. `data` has: y, x, g.</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> variable(s) 'z' in the formula are not columns of `data` and are not defined in the formula's environment. `data` has: y, x, g.</span></span>
 <span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">h</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
 <span>      phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Grouping variable 'h' not found in data</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Grouping variable 'h' not found in data</span></span></code></pre></div>
 <p>Check <code>names(d)</code> against every variable in the formula,
 including the one after the bar.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
@@ -251,8 +256,8 @@ including the one after the bar.</p>
 stops.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dc</span>, family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! family = 'binomial' with no `n_trials` requires a 0/1 response. Supply `n_trials` for aggregated counts, or write the response as cbind(successes, failures).</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> family = 'binomial' with no `n_trials` requires a 0/1 response. Supply `n_trials` for aggregated counts, or write the response as cbind(successes, failures).</span></span></code></pre></div>
 <p>Pass the trials, one per row.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dc</span>, family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
@@ -273,8 +278,8 @@ masked.</p>
 <code class="sourceCode R"><span><span class="va">dna</span> <span class="op">&lt;-</span> <span class="va">d</span></span>
 <span><span class="va">dna</span><span class="op">$</span><span class="va">y</span><span class="op">[</span><span class="fl">3</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="cn">NA</span></span>
 <span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dna</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! The response has 1 NA row(s). A row with no response is read for its linear predictor (a forecast) on the nested-Laplace path, which masks its likelihood term; mode resolved to backend 'laplace'. Use mode = 'nested_laplace', or drop the rows.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> The response has 1 NA row(s). A row with no response is read for its linear predictor (a forecast) on the nested-Laplace path, which masks its likelihood term; mode resolved to backend 'laplace'. Use mode = 'nested_laplace', or drop the rows.</span></span></code></pre></div>
 <p>A model with no latent field has no nested-Laplace path (see <a href="#nested-laplace-on-a-model-with-no-latent-field">Nested Laplace on
 a model with no latent field</a>), so remove the incomplete rows, or
 impute them, before fitting.</p>
@@ -294,8 +299,8 @@ impute them, before fitting.</p>
 <span><span class="va">ds_bad</span><span class="op">$</span><span class="va">region</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">2</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">11</span>, <span class="fl">12</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">ds_bad</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>      spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Spatial group variable 'region' has values outside [1, n_spatial_units = 10]: 11, 12. Integer `group_var` values are treated as 1-based row indices into the adjacency matrix.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Spatial group variable 'region' has values outside [1, n_spatial_units = 10]: 11, 12. Integer `group_var` values are treated as 1-based row indices into the adjacency matrix.</span></span></code></pre></div>
 <p>An adjacency with a one-sided link is refused too.
 <code><a href="../reference/check_adjacency.html">check_adjacency()</a></code> reports every property the spatial fit
 needs, and flags the asymmetry here.</p>
@@ -337,11 +342,11 @@ exists only for <code>U &gt; 0</code> and <code>alpha</code> strictly
 between 0 and 1, and each constructor that takes the pair checks it.</p>
 <div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prior_distributions.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">1</span>, alpha <span class="op">=</span> <span class="fl">1.5</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! prior_pc(): `alpha` is the tail probability P(sigma &gt; U) and must lie in (0, 1); got 1.5.</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> prior_pc(): `alpha` is the tail probability P(sigma &gt; U) and must lie in (0, 1); got 1.5.</span></span>
 <span><span class="fu"><a href="../reference/spatial_gp.html">spatial_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span>, approx <span class="op">=</span> <span class="st">"hsgp"</span>, sigma_prior_alpha <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! gp(approx = "hsgp"): `sigma_prior_alpha` is the tail probability P(sigma &gt; sigma_prior_U) and must lie in (0, 1); got 1.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> gp(approx = "hsgp"): `sigma_prior_alpha` is the tail probability P(sigma &gt; sigma_prior_U) and must lie in (0, 1); got 1.</span></span></code></pre></div>
 <p><code>alpha = 0.05</code> with <code>U = 1</code> reads “a 5% prior
 probability that the standard deviation exceeds 1”.</p>
 <div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
@@ -391,16 +396,16 @@ next to a spatial field is one.</p>
 <div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">site</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">ds</span>,</span>
 <span>      family <span class="op">=</span> <span class="st">"binomial"</span>, spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Random-slope term(s) together with a spatial field are not supported through tulpa() yet. Use a random intercept (1 | g) alongside the spatial term, or drop the spatial field.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Random-slope term(s) together with a spatial field are not supported through tulpa() yet. Use a random intercept (1 | g) alongside the spatial term, or drop the spatial field.</span></span></code></pre></div>
 <p>A temporal field with one trend per panel group
 (<code>group_var</code>) next to a spatial field is another.</p>
 <div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">ds</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>      spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span>,</span>
 <span>      temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span>, group_var <span class="op">=</span> <span class="st">"site"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! A grouped (panel) temporal field cannot be combined with a spatial or latent(...) field through tulpa() yet (the joint path has no per-group temporal layout). Fit the panel temporal field on its own.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> A grouped (panel) temporal field cannot be combined with a spatial or latent(...) field through tulpa() yet (the joint path has no per-group temporal layout). Fit the panel temporal field on its own.</span></span></code></pre></div>
 <p>Each message names the combination that does fit. With a random
 intercept in place of the slope, the spatial model runs.</p>
 <div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
@@ -422,8 +427,8 @@ fit it.</p>
 <div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>      mode <span class="op">=</span> <span class="st">"nested_laplace"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Backend 'nested_laplace' needs at least one `latent(...)` block, s(...) smoother, spatial(col) field, or temporal field. To integrate the random-effect scale of this model use mode = 'structured' (or 'auto'), which fits it with the RE-covariance integrator; mode = 'laplace' conditions on `sigma_re` instead.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Backend 'nested_laplace' needs at least one `latent(...)` block, s(...) smoother, spatial(col) field, or temporal field. To integrate the random-effect scale of this model use mode = 'structured' (or 'auto'), which fits it with the RE-covariance integrator; mode = 'laplace' conditions on `sigma_re` instead.</span></span></code></pre></div>
 <p><code>mode = "structured"</code> stays in Tier 2 and integrates the
 random-effect standard deviation.</p>
 <div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
@@ -446,8 +451,8 @@ count.</p>
 <span>      spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span>,</span>
 <span>      temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>,</span>
 <span>      control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>max_grid_cells <span class="op">=</span> <span class="fl">50</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Multi-block outer grid has 81 cells, past control$max_grid_cells = 50. It crosses b1 (9 rows: tau 9) x b2 (9 rows: tau 9). The cap is read on the grid each pass is about to solve, the declared grid first; a placement or refinement pass that runs afterwards can re-lay the axes, so a fitted grid can hold a different number of cells. Reduce per-block grid sizes.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Multi-block outer grid has 81 cells, past control$max_grid_cells = 50. It crosses b1 (9 rows: tau 9) x b2 (9 rows: tau 9). The cap is read on the grid each pass is about to solve, the declared grid first; a placement or refinement pass that runs afterwards can re-lay the axes, so a fitted grid can hold a different number of cells. Reduce per-block grid sizes.</span></span></code></pre></div>
 <p>Raise the cap above the count the message gives, or leave it unset.
 <code><a href="../reference/tulpa_nested_laplace.html">?tulpa_nested_laplace</a></code> documents that an unset cap solves a
 grid of any size and warns first when it passes 2048 cells.</p>
@@ -492,6 +497,7 @@ longer chain clears them.</p>
 <span><span class="fu"><a href="../reference/check_diagnostics.html">check_diagnostics</a></span><span class="op">(</span><span class="va">fit_long</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Convergence checks passed (Rhat, bulk-ESS, divergences).</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_long</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu</span></span>
 <span><span class="co">#&gt;     parameter      rhat ess_bulk ess_tail</span></span>
 <span><span class="co">#&gt; 1 (Intercept) 0.9996312 564.6958 837.3768</span></span>
 <span><span class="co">#&gt; 2           x 0.9999560 500.8862 614.9376</span></span></code></pre></div>
@@ -507,6 +513,7 @@ longer chain clears them.</p>
 <span>                 mode <span class="op">=</span> <span class="st">"laplace"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_lap</span><span class="op">)</span></span>
 <span><span class="co">#&gt; diagnostics(): the 'laplace' fit carries no posterior draws. It carries a Laplace mode and its precision (`$mode` / `$H_beta`), summarized by summary() / confint(). No approximation-reliability quantity was computed for it either, so there is nothing to report.</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, dense_spec=cpu</span></span>
 <span><span class="co">#&gt; NULL</span></span></code></pre></div>
 <p><code>mode = "imh_laplace"</code> reuses the Laplace Gaussian as the
 proposal of an exact Metropolis-Hastings sampler. A high acceptance rate
@@ -538,6 +545,7 @@ a random walk over the 15 time points of <code>ds</code>.</p>
 <span><span class="co">#&gt; [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_rw</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_cholesky=cpu</span></span>
 <span><span class="co">#&gt; Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)</span></span>
 <span><span class="co">#&gt;   two layers: the outer hyperparameter-grid integration, and the inner</span></span>
 <span><span class="co">#&gt;     Gaussian Laplace on the latent field</span></span>
@@ -546,7 +554,7 @@ a random walk over the 15 time points of <code>ds</code>.</p>
 <span><span class="co">#&gt;   outer grid quadrature ESS = 3.39 of 10 cells (max weight 0.441)</span></span>
 <span><span class="co">#&gt;   hyperparameter integration contributes 0.0-0.0% of the fixed-effect marginal variance</span></span>
 <span><span class="co">#&gt;   note: outer grid re-centred on tau: the default span did not contain that axis's posterior mode, so the reported grid is not the default one</span></span>
-<span><span class="co">#&gt;   note: outer grid coarser than its own posterior on value (cell width / posterior SD = 1.27, both in that axis's own coordinate): the reported interval's endpoints are resolved to within one cell, so part of their width and their realized coverage are properties of where the grid fell rather than of the posterior -- add nodes on that axis to reduce it</span></span>
+<span><span class="co">#&gt;   note: outer grid coarser than its own posterior on tau (cell width / posterior SD = 1.27, both in that axis's own coordinate): the reported interval's endpoints are resolved to within one cell, so part of their width and their realized coverage are properties of where the grid fell rather than of the posterior -- add nodes on that axis to reduce it</span></span>
 <span><span class="co">#&gt;   inner Laplace max |gamma_3| = 0.124 (good), scored 2/2 latents</span></span>
 <span><span class="co">#&gt;   inner Laplace importance pareto_k = 0.621 (good), min IS efficiency 0.9960, scored 2/2 latents</span></span>
 <span><span class="co">#&gt;     the importance weights are uniform on every probed index: the inner</span></span>
@@ -569,16 +577,18 @@ moved or is coarser than its posterior.</li>
 <code>whole-fit verdict</code>, which combines the outer and inner
 layers.</li>
 </ul>
-<p>Here the outer k is 0.645, in the ok band, and the verdict reads the
-outer integration as borderline. Each number is also an attribute of the
-returned object. On the two-field fit <code>fit_st</code> of the grid
-entry the outer k is <code>NA</code>, because it is not defined on a
-multi-block grid, and that fit’s verdict says the outer integration was
-not assessed.</p>
+<p>Here the outer k is -1.408, in the good band, and the verdict reads
+the fit as reliable, with both layers good. Each number is also an
+attribute of the returned object. On the two-field fit
+<code>fit_st</code> of the grid entry the outer k is <code>NA</code>,
+because it is not defined on a multi-block grid, and that fit’s verdict
+says the outer integration was not assessed.</p>
 <div class="sourceCode" id="cb33"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_rw</span><span class="op">)</span>, <span class="st">"pareto_k"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_cholesky=cpu</span></span>
 <span><span class="co">#&gt; [1] -1.407576</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_st</span><span class="op">)</span>, <span class="st">"pareto_k"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_cholesky=cpu, sparse_selected_inverse=cpu</span></span>
 <span><span class="co">#&gt; [1] NA</span></span></code></pre></div>
 <p><a href="reliability-pareto-k.html">Reliability diagnostics</a>
 explains what a k in the ok or unreliable band means and the levers for

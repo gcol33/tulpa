@@ -52,7 +52,7 @@ inference_mode_info()
 #>   tulpa(..., mode = 'structured') # Tier 2
 #>   tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)
 #> 
-#> Backends ([R] = tulpa(mode =) dispatch, [direct] = has an R fitter but tulpa(mode =) refuses it -- call the fitter itself, [C-ABI] = model-package kernel only):
+#> Backends ([R] = tulpa(mode =) dispatch, [C-ABI] = model-package kernel only):
 #>   [R]     mode = 'hmc'               # Tier 1 (Exact)
 #>   [R]     mode = 'ess'               # Tier 1 (Exact)
 #>   [R]     mode = 'gibbs'             # Tier 1 (Exact)
@@ -67,7 +67,7 @@ inference_mode_info()
 #>   [R]     mode = 'ep'                # Tier 2 (Structured)
 #>   [R]     mode = 'eb'                # Tier 2 (Structured)
 #>   [R]     mode = 'nested_laplace'    # Tier 2 (Structured)
-#>   [direct] tulpa_nested_laplace_joint() # Tier 2 (Structured)
+#>   [R]     mode = 'nested_laplace_joint' # Tier 2 (Structured)
 #>   [R]     mode = 'spde'              # Tier 2 (Structured)
 #>   [R]     mode = 'sghmc'             # Tier 3 (Optimized)
 #>   [R]     mode = 'sgld'              # Tier 3 (Optimized)

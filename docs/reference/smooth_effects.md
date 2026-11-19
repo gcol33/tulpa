@@ -44,6 +44,10 @@ set.seed(1)
 d <- data.frame(x = runif(300, -2, 2))
 d$y <- rpois(300, exp(0.3 + sin(2 * d$x)))
 fit <- tulpa(y ~ s(x), data = d, family = "poisson")
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 sm <- smooth_effects(fit)
 plot(sm$x, sm$estimate, type = "l")
 

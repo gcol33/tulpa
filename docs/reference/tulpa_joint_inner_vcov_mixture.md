@@ -22,7 +22,9 @@ tulpa_joint_inner_vcov_mixture(
   weights,
   modes = NULL,
   field_marginal = TRUE,
-  n_threads = 1L
+  n_threads = 1L,
+  soft_cols_list = NULL,
+  soft_D_per_grid = NULL
 )
 ```
 
@@ -50,8 +52,10 @@ tulpa_joint_inner_vcov_mixture(
 
 - A_cols_list:
 
-  A list of integer vectors, one per sum-to-zero constraint group, each
-  the (1-based) latent coordinates that group averages to zero.
+  The hard constraint rows the covariance is conditioned on: a list
+  whose elements are integer vectors (a group of 1-based latent
+  coordinates summing to zero) or `list(cols, w)` (a weighted row). A
+  joint fit's own rows are `fit$constraint_cols`.
 
 - weights:
 
@@ -72,6 +76,16 @@ tulpa_joint_inner_vcov_mixture(
 - n_threads:
 
   Integer, grid cells processed concurrently.
+
+- soft_cols_list, soft_D_per_grid:
+
+  Optional soft rows added to every cell's precision as `S' D_k S`, in
+  `A_cols_list`'s form, and one `k x k` precision `D_k` per cell (`NULL`
+  for a cell without them). A sparse joint fit folds an intrinsic
+  field's sum-to-zero pin at solve time and leaves it off the stored
+  `Q`; its rows and per-cell precisions are `fit$Q_soft_cols` and
+  `fit$Q_soft_D_per_grid`, so the covariance of the fit's own inner
+  Gaussian is read with both.
 
 ## Value
 

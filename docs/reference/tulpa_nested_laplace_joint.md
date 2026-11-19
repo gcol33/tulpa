@@ -1041,22 +1041,17 @@ tulpa_nested_laplace_joint(
     [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
     for the measurement behind the default.
 
-  - `subspace_debias` (`FALSE`) – correct only the latent directions the
-    inner-layer diagnostics flagged, by Metropolis on the true joint
-    density along the Gaussian-conditional-mean surface through each
-    cell's mode, and leave the rest at their Gaussian conditional. That
-    nuisance carry and the Laplace outer weights remain approximations,
-    so this remains Tier 2. Settings and semantics are the ones
-    documented on
+  - `subspace_debias` (`FALSE`) – the same `method = "fast"` or
+    `method = "exact"` composition and controls as
     [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md).
-    On a fully coupled fit `gamma_3` is `NaN` for every arm, so the
-    selector rests on the derivative-free inner Pareto-k-hat; where that
-    also bands the coordinate reliable, `idx` pins the set explicitly.
-    An EMPTY selection leaves the fit bit-for-bit identical to the plain
-    path. A fit whose inner solve took the s2z rank-1 or the PSD
-    eigen-clamp path carries no usable factor to build the surface from
-    and is left uncorrected, the same two paths `diagnose_skew` declines
-    on.
+    Fast correction uses the Gaussian conditional-mean surface and keeps
+    Gaussian nuisance carry and Laplace cell weights. Exact correction
+    applies full-latent true-density MH within cells and shared unbiased
+    IS correction of their weights, gated by PSIS. Finite outer-grid and
+    importance errors keep the result Tier 2. Hard constraints and a
+    solver without a usable Cholesky factor decline explicitly. The
+    selected set, per-cell source chains and correction diagnostics
+    travel on the fit.
 
   - `cila` (`FALSE`) – corrected integrated Laplace, the second
     inner-layer debias (after Lai, Margossian and Sheldon,
@@ -1171,10 +1166,10 @@ A list of class
   integration weights (sum to 1).
 
 - `theta_mean`, `theta_sd` – posterior moments per hyperparameter,
-  including `alpha` when `copy` is set. Divergent physical range moments
-  are `Inf`; `moment_existence` records the prior tail, likelihood
-  boundary decay and the reason. `theta_log_mean` and `theta_log_sd`
-  retain finite log-range moments.
+  including `alpha` when `copy` is set. Divergent range and precision
+  moments are `Inf`; `moment_existence` records the prior tail,
+  likelihood boundary decay and the reason. `theta_log_mean` and
+  `theta_log_sd` retain finite log-range moments.
 
 - `theta_median`, `theta_ci_lo`, `theta_ci_hi` – weighted-quantile
   median and 2.5/97.5 empirical CI per hyperparameter axis (same names
@@ -1616,6 +1611,19 @@ outer-grid axis (rather than a post-hoc ratio \\\alpha = \sigma\_{pos} /
 small `n_pos` and lets a regularizing hyperprior land on \\\alpha\\
 directly.
 
+## Computation device
+
+`control$device` is `"auto"`, `"cpu"`, or `"cuda"`. The default `"auto"`
+uses CUDA for registered operations above their measured size crossover.
+Operations with no measured crossover run on CPU. `"cuda"` requests CUDA
+for each registered operation and errors with the reason from
+[`gpu_info()`](https://gillescolling.com/tulpa/reference/gpu_info.md)
+when its device or library is unavailable. Host inference stages run on
+CPU. The fit's `device$stages` table records CPU and CUDA call counts
+per stage; [`print()`](https://rdrr.io/r/base/print.html) and
+[`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+report these stages.
+
 ## References
 
 Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
@@ -1649,6 +1657,13 @@ prior <- list(type = "icar", n_spatial_units = S,
 fit <- tulpa_nested_laplace_joint(
   responses = list(occ = mk_arm(200L, "binomial"), pos = mk_arm(200L, "gaussian")),
   prior = prior)
+#> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [outer placement] round 1/30 | 11 evals | |step| 0.181 | logpost -329.5951 | elapsed 0s | 0s/eval
+#> [outer placement] round 2/30 | 14 evals | Newton step 0.00545 sd | logpost -329.5951 | elapsed 0s | 0s/eval
+#> [outer placement] mode-find done | 14 evals | logpost -329.5951 | elapsed 0s | 0s/eval
 fit$theta_mean        # shared field amplitude, integrated across both arms
+#>     sigma 
+#> 0.3064632 
 # }
 ```

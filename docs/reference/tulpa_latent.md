@@ -1,17 +1,17 @@
-# Latent factor specification for unmeasured confounders
+# Latent factor specification
 
-Specify latent factors to capture shared unmeasured confounders between
-model processes. Latent factors are particularly useful when you suspect
-that both processes are driven by common unmeasured variables.
+Latent factors are unmeasured drivers shared by the responses of a
+model: each unit carries a score on every factor and each response
+carries its own loading on it. The specification built by
+[`latent_factor()`](https://gillescolling.com/tulpa/reference/latent_factor.md)
+is read by
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) through
+its `factors =` argument (a long-format joint model, one response level
+per row) and by model packages built on tulpa, such as tulpaRatio, whose
+two-process models load the factors on the numerator and the
+denominator.
 
 ## Value
 
-The constructor documented in this family
-([`latent_factor()`](https://gillescolling.com/tulpa/reference/latent_factor.md))
-returns a `tulpa_latent` specification object consumed by ratio /
-multi-arm model packages built on tulpa (e.g. tulpaRatio), where the
-shared factor enters two or more linear predictors and cancels in the
-derived ratio. It is a multi-arm construct: the single-response
-[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) front
-door does not read it (for an in-formula latent Gaussian block on a
-single response, use `latent(tgmrf(...))`).
+[`latent_factor()`](https://gillescolling.com/tulpa/reference/latent_factor.md)
+returns a `tulpa_latent` specification.

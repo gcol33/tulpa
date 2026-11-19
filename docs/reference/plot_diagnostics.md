@@ -1,7 +1,4 @@
-# Diagnostic plotting functions for tulpa models
-
-Visual diagnostic tools for MCMC convergence assessment. All functions
-provide base R fallbacks when ggplot2/bayesplot are unavailable.
+# Multi-Panel Diagnostic Figure
 
 Creates a combined diagnostic figure with Rhat, ESS, trace plot, and
 energy/ACF panels. Requires the `patchwork` package for layout.
@@ -42,8 +39,8 @@ Creates a 2x2 grid:
 ## See also
 
 [`diagnostic_summary()`](https://gillescolling.com/tulpa/reference/diagnostic_summary.md),
-[`plot_rhat()`](https://gillescolling.com/tulpa/reference/plot_rhat.md),
-[`plot_ess()`](https://gillescolling.com/tulpa/reference/plot_ess.md)
+[`plot_rhat()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md),
+[`plot_ess()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md)
 
 ## Examples
 

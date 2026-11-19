@@ -46,7 +46,7 @@ per-cell inner fit and get the outer integration for free."><meta property="og:i
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,21 +59,44 @@ per-cell inner fit and get the outer integration for free."><meta property="og:i
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -117,6 +140,8 @@ per-cell inner fit and get the outer integration for free.</p>
 <span>  n_draws <span class="op">=</span> <span class="fl">2000L</span>,</span>
 <span>  seed <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  beta_names <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  design <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"grid"</span>, <span class="st">"ccd"</span><span class="op">)</span>,</span>
+<span>  ccd_start <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -140,7 +165,11 @@ Non-finite values are mapped to <code>-Inf</code> (the cell gets zero weight).</
 <li><p><code>beta_mean</code> – numeric vector of fixed-effect posterior mean at the
 cell. Required when <code>combine != "none"</code>.</p></li>
 <li><p><code>beta_cov</code> – <code>p x p</code> numeric matrix of fixed-effect marginal
-covariance at the cell. Required when <code>combine = "law_of_total_cov"</code>.
+covariance at the cell. Required when <code>combine = "law_of_total_cov"</code>.</p></li>
+<li><p><code>extras</code> – optional named list of numeric vectors (one length per
+name across cells): per-cell quantities the fit reports as their
+posterior mean over the grid (a latent field's mode, a per-observation
+offset), returned in <code>extras_mean</code> under the same weights as <code>beta</code>.
 <code>hypers</code> is a named numeric vector with the current cell's axis values
 (names match <code>vapply(hyper_specs, </code>[[<code>, character(1), "name")</code>).
 Errors thrown by <code>inner_fit</code> are caught and treated as a failed cell
@@ -180,6 +209,23 @@ successful cell's <code>beta_mean</code> (or <code>beta1</code>, <code>beta2</co
 unnamed).</p></dd>
 
 
+<dt id="arg-design">design<a class="anchor" aria-label="anchor" href="#arg-design"></a></dt>
+<dd><p><code>"grid"</code> (default) integrates on the Cartesian product of the
+axis grids. <code>"ccd"</code> places a mode-centred central composite design
+(<code><a href="tulpa_ccd_outer_grid.html">tulpa_ccd_outer_grid()</a></code>) over the axes whose grid has more than one
+level (log-scale axes in the log, the grid's range as the box, the others
+held at their single level), weighting each node by its design weight
+times its marginal; when the design declines, or no node is finite, the
+tensor grid is used and <code>ccd_declined</code> says why. The refinement passes in
+<code>control</code> apply to the tensor grid only.</p></dd>
+
+
+<dt id="arg-ccd-start">ccd_start<a class="anchor" aria-label="anchor" href="#arg-ccd-start"></a></dt>
+<dd><p>Optional named physical starting values of the CCD
+mode-find; an axis left out starts at the centre of its grid (in its
+integration coordinate).</p></dd>
+
+
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
 <dd><p>Optional list of refinement / tuning knobs:</p><ul><li><p><code>adaptive_grid</code> (<code>FALSE</code>) – run the boundary / interior refinement
 pass on every axis whose spec has <code>refinable = TRUE</code>. New cells are
@@ -194,8 +240,10 @@ consistency pass: for refinable axes whose marginal has collapsed onto
 too few nodes to carry a spread, bisect the gaps between adjacent nodes
 that carry the axis's mass, each new point a level laid in every row of
 the other axes that holds the posterior, and repeat until the axis reaches <code>var_of_means_min_ess</code>
-or has taken <code>.nl_diag("axis_refine_nodes")</code> new levels. One kernel call
-per round.</p></li>
+or has taken <code>.nl_diag("axis_refine_nodes")</code> new levels inside its
+span. An end whose read places more than <code>.nl_diag("edge_tail_mass")</code>
+of the axis past it gains a level beyond it, at most
+<code>.nl_diag("edge_extend_max")</code> per end. One kernel call per round.</p></li>
 <li><p><code>var_of_means_min_ess</code> (<code>.nl_diag("axis_sd_ess")</code>) – the quadrature
 effective sample size an axis marginal has to reach for the pass to
 leave it alone. Read off the weights, so the trigger is not one SD
@@ -238,6 +286,14 @@ and <code>draws</code> are <code>NULL</code>.</p></li>
 <li><p><code>means</code>, <code>param_names</code>, <code>process_info</code>, <code>n_samples</code>, <code>n_params</code>,
 <code>N</code> – the <code>tulpa_fit</code> accessor surface, populated when a
 fixed-effect posterior is assembled.</p></li>
+<li><p><code>extras_mean</code> – named list, the weighted mean of each <code>extras</code>
+quantity <code>inner_fit</code> returned (<code>NULL</code> when it returned none).</p></li>
+<li><p><code>mixture</code> – <code>list(weights, modes, covs)</code> over the cells carrying mass,
+the per-cell fixed-effect posteriors <code>beta</code> / <code>beta_cov</code> pool (<code>covs</code>
+<code>NULL</code> unless <code>combine = "law_of_total_cov"</code>).</p></li>
+<li><p><code>design</code>, <code>ccd_declined</code>, <code>pareto_k</code> – the integration design used,
+the reason a requested CCD fell back to the grid (<code>NULL</code> otherwise),
+and the CCD's outer PSIS k-hat (<code>NA</code> on the grid).</p></li>
 <li><p><code>hyper_specs</code> – echoed list of <code>hyper_axis_spec</code> objects (the
 normalised form).</p></li>
 <li><p><code>combine</code>, <code>n_failed</code>, <code>n_grid</code>, <code>refining_axis</code> – diagnostic fields.</p></li>

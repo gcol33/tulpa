@@ -150,5 +150,7 @@ log_post <- function(beta) {
 fit <- imh_laplace(log_post, mode = lap$mode[1:2],
                    hessian = lap$H_beta, n_iter = 1000)
 fit$mean_accept
+#> [1] 0.828
 colMeans(fit$draws)
+#> [1] 0.4205109 1.2201961
 ```

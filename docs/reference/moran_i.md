@@ -13,7 +13,8 @@ moran_i(
   weights = c("inverse", "knn"),
   k = 10L,
   resid_type = "pearson",
-  alternative = c("two.sided", "greater", "less")
+  alternative = c("two.sided", "greater", "less"),
+  effects = c("conditional", "population")
 )
 ```
 
@@ -42,6 +43,15 @@ moran_i(
 - alternative:
 
   `"two.sided"`, `"greater"`, or `"less"`
+
+- effects:
+
+  For a tulpa fit, the linear predictor the residuals are read against
+  ([`residuals.tulpa_fit()`](https://gillescolling.com/tulpa/reference/residuals.tulpa_fit.md)):
+  `"conditional"` (default) includes the fitted random effects and
+  spatial / temporal fields, so the test asks whether structure remains
+  after the model's own field; `"population"` holds them at zero and
+  tests what the fixed effects alone leave.
 
 ## Value
 

@@ -52,15 +52,20 @@ summary(object, probs = c(0.025, 0.5, 0.975), ...)
 
 A `tulpa_tvc_posterior` object containing:
 
-- `draws`: Array of posterior draws (draws x times x terms)
+- `draws`: Array of posterior draws (draws x units x terms). A unit is
+  one time point, or on a grouped fit (`temporal_tvc(group_var =)`) one
+  (group, time point) pair, group-major.
 
 - `time_levels`: Time point labels
+
+- `groups`: The group of each unit (`NULL` on an ungrouped fit)
 
 - `term_names`: Names of TVC terms
 
 [`summary()`](https://rdrr.io/r/base/summary.html) on a
 `tulpa_tvc_posterior` returns a `tulpa_tvc_summary` data frame with one
-row per time point and term, holding the posterior mean, SD and
+row per time point and term (per group, time point and term on a grouped
+fit, with a `group` column), holding the posterior mean, SD and
 requested quantiles of each temporally varying coefficient.
 
 ## See also
@@ -88,21 +93,22 @@ fit <- tulpa(
   mode = "exact",
   control = list(n_iter = 200L, n_warmup = 100L, seed = 1L)
 )
+#> Warning: tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.07, bulk-ESS 43; (Intercept): Rhat 1.05, bulk-ESS 79. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup); see check_diagnostics().
 
 tvc_post <- tvc(fit)
 summary(tvc_post)
 #> Temporally varying coefficient posterior summary, 400 posterior draws
-#>    time_idx time term        mean        sd        q2.5         q50     q97.5
-#> 1         1    1    x -0.51812356 0.3438930 -1.26815867 -0.48358081 0.1138761
-#> 2         2    2    x -0.43151069 0.3186817 -1.08518130 -0.39639008 0.1291343
-#> 3         3    3    x -0.17678201 0.1581185 -0.48672751 -0.17809841 0.1306088
-#> 4         4    4    x -0.04903702 0.2429977 -0.52076934 -0.06248125 0.4830875
-#> 5         5    5    x  0.25799312 0.2008314 -0.17772448  0.26136132 0.6231688
-#> 6         6    6    x  0.71976261 0.1672618  0.39749237  0.70680250 1.0518190
-#> 7         7    7    x  0.35624069 0.2307417 -0.08571445  0.36628699 0.8236376
-#> 8         8    8    x  0.17305269 0.2655832 -0.29044750  0.16995112 0.7065457
-#> 9         9    9    x -0.13007529 0.2739828 -0.61089948 -0.13256620 0.3671592
-#> 10       10   10    x -0.20152056 0.3324161 -0.84936798 -0.20867196 0.4724814
+#>    time_idx time term        mean        sd        q2.5         q50      q97.5
+#> 1         1    1    x -0.54722860 0.2824330 -1.10977185 -0.55503388 0.02178354
+#> 2         2    2    x -0.45083386 0.2838631 -1.11247267 -0.44752115 0.09539058
+#> 3         3    3    x -0.19708071 0.1631584 -0.54414150 -0.18840216 0.08850889
+#> 4         4    4    x -0.10701945 0.2510124 -0.63271347 -0.10155304 0.39963033
+#> 5         5    5    x  0.23988419 0.1820944 -0.09387735  0.24098046 0.59838279
+#> 6         6    6    x  0.70010911 0.1696473  0.32367347  0.70084133 1.04963581
+#> 7         7    7    x  0.40122629 0.2212774 -0.02021544  0.39401375 0.86828022
+#> 8         8    8    x  0.23620052 0.2658691 -0.26109811  0.24505041 0.75585052
+#> 9         9    9    x -0.07632102 0.2452147 -0.53943781 -0.05775278 0.43777507
+#> 10       10   10    x -0.19893647 0.3483548 -0.94827009 -0.16517174 0.38142247
 plot(tvc_post, "x")
 
 # }

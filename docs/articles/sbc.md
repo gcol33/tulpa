@@ -1,26 +1,7 @@
 # Simulation-based calibration
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -93,7 +74,7 @@ fit_one <- function(d, diagnose = FALSE) {
     y = d$y, n_trials = rep(1L, length(d$y)), X = d$X,
     prior = list(list(type = "iid", obs_idx = d$region,
                       n_units = max(d$region), sigma_grid = GRID)),
-    family = "gaussian", phi = PHI,
+    family = "gaussian", phi = PHI^2,
     control = list(n_threads = 1L, keep_grid_hessians = TRUE,
                    auto_recenter = FALSE, progress = FALSE,
                    diagnose_k = diagnose, diagnose_skew = diagnose))
@@ -175,35 +156,41 @@ res
 #>   CRPS: proper posterior score
 #>   proper prior: verified over 10 probed simulations; flat prior asserted for beta1, beta2
 #> 
-#>        arm quantity   n     ks inside p_unif inside_folded p_folded     crps
-#>    mixture    beta1 200 0.0429   TRUE  0.703          TRUE   0.4280 0.173850
-#>    mixture    beta2 200 0.0718   TRUE  0.197         FALSE   0.0495 0.095906
-#>    mixture    sigma 200 0.0541   TRUE  0.759          TRUE   0.3580 0.106130
-#>  collapsed    beta1 200 0.0577   TRUE  0.640          TRUE   0.0810 0.173780
-#>  collapsed    beta2 200 0.0754   TRUE  0.322         FALSE   0.0461 0.095823
-#>     narrow    beta1 200 0.0667   TRUE  0.367          TRUE   0.2650 0.174120
-#>     narrow    beta2 200 0.0546   TRUE  0.521          TRUE   0.5740 0.095336
+#>        arm quantity   n     ks inside  p_unif inside_folded p_folded     crps
+#>    mixture    beta1 200 0.0537   TRUE 0.85100          TRUE 8.91e-01 0.169560
+#>    mixture    beta2 200 0.0532   TRUE 0.90300          TRUE 5.55e-01 0.094554
+#>    mixture    sigma 200 0.0685   TRUE 0.66000         FALSE 4.64e-02 0.105990
+#>  collapsed    beta1 200 0.0494   TRUE 0.77500          TRUE 3.22e-01 0.169670
+#>  collapsed    beta2 200 0.0640   TRUE 0.65500          TRUE 6.67e-01 0.094667
+#>     narrow    beta1 200 0.0831   TRUE 0.10800         FALSE 3.87e-02 0.170350
+#>     narrow    beta2 200 0.0855  FALSE 0.00247         FALSE 2.46e-05 0.095774
 #>  crps_se
-#>  0.01040
-#>  0.00443
-#>  0.00683
-#>  0.01020
-#>  0.00440
-#>  0.01120
-#>  0.00497
+#>  0.01000
+#>  0.00490
+#>  0.00681
+#>  0.00985
+#>  0.00489
+#>  0.01080
+#>  0.00543
 #> 
-#> 7 of 7 (arm, quantity) reads inside the band; outside the band: mixture/beta2, collapsed/beta2.
+#> 4 of 7 (arm, quantity) reads inside the band; outside the band: mixture/sigma, narrow/beta1, narrow/beta2.
 ```
 
 `flat_prior` is a guard doing its job. Ordinary SBC draws the truth from
-the prior, so an improper prior has nothing to draw from, and the
-nested-Laplace door puts no prior on the fixed effects.
+the prior. The nested-Laplace door puts a wide normal prior, standard
+deviation 2.5, on the fixed effects, and the simulator holds them at
+fixed values instead of drawing them from it.
 [`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md) probes the
 simulator, sees that `beta1` and `beta2` do not move across simulations,
 and refuses to score them unless the caller names them. Naming them
-asserts that their flat prior leaves the PIT uniform by a structural
-argument; the assertion is checked in both directions and travels on the
-result in `res$premises`.
+asserts that their prior is flat against the likelihood, so the PIT
+stays uniform by a structural argument; the assertion is checked in both
+directions and travels on the result in `res$premises`.
+
+The `narrow` arm leaves the band on the folded read for both
+coefficients and on the raw read for `beta2`. The mixture arm’s `sigma`
+leaves it on the folded read at p = 0.046, against a band whose level is
+0.05 per read.
 
 ## Three reads of the same PIT sample
 
@@ -238,29 +225,29 @@ summary(res, baseline = "mixture")
 #> Simulation-based calibration -- prior_predictive, 200 simulations
 #>   CRPS: proper posterior score
 #> 
-#>        arm quantity   n     ks inside p_unif inside_folded p_folded     crps
-#>    mixture    beta1 200 0.0429   TRUE  0.703          TRUE   0.4280 0.173850
-#>    mixture    beta2 200 0.0718   TRUE  0.197         FALSE   0.0495 0.095906
-#>    mixture    sigma 200 0.0541   TRUE  0.759          TRUE   0.3580 0.106130
-#>  collapsed    beta1 200 0.0577   TRUE  0.640          TRUE   0.0810 0.173780
-#>  collapsed    beta2 200 0.0754   TRUE  0.322         FALSE   0.0461 0.095823
-#>     narrow    beta1 200 0.0667   TRUE  0.367          TRUE   0.2650 0.174120
-#>     narrow    beta2 200 0.0546   TRUE  0.521          TRUE   0.5740 0.095336
+#>        arm quantity   n     ks inside  p_unif inside_folded p_folded     crps
+#>    mixture    beta1 200 0.0537   TRUE 0.85100          TRUE 8.91e-01 0.169560
+#>    mixture    beta2 200 0.0532   TRUE 0.90300          TRUE 5.55e-01 0.094554
+#>    mixture    sigma 200 0.0685   TRUE 0.66000         FALSE 4.64e-02 0.105990
+#>  collapsed    beta1 200 0.0494   TRUE 0.77500          TRUE 3.22e-01 0.169670
+#>  collapsed    beta2 200 0.0640   TRUE 0.65500          TRUE 6.67e-01 0.094667
+#>     narrow    beta1 200 0.0831   TRUE 0.10800         FALSE 3.87e-02 0.170350
+#>     narrow    beta2 200 0.0855  FALSE 0.00247         FALSE 2.46e-05 0.095774
 #>  crps_se
-#>  0.01040
-#>  0.00443
-#>  0.00683
-#>  0.01020
-#>  0.00440
-#>  0.01120
-#>  0.00497
+#>  0.01000
+#>  0.00490
+#>  0.00681
+#>  0.00985
+#>  0.00489
+#>  0.01080
+#>  0.00543
 #> 
 #> Paired CRPS against arm 'mixture' (negative delta = better)
-#>  quantity       arm   n      delta     t worse_frac   p_sign
-#>     beta1 collapsed 200 -7.409e-05 -0.15      0.600 5.69e-03
-#>     beta1    narrow 200  2.618e-04  0.28      0.375 4.99e-04
-#>     beta2 collapsed 200 -8.275e-05 -0.42      0.520 6.21e-01
-#>     beta2    narrow 200 -5.698e-04 -0.91      0.360 9.13e-05
+#>  quantity       arm   n     delta    t worse_frac   p_sign
+#>     beta1 collapsed 200 0.0001103 0.25      0.600 0.005690
+#>     beta1    narrow 200 0.0007948 0.84      0.380 0.000845
+#>     beta2 collapsed 200 0.0001136 0.68      0.530 0.437000
+#>     beta2    narrow 200 0.0012200 2.01      0.435 0.076800
 #>   delta with its t is the proper-score verdict; p_sign is a more
 #>   powerful detector of a difference but is not itself proper.
 ```
@@ -272,9 +259,10 @@ cannot rank them.
 
 Expect the mixture and collapsed arms to score close together. They
 carry the same first two moments, and the CRPS integrates the whole
-squared CDF difference, which those moments dominate. Where they
-separate is on the ECDF reads above, which is why both instruments are
-worth running.
+squared CDF difference, which those moments dominate. Here their `delta`
+has a `t` of 0.25 and 0.68, and both pass every ECDF read. The `narrow`
+arm scores worse on `beta2` (`t` = 2.01) and leaves the band on the ECDF
+reads, which carry the larger signal for a mis-scaled posterior.
 
 The CRPS is a proper posterior score here only because the truth is
 drawn afresh each simulation. Hold the truth fixed across seeds and the
@@ -383,17 +371,17 @@ pres
 #>   pooling: verified; fresh groups: verified (disjoint group labels)
 #> 
 #>      arm quantity   n     ks inside  p_unif inside_folded p_folded     crps
-#>  mixture    beta1 200 0.0440   TRUE 0.77100          TRUE 0.721000 0.092846
-#>  mixture    beta2 200 0.0451   TRUE 0.31700          TRUE 0.741000 0.069473
-#>  mixture    sigma 200 0.0822   TRUE 0.19700          TRUE 0.322000 0.065106
-#>   narrow    beta1 200 0.0577  FALSE 0.02970         FALSE 0.000968 0.093038
-#>   narrow    beta2 200 0.0661  FALSE 0.00552         FALSE 0.000596 0.069730
+#>  mixture    beta1 200 0.0373   TRUE 0.66100          TRUE 0.975000 0.088674
+#>  mixture    beta2 200 0.0556   TRUE 0.80000          TRUE 0.991000 0.061605
+#>  mixture    sigma 200 0.0468   TRUE 0.86300          TRUE 0.675000 0.066061
+#>   narrow    beta1 200 0.0518  FALSE 0.01230         FALSE 0.000987 0.089084
+#>   narrow    beta2 200 0.0795  FALSE 0.00298         FALSE 0.000063 0.062275
 #>  crps_se
-#>  0.00508
-#>  0.00348
-#>  0.00392
-#>  0.00554
-#>  0.00387
+#>  0.00493
+#>  0.00312
+#>  0.00368
+#>  0.00537
+#>  0.00349
 #> 
 #> 3 of 5 (arm, quantity) reads inside the band; outside the band: narrow/beta1, narrow/beta2.
 ```
@@ -478,22 +466,22 @@ reads both at once when you hand it the calibration result.
 
 fit <- fit_one(d_obs, diagnose = TRUE)
 diagnostics(fit, sbc = res)
+#> Device: inference=cpu, laplace_dense=cpu, sparse_cholesky=cpu, sparse_selected_inverse=cpu
 #> Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)
 #>   two layers: the outer hyperparameter-grid integration, and the inner
 #>     Gaussian Laplace on the latent field
-#>   outer PSIS pareto_k = 0.657 (ok); IS-ESS = 252.2
-#>     proposal: moment_matched; as the backend placed it, 0.712 (unreliable)
-#>   outer grid quadrature ESS = 4.66 of 7 cells (max weight 0.262)
-#>   hyperparameter integration contributes 0.2-5.2% of the fixed-effect marginal variance
+#>   outer PSIS pareto_k = 0.526 (ok); IS-ESS = 267.4
+#>     proposal: grid_moment; as the backend placed it, 0.526 (ok)
+#>   outer grid quadrature ESS = 4.72 of 7 cells (max weight 0.257)
+#>   hyperparameter integration contributes 0.1-7.6% of the fixed-effect marginal variance
 #>   note: outer grid holds material weight on a boundary node of b1.sigma (lower): that axis truncates its own marginal there, whether or not its mode sits on the node -- widen it and refit to see what is outside
-#>   note: outer grid axis holding weight on its own boundary node on b1.sigma:lower: that axis truncates its marginal there even though its mode is inside the span -- widen it and refit to see what is outside
 #>   inner Laplace max |gamma_3| = 0.000 (good), scored 2/2 latents
-#>   inner Laplace importance pareto_k = 0.274 (good), min IS efficiency 1.0000, scored 2/2 latents
+#>   inner Laplace importance pareto_k = 0.276 (good), min IS efficiency 1.0000, scored 2/2 latents
 #>     the importance weights are uniform on every probed index: the inner
 #>     Gaussian reproduces the conditional posterior over the sampled region,
 #>     so the shape above describes no correction and is not banded
 #>   whole-fit verdict: scoped: outer integration borderline
-#>   calibration (SBC, prior_predictive): outside the band: mixture/beta2, collapsed/beta2
+#>   calibration (SBC, prior_predictive): outside the band: mixture/sigma, narrow/beta1, narrow/beta2
 #>   per-parameter columns: none.
 #>     the fit carries no posterior draws, so the per-parameter mean / sd / per-parameter columns are empty; tulpa_posterior_draws(fit) samples the retained outer-grid mixture if a sample is wanted
 ```

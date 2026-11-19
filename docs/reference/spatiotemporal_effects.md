@@ -21,6 +21,16 @@ spatiotemporal_effects(
   ...
 )
 
+# S3 method for class 'tulpa_fit'
+spatiotemporal_effects(
+  object,
+  format = c("array", "long", "summary"),
+  probs = c(0.025, 0.5, 0.975),
+  ndraws = 1000L,
+  seed = NULL,
+  ...
+)
+
 # S3 method for class 'tulpa_st_summary'
 print(x, ...)
 ```
@@ -29,15 +39,14 @@ print(x, ...)
 
 - object:
 
-  A fit carrying a `$spatiotemporal` Knorr-Held interaction block
-  (`n_spatial`, `n_times`) and its draws in
-  `$.internal$spatiotemporal_draws`.
-  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) itself
-  has no `spatiotemporal =` argument; such a block comes from a model
-  package's own fitter (see
+  A nested-Laplace fit of
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  carrying a
   [`spatiotemporal()`](https://gillescolling.com/tulpa/reference/spatiotemporal.md)
-  for what the engine itself fits), and the default method reads any
-  fit, of any class, that stores it this way.
+  interaction, or any fit storing a `$spatiotemporal` Knorr-Held block
+  (`n_spatial`, `n_times`) with its draws in
+  `$.internal$spatiotemporal_draws` (a model package's own fitter),
+  which the default method reads.
 
 - format:
 
@@ -53,6 +62,17 @@ print(x, ...)
 
   Ignored
 
+- ndraws:
+
+  Number of joint posterior draws for `format = "array"` or `"long"` on
+  a fit carrying a
+  [`spatiotemporal()`](https://gillescolling.com/tulpa/reference/spatiotemporal.md)
+  interaction.
+
+- seed:
+
+  Optional integer seed for those draws (RNG state is restored on exit).
+
 - x:
 
   A `tulpa_st_summary` table.
@@ -66,6 +86,22 @@ frame with columns `s`, `t`, `draw` and `value`; for `"summary"`, a
 per entry of `probs` and `sd`, which has
 [`print()`](https://rdrr.io/r/base/print.html) and
 [`plot()`](https://rdrr.io/r/graphics/plot.default.html) methods.
+
+## Details
+
+On a fit carrying a
+[`spatiotemporal()`](https://gillescolling.com/tulpa/reference/spatiotemporal.md)
+interaction the summary is the exact Gaussian mixture over the outer
+grid of each cell's posterior (mean, SD and the `probs` quantiles), the
+read
+[`latent_effects()`](https://gillescolling.com/tulpa/reference/latent_effects.md)
+makes for a
+[`latent()`](https://gillescolling.com/tulpa/reference/latent.md) block.
+The `"array"` and `"long"` formats are joint draws of all S x T cells: a
+grid cell drawn by its weight, then the latent vector from that cell's
+Gaussian conditioned on the model's constraints, so a derived quantity
+over cells (a sum over areas, a change between two times) carries the
+cells' correlation.
 
 ## Examples
 

@@ -1,26 +1,7 @@
 # Reliability diagnostics
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -106,12 +87,17 @@ fit <- tulpa_nested_laplace_joint(
 #> [nested-laplace-joint] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 #> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
 #> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 
 d <- diagnostics(fit)
+#> Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu
 c(pareto_k = round(attr(d, "pareto_k"), 3),
   is_ess   = round(attr(d, "pareto_k_is_ess"), 1))
 #> pareto_k   is_ess 
-#>    -1.07   337.40
+#>   -1.137  379.800
 attr(d, "scope")
 #> [1] "outer (hyperparameter) Gaussian proposal"
 ```
@@ -222,7 +208,7 @@ c(k       = round(attr(d, "pareto_k"), 3),
   ci_low  = round(attr(d, "pareto_k_ci_low"), 3),
   ci_high = round(attr(d, "pareto_k_ci_high"), 3))
 #>       k  ci_low ci_high 
-#>  -1.070  -1.437  -0.809
+#>  -1.137  -1.428  -0.780
 attr(d, "pareto_k_band_confident")
 #> [1] TRUE
 ```
@@ -238,6 +224,58 @@ The bootstrap cannot invent tail information. It measures how unstable
 the current tail estimate is, given the draws in hand. To make the
 interval itself tighter you need more actual tail ratios, which means
 raising `k_samples`, not the bootstrap count.
+
+The importance draws come from a fixed stream inside the engine, so a
+refit under another session seed returns the same k-hat: the reading is
+a function of the fit and its draw count. The draw count is what moves
+it. The chunk refits the same model at four draw counts and reads the
+k-hat and its bootstrap interval at each.
+
+``` r
+
+S_draws <- c(100L, 400L, 1500L, 4000L)
+by_S <- do.call(rbind, lapply(S_draws, function(S) {
+  dS <- diagnostics(tulpa_nested_laplace_joint(
+    responses = resp, prior = prior, control = list(k_samples = S)))
+  data.frame(S = S, k = attr(dS, "pareto_k"),
+             lo = attr(dS, "pareto_k_ci_low"), hi = attr(dS, "pareto_k_ci_high"))
+}))
+```
+
+``` r
+
+round(by_S, 3)
+#>      S      k     lo     hi
+#> 1  100 -1.327 -1.835 -0.585
+#> 2  400 -1.137 -1.428 -0.780
+#> 3 1500 -1.496 -1.697 -1.295
+#> 4 4000 -1.691 -1.816 -1.561
+```
+
+``` r
+
+S_line <- exp(seq(log(70), log(5500), length.out = 200))
+plot(by_S$S, by_S$k, log = "x", pch = 19, col = "steelblue",
+     ylim = c(min(by_S$lo) - 0.3, max(k_usable(S_line))),
+     xlab = "importance draws (log scale)", ylab = "Pareto k-hat", las = 1)
+segments(by_S$S, by_S$lo, by_S$S, by_S$hi, col = "steelblue", lwd = 3)
+lines(S_line, k_usable(S_line), col = "darkorange", lwd = 2)
+abline(h = 0.5, lty = 2)
+legend("right", c("k-hat, bootstrap interval", "usable boundary", "good cut"),
+       col = c("steelblue", "darkorange", "black"),
+       pch = c(19, NA, NA), lty = c(1, 1, 2), lwd = c(3, 2, 1),
+       bty = "n", cex = 0.8)
+```
+
+![Pareto k-hat with its bootstrap interval at 100, 400, 1500 and 4000
+importance draws, on a log draw-count axis, with the usable boundary
+min(1 - 1/log10(S), 0.7) as a curve and a dashed line at the good cut
+0.5.](reliability-pareto-k_files/figure-html/redraws-plot-1.png)
+
+The k-hat falls from -1.33 at 100 draws to -1.69 at 4000, and its
+bootstrap interval narrows from 1.25 wide to 0.26. Every reading and
+every interval sits far below the good cut, and the orange curve, the
+usable boundary from the previous section, lies above all of them.
 
 ## Tightening a borderline reading
 
@@ -258,14 +296,19 @@ fit_hi <- tulpa_nested_laplace_joint(
 #> [nested-laplace-joint] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 #> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
 #> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 
 d_hi <- diagnostics(fit_hi)
+#> Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu
 c(k              = round(attr(d_hi, "pareto_k"), 3),
   ci_low         = round(attr(d_hi, "pareto_k_ci_low"), 3),
   ci_high        = round(attr(d_hi, "pareto_k_ci_high"), 3),
   band_confident = attr(d_hi, "pareto_k_band_confident"))
 #>              k         ci_low        ci_high band_confident 
-#>         -1.627         -1.889         -1.443          1.000
+#>         -1.496         -1.697         -1.295          1.000
 ```
 
 Raising `k_samples` is the lever for both halves of the reading at once.
@@ -329,8 +372,13 @@ fit_q <- tulpa_nested_laplace_joint(
 #> [nested-laplace-joint] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 #> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
 #> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 
 d_q <- diagnostics(fit_q)
+#> Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu
 c(requested = attr(d_q, "k_quality_requested"),
   reached   = attr(d_q, "k_quality_reached"),
   best      = attr(d_q, "k_quality_best"),
@@ -384,18 +432,19 @@ fixed-effects coefficients.
 ``` r
 
 attr(d, "inner_skew")
-#> [1]  1.845792e-02  1.038059e-01  1.135022e-05 -1.489145e-05
+#> [1]  1.815421e-02  1.026741e-01  1.067641e-05 -1.488590e-05
 attr(d, "inner_skew_idx")
 #> [1] 1 2 3 4
 ```
 
 The two occupancy-arm coefficients (indices 1-2, binomial) carry a small
 non-zero skew; the two positive-value coefficients (indices 3-4,
-gaussian) read exactly zero, because a gaussian log-likelihood is
-exactly quadratic in the linear predictor, so its inner Laplace is exact
-and has nothing to be skewed. A binomial or Poisson coefficient with
-thin data is the case where this number moves, and it grows toward the
-same “good / ok / unreliable” bands the outer k-hat uses:
+gaussian) read about 1e-5, four orders of magnitude below them: a
+gaussian log-likelihood is exactly quadratic in the linear predictor, so
+the gaussian arm adds no skew of its own. A binomial or Poisson
+coefficient with thin data is the case where this number moves, and it
+grows toward the same “good / ok / unreliable” bands the outer k-hat
+uses:
 
 ``` r
 
@@ -449,4 +498,13 @@ probed indices past the default fixed-effects set (1-based, into the
   whether the backend’s posteriors are calibrated across the generative
   model, and the two verdicts have been measured to disagree in both
   directions, so a clean band here is a screen rather than a calibration
-  result. \`\`\`
+  result.
+
+## References
+
+Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed importance
+sampling. *JMLR* 25(72):1-58.
+
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+*JRSS-B* 71(2):319-392.

@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -205,6 +209,7 @@ k-hat comes back on the fitted object with no extra request, and
 <span><span class="co">#&gt; [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>pareto_k <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d</span>, <span class="st">"pareto_k"</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  is_ess   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d</span>, <span class="st">"pareto_k_is_ess"</span><span class="op">)</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; pareto_k   is_ess </span></span>
@@ -365,8 +370,8 @@ k-hat and its bootstrap interval at each.</p>
 <span>       pch <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">19</span>, <span class="cn">NA</span>, <span class="cn">NA</span><span class="op">)</span>, lty <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span>, <span class="fl">2</span><span class="op">)</span>, lwd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3</span>, <span class="fl">2</span>, <span class="fl">1</span><span class="op">)</span>,</span>
 <span>       bty <span class="op">=</span> <span class="st">"n"</span>, cex <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span></span></code></pre></div>
 <p><img src="reliability-pareto-k_files/figure-html/redraws-plot-1.png" class="r-plt" alt="Pareto k-hat with its bootstrap interval at 100, 400, 1500 and 4000 importance draws, on a log draw-count axis, with the usable boundary min(1 - 1/log10(S), 0.7) as a curve and a dashed line at the good cut 0.5." width="576"></p>
-<p>The k-hat falls from -1.21 at 100 draws to -1.78 at 4000, and its
-bootstrap interval narrows from 1.13 wide to 0.27. Every reading and
+<p>The k-hat falls from -1.33 at 100 draws to -1.69 at 4000, and its
+bootstrap interval narrows from 1.25 wide to 0.26. Every reading and
 every interval sits far below the good cut, and the orange curve, the
 usable boundary from the previous section, lies above all of them.</p>
 </div>
@@ -394,6 +399,7 @@ draws and read the interval again.</p>
 <span><span class="co">#&gt; [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="va">d_hi</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_hi</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>k              <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d_hi</span>, <span class="st">"pareto_k"</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_low         <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d_hi</span>, <span class="st">"pareto_k_ci_low"</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_high        <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d_hi</span>, <span class="st">"pareto_k_ci_high"</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
@@ -473,6 +479,7 @@ fit carries an honest verdict.</p>
 <span><span class="co">#&gt; [nested-laplace-joint] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="va">d_q</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_q</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>requested <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d_q</span>, <span class="st">"k_quality_requested"</span><span class="op">)</span>,</span>
 <span>  reached   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d_q</span>, <span class="st">"k_quality_reached"</span><span class="op">)</span>,</span>
 <span>  best      <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">d_q</span>, <span class="st">"k_quality_best"</span><span class="op">)</span>,</span>

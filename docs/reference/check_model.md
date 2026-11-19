@@ -16,7 +16,14 @@ Produces a 2x2 or 1x3 panel of diagnostic plots:
 check_model(object, ...)
 
 # Default S3 method
-check_model(object, coords = NULL, nsim = 250L, seed = 123L, ...)
+check_model(
+  object,
+  coords = NULL,
+  nsim = 250L,
+  seed = 123L,
+  effects = c("conditional", "population"),
+  ...
+)
 ```
 
 ## Arguments
@@ -43,6 +50,16 @@ check_model(object, coords = NULL, nsim = 250L, seed = 123L, ...)
 - seed:
 
   Random seed (default 123)
+
+- effects:
+
+  For a tulpa fit, the linear predictor the residuals-vs-fitted and
+  correlogram panels read
+  ([`residuals.tulpa_fit()`](https://gillescolling.com/tulpa/reference/residuals.tulpa_fit.md)):
+  `"conditional"` (default) includes the fitted random effects and
+  fields, matching the posterior predictive replicates the QQ and
+  dispersion panels compare against, so all four panels check one model;
+  `"population"` holds them at zero.
 
 ## Value
 

@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -232,7 +236,7 @@ constraint at every cell.</p>
 <code class="sourceCode R"><span><span class="va">g</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_outer_grid.html">tulpa_outer_grid</a></span><span class="op">(</span><span class="va">fit_icar</span><span class="op">)</span></span>
 <span><span class="va">field_cells</span> <span class="op">&lt;-</span> <span class="va">g</span><span class="op">$</span><span class="va">modes</span><span class="op">[</span>, <span class="va">g</span><span class="op">$</span><span class="va">n_fixed</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">rowSums</a></span><span class="op">(</span><span class="va">field_cells</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] -2.026157e-15  3.365364e-15</span></span>
+<span><span class="co">#&gt; [1] -2.435552e-15  2.609024e-15</span></span>
 <span><span class="va">field_hat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colSums</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">weights</span> <span class="op">*</span> <span class="va">field_cells</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">field_hat</span>, <span class="va">wave</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] 0.99445</span></span></code></pre></div>
@@ -616,10 +620,10 @@ Simulation code
 <span><span class="co">#&gt; [nested-laplace] 23/23 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 21/21 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 7/7 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 24/24 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
@@ -629,10 +633,10 @@ Simulation code
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 22/22 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 21/21 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
@@ -644,7 +648,7 @@ Simulation code
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 22/22 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
@@ -654,28 +658,28 @@ Simulation code
 <span><span class="co">#&gt; [nested-laplace] 20/20 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 23/23 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 20/20 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 22/22 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 22/22 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="va">bym</span><span class="op">$</span><span class="va">width</span> <span class="op">&lt;-</span> <span class="va">bym</span><span class="op">$</span><span class="va">ci_hi</span> <span class="op">-</span> <span class="va">bym</span><span class="op">$</span><span class="va">ci_lo</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/aggregate.html" class="external-link">aggregate</a></span><span class="op">(</span><span class="va">width</span> <span class="op">~</span> <span class="va">parameter</span> <span class="op">+</span> <span class="va">K</span>, data <span class="op">=</span> <span class="va">bym</span>, FUN <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">v</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/median.html" class="external-link">median</a></span><span class="op">(</span><span class="va">v</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   parameter   K width</span></span>
-<span><span class="co">#&gt; 1       rho  16  0.42</span></span>
+<span><span class="co">#&gt; 1       rho  16  0.94</span></span>
 <span><span class="co">#&gt; 2     sigma  16  0.46</span></span>
-<span><span class="co">#&gt; 3       rho  49  0.61</span></span>
+<span><span class="co">#&gt; 3       rho  49  0.81</span></span>
 <span><span class="co">#&gt; 4     sigma  49  0.28</span></span>
 <span><span class="co">#&gt; 5       rho 100  0.63</span></span>
 <span><span class="co">#&gt; 6     sigma 100  0.23</span></span>
@@ -693,7 +697,7 @@ Simulation code
 <p><img src="identifiability_files/figure-html/bym2-plot-1.png" class="r-plt" alt="95 percent intervals for the BYM2 mixing parameter rho in four replicates at 16, 49, 100 and 196 regions, with the true value 0.5 as a horizontal line; the intervals cover most of the unit interval at 16 regions and narrow with more regions" width="576"></p>
 <p>The median width of the
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
-interval is 0.42 at 16 regions, so the data barely move the posterior
+interval is 0.94 at 16 regions, so the data barely move the posterior
 away from the whole unit interval, and 0.52 at 196 regions. The interval
 for
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>σ</mi><annotation encoding="application/x-tex">\sigma</annotation></semantics></math>
@@ -704,7 +708,7 @@ directly, while
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
 needs many neighbour comparisons. Of the 16
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
-intervals, 12 contain 0.5.</p>
+intervals, 16 contain 0.5.</p>
 </div>
 <div class="section level3">
 <h3 id="range-and-variance-of-a-gaussian-process-against-the-number-of-locations">Range and variance of a Gaussian process against the number of
@@ -755,8 +759,8 @@ follow as weighted moments.</p>
 <span>  <span class="fu"><a href="https://rdrr.io/r/base/do.call.html" class="external-link">do.call</a></span><span class="op">(</span><span class="va">rbind</span>, <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">3</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="fu">gp_one</span><span class="op">(</span><span class="va">n</span>, <span class="va">s</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 1s | ETA &gt;=16s | 0.66s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 17/17 cells (100%) | elapsed 1s | ETA done | 0.05s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 17/17 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 12/12 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
@@ -765,60 +769,55 @@ follow as weighted moments.</p>
 <span><span class="co">#&gt; [nested-laplace] 24/24 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 14/14 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 14/14 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 24/24 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 24/24 cells (100%) | elapsed 0s | ETA done | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 7/7 cells (100%) | elapsed 0s | ETA done | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 7/7 cells (100%) | elapsed 0s | ETA done | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.02s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 16/16 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 1s | ETA done | 0.09s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.08s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.03s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 1s | ETA done | 0.05s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 7/7 cells (100%) | elapsed 1s | ETA done | 0.08s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.04s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 9/9 cells (100%) | elapsed 1s | ETA done | 0.06s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 7/7 cells (100%) | elapsed 1s | ETA done | 0.08s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.05s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 1s | ETA done | 0.09s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 16/16 cells (100%) | elapsed 1s | ETA done | 0.04s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.04s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 1s | ETA done | 0.04s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.07s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.10s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 1s | ETA done | 0.21s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=3s | 0.11s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 2s | ETA done | 0.12s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.08s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 1s | ETA done | 0.18s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.06s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 1s | ETA done | 0.11s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.09s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 1s | ETA done | 0.20s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.07s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 9/9 cells (100%) | elapsed 1s | ETA done | 0.14s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.07s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 1s | ETA done | 0.20s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.07s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 1s | ETA done | 0.11s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=4s | 0.16s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 3/5 cells (60%) | elapsed 2s | ETA ~2s | 1.02s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 2s | ETA done | 0.48s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=4s | 0.17s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 3/13 cells (23%) | elapsed 2s | ETA ~10s | 1.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 13/13 cells (100%) | elapsed 3s | ETA done | 0.25s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=4s | 0.18s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 3/6 cells (50%) | elapsed 2s | ETA ~3s | 1.04s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 3s | ETA done | 0.43s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=5s | 0.19s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 2/5 cells (40%) | elapsed 2s | ETA ~6s | 2.05s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 5/5 cells (100%) | elapsed 3s | ETA done | 0.51s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=4s | 0.16s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 4/11 cells (36%) | elapsed 2s | ETA ~5s | 0.69s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 11/11 cells (100%) | elapsed 3s | ETA done | 0.27s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=2s | 0.10s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 11/11 cells (100%) | elapsed 1s | ETA done | 0.13s/cells</span></span>
 <span><span class="va">gp_tab</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/aggregate.html" class="external-link">aggregate</a></span><span class="op">(</span><span class="va">sd</span> <span class="op">~</span> <span class="va">qty</span> <span class="op">+</span> <span class="va">n</span>, data <span class="op">=</span> <span class="va">gp</span>,</span>
 <span>                    FUN <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">v</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/median.html" class="external-link">median</a></span><span class="op">(</span><span class="va">v</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/reshape.html" class="external-link">reshape</a></span><span class="op">(</span><span class="va">gp_tab</span>, idvar <span class="op">=</span> <span class="st">"n"</span>, timevar <span class="op">=</span> <span class="st">"qty"</span>, direction <span class="op">=</span> <span class="st">"wide"</span><span class="op">)</span></span>
@@ -878,7 +877,7 @@ treat the groups as fixed effects.</li>
 <li>
 <strong>BYM2 mixing parameter.</strong> At 16 regions the median
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
-interval was 0.42 wide on a unit interval, and at 196 regions 0.52 (4
+interval was 0.94 wide on a unit interval, and at 196 regions 0.52 (4
 replicates per size, 10 observations per region). On maps of a few dozen
 regions, read
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>

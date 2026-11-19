@@ -29,6 +29,14 @@ draws provenance and returns the diagnostic that applies:
   no sample to diagnose; returns `NULL` with a message naming the
   backend.
 
+- resampled within-cell chains:
+
+  the original cell-chain diagnostic table, including cell indices and
+  weights. The `subspace_outer_correction` attribute contains per-cell
+  IS diagnostics; `pareto_k` and `scope` describe the stratified outer
+  correction. Monte Carlo uncertainty depends on those source chains and
+  estimates.
+
 Provenance is read from `$draws_kind` (stamped by `tulpa_dispatch`),
 falling back to the backend registry's `emits` property and then to an
 inner `$joint_fit`. A fit that predates the tag is treated as a chain,
@@ -499,9 +507,25 @@ hmc <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 diagnostics(hmc)
+#> Device: inference=cpu, likelihood=cpu
+#>     parameter     rhat ess_bulk ess_tail
+#> 1 (Intercept) 1.021024 122.4128 159.6886
+#> 2           x 1.013575 227.3432 180.9505
 
 # deterministic fit -> PSIS approximation reliability
 smc <- tulpa(y ~ x, data = df, family = "poisson", mode = "smc")
 diagnostics(smc)
+#> Device: inference=cpu, likelihood=cpu
+#> Sequential Monte Carlo approximation reliability (i.i.d. draws)
+#>   scope: the draws are the particle population after the final tempering
+#>     stage, resampled to equal weights and moved by MCMC mutation steps; no
+#>     pareto_k or other reliability quantity is computed for this backend.
+#>   2 parameters, 1000 draws; mcse_mean below is the i.i.d.
+#>   Monte-Carlo error of each reported mean (not chain mixing:
+#>   Rhat and ESS are not defined for these draws).
+#> 
+#>     parameter      mean        sd n_draws   mcse_mean moment_source
+#> 1 (Intercept) 0.5325424 0.1029663    1000 0.003256082         draws
+#> 2           x 0.3107521 0.1185866    1000 0.003750039         draws
 # }
 ```

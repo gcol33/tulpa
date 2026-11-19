@@ -28,7 +28,8 @@ temporal_tvc(
   shared = NULL,
   sigma_prior_U = 1,
   sigma_prior_alpha = 0.01,
-  scale_coords = TRUE
+  scale_coords = TRUE,
+  parameterization = c("auto", "noncentered", "centered")
 )
 
 # S3 method for class 'tulpa_tvc'
@@ -94,6 +95,20 @@ print(x, ...)
   [`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md)
   uses. `period` is stated in the raw time units and makes the same
   trip.
+
+- parameterization:
+
+  GP field coordinates: `"noncentered"` samples independent standard
+  normal innovations and reconstructs the coefficient through its
+  covariance factor. `"auto"` (default) uses this covariance whitening
+  and adapts to likelihood information. `"centered"` samples the
+  coefficient directly. All choices use the same variance and
+  lengthscale priors and return centred coefficient draws. Applies to
+  `structure = "gp"`. The constant field direction occupies one
+  independent innovation coordinate. Within the sampler's dense
+  parameter budget, `"auto"` also centres and scales innovations using
+  their Gaussian conditional approximation at a fixed-effects reference
+  fit. The exact likelihood corrects this approximation.
 
 - x:
 

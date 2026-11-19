@@ -509,9 +509,9 @@ repeat a warning that the marginal fixed-effect precision could not be formed.
 On a single analysis they are worth reading.
 Averaged
 over the replicates, the nested Laplace estimates both standard deviations
-below their true values, the slope SD most (0.45 against 0.7), and in 5 of
-the 20 replicates it places the slope SD at zero. The Gibbs averages are
-within 0.1 of the truth, and none of its fits collapses.
+below their true values (0.77 against 1 and 0.52 against 0.7), and it places
+the slope SD at zero in none of the 20 replicates. The Gibbs averages are
+within about 0.1 of the truth, and none of its fits collapses.
 
 ### Adaptive Gauss-Hermite quadrature
 
@@ -535,8 +535,8 @@ round(reps[, 1], 3)   # nested Laplace, then Gibbs, on the same data set
 
 `reps[, 1]` holds the nested and Gibbs medians of $\sigma_1$, $\sigma_2$ and
 $\rho$ for the same data set. Quadrature of order 3 raises both standard
-deviations above the Laplace values: $\sigma_1$ from 0.45 to 0.54, against
-0.65 from the Gibbs sampler, and $\sigma_2$ from 0.80 to 0.91, against 0.99.
+deviations above the Laplace values: $\sigma_1$ from 0.43 to 0.51, against
+0.61 from the Gibbs sampler, and $\sigma_2$ from 0.79 to 0.91, against 0.87.
 
 ## How many groups a covariance needs
 
@@ -579,10 +579,10 @@ observations per group, and binary responses with 6.
 
 | Situation | Measured here | Choice |
 |---|---|---|
-| 10 groups, full 2 x 2 block | $\rho$ interval width 1.20 of 2; 1 of 3 fits collapsed the slope SD | read $\rho$ as unidentified; drop the correlation or the slope |
-| 20 to 40 groups | $\rho$ width 0.93 to 0.78 | $\rho$ gives its sign at best |
-| 80 groups | $\rho$ width 0.49, $\sigma_2$ width 0.21 | the full block is informed |
-| 6 binary observations per group | nested $\sigma_2$ 0.45 against 0.7; 5 of 20 fits collapsed | `control$re_cov = "gibbs"` |
+| 10 groups, full 2 x 2 block | $\rho$ interval width 1.42 of 2; 0 of 3 fits collapsed the slope SD | read $\rho$ as unidentified; drop the correlation or the slope |
+| 20 to 40 groups | $\rho$ width 0.91 to 0.76 | $\rho$ gives its sign at best |
+| 80 groups | $\rho$ width 0.46, $\sigma_2$ width 0.21 | the full block is informed |
+| 6 binary observations per group | nested $\sigma_2$ 0.52 against 0.7; 0 of 20 fits collapsed | `control$re_cov = "gibbs"` |
 | 12 Poisson observations per group | nested and Gibbs medians within 0.02 on every parameter | nested Laplace |
 
 - A full block of $c$ coefficients has $c(c+1)/2$ covariance parameters,

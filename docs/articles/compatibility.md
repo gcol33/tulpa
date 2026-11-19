@@ -1,0 +1,828 @@
+# Compatibility with lme4, glmmTMB, brms and INLA
+
+Four packages shaped how a mixed or latent Gaussian model is written and
+fitted in R. [lme4](https://github.com/lme4/lme4/) (Bates et al. 2015)
+introduced the `(1 + x | g)` formula syntax for random effects and fits
+generalized linear mixed models by maximum likelihood, with a Laplace or
+adaptive Gauss-Hermite approximation to the integral over each group.
+[glmmTMB](https://github.com/glmmTMB/glmmTMB) keeps that syntax,
+computes the Laplace approximation with automatic differentiation
+through TMB, and adds families such as the negative binomial and
+Tweedie, zero-inflation through `ziformula`, and restricted (REML)
+estimation for non-Gaussian responses.
+[brms](https://paulbuerkner.com/brms/) translates the same formulas into
+a Stan program and samples the full posterior with the No-U-Turn
+sampler, with priors set per parameter class. INLA (Rue, Martino and
+Chopin 2009) computes posterior marginals for latent Gaussian models by
+nested Laplace approximations, writes each structured effect as an `f()`
+term, and supplies the penalised-complexity (PC) priors and the scaled
+BYM2 areal model that tulpa uses as its defaults.
+
+tulpa takes the lme4 formula syntax and the INLA latent blocks into one
+Bayesian engine. Blocks that a deterministic approximation handles well
+are fitted by Laplace or nested Laplace, as in INLA, and the directions
+where that approximation is biased can be corrected by exact sampling,
+as in Stan. The fit records which method ran. This article checks that,
+with matched model, settings and priors, tulpa gives the same estimates
+as each of the four packages, and documents the places where it does
+not. Each comparison runs on one simulated data set, so it shows
+agreement of the numbers on that data set and says nothing about
+calibration over repeated data, which the [Simulation-based
+calibration](https://gillescolling.com/tulpa/articles/sbc.md) article
+covers.
+
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md). The
+comparisons need lme4, glmmTMB and brms from CRAN, and INLA, which is
+not on CRAN; its DESCRIPTION names the repository
+`https://inlabru-org.r-universe.dev`. Every chunk that calls another
+package runs only when that package is installed. The brms fit uses
+cmdstanr as its Stan backend when CmdStan is set up, and rstan
+otherwise.
+
+``` r
+
+library(tulpa)
+```
+
+## How agreement is measured
+
+A comparison is only meaningful when both packages fit the same model to
+the same data and report the same quantity. Each section below states
+three things before its fits: the model, the estimand (maximum
+likelihood, restricted likelihood or a posterior summary) and, for the
+Bayesian fits, the priors on every parameter. Where one of these cannot
+be matched, the section says so and the table shows the gap that
+follows.
+
+Agreement is reported per parameter as the difference between the tulpa
+estimate and the other package’s, in the parameter’s units and in units
+of the other package’s standard error or posterior SD. A difference of
+0.01 SD is numerical noise; a difference of 0.5 SD changes what a reader
+would conclude. The helper below builds that table from two named
+vectors of estimates and two of standard errors.
+
+``` r
+
+agree <- function(est_t, se_t, est_o, se_o) {
+  data.frame(tulpa = est_t, tulpa_se = se_t, other = est_o, other_se = se_o,
+             diff = est_t - est_o, diff_in_se = (est_t - est_o) / se_o)
+}
+```
+
+To check agreement on your own data, fit the model in both packages with
+the settings of the matching section, pass the estimates and standard
+errors to `agree()`, and read the last column.
+
+## Random-intercept GLMM: tulpa, lme4 and glmmTMB
+
+A binary response measured in 40 groups of 8 is the setting where the
+Laplace approximation to a group’s integral is least accurate, so it is
+a demanding first test. The intercept is -0.4, the slope 0.9, and the
+group intercepts are drawn with SD 0.8.
+
+``` r
+
+G <- 40L; npg <- 8L
+g <- rep(seq_len(G), each = npg)
+x <- rnorm(G * npg)
+u <- rnorm(G, sd = 0.8)
+y <- rbinom(G * npg, 1, plogis(-0.4 + 0.9 * x + u[g]))
+d <- data.frame(y = y, x = x, g = factor(g))
+```
+
+lme4 and glmmTMB maximise the Laplace-approximated likelihood over the
+fixed effects and the random-intercept SD. The tulpa backend that does
+the same is `mode = "agq"`: with `n_quad = 1` its marginal is the same
+joint Laplace approximation, and `tol` tightens the optimiser (the
+default tolerance is discussed under
+[Differences](#optimiser-tolerance-of-the-agq-backend)).
+
+``` r
+
+tm <- list()
+tm$tulpa_agq <- system.time(
+  f_t <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "agq",
+               control = list(n_quad = 1L, tol = 1e-10))
+)[["elapsed"]]
+summary(f_t)$coefficients[, 1:2]
+#>               estimate std.error
+#> (Intercept) -0.4873948 0.1864441
+#> x            0.9396841 0.1568559
+f_t$sigma_re
+#> [1] 0.8160032
+```
+
+``` r
+
+tm$glmer <- system.time(
+  f_l <- lme4::glmer(y ~ x + (1 | g), data = d, family = binomial)
+)[["elapsed"]]
+tm$glmmTMB <- system.time(
+  f_g <- glmmTMB::glmmTMB(y ~ x + (1 | g), data = d, family = binomial)
+)[["elapsed"]]
+c(logLik_tulpa = f_t$log_marginal, logLik_glmer = as.numeric(logLik(f_l)),
+  logLik_glmmTMB = as.numeric(logLik(f_g)))
+#>   logLik_tulpa   logLik_glmer logLik_glmmTMB 
+#>      -186.8587      -186.8594      -186.8587
+```
+
+tulpa and glmmTMB reach the same log-likelihood to four decimals, and
+glmer’s default optimiser stops 0.0007 below it. The table therefore
+compares the estimates against glmmTMB. The random-intercept SD has no
+standard error in either package’s default output, so its last two
+columns are empty.
+
+``` r
+
+se_g <- sqrt(diag(vcov(f_g)$cond))
+tab_ml <- agree(
+  c(coef(f_t), sigma = f_t$sigma_re),
+  c(summary(f_t)$coefficients[, "std.error"], NA),
+  c(glmmTMB::fixef(f_g)$cond, sigma = sqrt(glmmTMB::VarCorr(f_g)$cond$g[1])),
+  c(se_g, NA))
+round(tab_ml, 5)
+#>                tulpa tulpa_se    other other_se diff diff_in_se
+#> (Intercept) -0.48739  0.18644 -0.48740  0.18645    0      0e+00
+#> x            0.93968  0.15686  0.93968  0.15686    0     -1e-05
+#> sigma        0.81600       NA  0.81600       NA    0         NA
+```
+
+The same match holds for adaptive Gauss-Hermite quadrature. lme4 calls
+the number of nodes `nAGQ`; tulpa calls it `n_quad`. With seven nodes
+the integral over each group of eight binary responses is no longer a
+Laplace approximation, and the SD estimate moves from 0.816 to 0.842 in
+both packages.
+
+``` r
+
+f_t7 <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "agq",
+              control = list(n_quad = 7L, tol = 1e-10))
+f_l7 <- lme4::glmer(y ~ x + (1 | g), data = d, family = binomial, nAGQ = 7)
+rbind(tulpa = c(coef(f_t7), sigma = f_t7$sigma_re),
+      glmer = c(lme4::fixef(f_l7), sigma = attr(lme4::VarCorr(f_l7)$g, "stddev")))
+#>       (Intercept)         x     sigma
+#> tulpa  -0.4891310 0.9406283 0.8418408
+#> glmer  -0.4891226 0.9406310 0.8418574
+```
+
+## Random slopes: tulpa and glmmTMB
+
+A random slope adds a covariance matrix: the intercept SD, the slope SD
+and their correlation. lme4 fits it for this Poisson response as well,
+but glmmTMB also offers the restricted likelihood, which is the estimand
+of tulpa’s empirical-Bayes backend. Simulate 60 groups of 12 counts with
+SDs 0.7 and 0.5 and correlation 0.4.
+
+``` r
+
+G2 <- 60L; npg2 <- 12L
+g2 <- rep(seq_len(G2), each = npg2)
+x2 <- rnorm(G2 * npg2)
+Sig <- matrix(c(0.49, 0.14, 0.14, 0.25), 2)
+b2 <- t(t(chol(Sig)) %*% matrix(rnorm(2 * G2), 2))
+y2 <- rpois(G2 * npg2, exp(0.2 + 0.5 * x2 + b2[g2, 1] + b2[g2, 2] * x2))
+d2 <- data.frame(y = y2, x = x2, g = factor(g2))
+```
+
+`mode = "eb"` maximises the Laplace marginal over the covariance with
+the fixed effects integrated out, which is the restricted (REML-type)
+estimate. `hyperprior = "flat"` removes the default PC and LKJ prior on
+the covariance, so nothing but the likelihood enters the maximisation;
+the fixed effects keep the default `normal(0, 2.5)` prior, which is weak
+against 720 observations. The glmmTMB call is the same formula with
+`REML = TRUE`.
+
+``` r
+
+tm$tulpa_eb <- system.time(
+  s_t <- tulpa(y ~ x + (1 + x | g), data = d2, family = "poisson",
+               mode = "eb", hyperprior = "flat")
+)[["elapsed"]]
+tm$glmmTMB_reml <- system.time(
+  s_g <- glmmTMB::glmmTMB(y ~ x + (1 + x | g), data = d2, family = poisson,
+                          REML = TRUE)
+)[["elapsed"]]
+vc <- glmmTMB::VarCorr(s_g)$cond$g
+tab_rs <- agree(
+  c(coef(s_t), sd_int = s_t$map$sigma[1], sd_x = s_t$map$sigma[2],
+    cor = s_t$map$rho),
+  c(summary(s_t)$coefficients[, "std.error"], NA, NA, NA),
+  c(glmmTMB::fixef(s_g)$cond, attr(vc, "stddev"),
+    cor = attr(vc, "correlation")[1, 2]),
+  c(sqrt(diag(vcov(s_g)$cond)), NA, NA, NA))
+round(tab_rs, 5)
+#>               tulpa tulpa_se   other other_se     diff diff_in_se
+#> (Intercept) 0.36146  0.09205 0.36216  0.09268 -0.00070   -0.00752
+#> x           0.37336  0.08274 0.37397  0.08370 -0.00061   -0.00734
+#> sd_int      0.66035       NA 0.66030       NA  0.00005         NA
+#> sd_x        0.57221       NA 0.57218       NA  0.00003         NA
+#> cor         0.56860       NA 0.56850       NA  0.00010         NA
+```
+
+The SDs and the correlation agree to 1e-4, and the fixed effects differ
+by under a hundredth of a standard error.
+
+The Bayesian counterpart integrates over the covariance instead of
+fixing it at the maximum. With `mode = "laplace"` a slope term routes to
+that integration (the [Random
+slopes](https://gillescolling.com/tulpa/articles/random-slopes.md)
+article covers it). The posterior medians of the two SDs equal the
+restricted estimates to two decimals, and the median of the correlation
+is 0.52 against the restricted 0.57, inside an interval from 0.25 to
+0.73.
+
+``` r
+
+s_n <- tulpa(y ~ x + (1 + x | g), data = d2, family = "poisson",
+             mode = "laplace", control = list(n_threads = 2))
+summary(s_n)$hyperparameters[1:3, c("parameter", "median", "ci_lo", "ci_hi")]
+#>   parameter    median     ci_lo     ci_hi
+#> 1   sigma_1 0.6618372 0.5385379 0.8241984
+#> 2   sigma_2 0.5730461 0.4599580 0.7214724
+#> 3    rho_12 0.5227020 0.2459051 0.7251218
+```
+
+## Areal BYM2 model: tulpa and INLA
+
+The BYM2 model splits a region’s effect into a scaled ICAR part and an
+independent part, with a total SD `sigma` and a mixing weight for the
+structured share. INLA calls the weight `phi` and parameterises the
+scale as a precision; tulpa calls the weight `rho` and reports `sigma`
+directly. Both scale the ICAR part so that its marginal variances have
+geometric mean one (Riebler et al. 2016), which
+[`spatial_bym2()`](https://gillescolling.com/tulpa/reference/spatial_bym2.md)
+does and INLA’s `scale.model = TRUE` does.
+
+Simulate Poisson counts on a 10 by 10 lattice of regions with rook
+adjacency, expected counts between 10 and 60, a slope of 0.4 and a field
+with total SD 0.6, 70% of its variance spatially structured.
+
+``` r
+
+nr <- 10L; K <- nr * nr
+W <- matrix(0, K, K)
+id <- function(i, j) (i - 1L) * nr + j
+for (i in 1:nr) for (j in 1:nr) {
+  if (i < nr) W[id(i, j), id(i + 1L, j)] <- W[id(i + 1L, j), id(i, j)] <- 1
+  if (j < nr) W[id(i, j), id(i, j + 1L)] <- W[id(i, j + 1L), id(i, j)] <- 1
+}
+cx <- rep(1:nr, each = nr); cy <- rep(1:nr, nr)
+s  <- as.numeric(scale(sin(cx / 3) + cos(cy / 3)))
+bf <- 0.6 * (sqrt(0.7) * s + sqrt(0.3) * rnorm(K))
+x3 <- rnorm(K); E <- round(runif(K, 10, 60))
+y3 <- rpois(K, E * exp(-0.3 + 0.4 * x3 + bf))
+d3 <- data.frame(y = y3, x = x3, E = E, region = factor(1:K), id = 1:K)
+```
+
+### Matching the priors
+
+The priors have to be set on the INLA side to match tulpa’s defaults,
+since the two packages’ defaults differ.
+
+| Parameter | tulpa default | INLA default | INLA setting used here |
+|----|----|----|----|
+| total SD `sigma` | PC prior, P(sigma \> 3) = 0.01 | `pc.prec`, P(sigma \> 1) = 0.01 | `pc.prec` with `param = c(3, 0.01)` |
+| mixing weight | uniform on (0, 1) | `pc`, P(phi \< 0.5) = 2/3 | `logitbeta` with `param = c(1, 1)` (uniform) |
+| intercept | `normal(0, 2.5)` | flat | flat |
+| slope | the same | normal, precision 0.001 | normal, precision 0.001 |
+
+INLA’s `pc.prec` with `param = c(U, alpha)` states P(1 / sqrt(precision)
+\> U) = alpha, which is the same statement as tulpa’s PC prior on
+`sigma`. The fixed-effect priors are left at each package’s default,
+`normal(0, 2.5)` in tulpa against a flat intercept and a precision of
+0.001 in INLA; the conditional check below measures how much that
+matters here.
+
+``` r
+
+tm$tulpa_bym2 <- system.time(
+  a_t <- tulpa(y ~ x + offset(log(E)) + spatial(region), data = d3,
+               family = "poisson",
+               spatial = spatial_bym2(W, level = "group", group_var = "region"),
+               mode = "nested_laplace", control = list(n_threads = 2))
+)[["elapsed"]]
+#> [nested-laplace] preparing joint Hessian sparsity pattern
+#> [nested-laplace] 1/30 cells (3%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace] preparing joint Hessian sparsity pattern
+#> [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 22/22 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+summary(a_t)$hyperparameters[, c("parameter", "mean", "sd")]
+#>   parameter      mean         sd
+#> 1     sigma 0.5149011 0.04965631
+#> 2       rho 0.7223863 0.13517381
+```
+
+``` r
+
+hyp <- list(prec = list(prior = "pc.prec", param = c(3, 0.01)),
+            phi  = list(prior = "logitbeta", param = c(1, 1)))
+tm$inla_bym2 <- system.time(
+  a_i <- INLA::inla(
+    y ~ x + f(id, model = "bym2", graph = W, scale.model = TRUE,
+              constr = TRUE, hyper = hyp),
+    family = "poisson", E = E, data = d3, num.threads = "2:1",
+    control.fixed = list(prec.intercept = 0, prec = 0.001))
+)[["elapsed"]]
+sd_marg <- INLA::inla.tmarginal(function(t) 1 / sqrt(t),
+                                a_i$marginals.hyperpar[[1]])
+sd_inla <- unlist(INLA::inla.zmarginal(sd_marg, silent = TRUE)[1:2])
+```
+
+``` r
+
+hp <- summary(a_t)$hyperparameters
+tab_bym2 <- agree(
+  c(coef(a_t), sigma = hp$mean[1], mixing = hp$mean[2]),
+  c(summary(a_t)$coefficients[, "std.error"], hp$sd),
+  c(a_i$summary.fixed$mean, sd_inla[["mean"]], a_i$summary.hyperpar$mean[2]),
+  c(a_i$summary.fixed$sd, sd_inla[["sd"]], a_i$summary.hyperpar$sd[2]))
+round(tab_bym2, 4)
+#>               tulpa tulpa_se   other other_se    diff diff_in_se
+#> (Intercept) -0.2244   0.0354 -0.2425   0.0360  0.0181     0.5025
+#> x            0.4416   0.0571  0.4468   0.0572 -0.0052    -0.0906
+#> sigma        0.5149   0.0497  0.5083   0.0495  0.0066     0.1326
+#> mixing       0.7224   0.1352  0.7083   0.1251  0.0141     0.1125
+```
+
+The slope and the total SD agree to within 0.2 posterior SD, and the
+mixing weight’s mean differs by 0.014, and tulpa’s posterior SD for it
+is 0.14 against INLA’s 0.13. The intercept differs by half a posterior
+SD, and the next section traces that gap to the method rather than the
+model.
+
+### The same model at fixed hyperparameters
+
+Fixing `sigma` and the mixing weight removes the outer integration, so
+the two packages then solve the same inner problem: the posterior of the
+fixed effects and the field given the hyperparameters. In tulpa that is
+one cell of the nested-Laplace grid.
+[`prior_from_spec()`](https://gillescolling.com/tulpa/reference/prior_from_spec.md)
+turns the
+[`spatial_bym2()`](https://gillescolling.com/tulpa/reference/spatial_bym2.md)
+spec into the prior list that
+[`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
+reads, and the grid is set to the single cell `sigma = 1 / sqrt(5)`,
+mixing weight 0.8.
+
+``` r
+
+pr <- prior_from_spec(spatial_bym2(W, level = "group", group_var = "region"),
+                      d3)
+pr$sigma_grid <- 1 / sqrt(5); pr$rho_grid <- 0.8
+c_t <- tulpa_nested_laplace(d3$y, rep(1L, K), cbind(1, d3$x), prior = pr,
+                            family = "poisson", offset = log(d3$E),
+                            control = list(n_threads = 2, axis_refine = "none"))
+#> [nested-laplace] preparing joint Hessian sparsity pattern
+#> [nested-laplace] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace] 1/1 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+eta_t <- as.numeric(c_t$fitted_eta[1, ]) - log(d3$E)
+c_t$modes[1, 1:2]
+#> [1] -0.2155708  0.4366814
+```
+
+On the INLA side the precision is fixed at 5 and `phi` at 0.8. INLA
+reports the posterior mean of the linear predictor; by default that mean
+includes a variational-Bayes correction, which is switched off here and
+kept on below.
+
+``` r
+
+hyp_fix <- list(prec = list(initial = log(5), fixed = TRUE),
+                phi  = list(initial = qlogis(0.8), fixed = TRUE))
+cond_inla <- function(vb) INLA::inla(
+  y ~ x + f(id, model = "bym2", graph = W, scale.model = TRUE,
+            constr = TRUE, hyper = hyp_fix),
+  family = "poisson", E = E, data = d3, num.threads = "2:1",
+  control.fixed = list(prec.intercept = 0, prec = 0.001),
+  control.predictor = list(compute = TRUE),
+  control.inla = list(control.vb = list(enable = vb)))
+c_i0 <- cond_inla(FALSE); c_i1 <- cond_inla(TRUE)
+rbind(vb_off = c(c_i0$summary.fixed$mean,
+                 max_abs_eta_diff = max(abs(eta_t - c_i0$summary.linear.predictor$mean))),
+      vb_on  = c(c_i1$summary.fixed$mean,
+                 max_abs_eta_diff = max(abs(eta_t - c_i1$summary.linear.predictor$mean))))
+#>                             max_abs_eta_diff
+#> vb_off -0.2155973 0.4368528     0.0001490837
+#> vb_on  -0.2316248 0.4405133     0.0439808001
+```
+
+With the correction off, INLA’s fixed effects equal tulpa’s to within
+2e-4 and the linear predictors of the 100 regions agree to within 2e-4,
+so the two packages build the same model, the same scaling and the same
+constraint, and the fixed-effect priors make no visible difference. With
+the correction on, the intercept moves by 0.016, close to the 0.018 gap
+of the full fits above. tulpa’s inner solve reports the Laplace mode;
+INLA’s default reports a mean corrected towards the skew of the Poisson
+posterior. The [Differences](#inlas-default-mean-correction) section
+shows the full fit with the correction switched off.
+
+## A brms fit of the GLMM
+
+brms samples the posterior of the random-intercept model from the first
+section. The matched tulpa fit integrates the random-intercept SD over a
+grid with adaptive Gauss-Hermite quadrature inside each group
+(`control$re_cov = "aghq"`), under the same priors:
+
+- the fixed effects, intercept included, `normal(0, 2.5)` in both;
+- the SD, tulpa’s PC prior P(sigma \> 3) = 0.01, which for a
+  random-effect SD is an exponential with rate `-log(0.01) / 3`, written
+  out for brms.
+
+brms writes the intercept as an ordinary coefficient (`0 + Intercept`)
+so that the `normal(0, 2.5)` prior applies to it on the same scale as in
+tulpa. The sampler runs two chains of 1000 iterations, half of them
+warmup.
+
+``` r
+
+rate <- -log(0.01) / 3
+pri <- c(brms::set_prior("normal(0, 2.5)", class = "b"),
+         brms::set_prior(sprintf("exponential(%.6f)", rate), class = "sd"))
+tm_brms <- system.time(
+  f_b <- brms::brm(y ~ 0 + Intercept + x + (1 | g), data = d,
+                   family = brms::bernoulli(), prior = pri, chains = 2,
+                   iter = 1000, warmup = 500, cores = 2, seed = 1, refresh = 0,
+                   backend = if (has_cmdstan) "cmdstanr" else "rstan")
+)[["elapsed"]]
+```
+
+``` r
+
+tm$tulpa_aghq <- system.time(
+  f_q <- tulpa(y ~ x + (1 | g), data = d, family = "binomial",
+               mode = "structured",
+               control = list(re_cov = "aghq", n_threads = 2))
+)[["elapsed"]]
+```
+
+``` r
+
+fb <- brms::fixef(f_b)
+#> Loading required namespace: rstan
+sb <- brms::VarCorr(f_b)$g$sd
+hq <- summary(f_q)$hyperparameters
+tab_brms <- agree(
+  c(coef(f_q), sigma = hq$mean[1]),
+  c(summary(f_q)$coefficients[, "std.error"], hq$sd[1]),
+  c(fb[, "Estimate"], sb[, "Estimate"]),
+  c(fb[, "Est.Error"], sb[, "Est.Error"]))
+round(tab_brms, 4)
+#>               tulpa tulpa_se   other other_se    diff diff_in_se
+#> (Intercept) -0.4853   0.1910 -0.4992   0.1888  0.0138     0.0732
+#> x            0.9350   0.1562  0.9419   0.1724 -0.0069    -0.0398
+#> sigma        0.8308   0.2302  0.8387   0.2370 -0.0079    -0.0334
+```
+
+The posterior means of the fixed effects agree to within 0.08 posterior
+SD and the mean of the SD to within 0.04. The brms posterior SDs of the
+slope and of the random-intercept SD are 0.016 and 0.007 larger than
+tulpa’s. The effective sample sizes of the brms draws set the Monte
+Carlo error of its means:
+
+``` r
+
+fx <- summary(f_b)$fixed
+cbind(fx[, c("Est.Error", "Bulk_ESS")],
+      mcse_in_sd = 1 / sqrt(fx[, "Bulk_ESS"]))
+#>           Est.Error  Bulk_ESS mcse_in_sd
+#> Intercept 0.1887669  987.2551 0.03182624
+#> x         0.1724471 1488.0502 0.02592336
+```
+
+A brms mean carries a Monte Carlo error of about 0.03 posterior SD here,
+so the difference in the slope’s mean is 1.5 Monte Carlo standard errors
+and the difference in the intercept’s 2.3.
+
+## Measured agreement
+
+The table collects the largest difference, in units of the other
+package’s standard error or posterior SD, over the parameters of each
+comparison that carry one.
+
+``` r
+
+worst <- function(tab) max(abs(tab$diff_in_se), na.rm = TRUE)
+data.frame(
+  comparison = c("binomial GLMM, ML (glmmTMB)", "Poisson random slope, REML",
+                 "Poisson BYM2 (INLA, defaults matched)", "binomial GLMM (brms)"),
+  max_abs_diff_in_se = round(c(worst(tab_ml), worst(tab_rs),
+                               worst(tab_bym2), worst(tab_brms)), 3))
+#>                              comparison max_abs_diff_in_se
+#> 1           binomial GLMM, ML (glmmTMB)              0.000
+#> 2            Poisson random slope, REML              0.008
+#> 3 Poisson BYM2 (INLA, defaults matched)              0.502
+#> 4                  binomial GLMM (brms)              0.073
+```
+
+## Syntax map
+
+The tables give the tulpa equivalent of each formula term, family,
+structured effect, prior and accessor of the four packages. Every tulpa
+function named here is exported by tulpa 0.8.0.
+
+### Formula terms and data
+
+| lme4 / glmmTMB / brms | INLA | tulpa |
+|----|----|----|
+| `(1 | g)` | `f(g, model = "iid")` | `(1 | g)` |
+| `(1 + x | g)` | `f(..., model = "iidkd")` | `(1 + x | g)` |
+| `(1 + x || g)` | `f(g, model = "iid")` plus `f(g2, x, model = "iid")` | `(1 + x || g)` |
+| `(1 | a/b)`, `(1 | a) + (1 | b)` | one `f()` per term | the same |
+| `offset(log(E))` | `E = E` (Poisson) or [`offset()`](https://rdrr.io/r/stats/offset.html) | `offset(log(E))` |
+| `cbind(s, n - s) ~ ...` (lme4), `s | trials(n)` (brms) | `Ntrials = n` | `s ~ ...` with `n_trials = n` |
+| `weights = w` | `weights = w` | `weights = w` |
+| `ziformula = ~ 1` (glmmTMB) | `zeroinflatedpoisson1` family | `ziformula = ~ 1` |
+| `dispformula = ~ x` (glmmTMB) |  | no equivalent |
+| `nAGQ = 7` (lme4) |  | `mode = "agq"`, `control = list(n_quad = 7)` |
+| `REML = TRUE` (glmmTMB) |  | `mode = "eb"`, `hyperprior = "flat"` |
+
+### Families
+
+| glmmTMB / lme4 | brms | INLA | tulpa `family =` |
+|----|----|----|----|
+| `binomial` | `bernoulli()`, [`binomial()`](https://rdrr.io/r/stats/family.html) | `"binomial"` | `"binomial"` |
+| `poisson` | [`poisson()`](https://rdrr.io/r/stats/family.html) | `"poisson"` | `"poisson"` |
+| `nbinom2` | `negbinomial()` | `"nbinomial"` | `"neg_binomial_2"` |
+| `nbinom1` |  |  | `"neg_binomial_1"` |
+| `truncated_poisson`, `truncated_nbinom2` |  |  | `"truncated_poisson"`, `"truncated_neg_binomial_2"` |
+| `gaussian` | [`gaussian()`](https://rdrr.io/r/stats/family.html) | `"gaussian"` | `"gaussian"` |
+| `lognormal` | `lognormal()` | `"lognormal"` | `"lognormal"` |
+| `Gamma` | [`Gamma()`](https://rdrr.io/r/stats/family.html) | `"gamma"` | `"gamma"` |
+| `inverse.gaussian` | [`inverse.gaussian()`](https://rdrr.io/r/stats/family.html) |  | `"inverse_gaussian"` |
+| `beta_family` | `Beta()` | `"beta"` | `"beta"` |
+| `betabinomial` | `beta_binomial()` | `"betabinomial"` | `"beta_binomial"` |
+| `tweedie` |  | `"tweedie"` | `"tweedie"` (power in `phi2`) |
+| `t_family` | `student()` |  | `"t"` |
+
+[`family_names()`](https://gillescolling.com/tulpa/reference/family_names.md)
+lists the tulpa families. tulpa holds a family’s dispersion fixed at
+`phi` unless `estimate_phi = TRUE` under `mode = "eb"`; the other
+packages estimate it by default.
+
+### INLA `f()` terms
+
+| INLA | tulpa |
+|----|----|
+| `f(id, model = "besag", graph = W)` | `spatial(region)` with `spatial = spatial_car(W, level = "group", group_var = "region")` |
+| `f(id, model = "bym2", graph = W)` | `spatial(region)` with `spatial = spatial_bym2(W, level = "group", group_var = "region")` |
+| `f(id, model = "besagproper", graph = W)` | `spatial = spatial_car(W, ..., proper = TRUE)` |
+| `f(t, model = "rw1")`, `"rw2"`, `"ar1"` | `temporal = temporal_rw1("t")`, `temporal_rw2("t")`, `temporal_ar1("t")` |
+| `f(t, model = "rw1", replicate = g)` | `temporal = temporal_rw1("t", group_var = "g")` |
+| `f(s, model = spde)` with `inla.spde2.pcmatern()` | `spatial = spatial_spde(~ lon + lat, data, max_edge = ...)` |
+| `f(id, model = "generic0", Cmatrix = Q)` | `latent(tgmrf(...))` |
+
+### Priors
+
+| Other package | tulpa |
+|----|----|
+| brms `set_prior("normal(0, 2.5)", class = "b")` | `beta_prior = list(mean = 0, sd = 2.5)` (the default) |
+| brms `exponential(rate)` on `sd`; INLA `pc.prec` with `param = c(U, alpha)` | `re_prior = list(prior_sigma = c(U, alpha))`, rate `-log(alpha) / U` |
+| brms `lkj(eta)` on `cor` | `re_prior = list(eta = eta)` |
+| INLA `pc.range` / `pc.prec` in `inla.spde2.pcmatern()` | `spatial_spde(..., prior_range = , prior_sigma = )` |
+| INLA `control.fixed` | `beta_prior = list(mean = , sd = )` |
+| a flat prior on the variance components | `hyperprior = "flat"` |
+
+### Accessors
+
+| Other package | tulpa |
+|----|----|
+| [`fixef()`](https://gillescolling.com/tulpa/reference/fixef.md), [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md), [`VarCorr()`](https://gillescolling.com/tulpa/reference/VarCorr.md) | [`fixef()`](https://gillescolling.com/tulpa/reference/fixef.md), [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md), [`VarCorr()`](https://gillescolling.com/tulpa/reference/VarCorr.md) |
+| [`summary()`](https://rdrr.io/r/base/summary.html), [`confint()`](https://rdrr.io/r/stats/confint.html), [`vcov()`](https://rdrr.io/r/stats/vcov.html), [`logLik()`](https://rdrr.io/r/stats/logLik.html) | the same |
+| `predict(newdata = , re.form = NA)` | `predict(newdata = , re_form = NA, type = , include_field = )` |
+| [`simulate()`](https://rdrr.io/r/stats/simulate.html) | [`simulate()`](https://rdrr.io/r/stats/simulate.html) |
+| brms [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md), [`pp_check()`](https://gillescolling.com/tulpa/reference/pp_check.md), [`bayes_R2()`](https://gillescolling.com/tulpa/reference/bayes_R2.md), [`as_draws_df()`](https://gillescolling.com/tulpa/reference/as_draws.md) | the same names |
+| brms `loo()`, `waic()` | [`loo::loo()`](https://mc-stan.org/loo/reference/loo.html), [`loo::waic()`](https://mc-stan.org/loo/reference/waic.html) methods |
+| INLA `fit$summary.fixed` | `summary(fit)$coefficients` |
+| INLA `fit$summary.hyperpar` | `summary(fit)$hyperparameters` |
+| INLA `fit$summary.random` | [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md) for a random effect, [`field_effects()`](https://gillescolling.com/tulpa/reference/field_effects.md) for a spatial field |
+| INLA `fit$mlik` | [`logLik()`](https://rdrr.io/r/stats/logLik.html), the log marginal likelihood on a Laplace fit |
+
+## Differences
+
+The differences below are design choices of tulpa, each with the code in
+both packages. They follow from two decisions: every scale tulpa does
+not integrate or estimate is an argument the call states, and a fit
+reports the inference method that produced it.
+
+### A random-intercept SD is conditioned on under `mode = "laplace"`
+
+lme4 and glmmTMB estimate the random-intercept SD in every fit. In
+tulpa, `mode = "laplace"` on a random-intercept model conditions on
+`sigma_re`, the value the call supplies, and warns when none is
+supplied. The default `mode = "auto"` and `mode = "structured"`
+integrate the SD instead, and `mode = "agq"` and `mode = "eb"` estimate
+it.
+
+``` r
+
+f_c <- tulpa(y ~ x + (1 | g), data = d, family = "binomial",
+             mode = "laplace", sigma_re = 0.8)
+coef(f_c)
+#> (Intercept)           x 
+#>  -0.4515672   0.8755364
+VarCorr(f_c)
+#>   term        coef  sd      source
+#> 1    g (Intercept) 0.8 conditioned
+```
+
+The `source` column reads `conditioned`, so the fit carries the SD it
+was given. The estimated SD of the same model is in the ML table of the
+first section.
+
+### Empirical-Bayes variances are restricted estimates
+
+`mode = "eb"` integrates the fixed effects out of the marginal
+likelihood before maximising over the variances, so with
+`hyperprior = "flat"` it gives the restricted estimate of glmmTMB’s
+`REML = TRUE`, here to within 0.002. It does not reproduce the
+maximum-likelihood fit of lme4 and of glmmTMB’s default, whose SD is
+smaller.
+
+``` r
+
+f_e <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "eb",
+             hyperprior = "flat")
+f_r <- glmmTMB::glmmTMB(y ~ x + (1 | g), data = d, family = binomial,
+                        REML = TRUE)
+c(tulpa_eb = f_e$map$sigma, glmmTMB_reml = sqrt(glmmTMB::VarCorr(f_r)$cond$g[1]),
+  ml = f_t$sigma_re)
+#>     tulpa_eb glmmTMB_reml           ml 
+#>    0.8423351    0.8440785    0.8160032
+```
+
+### A dispersion is estimated only on request
+
+glmmTMB estimates the negative-binomial size along with everything else.
+tulpa holds it at `phi` by default; `estimate_phi = TRUE` under
+`mode = "eb"` estimates it, again as a restricted estimate.
+
+``` r
+
+y_nb <- rnbinom(G * npg, mu = exp(1 + 0.5 * x + u[g]), size = 2)
+d_nb <- data.frame(y = y_nb, x = x, g = factor(g))
+f_nb <- tulpa(y ~ x + (1 | g), data = d_nb, family = "neg_binomial_2",
+              mode = "eb", hyperprior = "flat", estimate_phi = TRUE, phi = 1)
+g_nb <- glmmTMB::glmmTMB(y ~ x + (1 | g), data = d_nb,
+                         family = glmmTMB::nbinom2, REML = TRUE)
+c(tulpa_size = f_nb$phi, glmmTMB_size = glmmTMB::sigma(g_nb))
+#>   tulpa_size glmmTMB_size 
+#>     2.809925     2.809590
+```
+
+### INLA’s default mean correction
+
+INLA applies a variational-Bayes correction to the posterior mean of the
+latent field by default, which the conditional check above isolated.
+tulpa’s nested Laplace reports the mixture of the per-cell Laplace
+modes. Switching INLA’s correction off brings the full fit to tulpa’s
+numbers.
+
+``` r
+
+a_i0 <- INLA::inla(
+  y ~ x + f(id, model = "bym2", graph = W, scale.model = TRUE,
+            constr = TRUE, hyper = hyp),
+  family = "poisson", E = E, data = d3, num.threads = "2:1",
+  control.fixed = list(prec.intercept = 0, prec = 0.001),
+  control.inla = list(control.vb = list(enable = FALSE)))
+rbind(tulpa = coef(a_t), inla_vb_on = a_i$summary.fixed$mean,
+      inla_vb_off = a_i0$summary.fixed$mean)
+#>             (Intercept)         x
+#> tulpa        -0.2244064 0.4416127
+#> inla_vb_on   -0.2424738 0.4467937
+#> inla_vb_off  -0.2244228 0.4423572
+```
+
+The two choices answer different questions about a skewed posterior:
+INLA’s corrected mean moves the estimate towards the posterior mean,
+tulpa keeps the Laplace centre and leaves the skew to its diagnostics
+and to an exact sampler.
+
+### Incomplete rows are refused
+
+lme4, glmmTMB and brms drop a row with a missing value under their
+default `na.action`; INLA treats a missing response as a value to
+predict. tulpa refuses a missing predictor, so the rows a fit uses are
+always the rows supplied. A missing response is read as INLA reads it on
+tulpa’s nested-Laplace path, which leaves the row’s likelihood term out
+and still forms its linear predictor; every other backend refuses it.
+
+``` r
+
+d_na <- d; d_na$x[3] <- NA
+tulpa(y ~ x + (1 | g), data = d_na, family = "binomial", mode = "agq")
+#> Error:
+#> ! Non-finite value(s) in the model matrix (1 row(s), first at row 3). tulpa does not drop incomplete cases; remove or impute NA/NaN/Inf in the predictors before fitting.
+```
+
+``` r
+
+nobs(lme4::glmer(y ~ x + (1 | g), data = d_na, family = binomial))
+#> [1] 319
+```
+
+### Optimiser tolerance of the AGQ backend
+
+At its default tolerance, `mode = "agq"` reaches the same maximum on
+this data set: the log-likelihood and the SD equal those of the
+`tol = 1e-10` fit to the printed digits, and the SD differs from
+glmmTMB’s by 1e-7. The fits above set `tol = 1e-10`.
+
+``` r
+
+f_d <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "agq",
+             control = list(n_quad = 1L))
+rbind(default_tol = c(logLik = f_d$log_marginal, sigma = f_d$sigma_re),
+      tol_1e_10   = c(f_t$log_marginal, f_t$sigma_re),
+      glmmTMB     = c(as.numeric(logLik(f_g)),
+                      sqrt(glmmTMB::VarCorr(f_g)$cond$g[1])))
+#>                logLik     sigma
+#> default_tol -186.8587 0.8160032
+#> tol_1e_10   -186.8587 0.8160032
+#> glmmTMB     -186.8587 0.8160033
+```
+
+## Timings
+
+The timings are elapsed seconds of one run of each fit above, measured
+on a shared Windows 11 workstation (beast) with R 4.6.1, two threads
+where a fitter takes them, with tulpa 0.8.0. The data sizes are 320
+binary responses in 40 groups (GLMM), 720 counts in 60 groups (random
+slope) and 100 regions (BYM2). One run of a fit under a second carries
+noise of the order of its own value, so the table shows the order of
+magnitude and not a ranking; it says nothing about how the packages
+scale to larger data.
+
+``` r
+
+tm$brms <- tm_brms
+data.frame(fit = names(tm), seconds = round(unlist(tm), 2), row.names = NULL)
+#>            fit seconds
+#> 1    tulpa_agq    0.05
+#> 2        glmer    0.09
+#> 3      glmmTMB    0.07
+#> 4     tulpa_eb    0.13
+#> 5 glmmTMB_reml    0.08
+#> 6   tulpa_bym2    0.31
+#> 7    inla_bym2    0.91
+#> 8   tulpa_aghq    3.72
+#> 9         brms   36.05
+```
+
+The three maximum-likelihood fits of the random-intercept model take the
+same time to the precision of one run. The BYM2 fit took 0.31 seconds in
+tulpa and 0.91 seconds in INLA. The brms time includes compiling the
+Stan model, which a cached model skips on the next run, and the tulpa
+AGQ integration of the same model spends its time on nine-node
+quadrature inside each group at every grid cell.
+
+## When the other package is the better choice
+
+- lme4 for linear mixed models fitted by REML with `lmer()`, and for
+  profile likelihood intervals on the variance components.
+- glmmTMB when the dispersion itself depends on covariates
+  (`dispformula`), or the zero-inflation part carries random effects.
+- brms for distributional and non-linear models, any likelihood Stan can
+  write, and exact sampling of the whole posterior with Stan’s
+  diagnostics.
+- INLA for its wide range of likelihoods and `f()` models, per-region
+  BYM2 summaries read directly from `summary.random`, and the inlabru
+  interface for spatial point processes.
+
+All four have years of use and published validation behind them. tulpa’s
+agreement rests on its own test suite and on comparisons such as the
+ones in this article.
+
+## References
+
+Bates, D., Maechler, M., Bolker, B. and Walker, S. (2015). Fitting
+linear mixed-effects models using lme4. *Journal of Statistical
+Software* 67(1), 1-48.
+[doi:10.18637/jss.v067.i01](https://doi.org/10.18637/jss.v067.i01)
+
+Riebler, A., Sorbye, S. H., Simpson, D. and Rue, H. (2016). An intuitive
+Bayesian spatial model for disease mapping that accounts for scaling.
+*Statistical Methods in Medical Research* 25(4), 1145-1165.
+
+Rue, H., Martino, S. and Chopin, N. (2009). Approximate Bayesian
+inference for latent Gaussian models by using integrated nested Laplace
+approximations. *Journal of the Royal Statistical Society B* 71(2),
+319-392.
+
+## See also
+
+- [Get started](https://gillescolling.com/tulpa/articles/tulpa.md) for
+  the basic loop of fitting, checking and predicting.
+- [Inference
+  modes](https://gillescolling.com/tulpa/articles/inference-modes.md)
+  for the backends that `mode` selects.
+- [Random
+  slopes](https://gillescolling.com/tulpa/articles/random-slopes.md) for
+  the covariance integration.
+- [Spatial
+  models](https://gillescolling.com/tulpa/articles/spatial-models.md)
+  for the areal fields end to end.
+- [Priors](https://gillescolling.com/tulpa/articles/priors.md) for the
+  default priors and how to change them.

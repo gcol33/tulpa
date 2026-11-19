@@ -340,11 +340,13 @@ round(cor(phi_hat, trend), 3)
 
 The smoothing precision $\tau$ controls how tightly the walk hugs a straight
 line, and `summary()` reports its posterior in the `hyperparameters` table:
-the posterior mean of the field's hyperparameter, with `ci_lo` and `ci_hi`
-bounding it.
+the posterior median of the field's hyperparameter, with `ci_lo` and `ci_hi`
+bounding it. The table's `mean` column reads `Inf` for a precision: the
+default prior is exponential in the field's standard deviation, which leaves
+the precision a tail of $\tau^{-3/2}$ and no posterior mean.
 
 ```{r tau-summary}
-summary(fit)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
+summary(fit)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 ```
 
 A larger $\tau$ means a stiffer walk. Here the interval excludes the very large

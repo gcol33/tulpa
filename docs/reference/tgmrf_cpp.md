@@ -30,6 +30,7 @@ tgmrf_cpp(
   bounds = NULL,
   obs_idx = NULL,
   name = NULL,
+  n_grid = NULL,
   cache_dir = tulpa_cache_dir(),
   rebuild = FALSE
 )
@@ -50,7 +51,7 @@ tgmrf_cpp(
   Character: the stable id used as the registry key. Must match the
   first argument of `TULPA_REGISTER_TGMRF` in the user's `.cpp`.
 
-- init, mu, graph, bounds, obs_idx, name:
+- init, mu, graph, bounds, obs_idx, name, n_grid:
 
   Same arguments as
   [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md).

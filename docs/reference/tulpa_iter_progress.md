@@ -4,10 +4,10 @@ Build a progress reporter for a counted R loop (an EM iteration, a
 per-species outer loop, ...) – the R-side counterpart of the C++
 `tulpa_progress::GridProgress` reporter, sharing its wire format so a
 detached reader sees the same heartbeat file regardless of which kind of
-loop produced it. Config comes from the scoped `tulpa.nl_progress`
-option (`progress`, `progress_file`, `progress_every`,
-`progress_throttle`); a caller outside tulpa's own `control$progress`
-machinery sets the same option to opt in.
+loop produced it. Config is a list with `progress`, `progress_file`,
+`progress_every` and `progress_throttle`; by default it is the scoped
+`tulpa.nl_progress` option, which a caller outside tulpa's own
+`control$progress` machinery sets to opt in.
 
 Two independently gated channels: a console bar, emitted when `progress`
 is set on the option, and a heartbeat file, written whenever
@@ -19,7 +19,13 @@ box.
 ## Usage
 
 ``` r
-tulpa_iter_progress(label, total, unit = "iter", threads = 1L)
+tulpa_iter_progress(
+  label,
+  total,
+  unit = "iter",
+  threads = 1L,
+  config = getOption("tulpa.nl_progress", NULL)
+)
 ```
 
 ## Arguments
@@ -42,6 +48,11 @@ tulpa_iter_progress(label, total, unit = "iter", threads = 1L)
   line as `"| N threads"` so the parallelism is visible live and in
   detached-run logs; a serial loop leaves it at 1 and the field is
   omitted, mirroring the C++ `GridProgress` reporter.
+
+- config:
+
+  The reporter's settings, as described above. Default: the
+  `tulpa.nl_progress` option.
 
 ## Value
 

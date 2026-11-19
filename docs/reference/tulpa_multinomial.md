@@ -14,6 +14,7 @@ tulpa_multinomial(
   formula,
   data,
   beta_prior = .tulpa_default_beta_prior("multinomial"),
+  baseline = NULL,
   control = list()
 )
 
@@ -26,7 +27,7 @@ print(x, ...)
 - formula:
 
   Model formula; the response must be a factor (or coercible to one)
-  with \>= 3 levels. The baseline is the last level.
+  with \>= 3 levels.
 
 - data:
 
@@ -38,6 +39,18 @@ print(x, ...)
   Gaussian ridge on every coefficient with scalar SD `sd` (default the
   engine default, `prior_normal(0, 2.5)`). A finite SD keeps the mode
   finite under separation.
+
+- baseline:
+
+  The reference class, one level of the response given as a string;
+  `NULL` (default) takes the last level. The other classes each get a
+  linear predictor on the log-odds against it. The ridge prior sits on
+  those contrasts, so the choice changes the prior and, slightly, the
+  posterior, not only the labelling. The fit lists its classes in the
+  order it used, the baseline last (`$classes`), and the probability
+  columns of [`fitted()`](https://rdrr.io/r/stats/fitted.values.html)
+  and [`stats::predict()`](https://rdrr.io/r/stats/predict.html) follow
+  that order.
 
 - control:
 

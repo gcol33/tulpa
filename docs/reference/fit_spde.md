@@ -18,6 +18,7 @@ fit_spde(
   nested_laplace = is.null(range) || is.null(sigma),
   phi = 1,
   offset = NULL,
+  beta_prior = NULL,
   re_idx = NULL,
   n_re_groups = 0L,
   sigma_re = 1,
@@ -71,22 +72,40 @@ fit_spde(
 - phi:
 
   Dispersion passed to the family, held fixed. One convention at every
-  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
-  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
-  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
-  it. The compiled kernels parameterize the two variance families by the
-  residual SD and are handed `sqrt(phi)` at the boundary.
+  door: for `gaussian` / `lognormal`, and for a censored or truncated
+  gaussian response (`y | cens()`, `y | trunc()` in
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)), this
+  is the residual VARIANCE (the SD is `sqrt(phi)`), for `neg_binomial_2`
+  the size, `gamma` the shape, `beta` the precision, `t` the scale;
+  `binomial` and `poisson` ignore it. The compiled kernels parameterize
+  the variance families by the residual SD and are handed `sqrt(phi)` at
+  the boundary.
 
-  Defaulted, it conditions at 1 and says so with a warning, since for a
-  family that reads a dispersion that is a modelling choice rather than
-  a neutral value. `fit$phi_estimated` records whether the value on the
-  fit was estimated or conditioned on.
+  Left out of a
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) call
+  whose `phi` is a gaussian residual variance, on `mode = "auto"`,
+  `"structured"` or a nested-Laplace mode, it is integrated as an
+  outer-grid axis rather than set (see
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)).
+  Defaulted anywhere else, it conditions at 1 and says so with a
+  warning, since for a family that reads a dispersion that is a
+  modelling choice rather than a neutral value. `fit$phi_estimated`
+  records whether the value on the fit was estimated or conditioned on.
 
 - offset:
 
   Optional fixed additive term on the linear predictor
   (`eta = offset + X beta + A w`), length `length(y)`; `NULL` -\> no
   offset.
+
+- beta_prior:
+
+  Optional Gaussian prior on the fixed effects, as `list(mean, sd)` with
+  each entry a scalar or a length-`ncol(X)` vector (`sd = Inf` leaves a
+  coefficient unpenalized). `NULL` (default) is the engine default
+  `beta ~ N(0, 2.5^2)`. Every inner solve carries it, so the nested
+  marginal over `(range, sigma)` is the marginal under this prior. Under
+  `mode = "nuts"` it must be mean-zero with one scalar `sd`.
 
 - re_idx, n_re_groups, sigma_re:
 
@@ -127,13 +146,18 @@ fit_spde(
   in the signature above). Recognized entries:
 
   - `method`: hyperparameter integration backend when nested Laplace is
-    active. `"ccd"` (default) uses a central composite design centered
-    on the joint posterior mode of `(range, sigma)`, oriented by the
-    local Hessian (9 design points instead of `n_grid^2`), folding the
-    PC priors from `spatial$prior_range` / `spatial$prior_sigma` into
-    the integrated marginal and falling back to `"grid"` if the surface
-    is too flat for a Hessian-based design. `"grid"` uses a rectangular
-    grid in `log(range) x log(sigma)` around the prior modes.
+    active. `"auto"` (default) finds the joint posterior mode of
+    `(log range, log sigma)` and lays the aligned tensor there: 21 x 21
+    nodes over +/- 6 SDs of the whitened coordinates, oriented by the
+    Cholesky factor of the inverse mode Hessian so the nodes follow the
+    posterior's correlation, with the PC priors from
+    `spatial$prior_range` / `spatial$prior_sigma` folded into the
+    integrated marginal. `"ccd"` lays the 9-point central composite
+    design in the same orientation instead: 9 inner solves against 441,
+    and a 95\\ ridge falls well short of the upper tail. Either falls
+    back to `"grid"` if the surface is too flat for a Hessian-based
+    design. `"grid"` uses a rectangular grid in
+    `log(range) x log(sigma)` around the prior modes.
 
   - `n_grid`: grid points per hyperparameter dimension for
     `method = "grid"` (ignored under `"ccd"`). Default 5.
@@ -156,8 +180,8 @@ fit_spde(
     body ratios enter the tail and bias the shape.
 
   - `mode_find`: tuning for the outer `(range, sigma)` mode-find under
-    `method = "ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
-    subset. `ndeps` is the central-difference step for
+    `method = "auto"` or `"ccd"`, as `list(factr =, ndeps =, maxit =)`;
+    supply any subset. `ndeps` is the central-difference step for
     [`optim()`](https://rdrr.io/r/stats/optim.html)'s numerical gradient
     on the log scale (default 1e-2): it must clear the inner solver's
     convergence tolerance, and a step wide enough that its truncation
@@ -173,12 +197,21 @@ fit_spde(
 
   - `n_threads`: OpenMP threads. Default 1.
 
+  - `n_threads_outer`: concurrent outer-grid cells. Default 1.
+
   - `checkpoint`: grid-cell checkpoint/resume spec
     `list(path =, resume =)`. Each solved `(range, sigma)` cell is
     appended to `path`; a `resume = TRUE` run loads the finished cells
     and re-solves only the rest, so a killed or rebooted fit resumes
     instead of restarting. `resume = FALSE` starts a fresh file. Default
     `NULL` (off).
+
+  - `progress`, `progress.every`, `progress.file`, `progress.throttle`:
+    the integration grid's progress reporter, as on
+    [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md):
+    whether to print (default `TRUE`), every how many cells, a heartbeat
+    file to overwrite, and the minimum seconds between lines. The
+    mode-find and Pareto-k solves do not report.
 
 ## Value
 
@@ -231,6 +264,9 @@ if (requireNamespace("fmesher", quietly = TRUE)) {
   fit <- fit_spde(y = y, X = cbind(1, x), spatial = spec, family = "poisson")
   fit$nested$range_mean
 }
-#> [1] 0.07370861
+#> [nested-laplace] preparing joint Hessian sparsity pattern
+#> [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA >=2s | 0.00s/cells
+#> [nested-laplace] 441/441 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
+#> [1] 0.07330069
 # }
 ```

@@ -47,6 +47,15 @@ For integer-valued responses, a randomisation step avoids discrete
 artefacts: the residual is drawn uniformly between P(sim \< obs) and
 P(sim \<= obs).
 
+On a tulpa fit the replicates are the posterior predictive ones of
+[`simulate.tulpa_fit()`](https://gillescolling.com/tulpa/reference/simulate.tulpa_fit.md),
+whose linear predictor carries every fitted component (random effects
+and spatial / temporal fields included), so PIT residuals are
+conditional on them, as the default `effects = "conditional"` residuals
+of
+[`residuals.tulpa_fit()`](https://gillescolling.com/tulpa/reference/residuals.tulpa_fit.md)
+are.
+
 ## Examples
 
 ``` r

@@ -6,6 +6,13 @@ outer-grid cell `k ~ Categorical(weights)` and then samples that cell's
 inner Gaussian, so the draws are i.i.d. samples from
 `sum_k w_k N(m_k, V_k)`.
 
+With an applied `subspace_debias = list(method = "exact")` correction,
+rows are sampled from the retained full latent cell chains and corrected
+cell weights. Their `draws_kind` is `"mcmc_mixture"`; `source_rows` and
+`cells` identify their origin, and `theta` contains the paired cell
+nodes. Monte Carlo uncertainty depends on the source chains and IS
+estimates.
+
 Sampling the mixture is the faithful primitive for marginalizing
 nonlinear derived quantities (e.g. `plogis(eta_2) - plogis(eta_1)`,
 expected-cover products `p * mu`): compute the derived quantity per
@@ -105,7 +112,7 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
 dr <- tulpa_posterior_draws(fit, n = 200)
 colMeans(dr)                # fixed effects, mixed over the outer grid
 #>       beta1           x 
-#> -0.02097457  0.57813071 
+#> -0.02085568  0.57483674 
 summary(attr(dr, "theta"))  # the hyperparameter half of the same draws
 #>       tau         
 #>  Min.   : 0.4106  

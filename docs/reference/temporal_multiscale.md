@@ -13,8 +13,8 @@ temporal_multiscale(
   trend = c("rw2", "rw1", "none"),
   seasonal = NULL,
   short_term = c("ar1", "iid", "none"),
-  group_var = NULL,
-  shared = NULL
+  shared = NULL,
+  parameterization = c("auto", "noncentered", "centered")
 )
 
 # S3 method for class 'tulpa_temporal_multiscale'
@@ -43,16 +43,23 @@ print(x, ...)
   Prior for the short-term component. One of `"ar1"`, `"iid"`, or
   `"none"`.
 
-- group_var:
-
-  Optional character string naming a grouping variable for
-  group-specific temporal effects.
-
 - shared:
 
   Whether the effect is shared across processes in a multi-process
   model. `NULL` (default) shares it; `FALSE` fits process-specific
   effects and emits a warning.
+
+- parameterization:
+
+  How the exact sampler (`mode = "hmc"`) samples the components.
+  `"auto"` scales field amplitudes using prior and observation
+  information. `"noncentered"` samples the trend walk's level, its slope
+  (RW2) and its innovations divided by the trend SD, the seasonal walk's
+  level and its innovations divided by the seasonal SD, and the
+  short-term component's innovations divided by its SD, and builds the
+  fields from them; `"centered"` samples the fields' values. Both are
+  the same model. The nested-Laplace and Gibbs routes do not read it,
+  and the other sampler backends sample the fields' values.
 
 - x:
 
@@ -69,6 +76,28 @@ A `tulpa_temporal_multiscale` object.
 ## Details
 
 At least one of `trend`, `seasonal`, or `short_term` must be active.
+
+`mode = "auto"`, `"structured"` and `"nested_laplace"` fit the field by
+nested Laplace, one block per component: the trend an RW1 / RW2 walk
+over the time points, the seasonal cycle a cyclic RW1 over the period
+(time point `t` reads position `(t - 1) mod seasonal + 1`), the
+short-term component an AR1 or iid block. Each component's SD (and the
+AR1 correlation) is its own axis of the outer grid. The walks carry a
+sum-to-zero restriction, so the intercept holds the level; the trend is
+told apart from the short-term component by its structure, since a walk
+leaves a smooth path unpenalised where an AR1 or iid block shrinks every
+time point to zero. Every route uses the same priors: a PC prior with
+`P(sigma > 1) = 0.01` on each component's SD and a Beta(2, 2) on
+`(rho + 1) / 2`.
+[`temporal()`](https://gillescolling.com/tulpa/reference/temporal.md)
+returns each component's posterior. The exact sampler (`mode = "hmc"`)
+samples the trend, the seasonal and the short-term component non-centred
+by default: under the centred parameterization the spread of each walk's
+differences follows its SD, and the spread of the short-term values the
+short-term SD, each a funnel whose divergent transitions concentrate at
+the smallest variances. `mode = "gibbs"` runs the binomial Polya-Gamma
+sampler for a field with an RW1 trend (or none). The field is one walk
+per component shared by every observation.
 
 ## See also
 

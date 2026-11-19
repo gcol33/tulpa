@@ -22,7 +22,7 @@ from a fitted tulpa model with TVC specification."><meta property="og:image" con
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -35,21 +35,44 @@ from a fitted tulpa model with TVC specification."><meta property="og:image" con
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -120,11 +143,15 @@ full posterior draws.</p></dd>
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A <code>tulpa_tvc_posterior</code> object containing:</p><ul><li><p><code>draws</code>: Array of posterior draws (draws x times x terms)</p></li>
+    <p>A <code>tulpa_tvc_posterior</code> object containing:</p><ul><li><p><code>draws</code>: Array of posterior draws (draws x units x terms). A unit is one
+time point, or on a grouped fit (<code>temporal_tvc(group_var =)</code>) one
+(group, time point) pair, group-major.</p></li>
 <li><p><code>time_levels</code>: Time point labels</p></li>
+<li><p><code>groups</code>: The group of each unit (<code>NULL</code> on an ungrouped fit)</p></li>
 <li><p><code>term_names</code>: Names of TVC terms</p></li>
 </ul><p><code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> on a <code>tulpa_tvc_posterior</code> returns a <code>tulpa_tvc_summary</code>
-data frame with one row per time point and term, holding the posterior
+data frame with one row per time point and term (per group, time point
+and term on a grouped fit, with a <code>group</code> column), holding the posterior
 mean, SD and requested quantiles of each temporally varying coefficient.</p>
     </div>
     <div class="section level2">
@@ -151,21 +178,22 @@ mean, SD and requested quantiles of each temporally varying coefficient.</p>
 <span class="r-in"><span>  mode <span class="op">=</span> <span class="st">"exact"</span>,</span></span>
 <span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">200L</span>, n_warmup <span class="op">=</span> <span class="fl">100L</span>, seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.07, bulk-ESS 43; (Intercept): Rhat 1.05, bulk-ESS 79. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup); see check_diagnostics().</span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">tvc_post</span> <span class="op">&lt;-</span> <span class="fu">tvc</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">tvc_post</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Temporally varying coefficient posterior summary, 400 posterior draws</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>    time_idx time term        mean        sd        q2.5         q50     q97.5</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1         1    1    x -0.51812356 0.3438930 -1.26815867 -0.48358081 0.1138761</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2         2    2    x -0.43151069 0.3186817 -1.08518130 -0.39639008 0.1291343</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3         3    3    x -0.17678201 0.1581185 -0.48672751 -0.17809841 0.1306088</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4         4    4    x -0.04903702 0.2429977 -0.52076934 -0.06248125 0.4830875</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5         5    5    x  0.25799312 0.2008314 -0.17772448  0.26136132 0.6231688</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6         6    6    x  0.71976261 0.1672618  0.39749237  0.70680250 1.0518190</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7         7    7    x  0.35624069 0.2307417 -0.08571445  0.36628699 0.8236376</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8         8    8    x  0.17305269 0.2655832 -0.29044750  0.16995112 0.7065457</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9         9    9    x -0.13007529 0.2739828 -0.61089948 -0.13256620 0.3671592</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10       10   10    x -0.20152056 0.3324161 -0.84936798 -0.20867196 0.4724814</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    time_idx time term        mean        sd        q2.5         q50      q97.5</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1         1    1    x -0.54722860 0.2824330 -1.10977185 -0.55503388 0.02178354</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2         2    2    x -0.45083386 0.2838631 -1.11247267 -0.44752115 0.09539058</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3         3    3    x -0.19708071 0.1631584 -0.54414150 -0.18840216 0.08850889</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4         4    4    x -0.10701945 0.2510124 -0.63271347 -0.10155304 0.39963033</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5         5    5    x  0.23988419 0.1820944 -0.09387735  0.24098046 0.59838279</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6         6    6    x  0.70010911 0.1696473  0.32367347  0.70084133 1.04963581</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7         7    7    x  0.40122629 0.2212774 -0.02021544  0.39401375 0.86828022</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8         8    8    x  0.23620052 0.2658691 -0.26109811  0.24505041 0.75585052</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9         9    9    x -0.07632102 0.2452147 -0.53943781 -0.05775278 0.43777507</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10       10   10    x -0.19893647 0.3483548 -0.94827009 -0.16517174 0.38142247</span>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">tvc_post</span>, <span class="st">"x"</span><span class="op">)</span></span></span>
 <span class="r-plt img"><img src="tvc-1.png" alt="" width="700" height="433"></span>
 <span class="r-in"><span><span class="co"># }</span></span></span>

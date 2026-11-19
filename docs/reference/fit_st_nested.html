@@ -34,7 +34,7 @@ the grid-weighted latent modes."><meta property="og:image" content="https://gill
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -47,21 +47,44 @@ the grid-weighted latent modes."><meta property="og:image" content="https://gill
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -113,8 +136,10 @@ the grid-weighted latent modes.</p>
 <span>  coords <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  nn <span class="op">=</span> <span class="fl">10L</span>,</span>
 <span>  cov_type <span class="op">=</span> <span class="fl">2L</span>,</span>
-<span>  hsgp_m <span class="op">=</span> <span class="fl">6L</span>,</span>
-<span>  hsgp_c <span class="op">=</span> <span class="fl">1.5</span></span>
+<span>  hsgp_m <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  hsgp_c <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  hsgp_cov <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  hsgp_nu <span class="op">=</span> <span class="fl">1.5</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'tulpa_st_nested'</span></span>
@@ -174,15 +199,19 @@ Required for <code>spatial_type = "icar"/"bym2"/"car_proper"</code>; ignored (pa
 
 <dt id="arg-phi">phi<a class="anchor" aria-label="anchor" href="#arg-phi"></a></dt>
 <dd><p>Dispersion passed to the family, held fixed. One convention at
-every door: for <code>gaussian</code> / <code>lognormal</code> this is the residual VARIANCE
-(the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size, <code>gamma</code> the
-shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and <code>poisson</code>
-ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
-<p>Defaulted, it conditions at 1 and says so with a warning, since for a
-family that reads a dispersion that is a modelling choice rather than a
-neutral value. <code>fit$phi_estimated</code> records whether the value on the fit
-was estimated or conditioned on.</p></dd>
+every door: for <code>gaussian</code> / <code>lognormal</code>, and for a censored or truncated
+gaussian response (<code>y | cens()</code>, <code>y | trunc()</code> in <code><a href="tulpa.html">tulpa()</a></code>), this is the
+residual VARIANCE (the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size,
+<code>gamma</code> the shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and
+<code>poisson</code> ignore it. The compiled kernels parameterize the variance
+families by the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
+<p>Left out of a <code><a href="tulpa.html">tulpa()</a></code> call whose <code>phi</code> is a gaussian residual variance,
+on <code>mode = "auto"</code>, <code>"structured"</code> or a nested-Laplace mode, it is
+integrated as an outer-grid axis rather than set (see <code><a href="tulpa.html">tulpa()</a></code>).
+Defaulted anywhere else, it conditions at 1 and says so with a warning,
+since for a family that reads a dispersion that is a modelling choice
+rather than a neutral value. <code>fit$phi_estimated</code> records whether the value
+on the fit was estimated or conditioned on.</p></dd>
 
 
 <dt id="arg-cyclic">cyclic<a class="anchor" aria-label="anchor" href="#arg-cyclic"></a></dt>
@@ -287,9 +316,19 @@ only. Default 10 (clamped to <code>nrow(coords) - 1</code>).</p></dd>
 
 
 <dt id="arg-hsgp-m-hsgp-c">hsgp_m, hsgp_c<a class="anchor" aria-label="anchor" href="#arg-hsgp-m-hsgp-c"></a></dt>
-<dd><p>Hilbert-space GP basis size (per dimension, default 6)
-and boundary factor (default 1.5), <code>spatial_type = "hsgp"</code> only – the
-same parameterisation and defaults as <code>spatial_gp(approx = "hsgp")</code>.</p></dd>
+<dd><p>Hilbert-space GP basis size per dimension (3 to 50)
+and boundary factor (<code>&gt;= 1</code>), <code>spatial_type = "hsgp"</code> only – the
+parameterisation of <code>spatial_gp(approx = "hsgp")</code>. A value given is held
+as given; <code>NULL</code> (default) leaves it to the data by the rule and the
+refit loop <code><a href="spatial_gp.html">spatial_gp()</a></code> describes, and the fit records the bases it
+went through as <code>hsgp_basis</code>.</p></dd>
+
+
+<dt id="arg-hsgp-cov-hsgp-nu">hsgp_cov, hsgp_nu<a class="anchor" aria-label="anchor" href="#arg-hsgp-cov-hsgp-nu"></a></dt>
+<dd><p>The kernel the HSGP basis approximates,
+<code>spatial_type = "hsgp"</code> only, read as <code><a href="spatial_gp.html">spatial_gp()</a></code> reads <code>cov</code> / <code>nu</code>:
+<code>"matern"</code> (<code>nu</code> 1.5 or 2.5) or <code>"squared_exponential"</code>; <code>NULL</code> (default)
+is Matern 3/2.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
@@ -306,7 +345,8 @@ same parameterisation and defaults as <code>spatial_gp(approx = "hsgp")</code>.<
 fixed-effect posterior (<code>draws</code> via the grid mixture), <code>spatial_effects</code>,
 <code>temporal_effects</code>, <code>log_marginal</code>, <code>weights</code>, <code>theta_grid</code> over
 <code>(tau_spatial, tau_temporal, rho)</code> for an areal spatial field or
-<code>(sigma2, lengthscale, tau_temporal, rho)</code> / <code>(sigma2, phi_gp, tau_temporal, rho)</code> for <code>"hsgp"</code> / <code>"nngp"</code>, and <code>family</code> / <code>n_trials</code> /
+<code>(sigma2, lengthscale, tau_temporal, rho)</code> / <code>(sigma2, phi_gp, tau_temporal, rho)</code> for <code>"hsgp"</code> / <code>"nngp"</code> (bym2: <code>(sigma_spatial, rho_spatial, tau_temporal, rho)</code>; the temporal <code>rho</code> column is present
+for <code>temporal_type = "ar1"</code> only), and <code>family</code> / <code>n_trials</code> /
 <code>phi</code> (the
 R-level convention), which is what <code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>, <code><a href="https://rdrr.io/r/stats/residuals.html" class="external-link">residuals()</a></code>,
 <code><a href="posterior_predict.html">posterior_predict()</a></code> and <code><a href="https://rdrr.io/r/stats/simulate.html" class="external-link">simulate()</a></code> read the response family from.

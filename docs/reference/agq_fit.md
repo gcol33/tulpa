@@ -94,7 +94,9 @@ agq_fit(
 
 - tol:
 
-  Convergence tolerance (default `1e-6`).
+  Convergence tolerance: the fit stops once the Newton decrement of the
+  negative log marginal likelihood, its estimated distance above the
+  maximum in nats, is at most `tol` (default `1e-6`).
 
 - verbose:
 
@@ -164,5 +166,5 @@ y <- rbinom(n, 1, plogis(eta))
 fit_lap <- agq_fit(y, X, group, family = "binomial", n_quad = 1)
 fit_agq <- agq_fit(y, X, group, family = "binomial", n_quad = 7)
 c(fit_lap$log_marginal, fit_agq$log_marginal)
-#> [1] -58.97319 -58.96228
+#> [1] -58.97289 -58.96207
 ```

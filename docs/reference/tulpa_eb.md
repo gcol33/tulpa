@@ -262,11 +262,11 @@ maximizes the marginal likelihood alone.
 
 The marginal likelihood is marginal over the fixed effects too: the
 inner Laplace approximation integrates `beta` out together with the
-random effects (under `beta_prior`, or the inner solve's vague
-`N(0, 100^2)` default) rather than profiling it. `hyperprior = "flat"`
-is therefore a RESTRICTED, REML-type estimate, not maximum likelihood:
-for a gaussian response it is REML, and for a non-gaussian one it agrees
-with `glmmTMB(..., REML = TRUE)`, not with the ML fit of
+random effects (under `beta_prior`, or the engine default `N(0, 2.5^2)`)
+rather than profiling it. `hyperprior = "flat"` is therefore a
+RESTRICTED, REML-type estimate, not maximum likelihood: for a gaussian
+response it is REML, and for a non-gaussian one it agrees with
+`glmmTMB(..., REML = TRUE)`, not with the ML fit of
 [`lme4::glmer()`](https://rdrr.io/pkg/lme4/man/glmer.html) or
 `glmmTMB(..., REML = FALSE)`. On a binomial random intercept with 40
 groups of 6 the three read RE SDs of 0.7931 (`tulpa_eb`), 0.7931
@@ -311,6 +311,6 @@ y <- rpois(n, exp(0.3 + 0.5 * x + b[grp]))
 re_term <- list(idx = grp, n_groups = G, n_coefs = 1L)
 fit <- tulpa_eb(y, NULL, cbind(1, x), re_term, family = "poisson")
 fit$map$sigma          # empirical-Bayes RE standard deviation
-#> [1] 0.7649598
+#> [1] 0.7650541
 # }
 ```

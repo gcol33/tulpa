@@ -48,16 +48,22 @@ What each backend reports for a group effect follows what it computes:
   (`control$subspace_debias`) is moved by the Metropolis sampler at
   every node instead, and is reported from those draws.
 
-- The Laplace tier reports the conditional mode with no spread (`sd` and
-  the bounds are `NA`), which is the only per-group quantity it forms.
+- The Laplace tier (`mode = "laplace"`) reports the Laplace Gaussian of
+  each group effect given the conditioned `sigma_re`: the mode, the
+  marginal SD from the diagonal of the inverse joint Hessian (the fixed
+  effects and the other groups integrated out), and the Gaussian bounds.
+  The interval holds `sigma_re` fixed, so it omits the scale's
+  uncertainty. A fit that keeps no such curvature reports the mode with
+  `NA` spread.
 
 The `source` column says per row which of these produced it: `"sampled"`
-for a posterior draw summary, `"mixture"` for the node mixture, `"mode"`
-for a conditional mode. A fit whose backend never forms a per-group
-posterior at all (the adaptive Gauss-Hermite inner marginal integrates
-each group out by quadrature) errors with that reason rather than
-returning an empty table, which would be indistinguishable from a model
-with no random effects. A model that genuinely has none returns a
+for a posterior draw summary, `"mixture"` for the node mixture,
+`"laplace"` for the Laplace Gaussian at a conditioned scale, `"mode"`
+for a conditional mode without spread. A fit whose backend never forms a
+per-group posterior at all (the adaptive Gauss-Hermite inner marginal
+integrates each group out by quadrature) errors with that reason rather
+than returning an empty table, which would be indistinguishable from a
+model with no random effects. A model that genuinely has none returns a
 zero-row data frame.
 
 ## See also
@@ -75,18 +81,17 @@ set.seed(1)
 df <- data.frame(x = rnorm(100), g = factor(rep(1:10, 10)))
 df$y <- rpois(100, exp(0.3 * df$x))
 fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
-#> Warning: tulpa(): the 're_cov_gibbs' chain has not converged -- x: Rhat 1.01, bulk-ESS 67. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 ranef(fit)
-#>     term    estimate        sd   conf.low conf.high  source
-#> 1   g[1] -0.04236037 0.3099103 -0.6875981 0.5397354 sampled
-#> 2   g[2] -0.31658002 0.3386600 -1.0186997 0.2724267 sampled
-#> 3   g[3]  0.41457813 0.2956690 -0.1304489 1.0242238 sampled
-#> 4   g[4]  0.10813286 0.3237494 -0.5371499 0.7474092 sampled
-#> 5   g[5] -0.04184347 0.3218825 -0.7036788 0.5629522 sampled
-#> 6   g[6] -0.26006011 0.3384532 -1.0014842 0.3438895 sampled
-#> 7   g[7] -0.18195490 0.3461762 -0.9084533 0.4893878 sampled
-#> 8   g[8] -0.04564851 0.3204036 -0.7054439 0.5693173 sampled
-#> 9   g[9] -0.01274066 0.3232769 -0.6864370 0.6125156 sampled
-#> 10 g[10]  0.39926011 0.2922594 -0.1986759 0.9656433 sampled
+#>     term     estimate        sd   conf.low conf.high  source
+#> 1   g[1] -0.057396423 0.3008308 -0.6735606 0.5223848 sampled
+#> 2   g[2] -0.371631939 0.3566917 -1.1587555 0.2748691 sampled
+#> 3   g[3]  0.430592135 0.2902941 -0.1634166 0.9876700 sampled
+#> 4   g[4]  0.120593882 0.3243558 -0.5168653 0.7569955 sampled
+#> 5   g[5] -0.049037426 0.3270000 -0.7005167 0.5869685 sampled
+#> 6   g[6] -0.299676922 0.3521741 -1.0243211 0.3654488 sampled
+#> 7   g[7] -0.156148750 0.3576860 -0.8632569 0.5433473 sampled
+#> 8   g[8] -0.060701888 0.3289538 -0.7349215 0.5695302 sampled
+#> 9   g[9] -0.005503859 0.3175790 -0.6590107 0.6280518 sampled
+#> 10 g[10]  0.401565686 0.3193313 -0.1906539 1.0696400 sampled
 # }
 ```

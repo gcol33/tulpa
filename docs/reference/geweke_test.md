@@ -77,11 +77,9 @@ geweke_test(fit)
 #> =============================
 #> 
 #>  chain   parameter z_score p_value
-#>      1 (Intercept)   0.787  0.4314
-#>      1           x  -2.611  0.0090
-#>      2 (Intercept)  -0.727  0.4671
-#>      2           x   2.678  0.0074
-#> 
-#> Warning: 2 chain/parameter pair(s) have |z| > 2 (potential non-convergence)
+#>      1 (Intercept)  -0.069  0.9450
+#>      1           x   1.451  0.1469
+#>      2 (Intercept)  -1.780  0.0751
+#>      2           x   1.609  0.1075
 # }
 ```

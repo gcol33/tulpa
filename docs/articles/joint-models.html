@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -285,7 +289,8 @@ taken afterwards.</p>
 <span><span class="co">#&gt; tulpa joint nested-Laplace fit </span></span>
 <span><span class="co">#&gt;   hyperparameters: sigma, alpha  (grid: 103 cells)</span></span>
 <span><span class="co">#&gt;   outer pareto-k: -0.78 (reliable)</span></span>
-<span><span class="co">#&gt;   fit in 1.2s (grid 0.2s)</span></span>
+<span><span class="co">#&gt;   fit in 1.4s (grid 0.1s)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu</span></span>
 <span><span class="co">#&gt;   n_obs: 352 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
@@ -312,7 +317,7 @@ standard deviation, median and 95% interval.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Hyperparameters:</span></span>
 <span><span class="co">#&gt;  parameter   mean      sd median  ci_lo  ci_hi</span></span>
-<span><span class="co">#&gt;      sigma 0.6083 0.08571 0.6002 0.4513 0.8034</span></span>
+<span><span class="co">#&gt;      sigma 0.6083 0.08570 0.6002 0.4513 0.8034</span></span>
 <span><span class="co">#&gt;      alpha 0.6534 0.09597 0.6536 0.4751 0.8601</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Reliability (iid draws):</span></span>
@@ -347,6 +352,7 @@ outer grid that integrates
 and the inner Gaussian approximation at each cell.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_inverse_host_factor=cpu</span></span>
 <span><span class="co">#&gt; Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)</span></span>
 <span><span class="co">#&gt;   two layers: the outer hyperparameter-grid integration, and the inner</span></span>
 <span><span class="co">#&gt;     Gaussian Laplace on the latent field</span></span>
@@ -366,7 +372,7 @@ and the inner Gaussian approximation at each cell.</p>
 <span><span class="co">#&gt;     the fit carries no posterior draws, so the per-parameter mean / sd / per-parameter columns are empty; tulpa_posterior_draws(fit) samples the retained outer-grid mixture if a sample is wanted</span></span></code></pre></div>
 <p>Both layers grade as good. The note on
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math>
-says the grid cells on that axis are 1.5 posterior standard deviations
+says the grid cells on that axis are 1.26 posterior standard deviations
 wide, so the endpoints of its interval are resolved to within one
 cell.</p>
 <p>A posterior predictive check compares the count arm with counts
@@ -420,9 +426,9 @@ draws.</p>
 <div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>correlation <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">q1</span><span class="op">[</span><span class="fl">2</span>, <span class="op">]</span>, <span class="va">w</span><span class="op">)</span>, sd_estimate <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/sd.html" class="external-link">sd</a></span><span class="op">(</span><span class="va">q1</span><span class="op">[</span><span class="fl">2</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; correlation sd_estimate </span></span>
-<span><span class="co">#&gt;   0.9729460   0.6857778</span></span></code></pre></div>
+<span><span class="co">#&gt;   0.9729460   0.6857779</span></span></code></pre></div>
 <p>The estimates lie along the identity line with a correlation of 0.97.
-Their standard deviation is 0.68 against the true 0.8: the ICAR prior
+Their standard deviation is 0.69 against the true 0.8: the ICAR prior
 pulls each unit toward its neighbours, which shrinks the extremes of the
 surface.</p>
 <p>The posterior of the copy scale is read from the outer grid.
@@ -438,17 +444,19 @@ level gives that axis’s marginal.</p>
 <span><span class="co">#&gt; [1] 103   2</span></span>
 <span><span class="va">p_alpha</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tapply.html" class="external-link">tapply</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">weights</span>, <span class="va">g</span><span class="op">$</span><span class="va">nodes</span><span class="op">[</span>, <span class="st">"alpha"</span><span class="op">]</span>, <span class="va">sum</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">p_alpha</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt;                 0 0.350129713240255 0.404160319007241 0.466528710026816 </span></span>
+<span><span class="co">#&gt;                 0 0.350129713240221 0.404160319007211 0.466528710026792 </span></span>
 <span><span class="co">#&gt;             0.000             0.000             0.004             0.039 </span></span>
-<span><span class="co">#&gt; 0.558192831358526 0.667867229354734 0.799090584808091 0.956096862763987 </span></span>
+<span><span class="co">#&gt; 0.558192831358511 0.667867229354735 0.799090584808113 0.956096862764039 </span></span>
 <span><span class="co">#&gt;             0.279             0.497             0.173             0.008 </span></span>
-<span><span class="co">#&gt;  1.10363787603299 </span></span>
+<span><span class="co">#&gt;  1.10363787603308 </span></span>
 <span><span class="co">#&gt;             0.000</span></span></code></pre></div>
-<p>The grid holds more
+<p>The
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math>
-levels than the default axis, because the fit’s refinement added levels
-between 0.44 and 1.04, where the posterior sits. The point mass at zero
-carries no weight.</p>
+levels differ from the default axis, because the fit re-centred that
+axis on its posterior mode, as the first note in
+<code><a href="../reference/diagnostics.html">diagnostics()</a></code> says. Its levels above zero run from 0.35 to
+1.10, where the posterior sits. The point mass at zero carries no
+weight.</p>
 <div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">lev</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">p_alpha</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">lev</span>, <span class="va">p_alpha</span>, type <span class="op">=</span> <span class="st">"h"</span>, lwd <span class="op">=</span> <span class="fl">4</span>, xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1.5</span><span class="op">)</span>,</span>
@@ -488,10 +496,10 @@ joint fit also reads the counts taken there.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>joint <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>rmse <span class="op">=</span> <span class="fu">err</span><span class="op">(</span><span class="va">f2</span><span class="op">)</span>, interval_width <span class="op">=</span> <span class="fu">wid</span><span class="op">(</span><span class="va">f2</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>      separate <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>rmse <span class="op">=</span> <span class="fu">err</span><span class="op">(</span><span class="va">fd</span><span class="op">)</span>, interval_width <span class="op">=</span> <span class="fu">wid</span><span class="op">(</span><span class="va">fd</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;               rmse interval_width</span></span>
-<span><span class="co">#&gt; joint    0.1125887      0.7297106</span></span>
+<span><span class="co">#&gt; joint    0.1125888      0.7297093</span></span>
 <span><span class="co">#&gt; separate 0.2417778      0.7822557</span></span></code></pre></div>
 <p>On these 24 units the root mean squared error of the detection-arm
-field is 0.11 for the joint fit and 0.25 for the separate fit, with
+field is 0.11 for the joint fit and 0.24 for the separate fit, with
 intervals of similar width.</p>
 </div>
 <div class="section level2">
@@ -548,10 +556,10 @@ on the outer grid.</p>
 <span><span class="co">#&gt; 1      copy        4 -643.9354 log_evidence               </span></span>
 <span><span class="co">#&gt; 2  no_field        4 -681.1538 log_evidence               </span></span>
 <span><span class="co">#&gt; 3 alpha_one        4 -645.2078 log_evidence</span></span></code></pre></div>
-<p>The model with no field in the detection arm sits 37.5 log units
+<p>The model with no field in the detection arm sits 37.2 log units
 below the copy model. The model with
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math>
-fixed at 1 sits 1.6 below it, so the data prefer a detection arm that
+fixed at 1 sits 1.3 below it, so the data prefer a detection arm that
 feels the field more weakly than the count arm. The separate fit
 <code>fit_d</code> does not enter this table, because it models only the
 detection data and its evidence is on a different set of
@@ -626,7 +634,7 @@ with each detection reduced to a single binary trial, still at the true
 <span><span class="co">#&gt; 1.490457</span></span></code></pre></div>
 <p>With 160 binary detections the 95% interval for
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math>
-runs from 0.32 to 1.49, against 0.50 to 0.90 with ten trials per
+runs from 0.30 to 1.49, against 0.48 to 0.86 with ten trials per
 detection, and the point mass still holds almost no weight. The weaker
 arm leaves the coupling detected but its strength poorly resolved.</p>
 </div>
@@ -650,7 +658,7 @@ and 0.82 at
 is resolved.</strong> With 160 detections of ten trials each the 95%
 interval for
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>α</mi><annotation encoding="application/x-tex">\alpha</annotation></semantics></math>
-was 0.41 wide; with 160 single trials it was 1.17 wide. A large
+was 0.39 wide; with 160 single trials it was 1.19 wide. A large
 <code>posterior_mass</code> is evidence for “no shared field” only if
 the weaker arm could have shown one; simulating from the fitted model at
 a plausible
@@ -666,7 +674,7 @@ the remainder piles up at the smallest continuum node.
 <li>
 <strong>The gain from sharing is largest where one arm has no
 data.</strong> On the 24 units without detections the field error fell
-from 0.25 to 0.11; the slope interval of the detection arm barely
+from 0.24 to 0.11; the slope interval of the detection arm barely
 changed. A joint model pays off for mapping and prediction across the
 gaps of the sparser survey.</li>
 <li>

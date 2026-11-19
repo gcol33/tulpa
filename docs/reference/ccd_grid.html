@@ -19,7 +19,25 @@ defining word \(x_1 \cdots x_k\) keeps the point count reasonable
 while preserving Resolution V.
 Used by tulpa_nested_laplace() for higher-dimensional hyperparameter
 blocks. The standardised z-coordinates are mapped to physical
-hyperparameters \(\theta\) via ccd_to_theta()."><meta property="og:description" content="Produces a structured set of standardised hyperparameter points
+hyperparameters \(\theta\) via ccd_to_theta().
+ccd_to_theta() converts standardised CCD z-coordinates (in
+\(\mathbb{R}^k\)) to physical hyperparameters \(\theta\) via the affine
+map \(\theta = \hat\theta + L \cdot z\) with optional log-scale
+transform per component. L is typically a Cholesky factor of the
+negative Hessian inverse evaluated at the (working) mode \(\hat\theta\)
+– i.e. it scales z to one posterior standard deviation per axis.
+ccd_weights() gives the per-point design weights for a ccd_grid() used
+as nested-Laplace integration nodes. It implements the corrected R-INLA
+central-composite-design weights: the formula in Rue, Martino and Chopin
+(2009) has a typo, corrected by the R-INLA team to give a positive central
+weight. With m hyperparameters, np design points and standardized
+scaling f0, every non-centre point gets
+$$w = 1 / ((np - 1)(1 + e^{-m f0^2 / 2}(f0^2 - 1)))$$
+and the centre point gets \(w_0 = 1 - (np - 1) w\). Used as
+\(\Delta_k\): the integration weight of node \(k\) is
+\(\Delta_k \exp(\log\,\mathrm{marginal}_k)\), renormalized. On a
+standardized (whitened) hyperparameter posterior these reproduce the
+Gaussian moments exactly."><meta property="og:description" content="Produces a structured set of standardised hyperparameter points
 \(z \in \mathbb{R}^k\) for use as integration nodes in a nested
 Laplace approximation when \(k \ge 3\). CCD scales much better than
 the full tensor expand.grid() used by the 1D and 2D backends:
@@ -39,7 +57,25 @@ defining word \(x_1 \cdots x_k\) keeps the point count reasonable
 while preserving Resolution V.
 Used by tulpa_nested_laplace() for higher-dimensional hyperparameter
 blocks. The standardised z-coordinates are mapped to physical
-hyperparameters \(\theta\) via ccd_to_theta()."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
+hyperparameters \(\theta\) via ccd_to_theta().
+ccd_to_theta() converts standardised CCD z-coordinates (in
+\(\mathbb{R}^k\)) to physical hyperparameters \(\theta\) via the affine
+map \(\theta = \hat\theta + L \cdot z\) with optional log-scale
+transform per component. L is typically a Cholesky factor of the
+negative Hessian inverse evaluated at the (working) mode \(\hat\theta\)
+– i.e. it scales z to one posterior standard deviation per axis.
+ccd_weights() gives the per-point design weights for a ccd_grid() used
+as nested-Laplace integration nodes. It implements the corrected R-INLA
+central-composite-design weights: the formula in Rue, Martino and Chopin
+(2009) has a typo, corrected by the R-INLA team to give a positive central
+weight. With m hyperparameters, np design points and standardized
+scaling f0, every non-centre point gets
+$$w = 1 / ((np - 1)(1 + e^{-m f0^2 / 2}(f0^2 - 1)))$$
+and the centre point gets \(w_0 = 1 - (np - 1) w\). Used as
+\(\Delta_k\): the integration weight of node \(k\) is
+\(\Delta_k \exp(\log\,\mathrm{marginal}_k)\), renormalized. On a
+standardized (whitened) hyperparameter posterior these reproduce the
+Gaussian moments exactly."><meta property="og:image" content="https://gillescolling.com/tulpa/logo.svg"><script>
 (function () {
   var D = String.fromCharCode(36);
   window.MathJax = {
@@ -60,7 +96,7 @@ hyperparameters \(\theta\) via ccd_to_theta()."><meta property="og:image" conten
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -73,21 +109,44 @@ hyperparameters \(\theta\) via ccd_to_theta()."><meta property="og:image" conten
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -123,12 +182,34 @@ defining word \(x_1 \cdots x_k\) keeps the point count reasonable
 while preserving Resolution V.</p>
 <p>Used by <code><a href="tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code> for higher-dimensional hyperparameter
 blocks. The standardised z-coordinates are mapped to physical
-hyperparameters \(\theta\) via <code><a href="ccd_to_theta.html">ccd_to_theta()</a></code>.</p>
+hyperparameters \(\theta\) via <code>ccd_to_theta()</code>.</p>
+<p><code>ccd_to_theta()</code> converts standardised CCD z-coordinates (in
+\(\mathbb{R}^k\)) to physical hyperparameters \(\theta\) via the affine
+map \(\theta = \hat\theta + L \cdot z\) with optional log-scale
+transform per component. <code>L</code> is typically a Cholesky factor of the
+negative Hessian inverse evaluated at the (working) mode \(\hat\theta\)
+– i.e. it scales <code>z</code> to one posterior standard deviation per axis.</p>
+<p><code>ccd_weights()</code> gives the per-point design weights for a <code>ccd_grid()</code> used
+as nested-Laplace integration nodes. It implements the corrected R-INLA
+central-composite-design weights: the formula in Rue, Martino and Chopin
+(2009) has a typo, corrected by the R-INLA team to give a positive central
+weight. With <code>m</code> hyperparameters, <code>np</code> design points and standardized
+scaling <code>f0</code>, every non-centre point gets
+$$w = 1 / ((np - 1)(1 + e^{-m f0^2 / 2}(f0^2 - 1)))$$
+and the centre point gets \(w_0 = 1 - (np - 1) w\). Used as
+\(\Delta_k\): the integration weight of node \(k\) is
+\(\Delta_k \exp(\log\,\mathrm{marginal}_k)\), renormalized. On a
+standardized (whitened) hyperparameter posterior these reproduce the
+Gaussian moments exactly.</p>
     </div>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">ccd_grid</span><span class="op">(</span><span class="va">k</span>, f_0 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">k</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">ccd_grid</span><span class="op">(</span><span class="va">k</span>, f_0 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">k</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">ccd_to_theta</span><span class="op">(</span><span class="va">z</span>, <span class="va">theta_hat</span>, <span class="va">L</span>, log_scale <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">ccd_weights</span><span class="op">(</span><span class="va">ccd</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -144,19 +225,51 @@ hyperparameters \(\theta\) via <code><a href="ccd_to_theta.html">ccd_to_theta()<
 <code>f_0</code> spreads points further out; smaller concentrates near the
 centre. INLA's default scales like \(\sqrt{k}\).</p></dd>
 
+
+<dt id="arg-z">z<a class="anchor" aria-label="anchor" href="#arg-z"></a></dt>
+<dd><p>Matrix <code>[n_points x k]</code> of standardised coordinates from
+<code>ccd_grid()</code>.</p></dd>
+
+
+<dt id="arg-theta-hat">theta_hat<a class="anchor" aria-label="anchor" href="#arg-theta-hat"></a></dt>
+<dd><p>Numeric vector of length <code>k</code>: centre of the design,
+in either physical or log-space (per <code>log_scale</code>).</p></dd>
+
+
+<dt id="arg-l">L<a class="anchor" aria-label="anchor" href="#arg-l"></a></dt>
+<dd><p>Numeric <code>[k x k]</code> matrix: scale/rotation applied to z. Pass
+<code>diag(sd)</code> for a diagonal axis-aligned grid where <code>sd</code> is the
+per-axis posterior SD; pass a Cholesky factor to capture
+correlations between hyperparameters.</p></dd>
+
+
+<dt id="arg-log-scale">log_scale<a class="anchor" aria-label="anchor" href="#arg-log-scale"></a></dt>
+<dd><p>Logical (or logical vector of length k). If <code>TRUE</code>
+for component j, <code>theta_hat[j]</code> and column j of the affine
+transform live on log-scale and are exponentiated afterward
+(useful for positive parameters like tau). Default <code>FALSE</code> everywhere.</p></dd>
+
+
+<dt id="arg-ccd">ccd<a class="anchor" aria-label="anchor" href="#arg-ccd"></a></dt>
+<dd><p>A <code>ccd_grid()</code> result. The standardized scaling is recovered as
+<code>f0 = ccd$f_0 / sqrt(m)</code>: a <code>ccd_grid(m, f_0 = sqrt(m) * f0)</code> design places
+the factorial corners at <code>+/- f0</code>, matching the INLA convention (<code>f0 = 1.1</code>
+is the INLA default).</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A list with components:</p><ul><li><p><code>z</code>: numeric matrix <code>[n_points x k]</code> of standardised hyperparameter
+    <p><code>ccd_grid()</code>: a list with components:</p><ul><li><p><code>z</code>: numeric matrix <code>[n_points x k]</code> of standardised hyperparameter
 coordinates.</p></li>
 <li><p><code>n_points</code>: integer; total grid size.</p></li>
 <li><p><code>kind</code>: character vector labelling each point as
 <code>"center"</code>, <code>"axial"</code>, or <code>"factorial"</code>.</p></li>
 <li><p><code>f_0</code>: the sphere radius used.</p></li>
-</ul></div>
-    <div class="section level2">
-    <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
-    <div class="dont-index"><p><code><a href="ccd_to_theta.html">ccd_to_theta()</a></code> to map z-coordinates to physical theta.</p></div>
+</ul><p><code>ccd_to_theta()</code>: a numeric matrix <code>[n_points x k]</code> of physical
+theta-values.</p>
+<p><code>ccd_weights()</code>: a numeric vector of length <code>ccd$n_points</code>, the design
+weight for each point (the centre weight <code>w0</code> for the central point, <code>w</code>
+otherwise).</p>
     </div>
 
     <div class="section level2">
@@ -168,6 +281,23 @@ coordinates.</p></li>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>     axial    center factorial </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>         6         1         8 </span>
+<span class="r-in"><span><span class="fu">ccd_weights</span><span class="op">(</span><span class="va">g</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [1] 0.00000000 0.07142857 0.07142857 0.07142857 0.07142857 0.07142857</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [7] 0.07142857 0.07142857 0.07142857 0.07142857 0.07142857 0.07142857</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [13] 0.07142857 0.07142857 0.07142857</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="va">g2</span> <span class="op">&lt;-</span> <span class="fu">ccd_grid</span><span class="op">(</span><span class="fl">2</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">ccd_to_theta</span><span class="op">(</span><span class="va">g2</span><span class="op">$</span><span class="va">z</span>, theta_hat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>, L <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>             [,1]      [,2]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [1,]  0.0000000 1.0000000</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [2,]  0.7071068 1.0000000</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [3,] -0.7071068 1.0000000</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [4,]  0.0000000 1.2828427</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [5,]  0.0000000 0.7171573</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [6,] -0.5000000 0.8000000</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [7,]  0.5000000 0.8000000</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [8,] -0.5000000 1.2000000</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  [9,]  0.5000000 1.2000000</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

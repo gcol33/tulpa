@@ -10,7 +10,13 @@ autocorrelation parameter rho.
 ## Usage
 
 ``` r
-temporal_ar1(time_var, group_var = NULL, shared = NULL, rho_prior = NULL)
+temporal_ar1(
+  time_var,
+  group_var = NULL,
+  shared = NULL,
+  rho_prior = NULL,
+  parameterization = c("auto", "centered")
+)
 ```
 
 ## Arguments
@@ -41,6 +47,11 @@ temporal_ar1(time_var, group_var = NULL, shared = NULL, rho_prior = NULL)
   prior (e.g. `prior_beta(5, 2)` favours positive autocorrelation).
   Honoured on both the exact-sampler and nested-Laplace paths.
 
+- parameterization:
+
+  Sampler coordinates: `"auto"` uses field information to scale field
+  amplitudes; `"centered"` samples effect coordinates.
+
 ## Value
 
 A `tulpa_temporal` object
@@ -52,6 +63,9 @@ correlation between time points t and s of rho^\|t-s\|.
 
 The precision matrix is tridiagonal and full rank, so no constraints are
 needed.
+
+The innovation SD sigma carries a PC prior with `P(sigma > 3) = 0.01`,
+the same on the nested-Laplace and the sampler routes.
 
 ## Examples
 
@@ -90,6 +104,8 @@ fit <- tulpa(
   temporal = temporal_ar1("year"),
   mode = "auto"
 )
+#> [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 20/20 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 summary(fit)
 #> tulpa fit  (nested_laplace, tier 2) 
 #> Call: tulpa(formula = count ~ x, data = df, family = "poisson", mode = "auto", temporal = temporal_ar1("year"))
@@ -100,18 +116,20 @@ summary(fit)
 #> 
 #> Fixed effects:
 #>             estimate std.error   2.5 % 97.5 %
-#> (Intercept)   1.1134   0.49232 0.08823 2.0181
-#> x             0.3297   0.07599 0.18296 0.4808
+#> (Intercept)   1.0725   0.48365 0.06563 1.9615
+#> x             0.3304   0.07604 0.18352 0.4816
 #>   interval read: skew_map_cell 
 #>   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had 
 #> 
 #> Hyperparameters:
-#>  parameter   mean     sd median  ci_lo  ci_hi
-#>        tau 8.4592 4.8630 7.1050 2.2867 24.286
-#>        rho 0.6618 0.2235 0.7196 0.1365  1.193
+#>  parameter   mean    sd median  ci_lo   ci_hi
+#>        tau    Inf   Inf  7.049 2.3351 27.5726
+#>        rho 0.6599 0.231  0.725 0.1158  0.9771
+#> 
+#> Fixed-effect prior: normal(0, 2.5)
 #> 
 #> Reliability (iid draws):
-#>   outer pareto_k NA (NA); grid ESS 6.996 of 25 cells; inner skew 0.006854 (good)
+#>   grid ESS 14.66 of 105 cells; inner skew 0.006803 (good)
 #>   verdict: outer integration not assessed; inner Laplace good
 # }
 ```

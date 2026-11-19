@@ -16,7 +16,8 @@ tulpa_joint_axis_specs_from_grid(
   theta_grid,
   copy_slab = "exponential",
   folded_axes = NULL,
-  logchol = .hp_logchol_designs(theta_grid)
+  logchol = .hp_logchol_designs(theta_grid),
+  axis_support = NULL
 )
 ```
 
@@ -31,7 +32,7 @@ tulpa_joint_axis_specs_from_grid(
 
   `"exponential"` or `"flat"`; the copy-scale axis's continuum measure
   (see
-  [`tulpa_hyper_check_copy_slab()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_check_copy_slab.md)).
+  [`tulpa_hyper_check_copy_slab()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_copy_slab_density.md)).
 
 - folded_axes:
 
@@ -42,6 +43,13 @@ tulpa_joint_axis_specs_from_grid(
   Free-covariance block design(s) as returned by
   `.hp_logchol_designs()`; defaults to the design `theta_grid` itself
   declares.
+
+- axis_support:
+
+  Optional named list of `c(lower, upper)` intervals, one per axis whose
+  block defines it on a narrower interval than its name fixes (a BYM2
+  mixing weight `rho` on `(0, 1)`). A fit carries its own as
+  `fit$log_hyperprior_support`.
 
 ## Value
 

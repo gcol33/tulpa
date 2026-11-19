@@ -1,26 +1,7 @@
 # Temporal models
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -86,10 +67,10 @@ the first- and second-order random walks and the autoregressive process,
 and
 [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md).
 A panel (per-group) trend runs through the same door, and a temporal
-field can sit beside an areal (ICAR, BYM2, CAR) spatial field. Pairing a
-panel trend with a spatial field, or a temporal field with a continuous
-(GP, NNGP, HSGP) or SPDE spatial field, raises a clean error and points
-you at the direct fitters. The main example below uses
+field can sit beside an areal (ICAR, BYM2, CAR) or a continuous (GP,
+NNGP, HSGP) spatial field. Pairing a panel trend with a spatial field,
+or a temporal field with an SPDE spatial field, raises a clean error and
+points you at the direct fitters. The main example below uses
 [`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md);
 the closing section runs the others.
 
@@ -182,10 +163,8 @@ The matrix $`R`$ has rank $`T - 1`$. The walk fixes increments, not
 levels, so the whole trend can slide up or down by a constant without
 changing any increment. That constant is the unidentified direction, and
 it collides with the intercept $`\beta_0`$. tulpa resolves it with a
-sum-to-zero constraint on $`\phi`$, which has a consequence we return to
-when reading the intercept: under an intrinsic field the intercept
-absorbs the free level and its standard error sits near the prior width
-by design.
+hard sum-to-zero constraint on $`\phi`$, so the intercept carries the
+overall level, a point we return to when reading the intercept.
 
 One switch changes the geometry. With `cyclic = TRUE` the chain closes
 into a ring, so time $`T`$ becomes a neighbour of time $`1`$ and the
@@ -278,13 +257,15 @@ formula.
 tspec <- temporal_rw1("time")
 fit <- tulpa(y ~ x, data = df, family = "binomial",
              temporal = tspec, mode = "auto")
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 coef(fit)
 #> (Intercept)           x 
-#>  -0.2134068   0.8887866
+#>  -0.2131420   0.8876561
 ```
 
-The slope lands near the true $`0.9`$. The intercept reads near zero
-with a very wide interval, the sum-to-zero constraint at work, covered
+The slope lands near the true $`0.9`$, and the intercept near the true
+$`-0.2`$, the level the sum-to-zero constraint leaves to it, covered
 below. How was the fit routed?
 
 ``` r
@@ -333,18 +314,20 @@ summary(fit)
 #> 
 #> Fixed effects:
 #>             estimate std.error   2.5 %   97.5 %
-#> (Intercept)  -0.2134   0.07858 -0.3675 -0.05943
-#> x             0.8888   0.08885  0.7147  1.06301
-#>   interval read: mixture_cdf 
-#>   interval declined: NA 
+#> (Intercept)  -0.2131   0.07853 -0.3701 -0.06228
+#> x             0.8877   0.08875  0.7331  1.08098
+#>   interval read: skew_map_cell 
+#>   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had 
 #> 
 #> Hyperparameters:
-#>  parameter  mean    sd median ci_lo ci_hi
-#>        tau 8.255 4.116  7.357 2.929 18.79
+#>  parameter mean  sd median ci_lo ci_hi
+#>        tau  Inf Inf  7.362 2.933 18.79
+#> 
+#> Fixed-effect prior: normal(0, 2.5)
 #> 
 #> Reliability (iid draws):
-#>   outer pareto_k -1.402 (good); grid ESS 5.933 of 12 cells; inner skew NA (NA)
-#>   verdict: outer integration good; inner Laplace not assessed
+#>   outer pareto_k -1.462 (good); grid ESS 5.929 of 13 cells; inner skew 0.06985 (good)
+#>   verdict: reliable (both layers good)
 ```
 
 [`confint()`](https://rdrr.io/r/stats/confint.html) returns the same
@@ -354,15 +337,15 @@ bounds as a matrix.
 
 confint(fit)
 #>                  2.5 %      97.5 %
-#> (Intercept) -0.3674611 -0.05942505
-#> x            0.7147387  1.06300797
+#> (Intercept) -0.3701008 -0.06227846
+#> x            0.7330940  1.08097871
 #> attr(,"skew_applied")
 #> (Intercept)           x 
-#>       FALSE       FALSE 
+#>        TRUE        TRUE 
 #> attr(,"interval_source")
-#> [1] "mixture_cdf"
+#> [1] "skew_map_cell"
 #> attr(,"interval_declined")
-#> [1] NA
+#> [1] "skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had"
 #> attr(,"retained_mass")
 #> [1] 1
 ```
@@ -384,7 +367,7 @@ g       <- tulpa_outer_grid(fit)
 nf      <- g$n_fixed
 phi_hat <- colSums(g$weights * g$modes)[nf + seq_len(T_pts)]
 round(head(phi_hat), 3)
-#> [1] 0.238 0.603 0.823 0.977 1.265 1.380
+#> [1] 0.238 0.603 0.823 0.976 1.264 1.380
 ```
 
 The offset `nf + u` skips the `nf` fixed-effect columns and lands on the
@@ -435,14 +418,17 @@ round(cor(phi_hat, trend), 3)
 
 The smoothing precision $`\tau`$ controls how tightly the walk hugs a
 straight line, and [`summary()`](https://rdrr.io/r/base/summary.html)
-reports its posterior in the `hyperparameters` table: the posterior mean
-of the field’s hyperparameter, with `ci_lo` and `ci_hi` bounding it.
+reports its posterior in the `hyperparameters` table: the posterior
+median of the field’s hyperparameter, with `ci_lo` and `ci_hi` bounding
+it. The table’s `mean` column reads `Inf` for a precision: the default
+prior is exponential in the field’s standard deviation, which leaves the
+precision a tail of $`\tau^{-3/2}`$ and no posterior mean.
 
 ``` r
 
-summary(fit)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
-#>   parameter     mean    ci_lo    ci_hi
-#> 1       tau 8.254556 2.929169 18.78712
+summary(fit)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
+#>   parameter median    ci_lo    ci_hi
+#> 1       tau 7.3616 2.932906 18.78675
 ```
 
 A larger $`\tau`$ means a stiffer walk. Here the interval excludes the
@@ -491,61 +477,49 @@ badly when the trend is hard to pin down. The coverage of the
 marginalized interval is tested at its nominal rate, so the ninety-five
 percent bounds mean what they say.
 
-Second, the intercept. Under an intrinsic field the level of the trend
-is not separately identified from $`\beta_0`$, so the sum-to-zero
-constraint hands the intercept a near-flat posterior and its standard
-error sits at roughly the prior width.
+Second, the intercept. The random walk constrains increments, so on its
+own it says nothing about the level of the trend, and $`\beta_0`$ and
+$`\bar\phi`$ could trade a constant without changing the linear
+predictor. The sum-to-zero constraint removes that direction:
+$`\bar\phi`$ is held at zero, so the intercept is the overall level and
+the trend carries only the departures from it. The data inform that
+level directly, and its standard error is of the size a model with the
+trend as fixed effects under sum-to-zero contrasts would give.
 
 ``` r
 
 coef(summary(fit))["(Intercept)", c("estimate", "std.error")]
-#>               estimate  std.error
-#> (Intercept) -0.2134068 0.07858009
+#>              estimate  std.error
+#> (Intercept) -0.213142 0.07852755
 ```
 
-That large standard error is a feature of the parameterisation, not a
-sign the fit failed. Interpret slopes, which are identified and
-marginalized; do not read the intercept as an estimate of the overall
-level. If you need a level, it lives in the trend $`\phi`$, which you
-extract and centre as shown above.
-
-The reason traces straight back to the intrinsic prior. The random walk
-constrains increments, so the data inform the shape of $`\phi`$ and the
-height of $`\beta_0 + \bar\phi`$ taken together, but not the split
-between them. tulpa pins $`\phi`$ to sum to zero and lets $`\beta_0`$
-float, which is one valid way to break the tie, and under that choice
-the intercept inherits the unidentified level. A different software
-might pin the intercept and let the trend float; the slopes, which
-depend on neither convention, come out the same. The lesson is to anchor
-interpretation on quantities that do not depend on how the tie was
-broken. Slopes qualify. Differences in the trend between two time points
-qualify too, since the shared level cancels. The bare intercept stands
-apart, tied to a convention rather than to the data.
+What the intercept means does depend on the constraint. It is the level
+at the average of the time points, not the level at any one of them, and
+a model that centred the trend differently (on its first time point,
+say) would report a different intercept with the same slopes.
+Differences in the trend between two time points do not depend on that
+choice either, since the shared level cancels.
 
 ## Prediction
 
 [`predict()`](https://rdrr.io/r/stats/predict.html) gives the
 fixed-effect prediction at new covariate values, with the field held at
-its population average. On the link scale the intercept’s wide posterior
-flows straight into the standard error, so a raw link-scale band is
-dominated by that unidentified level rather than by covariate
-uncertainty.
+its population average. On the link scale the band carries the
+intercept’s uncertainty as well as the slope’s.
 
 ``` r
 
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
-pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
+pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE,
+              include_field = FALSE)
 round(head(pr, 2), 3)
 #>      fit se.fit  lower  upper
-#> 1 -1.991  0.198 -2.380 -1.602
-#> 2 -1.918  0.192 -2.294 -1.543
+#> 1 -1.988  0.198 -2.377 -1.600
+#> 2 -1.916  0.191 -2.291 -1.541
 ```
 
-The informative quantity is how the prediction *changes* with $`x`$,
-which is the slope and its tight interval, not the absolute height of
-the line. To show the covariate effect cleanly, plot the link-scale
-prediction centred at its own mean, so the intercept’s free level drops
-out and the slope’s uncertainty is what remains.
+To show how the prediction *changes* with $`x`$, plot the link-scale
+prediction centred at its own mean.
 
 ``` r
 
@@ -562,24 +536,49 @@ lines(nd$x, ctr, lwd = 2)
 ![Centred link-scale prediction across x with the covariate slope and
 its credible band](temporal-models_files/figure-html/predict-plot-1.png)
 
-The band is narrow because the slope is well identified, even though the
-line’s absolute position is not. Centring is the right move precisely
-because the quantity of interest is a contrast: the difference in linear
-predictor between two covariate values, which the slope controls and the
-intercept cancels out of. The raw `se.fit` is not wrong, it is answering
-a different question, namely how uncertain the absolute height of the
-line is, and under an intrinsic field that height is barely identified.
+The band drawn is the half-width of the raw interval, so it still
+includes the intercept’s share; the contrast between two covariate
+values depends on the slope alone.
 
 [`predict()`](https://rdrr.io/r/stats/predict.html) holds the temporal
 field at its population average. What you see is the covariate effect
-with the trend marginalised out, not a forecast at a particular time. To
-predict at a specific time point, add that time’s $`\phi`$ value from
-the extracted trend to the linear predictor before applying the inverse
-link, and set the intercept to whatever level you want to anchor on. The
-engine’s population-level
-[`predict()`](https://rdrr.io/r/stats/predict.html) deliberately stays
-on the marginal trend, so the default answer is the covariate
-relationship rather than a time-specific one.
+with the trend marginalised out, not a forecast at a particular time.
+
+### Forecasting
+
+A prediction at a particular time, past the last one included, comes
+from the fit itself. Append rows with an `NA` response at the times and
+covariate values you want: the nested-Laplace fit leaves their
+likelihood term out and still forms their linear predictor, and
+[`posterior_linpred()`](https://gillescolling.com/tulpa/reference/posterior_linpred.md)
+summarises it. The rows below sit at the last observed time and the
+three after it, at $`x = 0`$.
+
+``` r
+
+h      <- 0:3
+df_fc  <- rbind(df, data.frame(y = NA, x = 0, time = T_pts + h))
+fit_fc <- tulpa(y ~ x, data = df_fc, family = "binomial",
+                temporal = tspec, mode = "auto")
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+fc <- tail(posterior_linpred(fit_fc, summary = TRUE), length(h))
+data.frame(time = T_pts + h,
+           round(fc[, c("estimate", "sd", "conf.low", "conf.high")], 3),
+           row.names = NULL)
+#>   time estimate    sd conf.low conf.high
+#> 1   30   -0.407 0.324   -1.032     0.240
+#> 2   31   -0.407 0.507   -1.379     0.625
+#> 3   32   -0.406 0.639   -1.641     0.897
+#> 4   33   -0.406 0.748   -1.859     1.119
+```
+
+At time 30 the row reads the fitted level of the walk; its interval
+contains the simulated linear predictor at that time, $`-0.2`$. Past it
+the RW1 carries that level forward unchanged, and the standard deviation
+grows with each step of the horizon, from 0.32 at time 30 to 0.75 three
+steps later. Only the nested-Laplace path masks a row with no response;
+another backend refuses an `NA` response by name.
 
 ## Comparing against no temporal field
 
@@ -611,7 +610,7 @@ ranks them on it directly.
 compare_models(no_temporal = m_nt, temporal = fit, criterion = "loglik")
 #>         model n_params    logLik     quantity conditioned_on
 #> 1 no_temporal        2 -569.1084 log_evidence               
-#> 2    temporal        2 -517.2204 log_evidence
+#> 2    temporal        2 -508.2127 log_evidence
 ```
 
 The temporal model carries substantially higher evidence, matching the
@@ -634,12 +633,12 @@ its linear predictor with the temporal field included:
 ``` r
 
 compare_models(no_temporal = m_nt, temporal = fit, criterion = "waic")
-#>         model      elpd  se_elpd     p_eff        ic     delta  se_diff
-#> 2    temporal -497.5813 13.89653 13.404176  995.1627   0.00000       NA
-#> 1 no_temporal -564.0802 10.14962  1.968577 1128.1605 -66.49891 10.80986
+#>         model      elpd  se_elpd     p_eff        ic    delta  se_diff
+#> 2    temporal -497.5730 13.88412 13.372409  995.1461   0.0000       NA
+#> 1 no_temporal -564.0802 10.14962  1.968577 1128.1605 -66.5072 10.80465
 #>         weight
 #> 2 1.000000e+00
-#> 1 1.317919e-29
+#> 1 1.307043e-29
 ```
 
 ## A second family
@@ -655,9 +654,13 @@ yg  <- -0.2 + 0.9 * x + trend[time] + rnorm(n, sd = 0.5)
 dfg <- data.frame(y = yg, x = x, time = time)
 fitg <- tulpa(y ~ x, data = dfg, family = "gaussian",
               temporal = tspec, mode = "auto", phi = 0.5)
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 coef(fitg)["x"]
 #>         x 
-#> 0.9227501
+#> 0.9226682
 ```
 
 The slope again recovers near $`0.9`$, and the same field-extraction
@@ -696,11 +699,13 @@ A handful of rules of thumb for everyday use.
   join up across the seam. Leave it `FALSE` for an open calendar
   sequence whose endpoints are not neighbours.
 
-- **Read slopes, not the intercept.** Under the intrinsic RW1 the
-  intercept’s standard error sits near the prior width because the trend
-  level is not separately identified. The covariate slopes are
-  identified and their intervals are marginalized over $`\tau`$. If you
-  need the overall level, read it from the extracted, centred trend.
+- **Read the intercept as the level of a centred trend.** The RW1 trend
+  is constrained to sum to zero, so the intercept carries the overall
+  level and the trend only the departures from it; the covariate slopes
+  and the intercept are both identified, and their intervals are
+  marginalized over $`\tau`$.
+  [Identifiability](https://gillescolling.com/tulpa/articles/identifiability.md)
+  shows the alias the constraint removes.
 
 - **Skip the field when time carries no shared signal.** If observations
   are not clustered in time, or the response has no plausible smooth
@@ -720,18 +725,24 @@ penalizes second differences for a smoother trend than RW1:
 
 fit_rw2 <- tulpa(y ~ x, data = df, family = "binomial",
                  temporal = temporal_rw2("time"), mode = "auto")
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 coef(fit_rw2)
 #> (Intercept)           x 
-#>  -0.2128406   0.8967348
+#>  -0.2125742   0.8955873
 ```
 
 [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
 is a stationary, full-rank alternative with an estimated correlation
 parameter rather than an intrinsic walk. Panel trends through
 `group_var=` fit a separate walk per group sharing one hyperparameter,
-and a temporal field combined with an **areal**
-(`icar`/`car`/`bym2`/`car_proper`) spatial field forms an additive
-space-time joint prior over the `[spatial, temporal]` block stack:
+and a temporal field combined with an areal
+(`icar`/`car`/`bym2`/`car_proper`) or a continuous
+[`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+field (NNGP or HSGP) forms an additive space-time joint prior over the
+`[spatial, temporal]` block stack:
 
 ``` r
 
@@ -749,11 +760,22 @@ tulpa(y ~ x + spatial(region), data = st_df, family = "binomial",
       temporal = temporal_rw1("time"), mode = "auto")
 ```
 
+A space-time interaction on top of the two main effects, one effect per
+area and time, is `spatiotemporal(type = )` with Knorr-Held types I to
+IV; [Space-time
+models](https://gillescolling.com/tulpa/articles/space-time.md) fits it.
+
 Still off the front door: a panel temporal field alongside a spatial or
 [`latent()`](https://gillescolling.com/tulpa/reference/latent.md) block,
-and continuous (`gp`/`nngp`/`hsgp`) or SPDE space-time. Those report a
-clear error rather than dropping the term; the dedicated
-`cpp_nested_laplace_st_*` kernels exist for later wiring.
+a temporal field alongside an SPDE field, and a
+[`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md)
+or
+[`temporal_tvc()`](https://gillescolling.com/tulpa/reference/temporal_tvc.md)
+field alongside any other field. Each reports an error naming the
+combination rather than dropping a term.
+[`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)
+fits the same additive model directly through its own kernels, for an
+areal, HSGP or NNGP spatial field.
 
 ## See also
 

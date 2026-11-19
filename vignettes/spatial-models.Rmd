@@ -359,11 +359,14 @@ free constant and leaves the contrasts, which are what the model actually
 identifies.
 
 The precision $\tau$ is summarised in the `hyperparameters` table of
-`summary()`: `mean` is the posterior mean over the grid, on the natural
-precision scale, and `ci_lo` / `ci_hi` give a credible interval.
+`summary()`: `median` is the posterior median, on the natural precision
+scale, and `ci_lo` / `ci_hi` give a credible interval. The `mean` column
+reads `Inf` for a precision: the default prior is exponential in the field's
+standard deviation, which leaves the precision a tail of $\tau^{-3/2}$ and
+no posterior mean.
 
 ```{r tau}
-summary(fit)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
+summary(fit)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 ```
 
 A larger $\tau$ would mean a stiffer penalty on neighbour differences and

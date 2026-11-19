@@ -232,19 +232,19 @@ rbind(tulpa = coef(fit_add), fit_st_nested = coef(fit_st))
 c(tulpa = logLik(fit_add), fit_st_nested = logLik(fit_st))
 ```
 
-The two doors agree on the coefficients to the fourth decimal and on the log
-evidence to 0.05. The AR(1) variant replaces the random walk by a stationary
+The two doors agree on the coefficients to within 0.0001 and on the log
+evidence to 0.01. The AR(1) variant replaces the random walk by a stationary
 process whose correlation `rho` is integrated on its own grid axis.
 
 ```{r st-ar1, fit = TRUE}
 fit_ar1 <- fit_st_nested(d$y, cbind(1, d$x), d$region, W, d$time, Tn,
                          temporal_type = "ar1", family = "poisson",
                          control = list(n_threads = 2))
-summary(fit_ar1)$hyperparameters[, c("parameter", "mean", "sd")]
+summary(fit_ar1)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 c(rw1 = logLik(fit_st), ar1 = logLik(fit_ar1))
 ```
 
-The AR(1) fit puts the correlation's posterior mean at 0.81 and its log
+The AR(1) fit puts the correlation's posterior median at 0.76 and its log
 evidence 1.5 below the random walk's. `fit_st_nested()` also takes `spatial_type = "bym2"`,
 `"car_proper"`, `"hsgp"` and `"nngp"`; the same pairs reach `tulpa()` through
 `spatial = list(type = "bym2", ...)` or `spatial_gp()`.
@@ -260,12 +260,12 @@ d$lon <- xy$col[d$region]; d$lat <- xy$row[d$region]
 fit_gp <- tulpa(y ~ x, data = d, family = "poisson",
                 spatial = spatial_gp(~ lon + lat),
                 temporal = temporal_rw1("time"), mode = "auto", control = ctl)
-summary(fit_gp)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
+summary(fit_gp)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 ```
 
 The grid now runs over the field variance `b1.sigma2`, its range `b1.phi_gp`
 and the trend precision `b2.tau`. With 25 locations the variance interval runs
-from 0.16 to 4.53.
+from 0.15 to 1.28.
 
 ## Checking the additive fit
 
@@ -328,7 +328,7 @@ the count distribution as a whole.
 test_dispersion(fit_add, nsim = 100)
 ```
 
-The dispersion ratio is 1.07 (p = 0.48). The counts show no excess spread
+The dispersion ratio is 1.09 (p = 0.44). The counts show no excess spread
 overall, and the interaction is found only by the check that follows regions
 over time.
 
@@ -346,13 +346,13 @@ fit_I <- tulpa(y ~ x + spatial(region) + (1 | cell), data = dI,
                family = "poisson",
                spatial = list(type = "icar", adjacency = W),
                temporal = temporal_rw1("time"), mode = "auto", control = ctl)
-summary(fit_I)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
+summary(fit_I)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 ```
 
 tulpa warns when a multi-block grid takes more than 2 s to solve; this fit and
 the interaction fits below sit near that limit on the machine that built the
 article, and their warnings are not printed. The posterior of $\sigma_\delta$
-sits at 0.17 with an interval from 0.08 to 0.26, against an interaction whose
+sits at 0.17 with an interval from 0.05 to 0.27, against an interaction whose
 true standard deviation is 0.107. `ranef()` returns the 250 cell effects with
 their posterior standard deviations and 95% intervals.
 
@@ -381,7 +381,7 @@ fit_int <- function(type, data = d) {
 fit_II  <- fit_int("II")
 fit_III <- fit_int("III")
 fit_IV  <- fit_int("IV")
-summary(fit_IV)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
+summary(fit_IV)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 ```
 
 ### Extracting the interaction
@@ -488,7 +488,7 @@ t(sapply(fc, function(f) c(covered = sum(f$y >= f$lo & f$y <= f$hi),
                            of = nrow(f), mean_width = mean(f$hi - f$lo))))
 ```
 
-The additive model covers 41 and the type II model 42 of the 50 held-out
+The additive model and the type II model each cover 42 of the 50 held-out
 counts with their 90% intervals, and the two sets of intervals have the same
 mean width to within 0.1 counts. The plot
 shows the south-west corner region, where the hotspot grows, and the opposite
@@ -525,11 +525,11 @@ compare_models(additive = fit_add, type_I = fit_I, type_II = fit_II,
                type_III = fit_III, type_IV = fit_IV, criterion = "waic")
 ```
 
-Every interaction model ranks above the additive one, which sits 6.9 units of
+Every interaction model ranks above the additive one, which sits 6.0 units of
 expected log predictive density (`elpd`) below the best, at a standard error
-of the difference of 3.4. Among the interaction types the differences reach
-4.1 units, each within about 1.2 standard errors. The ranking puts type III
-first and type I 0.15 behind it, even though type IV recovered the interaction
+of the difference of 2.9. Among the interaction types the differences reach
+3.8 units, each within about 1.4 standard errors. The ranking puts type I
+first and type III 0.73 behind it, even though type IV recovered the interaction
 best: WAIC scores the fit to these 250 counts, and a free effect per cell can
 fit them as well as a smooth one.
 
@@ -541,8 +541,8 @@ compare_models(additive = fit_add, type_I = fit_I, type_II = fit_II,
                type_III = fit_III, type_IV = fit_IV, criterion = "loglik")
 ```
 
-The type IV fit has the highest log evidence, 2.0 above the additive model,
-and the five fits lie within those 2.0 units of each other.
+The type IV fit has the highest log evidence, 2.1 above the additive model,
+and the five fits lie within those 2.1 units of each other.
 
 ## Prior sensitivity
 
@@ -604,10 +604,10 @@ round(c(cor_wide = cor(c(M_wide), c(delta_true)),
 were stacked: the fixed effects, the 25 spatial values, the 10 temporal
 values, then the 250 interaction values.
 
-The tight prior moves the posterior mean of $\log \tau_\delta$ from 3.6 to 5.3.
+The tight prior moves the posterior mean of $\log \tau_\delta$ from 3.7 to 5.9.
 The estimated interaction keeps its shape, with a correlation with the truth of
-0.84, but its standard deviation shrinks from 0.103 to 0.041 against a true
-0.107: the hotspot is drawn at less than half its size. With one count per cell
+0.84, but its standard deviation shrinks from 0.100 to 0.025 against a true
+0.107: the hotspot is drawn at about a quarter of its size. With one count per cell
 the data inform $\tau_\delta$ only weakly, and the prior on it decides the
 amplitude of the map's change over time.
 
@@ -619,8 +619,8 @@ the two precisions.
 fit_flat <- fit_st_nested(d$y, cbind(1, d$x), d$region, W, d$time, Tn,
                           temporal_type = "rw1", family = "poisson",
                           hyperprior = "flat", control = list(n_threads = 2))
-rbind(proper = summary(fit_st)$hyperparameters[1:2, c("mean", "ci_lo", "ci_hi")],
-      flat = summary(fit_flat)$hyperparameters[1:2, c("mean", "ci_lo", "ci_hi")])
+rbind(proper = summary(fit_st)$hyperparameters[1:2, c("median", "ci_lo", "ci_hi")],
+      flat = summary(fit_flat)$hyperparameters[1:2, c("median", "ci_lo", "ci_hi")])
 ```
 
 Both precisions move by less than a tenth of their interval width.
@@ -697,16 +697,16 @@ cells, each over all $S T$ interaction values, and takes
   smooth hotspot was recovered with correlation 0.78 by type IV and 0.20 by
   type I.
 - Do not choose among types I to IV on WAIC alone at this data size. With 250
-  counts the four interaction fits sat within 4.1 `elpd` units of each other,
-  inside about 1.2 standard errors.
+  counts the four interaction fits sat within 3.8 `elpd` units of each other,
+  inside about 1.4 standard errors.
 - Report the prior on $\tau_\delta$ with any interaction map. With one count
   per cell and a mean count near 4.5, moving the prior centre from 3 to 6 on
   the log scale shrank the estimated interaction's standard deviation from
-  0.10 to 0.04.
+  0.100 to 0.025.
 - Keep the additive model when the residual check over time finds nothing
   and the WAIC gain of an interaction is within its standard error. An
   interaction adds one value per region-time cell: here the type IV fit
-  carried 250 of them for a WAIC gain of 5.1 over the additive model, and
+  carried 250 of them for a WAIC gain of 4.5 `elpd` units over the additive model, and
   the type I estimate, which shares nothing between cells, correlated with the
   truth at 0.20.
 - Budget the interaction fit from the cost table: with a type IV interaction

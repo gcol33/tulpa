@@ -33,8 +33,10 @@ fit_st_nested(
   coords = NULL,
   nn = 10L,
   cov_type = 2L,
-  hsgp_m = 6L,
-  hsgp_c = 1.5
+  hsgp_m = NULL,
+  hsgp_c = NULL,
+  hsgp_cov = NULL,
+  hsgp_nu = 1.5
 )
 
 # S3 method for class 'tulpa_st_nested'
@@ -95,16 +97,25 @@ print(x, ...)
 - phi:
 
   Dispersion passed to the family, held fixed. One convention at every
-  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
-  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
-  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
-  it. The compiled kernels parameterize the two variance families by the
-  residual SD and are handed `sqrt(phi)` at the boundary.
+  door: for `gaussian` / `lognormal`, and for a censored or truncated
+  gaussian response (`y | cens()`, `y | trunc()` in
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)), this
+  is the residual VARIANCE (the SD is `sqrt(phi)`), for `neg_binomial_2`
+  the size, `gamma` the shape, `beta` the precision, `t` the scale;
+  `binomial` and `poisson` ignore it. The compiled kernels parameterize
+  the variance families by the residual SD and are handed `sqrt(phi)` at
+  the boundary.
 
-  Defaulted, it conditions at 1 and says so with a warning, since for a
-  family that reads a dispersion that is a modelling choice rather than
-  a neutral value. `fit$phi_estimated` records whether the value on the
-  fit was estimated or conditioned on.
+  Left out of a
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) call
+  whose `phi` is a gaussian residual variance, on `mode = "auto"`,
+  `"structured"` or a nested-Laplace mode, it is integrated as an
+  outer-grid axis rather than set (see
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)).
+  Defaulted anywhere else, it conditions at 1 and says so with a
+  warning, since for a family that reads a dispersion that is a
+  modelling choice rather than a neutral value. `fit$phi_estimated`
+  records whether the value on the fit was estimated or conditioned on.
 
 - cyclic:
 
@@ -225,9 +236,21 @@ print(x, ...)
 
 - hsgp_m, hsgp_c:
 
-  Hilbert-space GP basis size (per dimension, default 6) and boundary
-  factor (default 1.5), `spatial_type = "hsgp"` only – the same
-  parameterisation and defaults as `spatial_gp(approx = "hsgp")`.
+  Hilbert-space GP basis size per dimension (3 to 50) and boundary
+  factor (`>= 1`), `spatial_type = "hsgp"` only – the parameterisation
+  of `spatial_gp(approx = "hsgp")`. A value given is held as given;
+  `NULL` (default) leaves it to the data by the rule and the refit loop
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  describes, and the fit records the bases it went through as
+  `hsgp_basis`.
+
+- hsgp_cov, hsgp_nu:
+
+  The kernel the HSGP basis approximates, `spatial_type = "hsgp"` only,
+  read as
+  [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
+  reads `cov` / `nu`: `"matern"` (`nu` 1.5 or 2.5) or
+  `"squared_exponential"`; `NULL` (default) is Matern 3/2.
 
 - x:
 
@@ -244,8 +267,10 @@ fixed-effect posterior (`draws` via the grid mixture),
 `spatial_effects`, `temporal_effects`, `log_marginal`, `weights`,
 `theta_grid` over `(tau_spatial, tau_temporal, rho)` for an areal
 spatial field or `(sigma2, lengthscale, tau_temporal, rho)` /
-`(sigma2, phi_gp, tau_temporal, rho)` for `"hsgp"` / `"nngp"`, and
-`family` / `n_trials` / `phi` (the R-level convention), which is what
+`(sigma2, phi_gp, tau_temporal, rho)` for `"hsgp"` / `"nngp"` (bym2:
+`(sigma_spatial, rho_spatial, tau_temporal, rho)`; the temporal `rho`
+column is present for `temporal_type = "ar1"` only), and `family` /
+`n_trials` / `phi` (the R-level convention), which is what
 [`fitted()`](https://rdrr.io/r/stats/fitted.values.html),
 [`residuals()`](https://rdrr.io/r/stats/residuals.html),
 [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)

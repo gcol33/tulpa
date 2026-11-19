@@ -26,8 +26,11 @@ tulpa_outer_grid(fit)
   A nested-Laplace fit:
   [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md),
   [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md),
-  or a [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
-  fit routed to that tier.
+  a
+  [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)
+  fit integrating `(range, sigma)`, or a
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) fit
+  routed to one of them.
 
 ## Value
 
@@ -36,7 +39,9 @@ A list:
 - `nodes`:
 
   numeric matrix `[n_cells x n_axes]`, the hyperparameter value of each
-  cell, with the axis names as column names.
+  cell, with the axis names as column names. A spatial lengthscale is in
+  the units of the coordinates as supplied, also when the field was
+  fitted on standardized coordinates.
 
 - `weights`:
 
@@ -91,11 +96,11 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
 g <- tulpa_outer_grid(fit)
 cbind(g$nodes, weight = g$weights)
 #>      tau      weight
-#> [1,] 0.5 0.001157234
-#> [2,] 1.0 0.021253946
-#> [3,] 2.0 0.133119591
-#> [4,] 4.0 0.361654250
-#> [5,] 8.0 0.482814980
+#> [1,] 0.5 0.001141215
+#> [2,] 1.0 0.021064567
+#> [3,] 2.0 0.132506016
+#> [4,] 4.0 0.361327924
+#> [5,] 8.0 0.483960279
 field_hat <- colSums(g$weights * g$modes)[-seq_len(g$n_fixed)]
 # }
 ```

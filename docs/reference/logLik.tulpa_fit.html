@@ -22,7 +22,7 @@ names it in a quantity attribute:"><meta property="og:image" content="https://gi
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -35,21 +35,44 @@ names it in a quantity attribute:"><meta property="og:image" content="https://gi
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -93,7 +116,8 @@ names it in a <code>quantity</code> attribute:</p>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A <code>logLik</code> object with <code>quantity</code> and <code>conditioned_on</code> attributes,
-and a <code>declined</code> attribute naming the reason when no value could be read.</p>
+a <code>declined</code> attribute naming the reason when no value could be read, and
+an <code>mc_se</code> attribute on a Monte Carlo evidence.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -105,13 +129,14 @@ parameterization: the unconstrained coordinates with their Jacobians
 for the ModelData samplers (<code>hmc</code>, <code>ess</code>, <code>sghmc</code>, <code>sgld</code>, <code>mclmc</code>,
 <code>smc</code>, <code>vi</code>), and the natural scale each quantity is sampled on for the
 RE-covariance and Polya-Gamma Gibbs samplers. Values are therefore
-comparable across fits of the same backend only.</p></dd>
+comparable across fits of the same backend only. An <code>smc</code> fit reports
+this only when it estimated no evidence (see below).</p></dd>
 
 <dt><code>"log_evidence"</code></dt>
 <dd><p>a deterministic fit that estimated no
-hyperparameter from the data: the log marginal probability of the data
-under the model as specified. A hyperparameter the fit integrated counts,
-and so does one the caller supplied (a <code>phi</code>, a <code>sigma_re</code>, an outer grid
+hyperparameter from the data, or an <code>smc</code> fit: the log marginal
+probability of the data under the model as specified. A hyperparameter
+the fit integrated counts, and so does one the caller supplied (a <code>phi</code>, a <code>sigma_re</code>, an outer grid
 laid at one value), which is part of the model rather than an estimate. A
 Laplace fit of a model with nothing to integrate reports its log marginal
 likelihood here, which already is that quantity.</p></dd>
@@ -139,9 +164,34 @@ covers the posterior. A fit carrying an axis with no proper prior (a flat
 random-effect covariance prior, a dispersion whose family has no PC prior yet,
 an axis on a block that does not carry its coordinates) reports <code>NA</code> with
 <code>declined = "improper_hyperprior"</code> and names the axes in a <code>declined_axes</code>
-attribute. A central-composite (CCD) design reproduces moments and carries no
-cell volume, so a fit integrated on one reports <code>NA</code> with a <code>declined</code>
-attribute.</p>
+attribute. A central-composite (CCD) design carries no cell volume. On the
+random-effect covariance integrator (<code><a href="tulpa_re_cov_nested.html">tulpa_re_cov_nested()</a></code>, the <code><a href="tulpa.html">tulpa()</a></code>
+random-slope door) each CCD node's weight is calibrated against the Gaussian
+the design was laid on, which makes the evidence exact when the ratio of the
+hyperparameter posterior to that Gaussian is a cubic in the whitened
+coordinates; the other nested doors report <code>NA</code> on a CCD design with a
+<code>declined</code> attribute.</p>
+<p>An <code>smc</code> fit (<code>mode = "smc"</code>) estimates the evidence directly: its
+tempered path runs from a normalized reference to the posterior, and the
+sum over tempering steps of the log mean incremental weight, plus the
+normalizing constants of the prior and likelihood it tempered, is
+<code>log p(y)</code>. The Monte Carlo standard error rides along as an <code>mc_se</code>
+attribute: the square root of the sum over steps of <code>1 / ESS_t - 1 / N</code>,
+the variance of each step's log mean weight over <code>N</code> independent particles
+(Chopin 2004). Correlation the mutations leave between particles is not in
+it, which is why the sampler moves its population after every tempering
+step until each coordinate has decorrelated from where the step started
+(Buchholz, Chopin and Jacob 2021); a run capped below that
+(<code>control$smc_max_moves</code>) can sit low by more than the SE reports. Every
+latent block the sampler fits carries its prior's normalizing constant
+(areal, temporal, continuous and multi-scale GP, HSGP, varying-coefficient
+and multi-scale temporal fields included). The fit reports no evidence, and
+<code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code> falls back to <code>"log_posterior_mean"</code>, when the prior has no
+normalizing constant because it is improper (an acyclic RW2, or an RW1 /
+RW2 over several groups, whose group contrasts are left free), when a
+restricted (RSR) field is evaluated at its projection, or when the
+likelihood is not a built-in family's; the fit's <code>log_evidence_declined</code>
+names which.</p>
 <p>A sampler fit whose producer kept no per-draw log posterior reports <code>NA</code>
 with <code>quantity = "log_posterior_mean"</code> and
 <code>declined = "no_log_posterior_recorded"</code>. The Polya-Gamma Gibbs routes that

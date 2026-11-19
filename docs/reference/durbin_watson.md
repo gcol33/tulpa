@@ -9,7 +9,8 @@ durbin_watson(
   object,
   alternative = c("two.sided", "greater", "less"),
   time = NULL,
-  resid_type = "pearson"
+  resid_type = "pearson",
+  effects = c("conditional", "population")
 )
 ```
 
@@ -34,6 +35,11 @@ durbin_watson(
 - resid_type:
 
   Residual type if extracting from a model (default `"pearson"`), as for
+  [`moran_i()`](https://gillescolling.com/tulpa/reference/moran_i.md).
+
+- effects:
+
+  `"conditional"` (default) or `"population"`, as for
   [`moran_i()`](https://gillescolling.com/tulpa/reference/moran_i.md).
 
 ## Value

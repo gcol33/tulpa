@@ -251,6 +251,10 @@ tulpa_nested_laplace(
 
   - `n_threads` (`1L`) – inner-loop OpenMP threads.
 
+  - `n_threads_outer` (`1L`) – concurrent outer-grid cells, each
+    retaining its own Newton state. Equal-order CUDA factors can share
+    batched launches.
+
   - `x_init` (`NULL`) – warm-start for the first grid point's inner
     solve.
 
@@ -370,30 +374,34 @@ tulpa_nested_laplace(
     location term is unreachable – reports what it reported before, to
     the bit.
 
-  - `subspace_debias` (`FALSE`) – correct only the latent directions the
-    inner-layer diagnostics flagged, by Metropolis on the true joint
-    density evaluated along the Gaussian-conditional-mean surface. The
-    Gaussian nuisance carry and Laplace outer weights remain
-    approximations, so this remains Tier 2. `TRUE` takes every default;
-    a list overrides `band` (the inner-reliability floor a coordinate is
-    selected at, default `"ok"`), `idx` (pin the corrected set
-    explicitly, skipping the selector), `closure` / `closure_max` (grow
-    the set by strongly coupled precision-graph neighbours: a coordinate
-    strongly coupled to a member of the corrected set and left out of it
-    is carried linearly, which is the error the correction removes, so
-    requesting the closure also retains the modal cell's joint precision
-    for the selector to read), the sampler budget `n_iter` / `warmup` /
-    `thin`, and `n_draws`. The selector reads the per-index bands
-    `diagnose_skew` already attached, so it costs no extra solve; the
-    correction itself re-runs the settled grid once with the sampler on,
-    and the fit then reports `$draws` – the per-cell Metropolis sample
-    for the selected coordinates, the rest from the Gaussian conditional
-    given them – instead of the Gaussian-mixture moments. An EMPTY
-    selection leaves the fit bit-for-bit identical to the plain path.
-    `$subspace_debias` records what was selected, the bands it was read
-    from, and the per-cell acceptance rate. Requesting it turns
-    `keep_grid_hessians` on, since the recombination reads exactly those
-    per-cell pieces.
+  - `subspace_debias` (`FALSE`) – latent Metropolis correction, supplied
+    as `TRUE` or a list. `method = "fast"` (default) samples the true
+    joint density on the Gaussian conditional-mean surface of the
+    selected coordinates, carries Gaussian nuisance conditionals, and
+    keeps Laplace cell weights (Tier 2). Its empty selection consumes no
+    randomness. `method = "exact"` proposes the full latent vector: a
+    symmetric move in the selected coordinates and a fresh Gaussian
+    conditional nuisance draw. The joint proposal density enters the MH
+    ratio, and rejection retains the complete state. Each cell's kernel
+    targets `p(x | theta_k, y)`. Independent full-dimensional t
+    importance samples estimate the ratio of the true latent integral to
+    its Laplace approximation. Independent pilots calibrate the particle
+    count using the shared IS settings; the final unbiased integral
+    estimate reweights the cell. The existing PSIS k diagnostic and gate
+    assess the stratified joint correction. Finite importance and
+    outer-grid errors remain, so the nested result stays Tier 2. Hard
+    constraints and unusable Cholesky factors decline explicitly. Choose
+    one of this exact composition and `cila`. Other settings are `band`
+    (default `"ok"`), `idx` (explicit selected indices), `closure` /
+    `closure_max` (precision-graph neighbours), `n_iter` (recorded
+    sweeps), `warmup`, `thin`, and `n_draws` (reported mixture rows).
+    The selector reads `diagnose_skew`'s per-index bands. The correction
+    re-solves the settled grid. `$subspace_debias` records the selected
+    set, targets, acceptance, IS diagnostics and decline reason. An
+    applied exact correction retains each full latent chain, its cell
+    mode and paired row indices;
+    [`tulpa_posterior_draws()`](https://gillescolling.com/tulpa/reference/tulpa_posterior_draws.md)
+    samples those rows.
 
   - `cila` (`FALSE`) – corrected integrated Laplace, the second
     inner-layer debias (after Lai, Margossian and Sheldon,
@@ -660,11 +668,12 @@ A list with:
 - `weights`: integration weights normalising to sum 1.
 
 - `theta_mean`, `theta_sd`: posterior moments per hyperparameter. A
-  physical range moment that diverges is `Inf`. `moment_existence`
-  records each range's prior tail, likelihood boundary decay, fixed or
-  bounded support, and the reason for its moment-existence result.
-  `theta_log_mean` and `theta_log_sd` retain the finite log-range
-  moments.
+  range or precision moment that diverges is `Inf`: a precision under
+  the PC prior on its SD keeps the prior's `tau^(-3/2)` tail, so it has
+  neither a mean nor an SD. `moment_existence` records each such axis's
+  prior tail, likelihood boundary decay, fixed or bounded support, and
+  the reason for its moment-existence result. `theta_log_mean` and
+  `theta_log_sd` retain the finite log-range moments.
 
 - `n_iter`: inner Newton iterations per grid point.
 
@@ -731,6 +740,19 @@ diagnostic when present and the wall-clock timing line
 (`"fit in 5h 25m (grid 2h 09m)"`) when `fit$timing` is attached, then
 the fixed effects.
 
+## Computation device
+
+`control$device` is `"auto"`, `"cpu"`, or `"cuda"`. The default `"auto"`
+uses CUDA for registered operations above their measured size crossover.
+Operations with no measured crossover run on CPU. `"cuda"` requests CUDA
+for each registered operation and errors with the reason from
+[`gpu_info()`](https://gillescolling.com/tulpa/reference/gpu_info.md)
+when its device or library is unavailable. Host inference stages run on
+CPU. The fit's `device$stages` table records CPU and CUDA call counts
+per stage; [`print()`](https://rdrr.io/r/base/print.html) and
+[`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+report these stages.
+
 ## References
 
 Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
@@ -753,6 +775,9 @@ prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
               n_neighbors = nn, tau_grid = c(0.5, 1, 2, 4, 8))
 fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             family = "binomial")
+#> [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 fit$theta_mean        # marginalized ICAR precision
+#> [1] Inf
 # }
 ```

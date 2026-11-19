@@ -134,7 +134,13 @@ Metropolis-within-Gibbs targeting `p(beta, {b_m}, {Sigma_m} | y)`:
   holds every other term's contribution fixed.
 
 - **`beta | b, Sigma, y`** – random-walk Metropolis, proposal shape from
-  the Laplace fixed-effect Hessian block `H_beta`.
+  the fixed-effect block of the joint Laplace precision (the conditional
+  of `beta` given the random effects), followed by a Newton-step
+  Metropolis move whose proposal is the Laplace approximation of that
+  conditional at the current point, `N(beta + P^-1 g, P^-1)` with `g`
+  and `P` its gradient and negative Hessian (Gamerman 1997). On a
+  near-Gaussian conditional that proposal is close to an independent
+  draw. `accept$beta_newton` on the fit is its acceptance rate.
 
 - **`Sigma_m | b_m`** – exact conjugate draw. A correlated block draws
   the full matrix from
@@ -157,9 +163,11 @@ reference / for `Sigma` uncertainty.
 
 ## References
 
-Lewandowski, Kurowicka & Joe (2009). Generating random correlation
-matrices based on vines and extended onion method. *Journal of
-Multivariate Analysis* 100(9):1989-2001.
+Gamerman (1997). Sampling from the posterior distribution in generalized
+linear mixed models. *Statistics and Computing* 7(1):57-68. Lewandowski,
+Kurowicka & Joe (2009). Generating random correlation matrices based on
+vines and extended onion method. *Journal of Multivariate Analysis*
+100(9):1989-2001.
 
 ## See also
 
@@ -184,8 +192,8 @@ fit <- tulpa_re_cov_gibbs(y, rep(1L, n), cbind(1, x), re_term,
                           family = "binomial",
                           control = list(n_iter = 300L, warmup = 150L))
 fit$Sigma_mean        # exact-debias RE covariance posterior mean
-#>            [,1]       [,2]
-#> [1,]  0.5696631 -0.1356037
-#> [2,] -0.1356037  0.4061997
+#>              [,1]         [,2]
+#> [1,]  0.448716232 -0.002106793
+#> [2,] -0.002106793  0.369556286
 # }
 ```

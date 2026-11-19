@@ -87,16 +87,25 @@ tulpa_laplace(
 - phi:
 
   Dispersion passed to the family, held fixed. One convention at every
-  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
-  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
-  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
-  it. The compiled kernels parameterize the two variance families by the
-  residual SD and are handed `sqrt(phi)` at the boundary.
+  door: for `gaussian` / `lognormal`, and for a censored or truncated
+  gaussian response (`y | cens()`, `y | trunc()` in
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)), this
+  is the residual VARIANCE (the SD is `sqrt(phi)`), for `neg_binomial_2`
+  the size, `gamma` the shape, `beta` the precision, `t` the scale;
+  `binomial` and `poisson` ignore it. The compiled kernels parameterize
+  the variance families by the residual SD and are handed `sqrt(phi)` at
+  the boundary.
 
-  Defaulted, it conditions at 1 and says so with a warning, since for a
-  family that reads a dispersion that is a modelling choice rather than
-  a neutral value. `fit$phi_estimated` records whether the value on the
-  fit was estimated or conditioned on.
+  Left out of a
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) call
+  whose `phi` is a gaussian residual variance, on `mode = "auto"`,
+  `"structured"` or a nested-Laplace mode, it is integrated as an
+  outer-grid axis rather than set (see
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)).
+  Defaulted anywhere else, it conditions at 1 and says so with a
+  warning, since for a family that reads a dispersion that is a
+  modelling choice rather than a neutral value. `fit$phi_estimated`
+  records whether the value on the fit was estimated or conditioned on.
 
 - phi2:
 
@@ -138,15 +147,16 @@ tulpa_laplace(
 
 - beta_prior:
 
-  Optional Gaussian prior on the fixed effects. `NULL` (default) keeps
-  the weak built-in prior `beta ~ N(0, 100^2)`. Otherwise a list with
-  element `sd` (prior standard deviation, required) and optional `mean`
-  (prior mean, default 0). Each may be a scalar (applied to every
-  coefficient) or a length-`ncol(X)` vector. Adds
-  `sum((beta - mean)^2 / (2 * sd^2))` to the negative log-posterior, so
-  the mode is the penalized (MAP) estimate. A coefficient's `sd` may be
-  `+Inf`, which sets its precision to 0 (no penalty on that
-  coefficient). Not supported on the spatial path.
+  Optional Gaussian prior on the fixed effects. `NULL` (default) takes
+  the engine default `beta ~ N(0, 2.5^2)`. Otherwise a list with element
+  `sd` (prior standard deviation, required) and optional `mean` (prior
+  mean, default 0). Each may be a scalar (applied to every coefficient)
+  or a length-`ncol(X)` vector. Adds `sum((beta - mean)^2 / (2 * sd^2))`
+  to the negative log-posterior, so the mode is the penalized (MAP)
+  estimate. A coefficient's `sd` may be `+Inf`, which sets its precision
+  to 0 (no penalty on that coefficient). On the spatial path it is
+  carried by an SPDE field's solver; the areal, NNGP, proper-CAR and
+  HSGP solvers hold the engine default and refuse it.
 
 - return_re_cov:
 
@@ -206,14 +216,20 @@ tulpa_laplace(
 
 - debias:
 
-  Subspace debias: a list with `idx` (1-based latent indices to correct
-  by Metropolis along the Gaussian-conditional-mean surface through the
-  mode) and optional `n_iter` / `warmup` / `thin`. The result then
-  carries `debias_draws` (`n_kept x length(idx)`, the sampled
-  `x_S - mode_S`), `debias_sigma_ss` (the inner Laplace's own marginal
-  covariance of `x_S`), `debias_accept` and `debias_idx`. `NULL`
-  (default) or an empty `idx` leaves the solve bit-for-bit as it was and
-  consumes no random number. Non-spatial path only.
+  Subspace correction, a list with `idx` (1-based latent indices),
+  `method` (`"fast"` by default, or `"exact"`), and optional `n_iter` /
+  `warmup` / `thin`. Fast correction samples the true density on the
+  Gaussian conditional-mean surface and returns selected offsets
+  `x_S - mode_S` in `debias_draws`, with `debias_sigma_ss`,
+  `debias_accept` and `debias_idx`. An empty fast selection consumes no
+  randomness. Exact correction jointly proposes the selected coordinates
+  and Gaussian conditional nuisance residuals, with their proposal
+  density in the MH ratio. It retains the full state on rejection and
+  returns full latent offsets in `debias_draws`, natural-coordinate
+  `joint_latent_draws`, fixed-effect `draws` and paired random-effect
+  `re` draws. This conditional target is Tier 1 for the supplied fixed
+  hyperparameters. An empty exact selection uses full Gaussian
+  independence MH. Non-spatial path only.
 
 ## Value
 
@@ -253,5 +269,5 @@ eta <- X %*% c(-0.3, 0.8)
 y <- rbinom(n, 1, plogis(eta))
 fit <- tulpa_laplace(y, rep(1L, n), X, family = "binomial")
 fit$mode          # posterior mode of the fixed effects
-#> [1] -0.4406277  0.4822831
+#> [1] -0.4388582  0.4800024
 ```

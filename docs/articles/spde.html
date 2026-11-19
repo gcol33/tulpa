@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -263,7 +267,7 @@ h)</annotation></semantics></math>.</p>
 <span><span class="va">g1</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0.0125</span>, <span class="fl">0.9875</span>, length.out <span class="op">=</span> <span class="fl">40</span><span class="op">)</span></span>
 <span><span class="va">grid</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/expand.grid.html" class="external-link">expand.grid</a></span><span class="op">(</span>lon <span class="op">=</span> <span class="va">g1</span>, lat <span class="op">=</span> <span class="va">g1</span><span class="op">)</span></span>
 <span><span class="va">K</span>    <span class="op">&lt;-</span> <span class="fu">matern1</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">as.matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/dist.html" class="external-link">dist</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span><span class="va">obs</span>, <span class="va">grid</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>, range <span class="op">=</span> <span class="fl">0.3</span>, sigma <span class="op">=</span> <span class="fl">0.8</span><span class="op">)</span></span>
-<span><span class="va">w</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/chol.html" class="external-link">chol</a></span><span class="op">(</span><span class="va">K</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="fl">1e-8</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">w</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/chol-methods.html" class="external-link">chol</a></span><span class="op">(</span><span class="va">K</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="fl">1e-8</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">w_obs</span> <span class="op">&lt;-</span> <span class="va">w</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="va">n</span><span class="op">]</span>; <span class="va">w_grid</span> <span class="op">&lt;-</span> <span class="va">w</span><span class="op">[</span><span class="op">-</span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="va">n</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
 <p>The counts have intercept 0.5 and covariate slope 0.4, with the
 covariate drawn independently of the field.</p>
@@ -328,9 +332,8 @@ the SPDE backend.</p>
 <span>             control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=6s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 153/441 cells (35%) | elapsed 2s | ETA ~4s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 326/441 cells (74%) | elapsed 4s | ETA ~1s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 5s | ETA done | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 267/441 cells (61%) | elapsed 2s | ETA ~1s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 3s | ETA done | 0.01s/cells</span></span>
 <span><span class="va">fit</span><span class="op">$</span><span class="va">backend</span></span>
 <span><span class="co">#&gt; [1] "spde"</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">)</span></span>
@@ -360,6 +363,7 @@ from importance sampling against the Gaussian the design was laid on;
 here it reads 0.491, marked good.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, sparse_cholesky=cpu, sparse_inverse_host_factor=cpu, sparse_selected_inverse=cpu</span></span>
 <span><span class="co">#&gt; SPDE nested-Laplace OUTER-integration reliability (i.i.d. draws)</span></span>
 <span><span class="co">#&gt;   scope: the outer (range, sigma) integration; the latent-field Laplace is a</span></span>
 <span><span class="co">#&gt;     separate, unscored layer.</span></span>
@@ -405,14 +409,12 @@ response, a design matrix and the specification directly.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>median_0.05 <span class="op">=</span> <span class="fu">prior_fit</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.05</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>            median_1    <span class="op">=</span> <span class="fu">prior_fit</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=8s | 0.02s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 214/441 cells (49%) | elapsed 2s | ETA ~2s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 424/441 cells (96%) | elapsed 4s | ETA ~0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 4s | ETA done | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=6s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 270/441 cells (61%) | elapsed 2s | ETA ~1s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 3s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=7s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 206/441 cells (47%) | elapsed 2s | ETA ~2s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 407/441 cells (92%) | elapsed 4s | ETA ~0s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=6s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 251/441 cells (57%) | elapsed 2s | ETA ~2s | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 4s | ETA done | 0.01s/cells</span></span>
 <span><span class="co">#&gt;             range sigma slope</span></span>
 <span><span class="co">#&gt; median_0.05 0.374 0.899 0.329</span></span>
@@ -532,32 +534,30 @@ the grid.</p>
 <code class="sourceCode R"><span><span class="va">res_mesh</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span><span class="fu">mesh_fit</span><span class="op">(</span><span class="fl">0.05</span>, <span class="fl">0.02</span><span class="op">)</span>, <span class="fu">mesh_fit</span><span class="op">(</span><span class="fl">0.15</span>, <span class="fl">0.08</span><span class="op">)</span>,</span>
 <span>                  <span class="fu">mesh_fit</span><span class="op">(</span><span class="fl">0.3</span>, <span class="fl">0.15</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=22s | 0.05s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 59/441 cells (13%) | elapsed 2s | ETA ~13s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 119/441 cells (27%) | elapsed 4s | ETA ~11s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 178/441 cells (40%) | elapsed 6s | ETA ~9s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 240/441 cells (54%) | elapsed 8s | ETA ~7s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 299/441 cells (68%) | elapsed 10s | ETA ~5s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 357/441 cells (81%) | elapsed 12s | ETA ~3s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 412/441 cells (93%) | elapsed 14s | ETA ~1s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 15s | ETA done | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=19s | 0.04s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 75/441 cells (17%) | elapsed 2s | ETA ~10s | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 150/441 cells (34%) | elapsed 4s | ETA ~8s | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 225/441 cells (51%) | elapsed 6s | ETA ~6s | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 297/441 cells (67%) | elapsed 8s | ETA ~4s | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 371/441 cells (84%) | elapsed 10s | ETA ~2s | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 12s | ETA done | 0.03s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=2s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=5s | 0.01s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 1s | ETA done | 0.00s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
 <span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=1s | 0.00s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 1s | ETA done | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">res_mesh</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt;      max_edge vertices seconds range sigma slope  rmse</span></span>
-<span><span class="co">#&gt; [1,]     0.05     1269   42.36 0.383 0.927 0.330 0.435</span></span>
-<span><span class="co">#&gt; [2,]     0.15      159    3.47 0.394 0.973 0.359 0.441</span></span>
-<span><span class="co">#&gt; [3,]     0.30       70    1.60 0.373 1.171 0.353 0.450</span></span></code></pre></div>
+<span><span class="co">#&gt; [1,]     0.05     1269   36.46 0.383 0.927 0.330 0.435</span></span>
+<span><span class="co">#&gt; [2,]     0.15      159    2.93 0.394 0.973 0.359 0.441</span></span>
+<span><span class="co">#&gt; [3,]     0.30       70    1.47 0.373 1.171 0.353 0.450</span></span></code></pre></div>
 <p>Times are elapsed seconds on the machine that built this page, 300
 observations, two threads. All three meshes report a range between 0.37
-and 0.40, within the posterior SD of the range; the coarsest mesh, with
-edges as long as the range, reports a larger SD, 1.17 against 0.93 and
-0.97 on the two finer meshes. The finest takes about twelve times as
-long as the middle one for a grid error 0.006 lower.</p>
+and 0.40, inside the range’s 95% interval of 0.21 to 0.71; the coarsest
+mesh, with edges as long as the range, reports a larger SD, 1.17 against
+0.93 and 0.97 on the two finer meshes. The finest takes about twelve
+times as long as the middle one for a grid error 0.006 lower.</p>
 </div>
 <div class="section level2">
 <h2 id="comparing-with-other-spatial-fits">Comparing with other spatial fits<a class="anchor" aria-label="anchor" href="#comparing-with-other-spatial-fits"></a>
@@ -580,29 +580,28 @@ prediction, so subtracting the prediction without the field
 <span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">obs</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>  spatial <span class="op">=</span> <span class="fu"><a href="../reference/spatial_gp.html">spatial_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span><span class="op">)</span>, control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 5s | ETA &gt;=2.2min | 5.43s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 6s | ETA done | 1.05s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.04s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.08s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.06s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 18/18 cells (100%) | elapsed 1s | ETA done | 0.08s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.04s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 18/18 cells (100%) | elapsed 1s | ETA done | 0.04s/cells</span></span>
 <span><span class="va">time</span><span class="op">[</span><span class="st">"hsgp"</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="va">fits</span><span class="op">$</span><span class="va">hsgp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span></span>
 <span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">obs</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>  spatial <span class="op">=</span> <span class="fu"><a href="../reference/spatial_gp.html">spatial_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span>, approx <span class="op">=</span> <span class="st">"hsgp"</span>, m <span class="op">=</span> <span class="fl">12</span><span class="op">)</span>,</span>
 <span>  control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.03s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.06s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=9s | 0.39s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 1s | ETA done | 0.11s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=1s | 0.02s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 21/21 cells (100%) | elapsed 1s | ETA done | 0.03s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA &gt;=0s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 21/21 cells (100%) | elapsed 0s | ETA done | 0.02s/cells</span></span>
 <span><span class="va">time</span><span class="op">[</span><span class="st">"spde"</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.time.html" class="external-link">system.time</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span></span>
 <span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">obs</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, spatial <span class="op">=</span> <span class="va">fine</span>,</span>
 <span>  control <span class="op">=</span> <span class="va">ctl</span><span class="op">)</span><span class="op">)</span><span class="op">[[</span><span class="st">"elapsed"</span><span class="op">]</span><span class="op">]</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=8s | 0.02s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 216/441 cells (49%) | elapsed 2s | ETA ~2s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 415/441 cells (94%) | elapsed 4s | ETA ~0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 4s | ETA done | 0.01s/cells</span></span></code></pre></div>
+<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=6s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 264/441 cells (60%) | elapsed 2s | ETA ~1s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 3s | ETA done | 0.01s/cells</span></span></code></pre></div>
 <div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">field_rmse</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">f</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="va">w_hat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">f</span>, newdata <span class="op">=</span> <span class="va">nd</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">f</span>, newdata <span class="op">=</span> <span class="va">nd</span>,</span>
@@ -616,12 +615,12 @@ prediction, so subtracting the prediction without the field
 <span>             grid_rmse <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">fits</span><span class="op">[</span><span class="op">-</span><span class="fl">2</span><span class="op">]</span>, <span class="va">field_rmse</span><span class="op">)</span>, nonspatial <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">rownames</a></span><span class="op">(</span><span class="va">tab</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">tab</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt;            estimate std.error seconds grid_rmse</span></span>
-<span><span class="co">#&gt; spde          0.329     0.049   12.36     0.433</span></span>
-<span><span class="co">#&gt; nonspatial    0.402     0.042    0.02        NA</span></span>
-<span><span class="co">#&gt; nngp          0.334     0.051   13.20     0.431</span></span>
-<span><span class="co">#&gt; hsgp          0.339     0.045    3.82     0.443</span></span></code></pre></div>
-<p>The three fields reach grid errors within about 0.03 of each other,
-the SPDE field the lowest, and agree on the slope to within 0.015. On
+<span><span class="co">#&gt; spde          0.329     0.049   10.01     0.433</span></span>
+<span><span class="co">#&gt; nonspatial    0.402     0.042    0.01        NA</span></span>
+<span><span class="co">#&gt; nngp          0.334     0.051    4.54     0.431</span></span>
+<span><span class="co">#&gt; hsgp          0.339     0.045    3.02     0.443</span></span></code></pre></div>
+<p>The three fields reach grid errors within about 0.01 of each other,
+the NNGP field the lowest, and agree on the slope to within 0.015. On
 this dataset the non-spatial slope, 0.402, is closer to the simulated
 0.4, and its standard error is smaller than those of the spatial fits;
 every slope interval contains 0.4. The non-spatial fit has no field to
@@ -642,11 +641,11 @@ fit’s pointwise log-likelihood with its field included.</p>
 <span><span class="co">#&gt; 2 2.931965e-01</span></span>
 <span><span class="co">#&gt; 4 3.546707e-03</span></span>
 <span><span class="co">#&gt; 1 2.373594e-74</span></span></code></pre></div>
-<p>All three spatial fits sit about 165 to 177 units of expected log
-predictive density above the non-spatial one. Among them the SPDE field
-ranks first, the NNGP field 7.6 below it with a standard error of 4.6 on
-the difference, and the HSGP field 12.6 below with a standard error of
-4.8.</p>
+<p>All three spatial fits sit about 164 to 169 units of expected log
+predictive density above the non-spatial one. Among them the NNGP field
+ranks first, the SPDE field 0.9 below it with a standard error of 2.0 on
+the difference, and the HSGP field 5.3 below with a standard error of
+4.4.</p>
 </div>
 <div class="section level2">
 <h2 id="fractional-smoothness">Fractional smoothness<a class="anchor" aria-label="anchor" href="#fractional-smoothness"></a>
@@ -696,10 +695,9 @@ the same fit as <code><a href="../reference/spatial_spde.html">spatial_spde()</a
 <span><span class="va">f_custom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/fit_spde.html">fit_spde</a></span><span class="op">(</span><span class="va">obs</span><span class="op">$</span><span class="va">y</span>, <span class="va">X</span>, <span class="va">sp_custom</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>                     control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [nested-laplace] preparing joint Hessian sparsity pattern</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=7s | 0.02s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 211/441 cells (48%) | elapsed 2s | ETA ~2s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 440/441 cells (100%) | elapsed 4s | ETA ~0s | 0.01s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 4s | ETA done | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=6s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 280/441 cells (63%) | elapsed 2s | ETA ~1s | 0.01s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 441/441 cells (100%) | elapsed 3s | ETA done | 0.01s/cells</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>spatial_spde <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>, spatial_spde_custom <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">f_custom</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                     (Intercept)         x</span></span>
 <span><span class="co">#&gt; spatial_spde          0.4355807 0.3292975</span></span>
@@ -712,15 +710,15 @@ the same fit as <code><a href="../reference/spatial_spde.html">spatial_spde()</a
 <li>
 <strong>Mesh edge against the range.</strong> On these data, inner
 edges of a sixth and a half of the range (0.05 and 0.15 against 0.3)
-gave the same hyperparameters within their posterior SD and grid errors
-0.006 apart, while edges as long as the range raised the SD estimate
-from 0.93 to 1.17. Start with an inner <code>max_edge</code> at most
-half the range you expect, and refit at half that edge: if the range and
-the slope do not move, the coarser mesh is enough.</li>
+gave ranges of 0.38 and 0.39, both inside the 95% interval, and grid
+errors 0.006 apart, while edges as long as the range raised the SD
+estimate from 0.93 to 1.17. Start with an inner <code>max_edge</code> at
+most half the range you expect, and refit at half that edge: if the
+range and the slope do not move, the coarser mesh is enough.</li>
 <li>
 <strong>Cost grows with the vertices.</strong> The fine mesh of the
 comparison above had about eight times the vertices of the middle one
-and took about thirteen times as long. <code>cutoff</code> is the lever
+and took about twelve times as long. <code>cutoff</code> is the lever
 for clustered data, since every point closer than <code>cutoff</code> to
 another shares its vertex.</li>
 <li>

@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -457,8 +461,8 @@ error absorbs the cost of not knowing how smooth the surface is.</p>
 <span><span class="co">#&gt;   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Hyperparameters:</span></span>
-<span><span class="co">#&gt;  parameter  mean    sd median ci_lo ci_hi</span></span>
-<span><span class="co">#&gt;        tau 4.851 2.358  4.356 1.667 10.76</span></span>
+<span><span class="co">#&gt;  parameter mean  sd median ci_lo ci_hi</span></span>
+<span><span class="co">#&gt;        tau  Inf Inf  4.356 1.667 10.76</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Fixed-effect prior: normal(0, 2.5)</span></span>
 <span><span class="co">#&gt; </span></span>
@@ -486,7 +490,7 @@ integration weight, and sum. This is the same marginalisation the slopes
 get, applied to the latent field instead of the fixed effects.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g</span>         <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_outer_grid.html">tulpa_outer_grid</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="va">field_hat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colSums</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">weights</span> <span class="op">*</span> <span class="va">g</span><span class="op">$</span><span class="va">modes</span><span class="op">)</span><span class="op">[</span><span class="va">g</span><span class="op">$</span><span class="va">n_fixed</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">field_hat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colSums</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">weights</span> <span class="op">*</span> <span class="va">g</span><span class="op">$</span><span class="va">modes</span><span class="op">)</span><span class="op">[</span><span class="va">g</span><span class="op">$</span><span class="va">n_fixed</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">K</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">field_hat</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] 0.272 0.374 0.805 0.773 1.501 1.499</span></span></code></pre></div>
 <p>That recipe is the same one the temporal path uses for a random-walk
@@ -533,13 +537,17 @@ the model actually identifies.</p>
 <p>The precision
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
 is summarised in the <code>hyperparameters</code> table of
-<code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>: <code>mean</code> is the posterior mean over the
-grid, on the natural precision scale, and <code>ci_lo</code> /
-<code>ci_hi</code> give a credible interval.</p>
+<code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>: <code>median</code> is the posterior median, on
+the natural precision scale, and <code>ci_lo</code> / <code>ci_hi</code>
+give a credible interval. The <code>mean</code> column reads
+<code>Inf</code> for a precision: the default prior is exponential in
+the field’s standard deviation, which leaves the precision a tail of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>τ</mi><mrow><mi>−</mi><mn>3</mn><mi>/</mi><mn>2</mn></mrow></msup><annotation encoding="application/x-tex">\tau^{-3/2}</annotation></semantics></math>
+and no posterior mean.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"mean"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;   parameter     mean    ci_lo    ci_hi</span></span>
-<span><span class="co">#&gt; 1       tau 4.851152 1.667424 10.75661</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;   parameter median    ci_lo    ci_hi</span></span>
+<span><span class="co">#&gt; 1       tau 4.3559 1.667424 10.75661</span></span></code></pre></div>
 <p>A larger
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
 would mean a stiffer penalty on neighbour differences and a flatter

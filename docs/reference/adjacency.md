@@ -207,16 +207,16 @@ g
 #>   pass $adjacency to spatial(graph = ) and node_index() to remap data
 g$adjacency
 #> 9 x 9 sparse Matrix of class "dgCMatrix"
-#>                        
-#>  [1,] . 1 . 1 1 . . . .
-#>  [2,] 1 . 1 1 1 1 . . .
-#>  [3,] . 1 . . 1 1 . . .
-#>  [4,] 1 1 . . 1 . 1 1 .
-#>  [5,] 1 1 1 1 . 1 1 1 1
-#>  [6,] . 1 1 . 1 . . 1 1
-#>  [7,] . . . 1 1 . . 1 .
-#>  [8,] . . . 1 1 1 1 . 1
-#>  [9,] . . . . 1 1 . 1 .
+#>    c1 c2 c3 c4 c5 c6 c7 c8 c9
+#> c1  .  1  .  1  1  .  .  .  .
+#> c2  1  .  1  1  1  1  .  .  .
+#> c3  .  1  .  .  1  1  .  .  .
+#> c4  1  1  .  .  1  .  1  1  .
+#> c5  1  1  1  1  .  1  1  1  1
+#> c6  .  1  1  .  1  .  .  1  1
+#> c7  .  .  .  1  1  .  .  1  .
+#> c8  .  .  .  1  1  1  1  .  1
+#> c9  .  .  .  .  1  1  .  1  .
 
 # Second-order (24-neighbour) queen contiguity: any order is settable
 g2 <- adjacency(grid, id = "cell", order = 2)

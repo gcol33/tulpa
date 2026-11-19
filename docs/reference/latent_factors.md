@@ -9,6 +9,9 @@ latent_factors(fit, ...)
 
 # Default S3 method
 latent_factors(fit, summary = TRUE, probs = c(0.025, 0.5, 0.975), ...)
+
+# S3 method for class 'tulpa_factor_fit'
+latent_factors(fit, summary = TRUE, probs = c(0.025, 0.5, 0.975), ...)
 ```
 
 ## Arguments

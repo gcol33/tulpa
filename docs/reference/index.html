@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -33,21 +33,44 @@
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -75,7 +98,7 @@
 
       <dl><dt>
 
-          <code><a href="tulpa.html">tulpa()</a></code>
+          <code><a href="tulpa.html">print(<i>&lt;tulpa_factor_fit&gt;</i>)</a></code> <code><a href="tulpa.html">tulpa()</a></code>
 
         </dt>
         <dd>Fit a tulpa model</dd>
@@ -89,17 +112,10 @@
 
         <dt>
 
-          <code><a href="findbars.html">findbars()</a></code>
+          <code><a href="findbars.html">findbars()</a></code> <code><a href="findbars.html">nobars()</a></code>
 
         </dt>
-        <dd>Find all bar terms in a formula's parse tree</dd>
-
-        <dt>
-
-          <code><a href="nobars.html">nobars()</a></code>
-
-        </dt>
-        <dd>Remove all bar terms from a formula's parse tree</dd>
+        <dd>Bar terms of a formula's parse tree</dd>
 
         <dt>
 
@@ -210,6 +226,27 @@
 
         <dt>
 
+          <code><a href="tulpa_re_em.html">tulpa_re_em()</a></code>
+
+        </dt>
+        <dd>Grouped random effects by Laplace-EM on a per-group oracle</dd>
+
+        <dt>
+
+          <code><a href="tulpa_re_cov_update.html">tulpa_re_cov_update()</a></code>
+
+        </dt>
+        <dd>Closed-form covariance update of a grouped random-effect EM</dd>
+
+        <dt>
+
+          <code><a href="tulpa_latent_ascent.html">tulpa_latent_ascent()</a></code>
+
+        </dt>
+        <dd>Block-coordinate ascent for a grouped model with a shared field and latent factors</dd>
+
+        <dt>
+
           <code><a href="tulpa_eb.html">tulpa_eb()</a></code>
 
         </dt>
@@ -235,6 +272,13 @@
 
         </dt>
         <dd>Adaptive Gauss-Hermite quadrature for one-RE GLMMs</dd>
+
+        <dt>
+
+          <code><a href="tulpa_gauss_hermite.html">tulpa_gauss_hermite()</a></code>
+
+        </dt>
+        <dd>Gauss-Hermite rule for the standard normal</dd>
 
         <dt>
 
@@ -331,17 +375,10 @@
 
         <dt>
 
-          <code><a href="tulpa_cache_dir.html">tulpa_cache_dir()</a></code>
+          <code><a href="tulpa_cache_dir.html">tulpa_cache_dir()</a></code> <code><a href="tulpa_cache_dir.html">tulpa_cache_clear()</a></code>
 
         </dt>
-        <dd>Default cache directory for <code><a href="../reference/tgmrf_cpp.html">tgmrf_cpp()</a></code>-compiled DLLs</dd>
-
-        <dt>
-
-          <code><a href="tulpa_cache_clear.html">tulpa_cache_clear()</a></code>
-
-        </dt>
-        <dd>Remove compiled blocks from the tgmrf_cpp() cache</dd>
+        <dd>Cache of <code><a href="../reference/tgmrf_cpp.html">tgmrf_cpp()</a></code>-compiled DLLs</dd>
 
         <dt>
 
@@ -416,6 +453,13 @@
 
         </dt>
         <dd>Proper CAR spatial structure</dd>
+
+        <dt>
+
+          <code><a href="tulpa_car_precision_Q.html">tulpa_car_precision_Q()</a></code>
+
+        </dt>
+        <dd>CAR precision matrix of an adjacency graph</dd>
 
         <dt>
 
@@ -524,7 +568,7 @@
 
         <dt>
 
-          <code><a href="temporal_rtr.html">temporal_rtr()</a></code>
+          <code><a href="temporal_rtr.html">temporal_rtr()</a></code> <code><a href="temporal_rtr.html">print(<i>&lt;tulpa_rtr&gt;</i>)</a></code>
 
         </dt>
         <dd>Restricted temporal regression (RTR)</dd>
@@ -534,7 +578,7 @@
           <code><a href="spatiotemporal.html">spatiotemporal()</a></code>
 
         </dt>
-        <dd>Spatiotemporal interaction specifications for tulpa</dd>
+        <dd>Spatiotemporal interaction specification</dd>
 
         <dt>
 
@@ -652,52 +696,10 @@
 
         <dt>
 
-          <code><a href="prior_normal.html">prior_normal()</a></code>
+          <code><a href="prior_distributions.html">prior_normal()</a></code> <code><a href="prior_distributions.html">prior_half_normal()</a></code> <code><a href="prior_distributions.html">prior_half_cauchy()</a></code> <code><a href="prior_distributions.html">prior_gamma()</a></code> <code><a href="prior_distributions.html">prior_exponential()</a></code> <code><a href="prior_distributions.html">prior_beta()</a></code> <code><a href="prior_distributions.html">prior_pc()</a></code>
 
         </dt>
-        <dd>Normal prior</dd>
-
-        <dt>
-
-          <code><a href="prior_beta.html">prior_beta()</a></code>
-
-        </dt>
-        <dd>Beta prior</dd>
-
-        <dt>
-
-          <code><a href="prior_gamma.html">prior_gamma()</a></code>
-
-        </dt>
-        <dd>Gamma prior</dd>
-
-        <dt>
-
-          <code><a href="prior_exponential.html">prior_exponential()</a></code>
-
-        </dt>
-        <dd>Exponential prior</dd>
-
-        <dt>
-
-          <code><a href="prior_half_cauchy.html">prior_half_cauchy()</a></code>
-
-        </dt>
-        <dd>Half-Cauchy prior</dd>
-
-        <dt>
-
-          <code><a href="prior_half_normal.html">prior_half_normal()</a></code>
-
-        </dt>
-        <dd>Half-normal prior</dd>
-
-        <dt>
-
-          <code><a href="prior_pc.html">prior_pc()</a></code>
-
-        </dt>
-        <dd>Penalized complexity (PC) prior</dd>
+        <dd>Prior distributions</dd>
 
         <dt>
 
@@ -791,6 +793,20 @@
 
         </dt>
         <dd>Model-averaged predictions</dd>
+
+        <dt>
+
+          <code><a href="posterior_linpred.html">posterior_linpred()</a></code>
+
+        </dt>
+        <dd>Posterior of the linear predictor</dd>
+
+        <dt>
+
+          <code><a href="latent_effects.html">latent_effects()</a></code>
+
+        </dt>
+        <dd>Latent block effects per coordinate</dd>
 
         <dt>
 
@@ -1036,31 +1052,10 @@
 
         <dt>
 
-          <code><a href="test_uniformity.html">test_uniformity()</a></code>
+          <code><a href="simulation_tests.html">test_uniformity()</a></code> <code><a href="simulation_tests.html">test_dispersion()</a></code> <code><a href="simulation_tests.html">test_outliers()</a></code> <code><a href="simulation_tests.html">test_zero_inflation()</a></code>
 
         </dt>
-        <dd>Test uniformity of PIT residuals</dd>
-
-        <dt>
-
-          <code><a href="test_dispersion.html">test_dispersion()</a></code>
-
-        </dt>
-        <dd>Test for over- or underdispersion</dd>
-
-        <dt>
-
-          <code><a href="test_outliers.html">test_outliers()</a></code>
-
-        </dt>
-        <dd>Test for outliers (simulation envelope)</dd>
-
-        <dt>
-
-          <code><a href="test_zero_inflation.html">test_zero_inflation()</a></code>
-
-        </dt>
-        <dd>Test for zero inflation</dd>
+        <dd>Simulation-based residual tests</dd>
 
         <dt>
 
@@ -1101,7 +1096,7 @@
 
       <dl><dt>
 
-          <code><a href="sbc.html">sbc()</a></code> <code><a href="sbc.html">print(<i>&lt;sbc&gt;</i>)</a></code> <code><a href="sbc.html">summary(<i>&lt;sbc&gt;</i>)</a></code> <code><a href="sbc.html">print(<i>&lt;sbc_summary&gt;</i>)</a></code> <code><a href="sbc.html">plot(<i>&lt;sbc&gt;</i>)</a></code>
+          <code><a href="sbc.html">sbc()</a></code> <code><a href="sbc.html">print(<i>&lt;tulpa_sbc&gt;</i>)</a></code> <code><a href="sbc.html">summary(<i>&lt;tulpa_sbc&gt;</i>)</a></code> <code><a href="sbc.html">print(<i>&lt;tulpa_sbc_summary&gt;</i>)</a></code> <code><a href="sbc.html">plot(<i>&lt;tulpa_sbc&gt;</i>)</a></code>
 
         </dt>
         <dd>Simulation-based calibration</dd>
@@ -1124,52 +1119,17 @@
 
       <dl><dt>
 
-          <code><a href="plot_rhat.html">plot_rhat()</a></code>
+          <code><a href="mcmc_plots.html">plot_rhat()</a></code> <code><a href="mcmc_plots.html">plot_ess()</a></code> <code><a href="mcmc_plots.html">plot_acf()</a></code> <code><a href="mcmc_plots.html">plot_pairs()</a></code> <code><a href="mcmc_plots.html">plot_divergences()</a></code> <code><a href="mcmc_plots.html">plot_energy()</a></code>
 
         </dt>
-        <dd>Plot Rhat convergence diagnostic</dd>
-
-        <dt>
-
-          <code><a href="plot_ess.html">plot_ess()</a></code>
-
-        </dt>
-        <dd>Plot effective sample size diagnostic</dd>
-
-        <dt>
-
-          <code><a href="plot_acf.html">plot_acf()</a></code>
-
-        </dt>
-        <dd>Plot autocorrelation functions</dd>
-
-        <dt>
-
-          <code><a href="plot_energy.html">plot_energy()</a></code>
-
-        </dt>
-        <dd>Plot energy diagnostic (E-BFMI)</dd>
-
-        <dt>
-
-          <code><a href="plot_divergences.html">plot_divergences()</a></code>
-
-        </dt>
-        <dd>Plot divergent transitions</dd>
-
-        <dt>
-
-          <code><a href="plot_pairs.html">plot_pairs()</a></code>
-
-        </dt>
-        <dd>Plot bivariate parameter posteriors (pairs plot)</dd>
+        <dd>MCMC diagnostic plots</dd>
 
         <dt>
 
           <code><a href="plot_diagnostics.html">plot_diagnostics()</a></code>
 
         </dt>
-        <dd>Diagnostic plotting functions for tulpa models</dd>
+        <dd>Multi-Panel Diagnostic Figure</dd>
 
         <dt>
 
@@ -1196,24 +1156,17 @@
 
       <dl><dt>
 
-          <code><a href="ccd_grid.html">ccd_grid()</a></code>
+          <code><a href="ccd_grid.html">ccd_grid()</a></code> <code><a href="ccd_grid.html">ccd_to_theta()</a></code> <code><a href="ccd_grid.html">ccd_weights()</a></code>
 
         </dt>
         <dd>Central composite design (CCD) grid for nested-Laplace integration</dd>
 
         <dt>
 
-          <code><a href="ccd_weights.html">ccd_weights()</a></code>
+          <code><a href="tulpa_ccd_outer_grid.html">tulpa_ccd_outer_grid()</a></code>
 
         </dt>
-        <dd>Corrected R-INLA CCD integration weights</dd>
-
-        <dt>
-
-          <code><a href="ccd_to_theta.html">ccd_to_theta()</a></code>
-
-        </dt>
-        <dd>Map standardised CCD coordinates to physical hyperparameters</dd>
+        <dd>Mode-centred central composite design over outer hyperparameters</dd>
 
         <dt>
 
@@ -1245,24 +1198,10 @@
 
         <dt>
 
-          <code><a href="sn_cdf.html">sn_cdf()</a></code>
+          <code><a href="skew_normal.html">sn_match()</a></code> <code><a href="skew_normal.html">sn_cdf()</a></code> <code><a href="skew_normal.html">sn_quantile()</a></code>
 
         </dt>
-        <dd>Skew-normal CDF</dd>
-
-        <dt>
-
-          <code><a href="sn_quantile.html">sn_quantile()</a></code>
-
-        </dt>
-        <dd>Skew-normal quantile</dd>
-
-        <dt>
-
-          <code><a href="sn_match.html">sn_match()</a></code>
-
-        </dt>
-        <dd>Match three cumulants to a skew-normal parameterisation</dd>
+        <dd>Skew-normal distribution matched to three cumulants</dd>
 
         <dt>
 

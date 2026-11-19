@@ -24,7 +24,7 @@ hyperparameter integration."><meta property="og:image" content="https://gillesco
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -37,21 +37,44 @@ hyperparameter integration."><meta property="og:image" content="https://gillesco
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -88,6 +111,7 @@ hyperparameter integration.</p>
 <span>  nested_laplace <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">range</span><span class="op">)</span> <span class="op">||</span> <span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">sigma</span><span class="op">)</span>,</span>
 <span>  phi <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  offset <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  beta_prior <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  re_idx <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  n_re_groups <span class="op">=</span> <span class="fl">0L</span>,</span>
 <span>  sigma_re <span class="op">=</span> <span class="fl">1</span>,</span>
@@ -140,20 +164,33 @@ use nested Laplace approximation over hyperparameters.</p></dd>
 
 <dt id="arg-phi">phi<a class="anchor" aria-label="anchor" href="#arg-phi"></a></dt>
 <dd><p>Dispersion passed to the family, held fixed. One convention at
-every door: for <code>gaussian</code> / <code>lognormal</code> this is the residual VARIANCE
-(the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size, <code>gamma</code> the
-shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and <code>poisson</code>
-ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
-<p>Defaulted, it conditions at 1 and says so with a warning, since for a
-family that reads a dispersion that is a modelling choice rather than a
-neutral value. <code>fit$phi_estimated</code> records whether the value on the fit
-was estimated or conditioned on.</p></dd>
+every door: for <code>gaussian</code> / <code>lognormal</code>, and for a censored or truncated
+gaussian response (<code>y | cens()</code>, <code>y | trunc()</code> in <code><a href="tulpa.html">tulpa()</a></code>), this is the
+residual VARIANCE (the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size,
+<code>gamma</code> the shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and
+<code>poisson</code> ignore it. The compiled kernels parameterize the variance
+families by the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
+<p>Left out of a <code><a href="tulpa.html">tulpa()</a></code> call whose <code>phi</code> is a gaussian residual variance,
+on <code>mode = "auto"</code>, <code>"structured"</code> or a nested-Laplace mode, it is
+integrated as an outer-grid axis rather than set (see <code><a href="tulpa.html">tulpa()</a></code>).
+Defaulted anywhere else, it conditions at 1 and says so with a warning,
+since for a family that reads a dispersion that is a modelling choice
+rather than a neutral value. <code>fit$phi_estimated</code> records whether the value
+on the fit was estimated or conditioned on.</p></dd>
 
 
 <dt id="arg-offset">offset<a class="anchor" aria-label="anchor" href="#arg-offset"></a></dt>
 <dd><p>Optional fixed additive term on the linear predictor
 (<code>eta = offset + X beta + A w</code>), length <code>length(y)</code>; <code>NULL</code> -&gt; no offset.</p></dd>
+
+
+<dt id="arg-beta-prior">beta_prior<a class="anchor" aria-label="anchor" href="#arg-beta-prior"></a></dt>
+<dd><p>Optional Gaussian prior on the fixed effects, as
+<code>list(mean, sd)</code> with each entry a scalar or a length-<code>ncol(X)</code> vector
+(<code>sd = Inf</code> leaves a coefficient unpenalized). <code>NULL</code> (default) is the
+engine default <code>beta ~ N(0, 2.5^2)</code>. Every inner solve carries it, so the
+nested marginal over <code>(range, sigma)</code> is the marginal under this prior.
+Under <code>mode = "nuts"</code> it must be mean-zero with one scalar <code>sd</code>.</p></dd>
 
 
 <dt id="arg-re-idx-n-re-groups-sigma-re">re_idx, n_re_groups, sigma_re<a class="anchor" aria-label="anchor" href="#arg-re-idx-n-re-groups-sigma-re"></a></dt>
@@ -188,13 +225,19 @@ evidence declines. Not read by <code>mode = "nuts"</code>, where <code>"flat"</c
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
 <dd><p>A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above). Recognized entries:</p><ul><li><p><code>method</code>: hyperparameter integration backend when nested Laplace is
-active. <code>"ccd"</code> (default) uses a central composite design centered on
-the joint posterior mode of <code>(range, sigma)</code>, oriented by the local
-Hessian (9 design points instead of <code>n_grid^2</code>), folding the PC priors
-from <code>spatial$prior_range</code> / <code>spatial$prior_sigma</code> into the integrated
-marginal and falling back to <code>"grid"</code> if the surface is too flat for a
-Hessian-based design. <code>"grid"</code> uses a rectangular grid in
-<code>log(range) x log(sigma)</code> around the prior modes.</p></li>
+active. <code>"auto"</code> (default) finds the joint posterior mode of
+<code>(log range, log sigma)</code> and lays the aligned tensor there: 21 x 21
+nodes over +/- 6 SDs of the whitened coordinates, oriented by the
+Cholesky factor of the inverse mode Hessian so the nodes follow the
+posterior's correlation, with the PC priors from
+<code>spatial$prior_range</code> / <code>spatial$prior_sigma</code> folded into the
+integrated marginal. <code>"ccd"</code> lays the 9-point central composite design
+in the same orientation instead: 9 inner solves against 441, and a
+95\<!-- % interval read off its moments, which on a curved (range, sigma) -->
+ridge falls well short of the upper tail. Either falls back to
+<code>"grid"</code> if the surface is too flat for a Hessian-based design.
+<code>"grid"</code> uses a rectangular grid in <code>log(range) x log(sigma)</code> around
+the prior modes.</p></li>
 <li><p><code>n_grid</code>: grid points per hyperparameter dimension for
 <code>method = "grid"</code> (ignored under <code>"ccd"</code>). Default 5.</p></li>
 <li><p><code>diagnose_k</code>: if TRUE (default), compute the outer
@@ -210,7 +253,7 @@ deeper quantile of the weight distribution (gcol33/tulpa#631).</p></li>
 order statistics. Silently capped at 20% of the draws, beyond which
 body ratios enter the tail and bias the shape.</p></li>
 <li><p><code>mode_find</code>: tuning for the outer <code>(range, sigma)</code> mode-find under
-<code>method = "ccd"</code>, as <code>list(factr =, ndeps =, maxit =)</code>; supply any
+<code>method = "auto"</code> or <code>"ccd"</code>, as <code>list(factr =, ndeps =, maxit =)</code>; supply any
 subset. <code>ndeps</code> is the central-difference step for <code><a href="https://rdrr.io/r/stats/optim.html" class="external-link">optim()</a></code>'s
 numerical gradient on the log scale (default 1e-2): it must clear the
 inner solver's convergence tolerance, and a step wide enough that its
@@ -222,11 +265,17 @@ the relative-reduction stop in units of <code>.Machine$double.eps</code> (defaul
 <li><p><code>max_iter</code>: maximum Newton iterations. Default 100.</p></li>
 <li><p><code>tol</code>: Newton convergence tolerance. Default 1e-6.</p></li>
 <li><p><code>n_threads</code>: OpenMP threads. Default 1.</p></li>
+<li><p><code>n_threads_outer</code>: concurrent outer-grid cells. Default 1.</p></li>
 <li><p><code>checkpoint</code>: grid-cell checkpoint/resume spec
 <code>list(path =, resume =)</code>. Each solved <code>(range, sigma)</code> cell is appended
 to <code>path</code>; a <code>resume = TRUE</code> run loads the finished cells and re-solves
 only the rest, so a killed or rebooted fit resumes instead of
 restarting. <code>resume = FALSE</code> starts a fresh file. Default <code>NULL</code> (off).</p></li>
+<li><p><code>progress</code>, <code>progress.every</code>, <code>progress.file</code>,
+<code>progress.throttle</code>: the integration grid's progress reporter, as on
+<code><a href="tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code>: whether to print (default <code>TRUE</code>), every how
+many cells, a heartbeat file to overwrite, and the minimum seconds
+between lines. The mode-find and Pareto-k solves do not report.</p></li>
 </ul></dd>
 
 </dl></div>
@@ -273,7 +322,10 @@ Gaussian models by using integrated nested Laplace approximations.
 <span class="r-in"><span>  <span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">fit_spde</span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, spatial <span class="op">=</span> <span class="va">spec</span>, family <span class="op">=</span> <span class="st">"poisson"</span><span class="op">)</span></span></span>
 <span class="r-in"><span>  <span class="va">fit</span><span class="op">$</span><span class="va">nested</span><span class="op">$</span><span class="va">range_mean</span></span></span>
 <span class="r-in"><span><span class="op">}</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0.07370861</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [nested-laplace] preparing joint Hessian sparsity pattern</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [nested-laplace] 1/441 cells (0%) | elapsed 0s | ETA &gt;=2s | 0.00s/cells</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [nested-laplace] 441/441 cells (100%) | elapsed 1s | ETA done | 0.00s/cells</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0.07330069</span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
     </div>

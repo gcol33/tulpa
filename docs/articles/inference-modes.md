@@ -1,26 +1,7 @@
 # Inference modes
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -106,7 +87,7 @@ inference_mode_info()
 #>   tulpa(..., mode = 'structured') # Tier 2
 #>   tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)
 #> 
-#> Backends ([R] = tulpa(mode =) dispatch, [direct] = has an R fitter but tulpa(mode =) refuses it -- call the fitter itself, [C-ABI] = model-package kernel only):
+#> Backends ([R] = tulpa(mode =) dispatch, [C-ABI] = model-package kernel only):
 #>   [R]     mode = 'hmc'               # Tier 1 (Exact)
 #>   [R]     mode = 'ess'               # Tier 1 (Exact)
 #>   [R]     mode = 'gibbs'             # Tier 1 (Exact)
@@ -121,7 +102,7 @@ inference_mode_info()
 #>   [R]     mode = 'ep'                # Tier 2 (Structured)
 #>   [R]     mode = 'eb'                # Tier 2 (Structured)
 #>   [R]     mode = 'nested_laplace'    # Tier 2 (Structured)
-#>   [direct] tulpa_nested_laplace_joint() # Tier 2 (Structured)
+#>   [R]     mode = 'nested_laplace_joint' # Tier 2 (Structured)
 #>   [R]     mode = 'spde'              # Tier 2 (Structured)
 #>   [R]     mode = 'sghmc'             # Tier 3 (Optimized)
 #>   [R]     mode = 'sgld'              # Tier 3 (Optimized)
@@ -268,6 +249,7 @@ summary(fit_big)$inference[c("backend", "inference_tier", "selection_reason")]
 #> 
 #> $selection_reason
 #> [1] "large dataset (n=60,000)"
+big_coef <- coef(fit_big)
 ```
 
 Here auto stepped down to the Laplace path. The reason names the dataset
@@ -277,9 +259,9 @@ Gaussian likelihood is exact anyway. The estimates land on the truth.
 
 ``` r
 
-coef(fit_big)
+big_coef
 #> (Intercept)           x 
-#>   0.5077508   1.2038241
+#>   0.5043101   1.2011652
 ```
 
 Two models, two different branches, each recorded. The same rule that
@@ -294,15 +276,12 @@ records that you overrode it rather than papering over the change.
 
 ## The R-callable backends
 
-A backend is the concrete algorithm a mode resolves to. tulpa registers
-more backends than it exposes from R: several ship a C++ kernel
-reachable by model packages that link against tulpa, with no R entry
-point yet. The
+A backend is the concrete algorithm a mode resolves to. The
 [`inference_mode_info()`](https://gillescolling.com/tulpa/reference/inference_mode_info.md)
-map tags each one, `[R]` for callable from R and `[C-ABI]` for the
-kernel-only ones. Asking for a C-ABI backend by name from R errors with
-a message that names the missing entry point rather than pretending to
-dispatch. This section covers the backends you can drive from R today.
+map tags each one: `[R]` when `tulpa(mode = )` dispatches to it, and
+`[C-ABI]` when only a model package that links against tulpa can reach
+its C++ kernel. In this version every backend carries the `[R]` tag.
+This section covers them.
 
 ### laplace (Tier 2)
 
@@ -375,16 +354,12 @@ warmup toward an acceptance rate near 0.574.
 
 fit_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
-                  control = list(n_iter = 450, warmup = 150))
-#> Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.02, bulk-ESS
-#> 72; (Intercept): Rhat 1.00, bulk-ESS 82. Its estimates and intervals are not
-#> yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =
-#> 'hmc'; see check_diagnostics().
+                  control = list(n_iter = 2000, warmup = 500))
 coef(fit_mala)
 #> (Intercept)           x 
-#>  -0.2706339   0.8233584
+#>  -0.2523402   0.8204809
 summary(fit_mala)$reliability$mean_accept
-#> [1] 0.7
+#> [1] 0.6613333
 ```
 
 MALA earns its keep when you want exact posterior moments at moderate
@@ -408,12 +383,12 @@ Laplace was biased.
 
 fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6,
-                 control = list(n_iter = 450, warmup = 150))
+                 control = list(n_iter = 2000, warmup = 500))
 coef(fit_imh)
 #> (Intercept)           x 
-#>  -0.2746751   0.8342437
+#>  -0.2401248   0.8240074
 summary(fit_imh)$reliability$mean_accept
-#> [1] 0.8833333
+#> [1] 0.562
 ```
 
 The acceptance here is high, which says the Laplace fit was already
@@ -438,13 +413,13 @@ returns.
 
 round(coef(fit_auto), 3)
 #> (Intercept)           x 
-#>      -0.165       0.616
+#>      -0.170       0.626
 draws_auto <- posterior_sample(fit_auto)
 tail(colnames(draws_auto), 3)
 #> [1] "phi_spatial[18]" "phi_spatial[19]" "phi_spatial[20]"
 round(colMeans(draws_auto)[c("log_tau_spatial", "phi_spatial[1]")], 3)
 #> log_tau_spatial  phi_spatial[1] 
-#>           1.265           0.421
+#>           0.893           0.422
 ```
 
 Gibbs is the right call when the family is conjugate-friendly under the
@@ -459,9 +434,9 @@ integrates a random-effect covariance matrix rather than conditioning on
 a fixed standard deviation. A random-slope term such as `(1 + x | g)`
 has no scalar `sigma_re` to condition on, so when a slope term is
 present the Laplace path redirects to this backend automatically and
-integrates the covariance with a CCD design and a PC or LKJ prior. You
-reach it not by name but by writing a slope term and fitting at
-`mode = "laplace"`.
+integrates the covariance on an aligned tensor grid and a PC or LKJ
+prior. You reach it not by name but by writing a slope term and fitting
+at `mode = "laplace"`.
 
 ``` r
 
@@ -480,6 +455,9 @@ fit_rc <- tulpa(y ~ x + (1 + x | g), data = dsl,
                 family = "binomial", mode = "laplace")
 summary(fit_rc)$inference$backend
 #> [1] "re_cov_nested"
+rc_cov <- attr(VarCorr(fit_rc), "cov")$g
+rc_k <- attr(diagnostics(fit_rc), "pareto_k")
+#> Device: inference=cpu, sparse_cholesky=cpu
 ```
 
 The slope term routed the fit to `re_cov_nested` without being named.
@@ -492,14 +470,14 @@ attribute, one per random-effect term.
 
 ``` r
 
-round(attr(VarCorr(fit_rc), "cov")$g, 3)
+round(rc_cov, 3)
 #>             (Intercept)     x
-#> (Intercept)       0.994 0.249
-#> x                 0.249 0.553
+#> (Intercept)       0.998 0.251
+#> x                 0.251 0.551
 #> attr(,"correlation")
 #>             (Intercept)         x
-#> (Intercept)   1.0000000 0.3355217
-#> x             0.3355217 1.0000000
+#> (Intercept)   1.0000000 0.3381203
+#> x             0.3381203 1.0000000
 ```
 
 Integrating the covariance through a Gaussian grid over the
@@ -509,8 +487,8 @@ reports.
 
 ``` r
 
-round(attr(diagnostics(fit_rc), "pareto_k"), 2)
-#> [1] 0.48
+round(rc_k, 2)
+#> [1] 0.61
 ```
 
 Here k-hat sits below the 0.7 threshold, so the Gaussian grid fits the
@@ -566,11 +544,7 @@ t_lap  <- system.time(
 t_mala <- system.time(
   f_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
-                  control = list(n_iter = 450, warmup = 150)))[["elapsed"]]
-#> Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.02, bulk-ESS
-#> 47; (Intercept): Rhat 1.00, bulk-ESS 66. Its estimates and intervals are not
-#> yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =
-#> 'hmc'; see check_diagnostics().
+                  control = list(n_iter = 2000, warmup = 500)))[["elapsed"]]
 t_pf   <- system.time(
   f_pf   <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "pathfinder", sigma_re = 0.6,
@@ -596,9 +570,9 @@ data.frame(
   seconds  = round(c(t_lap, t_mala, t_pf), 3)
 )
 #>      backend tier slope slope_se seconds
-#> 1    laplace    2 0.800    0.128    0.00
-#> 2       mala    1 0.863    0.140    0.11
-#> 3 pathfinder    2 0.802    0.130    0.03
+#> 1    laplace    2 0.800    0.128    0.01
+#> 2       mala    1 0.834    0.132    0.38
+#> 3 pathfinder    2 0.808    0.124    0.04
 ```
 
 Three patterns sit in this table. The slope estimates agree across all
@@ -611,6 +585,41 @@ high IMH acceptance earlier. Timing is where the methods part ways. The
 deterministic Laplace fit returns fastest. Pathfinder costs an
 optimisation plus a draw step. MALA pays for its full chain of gradient
 evaluations, and that cost is the visible price of the exact guarantee.
+
+The same comparison as a figure: each backend’s 95% interval for the
+slope against the value it was simulated at, next to the elapsed time of
+each fit.
+
+``` r
+
+fits  <- list(laplace = f_lap, mala = f_mala, pathfinder = f_pf)
+ci    <- t(vapply(fits, function(f) confint(f)["x", ], numeric(2)))
+est   <- vapply(fits, function(f) coef(f)[["x"]], numeric(1))
+secs  <- c(t_lap, t_mala, t_pf)
+op <- par(mfrow = c(1, 2), mar = c(4, 7, 1, 1))
+plot(est, seq_along(fits), xlim = range(ci, 1.0), ylim = c(0.5, 3.5),
+     pch = 19, yaxt = "n", xlab = "slope", ylab = "")
+segments(ci[, 1], seq_along(fits), ci[, 2], seq_along(fits), lwd = 2)
+axis(2, at = seq_along(fits), labels = names(fits), las = 1)
+abline(v = 1.0, col = "darkorange", lwd = 2)
+barplot(secs, names.arg = names(fits), horiz = TRUE, las = 1,
+        col = adjustcolor("steelblue", 0.6), border = NA, xlab = "seconds")
+```
+
+![Left: 95% credible intervals for the slope from the Laplace, MALA and
+Pathfinder fits, with a vertical line at the simulated slope of 1.
+Right: elapsed seconds for each of the three fits as horizontal
+bars.](inference-modes_files/figure-html/timing-plot-1.png)
+
+``` r
+
+par(op)
+```
+
+All three intervals cover the simulated slope (orange line) and overlap
+almost entirely, so the backends agree on the width as well as the
+centre. The right panel is where they differ: the bar lengths are the
+price of each backend on this model, with the MALA chain the longest.
 
 Read the table as a guarantee you bought, not effort you wasted. The
 sampler purchased a promise this model did not need and another model
@@ -640,13 +649,14 @@ divergence count.
 
 glance(f_mala)[c("n_samples", "mean_accept", "n_divergent")]
 #>   n_samples mean_accept n_divergent
-#> 1       300        0.73          NA
+#> 1      1500   0.6033333          NA
 ```
 
-An acceptance rate inside the healthy band and no divergences say the
-MALA chain mixed well, which is the prerequisite for trusting its
-intervals. Without that check, a Tier 1 fit is only nominally exact: a
-stuck chain reports a posterior it never explored.
+An acceptance rate inside the healthy band says the MALA chain mixed
+well, which is the prerequisite for trusting its intervals.
+`n_divergent` is `NA` because the MALA fit records no divergence count.
+Without that check, a Tier 1 fit is only nominally exact: a stuck chain
+reports a posterior it never explored.
 
 ## Choosing a mode
 
@@ -673,8 +683,7 @@ for when to depart from it.
   acceptance is low, or when you simply need intervals you can quote
   without the Gaussian caveat, the gradient sampler is the next step.
   Budget a few thousand iterations with warmup at a third to a half of
-  them, and watch the acceptance rate settle near 0.574 and the
-  divergence count stay at zero.
+  them, and watch the acceptance rate settle near 0.574.
 
 - **Use `mode = "pathfinder"` when you want draws cheaply.** It costs
   more than Laplace and far less than MALA, returns a sample you can
@@ -707,8 +716,8 @@ guarantee on purpose.
 ## See also
 
 - [`inference_mode_info()`](https://gillescolling.com/tulpa/reference/inference_mode_info.md)
-  prints the full tier and backend map, with the R-callable and
-  C-ABI-only backends tagged.
+  prints the full tier and backend map, with each backend’s entry point
+  tagged.
 
 - The Get started article covers the fitting workflow.
 

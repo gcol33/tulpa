@@ -15,7 +15,8 @@ spatial_car(
   group_var = NULL,
   proper = FALSE,
   shared = NULL,
-  parameterization = c("standard", "collapsed")
+  parameterization = c("auto", "standard", "collapsed"),
+  prior_sigma = NULL
 )
 ```
 
@@ -47,7 +48,18 @@ spatial_car(
 
 - parameterization:
 
-  `"standard"` (default) or `"collapsed"` (deprecated).
+  `"auto"` scales field amplitudes using prior and observation
+  information; `"standard"` samples effects directly. For ICAR and BYM2,
+  `"collapsed"` analytically integrates Gaussian spatial effects under
+  NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+  collapsing is refused; use `"auto"` for full-field NUTS.
+
+- prior_sigma:
+
+  Optional PC prior on the field's standard deviation, `c(U, alpha)`
+  with \\P(\sigma \> U) = \alpha\\, read by the nested-Laplace and
+  sampler paths, carried to the precision for CAR and ICAR fields.
+  `NULL` uses the engine's default anchor \\P(\sigma \> 3) = 0.01\\.
 
 ## Value
 

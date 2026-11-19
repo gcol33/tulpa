@@ -4,15 +4,15 @@
 
 The main fitter, its formula surface, and the mode / family helpers.
 
-- [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) : Fit
+- [`print(`*`<tulpa_factor_fit>`*`)`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) : Fit
   a tulpa model
 - [`tulpa_parse_formula()`](https://gillescolling.com/tulpa/reference/tulpa_parse_formula.md)
   [`print(`*`<tulpa_parsed_formula>`*`)`](https://gillescolling.com/tulpa/reference/tulpa_parse_formula.md)
   : Parse a mixed-model formula
 - [`findbars()`](https://gillescolling.com/tulpa/reference/findbars.md)
-  : Find all bar terms in a formula's parse tree
-- [`nobars()`](https://gillescolling.com/tulpa/reference/nobars.md) :
-  Remove all bar terms from a formula's parse tree
+  [`nobars()`](https://gillescolling.com/tulpa/reference/findbars.md) :
+  Bar terms of a formula's parse tree
 - [`inference_mode_info()`](https://gillescolling.com/tulpa/reference/inference_mode_info.md)
   : Print inference mode information
 - [`validate_mode()`](https://gillescolling.com/tulpa/reference/validate_mode.md)
@@ -53,6 +53,13 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
 - [`tulpa_re_aghq()`](https://gillescolling.com/tulpa/reference/tulpa_re_aghq.md)
   : Adaptive Gauss-Hermite refinement of a grouped random-effect
   covariance
+- [`tulpa_re_em()`](https://gillescolling.com/tulpa/reference/tulpa_re_em.md)
+  : Grouped random effects by Laplace-EM on a per-group oracle
+- [`tulpa_re_cov_update()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_update.md)
+  : Closed-form covariance update of a grouped random-effect EM
+- [`tulpa_latent_ascent()`](https://gillescolling.com/tulpa/reference/tulpa_latent_ascent.md)
+  : Block-coordinate ascent for a grouped model with a shared field and
+  latent factors
 - [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)
   : Empirical-Bayes random-effect covariances
 - [`tulpa_em_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_em_laplace.md)
@@ -61,6 +68,8 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
   : Generic Monte-Carlo EM driver
 - [`agq_fit()`](https://gillescolling.com/tulpa/reference/agq_fit.md) :
   Adaptive Gauss-Hermite quadrature for one-RE GLMMs
+- [`tulpa_gauss_hermite()`](https://gillescolling.com/tulpa/reference/tulpa_gauss_hermite.md)
+  : Gauss-Hermite rule for the standard normal
 - [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)
   : Fit a spatial model using SPDE Laplace approximation
 - [`tulpa_ep()`](https://gillescolling.com/tulpa/reference/tulpa_ep.md)
@@ -102,14 +111,12 @@ Laplace, nested Laplace, and the free-Sigma random-effect backends.
   : User-defined GMRF latent block, compiled C++ backend
 
 - [`tulpa_cache_dir()`](https://gillescolling.com/tulpa/reference/tulpa_cache_dir.md)
+  [`tulpa_cache_clear()`](https://gillescolling.com/tulpa/reference/tulpa_cache_dir.md)
   :
 
-  Default cache directory for
+  Cache of
   [`tgmrf_cpp()`](https://gillescolling.com/tulpa/reference/tgmrf_cpp.md)-compiled
   DLLs
-
-- [`tulpa_cache_clear()`](https://gillescolling.com/tulpa/reference/tulpa_cache_clear.md)
-  : Remove compiled blocks from the tgmrf_cpp() cache
 
 - [`mala()`](https://gillescolling.com/tulpa/reference/mala.md) :
   Metropolis-adjusted Langevin algorithm (MALA)
@@ -139,6 +146,8 @@ Spatial, temporal, and varying-coefficient constructors.
   : CAR / ICAR spatial structure
 - [`spatial_car_proper()`](https://gillescolling.com/tulpa/reference/spatial_car_proper.md)
   : Proper CAR spatial structure
+- [`tulpa_car_precision_Q()`](https://gillescolling.com/tulpa/reference/tulpa_car_precision_Q.md)
+  : CAR precision matrix of an adjacency graph
 - [`spatial_bym2()`](https://gillescolling.com/tulpa/reference/spatial_bym2.md)
   : BYM2 spatial structure
 - [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md)
@@ -179,9 +188,10 @@ Spatial, temporal, and varying-coefficient constructors.
   [`print(`*`<tulpa_tvc>`*`)`](https://gillescolling.com/tulpa/reference/temporal_tvc.md)
   : Time-varying coefficient structure
 - [`temporal_rtr()`](https://gillescolling.com/tulpa/reference/temporal_rtr.md)
+  [`print(`*`<tulpa_rtr>`*`)`](https://gillescolling.com/tulpa/reference/temporal_rtr.md)
   : Restricted temporal regression (RTR)
 - [`spatiotemporal()`](https://gillescolling.com/tulpa/reference/spatiotemporal.md)
-  : Spatiotemporal interaction specifications for tulpa
+  : Spatiotemporal interaction specification
 - [`spatiotemporal_gp()`](https://gillescolling.com/tulpa/reference/spatiotemporal_gp.md)
   : Non-separable spatiotemporal GP
 - [`svc()`](https://gillescolling.com/tulpa/reference/svc.md)
@@ -244,26 +254,14 @@ The prior surface and the individual prior builders.
   [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
   from a tulpa spec object
 
-- [`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_normal.md)
-  : Normal prior
-
-- [`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_beta.md)
-  : Beta prior
-
-- [`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_gamma.md)
-  : Gamma prior
-
-- [`prior_exponential()`](https://gillescolling.com/tulpa/reference/prior_exponential.md)
-  : Exponential prior
-
-- [`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_half_cauchy.md)
-  : Half-Cauchy prior
-
-- [`prior_half_normal()`](https://gillescolling.com/tulpa/reference/prior_half_normal.md)
-  : Half-normal prior
-
-- [`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_pc.md)
-  : Penalized complexity (PC) prior
+- [`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
+  [`prior_half_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
+  [`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
+  [`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
+  [`prior_exponential()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
+  [`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
+  [`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
+  : Prior distributions
 
 - [`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md)
   : PC + LKJ hyperprior for a random-effect covariance
@@ -298,6 +296,10 @@ The prior surface and the individual prior builders.
   : Compare models by information criteria
 - [`model_average()`](https://gillescolling.com/tulpa/reference/model_average.md)
   : Model-averaged predictions
+- [`posterior_linpred()`](https://gillescolling.com/tulpa/reference/posterior_linpred.md)
+  : Posterior of the linear predictor
+- [`latent_effects()`](https://gillescolling.com/tulpa/reference/latent_effects.md)
+  : Latent block effects per coordinate
 - [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
   : Posterior predictive replicates
 - [`pp_check()`](https://gillescolling.com/tulpa/reference/pp_check.md)
@@ -397,14 +399,11 @@ share.
   : PIT (probability integral transform) residuals
 - [`tulpa_pit()`](https://gillescolling.com/tulpa/reference/tulpa_pit.md)
   : Probability integral transform from a predictive CDF
-- [`test_uniformity()`](https://gillescolling.com/tulpa/reference/test_uniformity.md)
-  : Test uniformity of PIT residuals
-- [`test_dispersion()`](https://gillescolling.com/tulpa/reference/test_dispersion.md)
-  : Test for over- or underdispersion
-- [`test_outliers()`](https://gillescolling.com/tulpa/reference/test_outliers.md)
-  : Test for outliers (simulation envelope)
-- [`test_zero_inflation()`](https://gillescolling.com/tulpa/reference/test_zero_inflation.md)
-  : Test for zero inflation
+- [`test_uniformity()`](https://gillescolling.com/tulpa/reference/simulation_tests.md)
+  [`test_dispersion()`](https://gillescolling.com/tulpa/reference/simulation_tests.md)
+  [`test_outliers()`](https://gillescolling.com/tulpa/reference/simulation_tests.md)
+  [`test_zero_inflation()`](https://gillescolling.com/tulpa/reference/simulation_tests.md)
+  : Simulation-based residual tests
 - [`check_model()`](https://gillescolling.com/tulpa/reference/check_model.md)
   : Diagnostic panel plot
 - [`spatial_range()`](https://gillescolling.com/tulpa/reference/spatial_range.md)
@@ -422,10 +421,10 @@ these score whether an inference algorithm’s posteriors are calibrated
 across the generative model, by reading the whole marginal CDF.
 
 - [`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md)
-  [`print(`*`<sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
-  [`summary(`*`<sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
-  [`print(`*`<sbc_summary>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
-  [`plot(`*`<sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
+  [`print(`*`<tulpa_sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
+  [`summary(`*`<tulpa_sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
+  [`print(`*`<tulpa_sbc_summary>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
+  [`plot(`*`<tulpa_sbc>`*`)`](https://gillescolling.com/tulpa/reference/sbc.md)
   : Simulation-based calibration
 - [`sbc_mixture()`](https://gillescolling.com/tulpa/reference/sbc_predictive.md)
   [`sbc_normal()`](https://gillescolling.com/tulpa/reference/sbc_predictive.md)
@@ -436,20 +435,15 @@ across the generative model, by reading the whole marginal CDF.
 
 ## Plots
 
-- [`plot_rhat()`](https://gillescolling.com/tulpa/reference/plot_rhat.md)
-  : Plot Rhat convergence diagnostic
-- [`plot_ess()`](https://gillescolling.com/tulpa/reference/plot_ess.md)
-  : Plot effective sample size diagnostic
-- [`plot_acf()`](https://gillescolling.com/tulpa/reference/plot_acf.md)
-  : Plot autocorrelation functions
-- [`plot_energy()`](https://gillescolling.com/tulpa/reference/plot_energy.md)
-  : Plot energy diagnostic (E-BFMI)
-- [`plot_divergences()`](https://gillescolling.com/tulpa/reference/plot_divergences.md)
-  : Plot divergent transitions
-- [`plot_pairs()`](https://gillescolling.com/tulpa/reference/plot_pairs.md)
-  : Plot bivariate parameter posteriors (pairs plot)
+- [`plot_rhat()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md)
+  [`plot_ess()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md)
+  [`plot_acf()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md)
+  [`plot_pairs()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md)
+  [`plot_divergences()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md)
+  [`plot_energy()`](https://gillescolling.com/tulpa/reference/mcmc_plots.md)
+  : MCMC diagnostic plots
 - [`plot_diagnostics()`](https://gillescolling.com/tulpa/reference/plot_diagnostics.md)
-  : Diagnostic plotting functions for tulpa models
+  : Multi-Panel Diagnostic Figure
 - [`plot_map()`](https://gillescolling.com/tulpa/reference/plot_map.md)
   : Plot spatial predictions as a map
 - [`plot_map_panel()`](https://gillescolling.com/tulpa/reference/plot_map_panel.md)
@@ -461,13 +455,12 @@ The node designs the outer hyperparameter integration is laid on, the
 axis-provenance surface, and the small numerical helpers.
 
 - [`ccd_grid()`](https://gillescolling.com/tulpa/reference/ccd_grid.md)
+  [`ccd_to_theta()`](https://gillescolling.com/tulpa/reference/ccd_grid.md)
+  [`ccd_weights()`](https://gillescolling.com/tulpa/reference/ccd_grid.md)
   : Central composite design (CCD) grid for nested-Laplace integration
 
-- [`ccd_weights()`](https://gillescolling.com/tulpa/reference/ccd_weights.md)
-  : Corrected R-INLA CCD integration weights
-
-- [`ccd_to_theta()`](https://gillescolling.com/tulpa/reference/ccd_to_theta.md)
-  : Map standardised CCD coordinates to physical hyperparameters
+- [`tulpa_ccd_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_ccd_outer_grid.md)
+  : Mode-centred central composite design over outer hyperparameters
 
 - [`hyper_axis_spec()`](https://gillescolling.com/tulpa/reference/hyper_axis_spec.md)
   [`print(`*`<tulpa_hyper_axis_spec>`*`)`](https://gillescolling.com/tulpa/reference/hyper_axis_spec.md)
@@ -482,14 +475,10 @@ axis-provenance surface, and the small numerical helpers.
 - [`rubins_pool()`](https://gillescolling.com/tulpa/reference/rubins_pool.md)
   : Pool multiple imputation draws via Rubin's rules
 
-- [`sn_cdf()`](https://gillescolling.com/tulpa/reference/sn_cdf.md) :
-  Skew-normal CDF
-
-- [`sn_quantile()`](https://gillescolling.com/tulpa/reference/sn_quantile.md)
-  : Skew-normal quantile
-
-- [`sn_match()`](https://gillescolling.com/tulpa/reference/sn_match.md)
-  : Match three cumulants to a skew-normal parameterisation
+- [`sn_match()`](https://gillescolling.com/tulpa/reference/skew_normal.md)
+  [`sn_cdf()`](https://gillescolling.com/tulpa/reference/skew_normal.md)
+  [`sn_quantile()`](https://gillescolling.com/tulpa/reference/skew_normal.md)
+  : Skew-normal distribution matched to three cumulants
 
 - [`tulpa_profile()`](https://gillescolling.com/tulpa/reference/tulpa_profile.md)
   : Profile a fit by solver phase

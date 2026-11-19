@@ -34,7 +34,7 @@ fit$log_quad."><meta property="og:image" content="https://gillescolling.com/tulp
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -47,21 +47,44 @@ fit$log_quad."><meta property="og:image" content="https://gillescolling.com/tulp
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -98,7 +121,8 @@ posterior weights (with <code><a href="tulpa_theta_matrix.html">tulpa_theta_matr
 <span>  copy_slab <span class="op">=</span> <span class="st">"exponential"</span>,</span>
 <span>  close_domain <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  folded_axes <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  refining <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  refining <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  axis_support <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -136,6 +160,12 @@ correlation axis reflected at 0).</p></dd>
 <code><a href="tulpa_hyper_slice_home.html">tulpa_hyper_slice_home()</a></code>); when supplied, specs are rebuilt from the
 grid's declared cells only.</p></dd>
 
+
+<dt id="arg-axis-support">axis_support<a class="anchor" aria-label="anchor" href="#arg-axis-support"></a></dt>
+<dd><p>Optional named list of <code>c(lower, upper)</code> intervals a
+block defines its axes on (see <code><a href="tulpa_joint_axis_specs_from_grid.html">?tulpa_joint_axis_specs_from_grid</a></code>); a
+fit carries its own as <code>fit$log_hyperprior_support</code>.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -168,7 +198,7 @@ grid's declared cells only.</p></dd>
 <span class="r-in"><span><span class="va">lq</span> <span class="op">&lt;-</span> <span class="fu">tulpa_grid_log_quad</span><span class="op">(</span><span class="va">tg</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="co"># The fit's own cell weights, rebuilt from its log marginals:</span></span></span>
 <span class="r-in"><span><span class="fu"><a href="tulpa_normalise_weights_safe.html">tulpa_normalise_weights_safe</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">log_marginal</span>, log_quad <span class="op">=</span> <span class="va">lq</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0.001157234 0.021253946 0.133119591 0.361654250 0.482814980</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0.001141215 0.021064567 0.132506016 0.361327924 0.483960279</span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
     </div>

@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -280,7 +284,8 @@ called directly with the same formula and data.</p>
 <span><span class="co">#&gt;    forest:(Intercept)           forest:elev          forest:water </span></span>
 <span><span class="co">#&gt;                0.2980                1.4239                0.6869 </span></span>
 <span><span class="co">#&gt; grassland:(Intercept)        grassland:elev       grassland:water </span></span>
-<span><span class="co">#&gt;                0.5822                0.3810                0.8350</span></span></code></pre></div>
+<span><span class="co">#&gt;                0.5822                0.3810                0.8350 </span></span>
+<span><span class="co">#&gt; Device: inference=cpu</span></span></code></pre></div>
 <p>The coefficients are named <code>class:term</code>, and each one is a
 contrast with wetland. <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> adds the posterior
 standard deviations and 95% credible intervals.</p>
@@ -475,7 +480,8 @@ since the cutpoints carry the level.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Cutpoints:</span></span>
 <span><span class="co">#&gt;  sparse|low  low|medium medium|high </span></span>
-<span><span class="co">#&gt;     -1.5832     -0.2210      1.4854</span></span></code></pre></div>
+<span><span class="co">#&gt;     -1.5832     -0.2210      1.4854 </span></span>
+<span><span class="co">#&gt; Device: inference=cpu</span></span></code></pre></div>
 <p><code><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef()</a></code> returns the covariate effects only, as
 <code><a href="https://rdrr.io/pkg/MASS/man/polr.html" class="external-link">MASS::polr()</a></code> does. The cutpoints are named after the two
 classes they separate (<code>sparse|low</code>), and
@@ -740,8 +746,8 @@ of the lower classes alone.</p>
 <span><span class="co">#&gt; sparse    low medium   high </span></span>
 <span><span class="co">#&gt;    122    131    218      0</span></span>
 <span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">cover</span> <span class="op">~</span> <span class="va">moist</span> <span class="op">+</span> <span class="va">graze</span>, data <span class="op">=</span> <span class="va">dc_low</span>, family <span class="op">=</span> <span class="st">"ordinal"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! tulpa_ordinal(): response level(s) 'high' have no observations, so their class parameters are not identified. Drop them with droplevels() or merge them into a neighbouring level.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> tulpa_ordinal(): response level(s) 'high' have no observations, so their class parameters are not identified. Drop them with droplevels() or merge them into a neighbouring level.</span></span></code></pre></div>
 <p>The message names two remedies, dropping the level or merging it into
 a neighbouring one. Here the high class was removed on purpose, so
 <code><a href="https://rdrr.io/r/base/droplevels.html" class="external-link">droplevels()</a></code> is the fix, and the model is fitted on the
@@ -869,8 +875,8 @@ or <code>"laplace"</code>.</p>
 <div class="sourceCode" id="cb32"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dc_g</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/transform.html" class="external-link">transform</a></span><span class="op">(</span><span class="va">dc</span>, site <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="fl">25</span>, each <span class="op">=</span> <span class="fl">20</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">cover</span> <span class="op">~</span> <span class="va">moist</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">site</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">dc_g</span>, family <span class="op">=</span> <span class="st">"ordinal"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! family = 'ordinal' supports fixed-effect models only through tulpa(); random effects, smoothers, and spatial / temporal structure are not wired for categorical responses yet.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> family = 'ordinal' supports fixed-effect models only through tulpa(); random effects, smoothers, and spatial / temporal structure are not wired for categorical responses yet.</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">

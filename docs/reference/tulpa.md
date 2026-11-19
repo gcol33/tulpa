@@ -14,6 +14,9 @@ over the hyperparameters is the role of the nested-Laplace / EM layer.
 ## Usage
 
 ``` r
+# S3 method for class 'tulpa_factor_fit'
+print(x, ...)
+
 tulpa(
   formula,
   data,
@@ -33,12 +36,26 @@ tulpa(
   warm_start = NULL,
   spatial = NULL,
   temporal = NULL,
+  spatiotemporal = NULL,
+  factors = NULL,
+  baseline = NULL,
   control = list(),
   ...
 )
 ```
 
 ## Arguments
+
+- x:
+
+  A `tulpa_factor_fit`, the fit `tulpa()` returns for a `factors =`
+  model.
+
+- ...:
+
+  Reserved for future statistical arguments. Nothing is read from it
+  today, so any entry errors: a stray name here is a misspelled argument
+  or a tuning knob that belongs in `control`.
 
 - formula:
 
@@ -48,6 +65,40 @@ tulpa(
   fixed-effect columns of a rank-deficient design are dropped with a
   warning, and unused levels of a grouping factor are dropped. A
   binomial response may be logical (`TRUE` a success).
+
+  A gaussian response may carry a bound term after a `|`:
+
+  - `y | cens(lower, upper)` – each row records that the latent value
+    fell in `(lower, upper]`. `NA` (or `-Inf` / `Inf`) leaves a side
+    open, so `cens(NA, L)` is left-censored at `L` and `cens(U, NA)`
+    right-censored at `U`; equal bounds record the value exactly. The
+    bounds are what the likelihood reads: `y` may be `NA` on a censored
+    row and, where present, lies in its interval. This is the gaussian
+    Tobit / interval-censored likelihood, the one
+    [`survival::survreg()`](https://rdrr.io/pkg/survival/man/survreg.html)
+    fits with `dist = "gaussian"` and
+    `Surv(lower, upper, type = "interval2")`.
+
+  - `y | trunc(lb, ub)` – `y` is observed only inside `[lb, ub]`, and
+    its density is the gaussian one renormalized to that range. Either
+    bound may be left out (`trunc(ub = 10)`) or be infinite.
+
+  Bounds are columns of `data` or expressions of them, or scalars. Both
+  take `family = "gaussian"` (identity link) and every random-effect and
+  field term the joint nested-Laplace door carries (areal, NNGP / GP and
+  HSGP spatial fields; RW1 / RW2 / AR1 temporal fields; smoothers), and
+  are fitted on that door with `mode = "auto"`, `"structured"`,
+  `"laplace"` or `"nested_laplace"`: a scale the call supplies is
+  conditioned on and one it leaves out is integrated. `fit$family` is
+  then `"interval_gaussian"` or `"truncated_gaussian"`.
+  [`fitted()`](https://rdrr.io/r/stats/fitted.values.html) and
+  [`stats::predict()`](https://rdrr.io/r/stats/predict.html) report the
+  latent gaussian mean;
+  [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+  draws the latent value for a censored response and a draw inside its
+  row's bounds for a truncated one; the pointwise log-likelihood behind
+  WAIC and LOO is the censored / truncated one. Survival responses with
+  a censoring indicator (Weibull, exponential AFT) belong to tulpaObs.
 
 - data:
 
@@ -72,8 +123,21 @@ tulpa(
   Inference mode or backend. `"auto"` (default) picks the most reliable
   Tier 1/Tier 2 method expected to finish; a tier (`"exact"`,
   `"structured"`) or a backend name (`"laplace"`, `"mala"`, ...) forces
-  it. `"eb"` estimates the random-effect covariance(s) by empirical
-  Bayes instead of conditioning on `sigma_re` (see
+  it. A model whose `phi` is a gaussian residual variance, fitted with
+  `phi` left out, resolves under `"auto"`, `"structured"` and the
+  nested-Laplace modes to the one-arm joint nested-Laplace backend
+  (`"nested_laplace_joint"`), whose outer grid integrates that variance
+  beside the random-effect and field scales, the axis laid at its
+  posterior mode; `fit$phi` is then its posterior mean and
+  `fit$phi_estimated` is `TRUE`. Where that backend cannot carry the
+  call (observation weights, zero inflation, `phi2`, a sampler-only
+  field) the selection stands and `phi` is conditioned on, with a
+  warning. Inline `spatial(graph =, formula =)` and
+  `temporal(formula =)` fields also use that joint backend under
+  `mode = "laplace"`: an omitted `phi` is integrated and a supplied
+  `phi` is conditioned on. `"eb"` estimates the random-effect
+  covariance(s) by empirical Bayes instead of conditioning on `sigma_re`
+  (see
   [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md));
   it is opt-in by name, because its intervals are conditional on that
   estimate rather than marginal over it. The maximized likelihood
@@ -111,16 +175,21 @@ tulpa(
 - phi:
 
   Dispersion passed to the family, held fixed. One convention at every
-  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
-  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
-  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
-  it. The compiled kernels parameterize the two variance families by the
-  residual SD and are handed `sqrt(phi)` at the boundary.
+  door: for `gaussian` / `lognormal`, and for a censored or truncated
+  gaussian response (`y | cens()`, `y | trunc()` in `tulpa()`), this is
+  the residual VARIANCE (the SD is `sqrt(phi)`), for `neg_binomial_2`
+  the size, `gamma` the shape, `beta` the precision, `t` the scale;
+  `binomial` and `poisson` ignore it. The compiled kernels parameterize
+  the variance families by the residual SD and are handed `sqrt(phi)` at
+  the boundary.
 
-  Defaulted, it conditions at 1 and says so with a warning, since for a
-  family that reads a dispersion that is a modelling choice rather than
-  a neutral value. `fit$phi_estimated` records whether the value on the
-  fit was estimated or conditioned on.
+  Left out of a `tulpa()` call whose `phi` is a gaussian residual
+  variance, on `mode = "auto"`, `"structured"` or a nested-Laplace mode,
+  it is integrated as an outer-grid axis rather than set (see
+  `tulpa()`). Defaulted anywhere else, it conditions at 1 and says so
+  with a warning, since for a family that reads a dispersion that is a
+  modelling choice rather than a neutral value. `fit$phi_estimated`
+  records whether the value on the fit was estimated or conditioned on.
 
 - estimate_phi:
 
@@ -160,8 +229,11 @@ tulpa(
   takes the engine default, `prior_normal(0, 2.5)`, on every backend
   that carries a fixed-effect prior – the prior is a modelling
   statement, so the backend `mode = "auto"` selects does not change it.
-  The nested-Laplace and SPDE paths hold their own field-conditional
-  prior and reject a supplied `beta_prior`. The resolved prior is
+  The nested-Laplace path and the SPDE path
+  ([`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md))
+  solve every outer cell under it; the conditional spatial-Laplace paths
+  for an areal, NNGP, proper-CAR or HSGP field solve under the same
+  default and refuse a supplied `beta_prior`. The resolved prior is
   reported on the fit as `$beta_prior`.
 
 - re_prior:
@@ -175,9 +247,9 @@ tulpa(
   covariance, same condition), `prior_df` / `prior_scale`
   (inverse-Wishart on the RE covariance, `control$re_cov = "gibbs"`),
   `prior_sigma_scale` (half-Cauchy scale on the RE SD for
-  `mode = "gibbs"`), and `sigma_re_scale` (half-Cauchy scale on the RE /
-  BYM2 SD for the ModelData samplers). An entry the resolved backend
-  does not read is an error naming the backends that do.
+  `mode = "gibbs"`), and `sigma_re_scale` (half-Cauchy scale on the RE
+  SD for the ModelData samplers). An entry the resolved backend does not
+  read is an error naming the backends that do.
 
 - hyperprior:
 
@@ -256,9 +328,11 @@ tulpa(
 
   - **Continuous** (`spatial_gp(~ lon + lat)` for an NNGP field,
     `spatial_gp(~ lon + lat, approx = 'hsgp')` for a Hilbert-space GP,
-    `spatial_spde(~ lon + lat, data)` for a Matern SPDE field): the spec
-    object carries the coordinate columns (the SPDE spec also carries
-    the mesh + FEM matrices), so **no** `spatial(col)` term is used –
+    `spatial_spde(~ lon + lat, data)` for a Matern SPDE field,
+    [`spatial_multiscale()`](https://gillescolling.com/tulpa/reference/spatial_multiscale.md)
+    for the sum of a local and a regional field): the spec object
+    carries the coordinate columns (the SPDE spec also carries the
+    mesh + FEM matrices), so **no** `spatial(col)` term is used –
     observations are mapped to locations from their coordinates.
 
   The mode selects how the spatial hyperparameter is handled:
@@ -268,8 +342,9 @@ tulpa(
     the designed Tier 2 path, mirroring `latent(...)` blocks. Areal
     `icar`/`car`/ `bym2`/`car_proper` and continuous `gp`/`nngp`/`hsgp`
     go through
-    [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md);
-    SPDE is redirected to
+    [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md),
+    and a multi-scale field goes there as two field blocks, one per
+    scale; SPDE is redirected to
     [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md),
     which integrates `(range, sigma)` with its own CCD / grid design.
 
@@ -288,28 +363,86 @@ tulpa(
   [`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md),
   [`temporal_rw2()`](https://gillescolling.com/tulpa/reference/temporal_rw2.md),
   [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
-  (nested Laplace);
-  [`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md)
   and
   [`temporal_multiscale()`](https://gillescolling.com/tulpa/reference/temporal_multiscale.md),
-  which are sampler-path only – their hyperparameters are sampled
-  jointly with the field, so `mode = "auto"` routes them to the exact
-  ModelData sampler. A plain field routes the single-block temporal
-  kernel; a `group_var` panel spec fits a separate walk per group
-  sharing one hyperparameter; combined with an areal `spatial` field it
-  forms an additive space-time joint prior.
+  whose components are integrated as one block each (nested Laplace);
+  [`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md),
+  which is sampler-path only – its hyperparameters are sampled jointly
+  with the field, so `mode = "auto"` routes it to the exact ModelData
+  sampler. A plain field routes the single-block temporal kernel; a
+  `group_var` panel spec fits a separate walk per group sharing one
+  hyperparameter; combined with an areal `spatial` field it forms an
+  additive space-time joint prior.
+
+- spatiotemporal:
+
+  Optional Knorr-Held space-time interaction, a
+  [`spatiotemporal()`](https://gillescolling.com/tulpa/reference/spatiotemporal.md)
+  spec (types I-IV): one latent value per area and time, conditioned
+  exactly on the null space of its structure so that it carries nothing
+  the `spatial` and `temporal` main effects model. Fit on the
+  nested-Laplace path; read back with
+  [`spatiotemporal_effects()`](https://gillescolling.com/tulpa/reference/spatiotemporal_effects.md).
+
+- factors:
+
+  Optional
+  [`latent_factor()`](https://gillescolling.com/tulpa/reference/latent_factor.md)
+  specification naming the `unit` and `response` columns of a
+  long-format `data` (one row per unit and response level, e.g. per site
+  and species). Each response level gets its own coefficients for the
+  fixed effects of `formula`, and the `n_factors` latent factors over
+  the units load on every level: \$\$\eta_i = X_i \beta\_{s(i)} + \sum_f
+  \lambda\_{s(i) f} u\_{l(i) f}, \quad u\_{l f} \sim N(0, 1),\$\$ with
+  \\s(i)\\ the response level and \\l(i)\\ the unit of row `i`. Factor
+  `f` does not load on the first `f - 1` response levels and loads
+  positively on the `f`-th (the levels' order, `levels(factor(...))`),
+  so the loading matrix is lower-triangular with a positive diagonal;
+  order the levels so that the first `n_factors` are ones the factors
+  load on. \\\Lambda \Lambda^\top\\, the factors' covariance between
+  response levels on the link scale, does not depend on that choice. The
+  fit is a joint nested Laplace with one arm per response level and the
+  scores integrated out unit by unit by a Laplace approximation; the
+  loading prior is `factors$prior` (`prior_normal(0, sd)`, default
+  `sd = 1`). The formula carries fixed effects only (no offset), the
+  dispersion of each level is held at `phi`, and `mode` is `"auto"`,
+  `"laplace"` or `"nested_laplace"`. The fit (class `tulpa_factor_fit`)
+  carries `$loadings` (posterior mean, levels x factors, also read by
+  [`stats::loadings()`](https://rdrr.io/r/stats/loadings.html)),
+  `$loadings_draws`, `$factor_cov` (posterior mean of \\\Lambda
+  \Lambda^\top\\), and the per-unit scores through
+  [`latent_factors()`](https://gillescolling.com/tulpa/reference/latent_factors.md);
+  [`coef()`](https://rdrr.io/r/stats/coef.html),
+  [`summary()`](https://rdrr.io/r/base/summary.html),
+  [`fitted()`](https://rdrr.io/r/stats/fitted.values.html) (conditional
+  on the scores) and [`predict()`](https://rdrr.io/r/stats/predict.html)
+  (fixed effects, `newdata` carrying the response column) read it as any
+  other fit.
+
+- baseline:
+
+  `family = "multinomial"` only: the reference class, one level of the
+  response as a string (default `NULL`, the last level). See
+  [`tulpa_multinomial()`](https://gillescolling.com/tulpa/reference/tulpa_multinomial.md).
+  Any other family refuses it.
 
 - control:
 
   Optional list of backend tuning arguments. Each backend accepts its
   own set, checked at the door: `n_iter` / `warmup` / `epsilon`
   (`mala`), `n_draws` (`pathfinder`), `n_chains` / `max_treedepth` /
-  `adapt_delta` / `mass_matrix` (`hmc`), the outer-grid knobs
+  `adapt_delta` / `mass_matrix` (`hmc`), `gradient_mode` (`"auto"`,
+  `"N"` / `"numerical"`, `"A_r"` / `"arena"`, `"H"` / `"handcoded"` for
+  ModelData sampler kernels), the outer-grid knobs
   [`?tulpa_nested_laplace`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
-  documents (`n_per_axis`, `prune`, `screen_iters`, `diagnose_k`,
+  documents (`prune`, `screen_iters`, `adaptive_grid`, `diagnose_k`,
   `within_cell`, `checkpoint`, the `progress*` family, ...), and
   `re_cov` (`"nested"` / `"gibbs"` / `"aghq"`), which selects the
-  RE-covariance integrator on any random-effect model.
+  RE-covariance integrator on any random-effect model. An outer-grid
+  knob the reached backend does not read (`n_grid`, `n_per_axis`,
+  `integration`, ... on the nested-Laplace field path, whose nodes are
+  the field spec's own `*_grid` entries) is an error rather than a
+  no-op.
 
   `n_iter` does not count the same thing on every sampler, and `warmup`
   (alias `n_warmup`) is validated against it before any sampler runs:
@@ -338,12 +471,6 @@ tulpa(
   and is forwarded from `control` by `tulpa()` alone, so it has no
   meaning on any other backend and is refused there. See
   [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md).
-
-- ...:
-
-  Reserved for future statistical arguments. Nothing is read from it
-  today, so any entry errors: a stray name here is a misspelled argument
-  or a tuning knob that belongs in `control`.
 
 ## Value
 
@@ -411,6 +538,19 @@ draws matrix on engine fits, while model-package fits may carry a list
   precision); continuous-coordinate fields (`gp` / `nngp` / `hsgp` /
   `spde`), `car_proper`, and exotic latent blocks stay on the dedicated
   nested-Laplace / SPDE / Polya-Gamma paths.
+
+## Computation device
+
+`control$device` is `"auto"`, `"cpu"`, or `"cuda"`. The default `"auto"`
+uses CUDA for registered operations above their measured size crossover.
+Operations with no measured crossover run on CPU. `"cuda"` requests CUDA
+for each registered operation and errors with the reason from
+[`gpu_info()`](https://gillescolling.com/tulpa/reference/gpu_info.md)
+when its device or library is unavailable. Host inference stages run on
+CPU. The fit's `device$stages` table records CPU and CUDA call counts
+per stage; [`print()`](https://rdrr.io/r/base/print.html) and
+[`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+report these stages.
 
 ## References
 

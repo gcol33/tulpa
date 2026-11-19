@@ -1,18 +1,23 @@
 # Create a latent factor specification
 
-Define latent factors for capturing unmeasured shared structure between
-all processes. Factors are observation-level random effects that enter
-both linear predictors when `shared = TRUE` (default).
+Define latent factors for unmeasured structure shared by the responses
+of a model. A unit `l` carries scores \\u\_{l f} \sim N(0, 1)\\ on
+factors \\f = 1, \ldots, K\\, and response `s` loads on them with
+loadings \\\lambda\_{s f}\\, so its linear predictor gains \\\sum_f
+\lambda\_{s f} u\_{l f}\\. The factors add the covariance \\\Lambda
+\Lambda^\top\\ between the linear predictors of the responses of one
+unit.
 
 ## Usage
 
 ``` r
 latent_factor(
   n_factors = 1L,
+  unit = NULL,
+  response = NULL,
   prior = NULL,
   shared = TRUE,
-  constraint = c("sum_to_zero", "first_zero"),
-  scale = TRUE
+  constraint = NULL
 )
 
 # S3 method for class 'tulpa_latent'
@@ -23,33 +28,47 @@ print(x, ...)
 
 - n_factors:
 
-  Integer; number of latent factors. Default is 1. More factors capture
-  more complex unmeasured structure but increase computational cost and
-  risk overfitting.
+  Integer; number of latent factors. Default is 1.
+
+- unit:
+
+  For [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)'s
+  `factors =` argument: the name of the column of `data` holding the
+  unit that carries the scores (e.g. `"site"`).
+
+- response:
+
+  For [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)'s
+  `factors =` argument: the name of the column of `data` holding the
+  response level each row belongs to (e.g. `"species"`). Each level has
+  its own fixed effects and loadings.
 
 - prior:
 
-  Prior for factor standard deviations. Default is a PC prior with
-  P(sigma \> 1) = 0.01, which shrinks toward simpler models.
+  Prior of the factor loadings, or `NULL` for the fitter's default.
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  carries a normal prior centred at zero on every loading, folded onto
+  the positive half-line on the diagonal, and takes
+  `prior_normal(0, sd)` (default `sd = 1`); a model package may read
+  other priors (tulpaRatio defaults to a PC prior with P(loading \> 1) =
+  0.01 on the diagonal loadings).
 
 - shared:
 
-  Logical; if TRUE (default), latent factors enter both all process
-  linear predictors identically. If FALSE, factors only affect the first
-  process.
+  Logical; if TRUE (default), the factors load on every process of the
+  model. If FALSE, they load on the first process only (a two-process
+  model package's numerator);
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  requires TRUE.
 
 - constraint:
 
-  Identifiability constraint for factors:
-
-  - `"sum_to_zero"` (default): Factors sum to zero across observations
-
-  - `"first_zero"`: First observation's factor is fixed to zero
-
-- scale:
-
-  Logical; if TRUE (default), factor loadings are standardized to have
-  unit variance before applying sigma.
+  `NULL` (default) or the identifiability constraint a sampling fitter
+  pins the scores with: `"sum_to_zero"` (each factor's scores sum to
+  zero across units) or `"first_zero"` (the first unit's scores are
+  zero). [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  requires `NULL`: its scores carry a proper N(0, 1) prior and each
+  response's intercept absorbs their level.
 
 - x:
 
@@ -61,150 +80,90 @@ print(x, ...)
 
 ## Value
 
-A `tulpa_latent` object consumed by ratio / multi-arm model packages
-built on tulpa (e.g. tulpaRatio); not read by the single-response
-[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) front
-door (use `latent(tgmrf(...))` for a single-response latent Gaussian
-block).
+A `tulpa_latent` object.
 
 ## Details
 
-### Why Use Latent Factors?
+### Identification
 
-When modeling multiple processes, they often share unmeasured
-confounders. For example, in relative abundance data, both the focal
-species count and total count might be affected by:
-
-- Observer skill (unmeasured)
-
-- Local microhabitat conditions (unmeasured)
-
-- Weather on sampling day (unmeasured)
-
-Without accounting for these shared drivers, estimates can be biased.
-Latent factors capture this shared structure without requiring the
-confounders to be measured.
-
-### Mathematical Model
-
-For observation i with K latent factors, on each of two model arms
-(processes 1 and 2):
-
-\$\$\eta^{(1)}\_i = X^{(1)}\_i \beta^{(1)} + \sum\_{k=1}^{K} f\_{ik}
-\sigma_k + \ldots\$\$ \$\$\eta^{(2)}\_i = X^{(2)}\_i \beta^{(2)} +
-\sum\_{k=1}^{K} f\_{ik} \sigma_k + \ldots\$\$
-
-where:
-
-- \\f\_{ik} \sim N(0, 1)\\ are standardized factor scores
-
-- \\\sigma_k\\ are factor standard deviations with PC prior
-
-- Identifiability: \\\sum_i f\_{ik} = 0\\ for each k
-
-Because factors enter both linear predictors identically (when shared),
-they cancel in derived quantities (e.g., ratios, differences):
-
-\$\$\eta^{(1)}\_i - \eta^{(2)}\_i\$\$
-
-This means factors capture shared effects that would otherwise bias
-derived quantities.
+The product \\\lambda\_{s f} u\_{l f}\\ is unchanged by a rescaling, a
+sign flip and, for several factors, a rotation of the scores against the
+loadings. The unit variance of the scores fixes the scale; a loading
+matrix that is lower-triangular with a positive diagonal fixes the sign
+and the rotation. \\\Lambda \Lambda^\top\\ is invariant to all three, so
+it is the quantity to compare across fits.
 
 ### Choosing n_factors
 
-- Start with `n_factors = 1` for simple unmeasured confounding
-
-- Use `n_factors = 2-3` if you suspect multiple independent confounders
-
-- More than 3 factors is rarely needed and risks overfitting
-
-- The PC prior provides regularization, shrinking unneeded factors
-  toward zero
+With `S` responses, \\\Lambda\\ lower-triangular has \\S K - K (K - 1) /
+2\\ free loadings against the \\S (S + 1) / 2\\ entries of a covariance
+between the responses, so at most `S` factors fit. A two-process model
+is full rank at `n_factors = 2`.
 
 ### Relationship to Random Effects
 
-Latent factors differ from random effects in several ways:
-
-- Random effects are grouped (e.g., site-level), factors are
-  observation-level
-
-- Random effects require grouping structure, factors don't
-
-- Factors capture residual correlation not explained by observed
-  predictors
-
-You can use both together: random effects for known grouping, factors
-for residual unmeasured confounding.
+A random intercept is one response's deviation per group; a factor is a
+deviation per unit that every response reads with its own loading, so it
+carries the residual correlation between responses that the covariates
+do not explain.
 
 ## See also
 
-[`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_pc.md)
-for prior specification;
-[`latent()`](https://gillescolling.com/tulpa/reference/latent.md) /
-[`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md) for a
-single-response in-formula latent Gaussian block
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+(`factors =`),
+[`latent_factors()`](https://gillescolling.com/tulpa/reference/latent_factors.md)
+for the scores,
+[`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
 
 ## Examples
 
 ``` r
-# Basic latent factor (single shared factor)
-latent_factor()
-#> Latent factor specification
-#> ===========================
-#> 
-#> Number of factors: 1 
-#> Shared: Yes (enters all processes) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
-#> 
-#> Factor SD prior:
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
-
-# Two latent factors
-latent_factor(n_factors = 2)
+# Two factors over sites, one response level per species
+latent_factor(n_factors = 2, unit = "site", response = "species")
 #> Latent factor specification
 #> ===========================
 #> 
 #> Number of factors: 2 
-#> Shared: Yes (enters all processes) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
+#> Unit column: site 
+#> Response column: species 
+#> Shared: Yes (loads on all processes) 
+#> Constraint: none (proper score prior) 
 #> 
-#> Factor SD prior:
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
+#> Loading prior:
+#>   the fitter's default
 
-# Custom prior (more regularization)
-latent_factor(n_factors = 1, prior = prior_pc(U = 0.5, alpha = 0.01))
+# A tighter loading prior
+latent_factor(unit = "site", response = "species",
+              prior = prior_normal(0, 0.5))
 #> Latent factor specification
 #> ===========================
 #> 
 #> Number of factors: 1 
-#> Shared: Yes (enters all processes) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
+#> Unit column: site 
+#> Response column: species 
+#> Shared: Yes (loads on all processes) 
+#> Constraint: none (proper score prior) 
 #> 
-#> Factor SD prior:
-#>   PC prior: P(x > 0.50) = 0.010
-#>     => Exponential(9.210)
+#> Loading prior:
+#>   Normal(0.00, 0.50)
 
-# Numerator-only factor (not shared)
-latent_factor(n_factors = 1, shared = FALSE)
-#> Latent factor specification
-#> ===========================
-#> 
-#> Number of factors: 1 
-#> Shared: No (first process only) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
-#> 
-#> Factor SD prior:
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
-
-# The spec is consumed by a ratio / multi-arm model package (tulpaRatio owns
-# the two-arm `species | total ~ ...` formula and the negbin/negbin ratio
-# family); it is that package's fitter, not the single-response tulpa() front
-# door, that reads the `latent_factor()` object.
+# \donttest{
+set.seed(1)
+n_site <- 60; n_sp <- 4
+u <- rnorm(n_site)
+lambda <- c(0.8, 0.5, -0.6, 0.3)
+d <- expand.grid(site = factor(seq_len(n_site)),
+                 species = factor(paste0("sp", seq_len(n_sp))))
+d$x <- rnorm(n_site)[d$site]
+d$y <- rpois(nrow(d), exp(0.5 + 0.3 * d$x +
+                          lambda[d$species] * u[d$site]))
+fit <- tulpa(y ~ x, data = d, family = "poisson",
+             factors = latent_factor(unit = "site", response = "species"))
+fit$loadings
+#>        factor1
+#> sp1  0.7542586
+#> sp2  0.3246828
+#> sp3 -0.4679399
+#> sp4  0.1682484
+# }
 ```

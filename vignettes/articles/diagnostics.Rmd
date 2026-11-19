@@ -146,9 +146,9 @@ rbind(correct = unlist(cm[c("ks_p", "disp_ratio")]),
 ```
 
 On the correct fit the PIT points lie on the diagonal (Kolmogorov-Smirnov
-p = 0.69) and the observed variance sits inside the simulated ones, at 1.04
+p = 0.66) and the observed variance sits inside the simulated ones, at 1.04
 times their median. On the misspecified fit the QQ plot bends away from the
-diagonal (p = 2.6e-08), and the observed variance, 1.86 times the simulated
+diagonal (p = 1.7e-08), and the observed variance, 1.85 times the simulated
 median, falls beyond the right edge of the histogram, so its red line is not
 drawn. The correlogram reads Moran's I between -0.075 and -0.04 on the correct
 fit: it is built from `residuals()`, which include the fitted field (see
@@ -190,7 +190,7 @@ test_uniformity(fit_od)
 ```
 
 The largest gap between the empirical and the uniform distribution function,
-`D`, is 0.029 on the correct fit and 0.123 on the misspecified one; only the
+`D`, is 0.030 on the correct fit and 0.125 on the misspecified one; only the
 second is far outside what 600 uniform draws produce.
 
 ### Dispersion
@@ -204,7 +204,7 @@ test_dispersion(fit)
 test_dispersion(fit_od)
 ```
 
-The Poisson data give a ratio of 1.04 (p = 0.58), the overdispersed data 1.86
+The Poisson data give a ratio of 1.04 (p = 0.66), the overdispersed data 1.85
 (p below 2.2e-16). The same comparison as a plot: simulate from the
 misspecified fit and place the observed variance among the simulated ones.
 
@@ -228,8 +228,8 @@ test_outliers(fit)
 test_outliers(fit_od)
 ```
 
-One of 600 Poisson counts falls outside its simulated range, against 15 of
-600 overdispersed counts (p = 0.00013).
+One of 600 Poisson counts falls outside its simulated range, against 13 of
+600 overdispersed counts (p = 0.0013).
 
 The plot sorts the observations by their simulated median and draws the
 simulated range around each; observed counts outside it are marked in red.
@@ -258,8 +258,11 @@ test_zero_inflation(fit)
 test_zero_inflation(fit_od)
 ```
 
-The Poisson data have 160 zeros against 142 expected (p = 0.10), the
-overdispersed data 199 against 137.
+The Poisson data have 160 zeros against 143 expected (p = 0.048), the
+overdispersed data 199 against 136 (p below 2.2e-16). The first model is the
+one that generated its data, so its p-value is a draw from a uniform
+distribution and falls below 0.05 in one dataset out of twenty; the ratio of
+1.12 against 1.46 is what separates the two fits here.
 
 ```{r zero-plot, fig.alt = "Histogram of the number of zeros in simulated datasets under the misspecified fit, with the observed number of zeros to the right"}
 z_sim <- colSums(sims_od == 0)
@@ -297,8 +300,8 @@ test_dispersion(fit_nb)
 test_uniformity(fit_nb)
 ```
 
-The dispersion ratio drops to 1.03 (p = 0.79) and the PIT residuals pass the
-uniformity test (p = 0.85).
+The dispersion ratio drops to 1.06 (p = 0.74) and the PIT residuals pass the
+uniformity test (p = 0.83).
 
 ## Spatial and temporal structure
 
@@ -341,7 +344,7 @@ z_pit <- qnorm(pmin(pmax(pit, eps), 1 - eps))
 moran_i(z_pit, coords)
 ```
 
-On these residuals Moran's I is -0.0006 (p = 0.46), the same reading.
+On these residuals Moran's I is -0.0006 (p = 0.45), the same reading.
 
 An empirical semivariogram shows the same contrast as a function of distance.
 `tulpa_variogram()` bins half the squared differences of residual pairs by
@@ -381,7 +384,7 @@ durbin_watson(z_pit, time = d$year)
 ```
 
 The year has no effect in the simulation, and the test finds no
-autocorrelation (DW = 1.98, p = 0.81). A trend over years that the model left out would push the
+autocorrelation (DW = 1.98, p = 0.84). A trend over years that the model left out would push the
 statistic below 2; [Temporal models](temporal-models.html) shows how to add one.
 
 ## Sampler diagnostics
@@ -496,7 +499,7 @@ diagnostics(fit)
 ```
 
 The outer $\hat k$ is in the good band, and the quadrature effective sample
-size of 3.84 over 12 grid cells says the weight is spread over several cells;
+size of 3.78 over 14 grid cells says the weight is spread over several cells;
 a value near 1 would mean the grid had collapsed onto one. [Reliability diagnostics](reliability-pareto-k.html) explains each line of
 this table, what a collapsed grid means, and when to widen the grid or switch
 to a sampler.

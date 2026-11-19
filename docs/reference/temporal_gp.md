@@ -24,7 +24,7 @@ temporal_gp(
   group_var = NULL,
   shared = NULL,
   scale_coords = TRUE,
-  parameterization = c("noncentered", "centered")
+  parameterization = c("auto", "noncentered", "centered")
 )
 
 # S3 method for class 'tulpa_temporal_gp'
@@ -82,10 +82,14 @@ print(x, ...)
 
 - parameterization:
 
-  Parameterization for GP effects: `"noncentered"` (default) stores z ~
-  N(0,1) and scales by covariance (better for weakly-informed effects);
-  `"centered"` stores effects directly (better for strongly-informed
-  effects).
+  Parameterization for GP effects: `"auto"` scales covariance-whitened
+  coordinates using prior and observation information. Within the
+  sampler's dense parameter budget it centres and scales innovations
+  using their Gaussian conditional approximation at a fixed-effects
+  reference fit, with the exact likelihood correcting the approximation.
+  `"noncentered"` stores z ~ N(0,1) and scales by covariance (better for
+  weakly-informed effects); `"centered"` stores effects directly (better
+  for strongly-informed effects).
 
 - x:
 
@@ -184,6 +188,6 @@ fit <- tulpa(
   mode = "hmc",
   control = list(n_iter = 200, warmup = 100, n_chains = 1)
 )
-#> Warning: tulpa(): the 'hmc' chain has not converged -- log_sigma2_temporal_gp: Rhat 1.02, bulk-ESS 26; (Intercept): Rhat 1.01, bulk-ESS 35; logit_phi_temporal_gp: Rhat 0.99, bulk-ESS 45; x: Rhat 1.04, bulk-ESS 94. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
+#> Warning: tulpa(): the 'hmc' chain has not converged -- x: Rhat 1.08, bulk-ESS 16; (Intercept): Rhat 1.04, bulk-ESS 30; log_sigma2_temporal_gp: Rhat 0.99, bulk-ESS 45; logit_phi_temporal_gp: Rhat 1.00, bulk-ESS 91. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup); see check_diagnostics().
 # }
 ```

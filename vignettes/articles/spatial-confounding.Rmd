@@ -306,7 +306,7 @@ covers(points)
 ```
 
 On the continuous field the restricted and non-spatial estimates are 0.056
-and 0.048 from the marginal slope on average, the unrestricted ones 0.094.
+and 0.048 from the marginal slope on average, the unrestricted ones 0.067.
 Every interval contains the marginal slope and none the conditional one, so
 here the unrestricted fit is pulled toward the marginal slope as well, only
 less far.

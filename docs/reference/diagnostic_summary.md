@@ -124,16 +124,17 @@ ds <- diagnostic_summary(fit)
 #> Status: WARN
 #> 
 #> Divergent transitions: 0
-#> E-BFMI: 1.151 (OK)
+#> E-BFMI: 0.957 (OK)
 #> 
 #> Parameters with Rhat > 1.01:
 #>    parameter  rhat
-#>  (Intercept) 1.015
+#>  (Intercept) 1.020
+#>            x 1.014
 #> 
 #> Parameters with ESS < 400:
 #>    parameter ess_bulk ess_tail
-#>            x      175      198
-#>  (Intercept)      183      174
+#>            x      122      194
+#>  (Intercept)      154      140
 #> 
 #> Recommendations:
 #>   - Rhat > 1.01: Run more iterations or chains 
@@ -146,16 +147,17 @@ print(ds)
 #> Status: WARN
 #> 
 #> Divergent transitions: 0
-#> E-BFMI: 1.151 (OK)
+#> E-BFMI: 0.957 (OK)
 #> 
 #> Parameters with Rhat > 1.01:
 #>    parameter  rhat
-#>  (Intercept) 1.015
+#>  (Intercept) 1.020
+#>            x 1.014
 #> 
 #> Parameters with ESS < 400:
 #>    parameter ess_bulk ess_tail
-#>            x      175      198
-#>  (Intercept)      183      174
+#>            x      122      194
+#>  (Intercept)      154      140
 #> 
 #> Recommendations:
 #>   - Rhat > 1.01: Run more iterations or chains 

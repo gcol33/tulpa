@@ -34,7 +34,7 @@ control list, so callers assembling many solves pass them positionally."><meta p
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -47,21 +47,44 @@ control list, so callers assembling many solves pass them positionally."><meta p
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -156,15 +179,19 @@ the joint Hessian (mode finding) and the marginal fixed-effect SE.</p></li>
 
 <dt id="arg-phi">phi<a class="anchor" aria-label="anchor" href="#arg-phi"></a></dt>
 <dd><p>Dispersion passed to the family, held fixed. One convention at
-every door: for <code>gaussian</code> / <code>lognormal</code> this is the residual VARIANCE
-(the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size, <code>gamma</code> the
-shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and <code>poisson</code>
-ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
-<p>Defaulted, it conditions at 1 and says so with a warning, since for a
-family that reads a dispersion that is a modelling choice rather than a
-neutral value. <code>fit$phi_estimated</code> records whether the value on the fit
-was estimated or conditioned on.</p></dd>
+every door: for <code>gaussian</code> / <code>lognormal</code>, and for a censored or truncated
+gaussian response (<code>y | cens()</code>, <code>y | trunc()</code> in <code><a href="tulpa.html">tulpa()</a></code>), this is the
+residual VARIANCE (the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size,
+<code>gamma</code> the shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and
+<code>poisson</code> ignore it. The compiled kernels parameterize the variance
+families by the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
+<p>Left out of a <code><a href="tulpa.html">tulpa()</a></code> call whose <code>phi</code> is a gaussian residual variance,
+on <code>mode = "auto"</code>, <code>"structured"</code> or a nested-Laplace mode, it is
+integrated as an outer-grid axis rather than set (see <code><a href="tulpa.html">tulpa()</a></code>).
+Defaulted anywhere else, it conditions at 1 and says so with a warning,
+since for a family that reads a dispersion that is a modelling choice
+rather than a neutral value. <code>fit$phi_estimated</code> records whether the value
+on the fit was estimated or conditioned on.</p></dd>
 
 
 <dt id="arg-phi-">phi2<a class="anchor" aria-label="anchor" href="#arg-phi-"></a></dt>
@@ -207,14 +234,15 @@ mode and the marginal precision <code>H_beta</code> describe one weighted model.
 
 <dt id="arg-beta-prior">beta_prior<a class="anchor" aria-label="anchor" href="#arg-beta-prior"></a></dt>
 <dd><p>Optional Gaussian prior on the fixed effects. <code>NULL</code>
-(default) keeps the weak built-in prior <code>beta ~ N(0, 100^2)</code>. Otherwise a
+(default) takes the engine default <code>beta ~ N(0, 2.5^2)</code>. Otherwise a
 list with element <code>sd</code> (prior standard deviation, required) and optional
 <code>mean</code> (prior mean, default 0). Each may be a scalar (applied to every
 coefficient) or a length-<code>ncol(X)</code> vector. Adds
 <code>sum((beta - mean)^2 / (2 * sd^2))</code> to the negative log-posterior, so the
 mode is the penalized (MAP) estimate. A coefficient's <code>sd</code> may be <code>+Inf</code>,
-which sets its precision to 0 (no penalty on that coefficient). Not
-supported on the spatial path.</p></dd>
+which sets its precision to 0 (no penalty on that coefficient). On the
+spatial path it is carried by an SPDE field's solver; the areal, NNGP,
+proper-CAR and HSGP solvers hold the engine default and refuse it.</p></dd>
 
 
 <dt id="arg-return-re-cov">return_re_cov<a class="anchor" aria-label="anchor" href="#arg-return-re-cov"></a></dt>
@@ -268,14 +296,19 @@ latent index.</p></dd>
 
 
 <dt id="arg-debias">debias<a class="anchor" aria-label="anchor" href="#arg-debias"></a></dt>
-<dd><p>Subspace debias: a list with <code>idx</code> (1-based
-latent indices to correct by Metropolis along the Gaussian-conditional-mean
-surface through the mode) and optional <code>n_iter</code> / <code>warmup</code> / <code>thin</code>. The
-result then carries <code>debias_draws</code> (<code>n_kept x length(idx)</code>, the sampled
-<code>x_S - mode_S</code>), <code>debias_sigma_ss</code> (the inner Laplace's own marginal
-covariance of <code>x_S</code>), <code>debias_accept</code> and <code>debias_idx</code>. <code>NULL</code> (default) or
-an empty <code>idx</code> leaves the solve bit-for-bit as it was and consumes no
-random number. Non-spatial path only.</p></dd>
+<dd><p>Subspace correction, a list with <code>idx</code> (1-based latent
+indices), <code>method</code> (<code>"fast"</code> by default, or <code>"exact"</code>), and optional
+<code>n_iter</code> / <code>warmup</code> / <code>thin</code>. Fast correction samples the true density
+on the Gaussian conditional-mean surface and returns selected offsets
+<code>x_S - mode_S</code> in <code>debias_draws</code>, with <code>debias_sigma_ss</code>, <code>debias_accept</code>
+and <code>debias_idx</code>. An empty fast selection consumes no randomness.
+Exact correction jointly proposes the selected coordinates and Gaussian
+conditional nuisance residuals, with their proposal density in the MH
+ratio. It retains the full state on rejection and returns full latent
+offsets in <code>debias_draws</code>, natural-coordinate <code>joint_latent_draws</code>,
+fixed-effect <code>draws</code> and paired random-effect <code>re</code> draws. This conditional
+target is Tier 1 for the supplied fixed hyperparameters. An empty exact
+selection uses full Gaussian independence MH. Non-spatial path only.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -305,7 +338,7 @@ at the observed curvature (if return_joint_hessian = TRUE)</p></li>
 <span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_laplace</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="va">X</span>, family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">mode</span>          <span class="co"># posterior mode of the fixed effects</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> [1] -0.4406277  0.4822831</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] -0.4388582  0.4800024</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

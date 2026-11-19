@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -504,7 +508,7 @@ here and kept on below.</p>
 <span>                 max_abs_eta_diff <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">eta_t</span> <span class="op">-</span> <span class="va">c_i1</span><span class="op">$</span><span class="va">summary.linear.predictor</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;                             max_abs_eta_diff</span></span>
 <span><span class="co">#&gt; vb_off -0.2155973 0.4368528     0.0001490837</span></span>
-<span><span class="co">#&gt; vb_on  -0.2316248 0.4405133     0.0439807996</span></span></code></pre></div>
+<span><span class="co">#&gt; vb_on  -0.2316248 0.4405133     0.0439808001</span></span></code></pre></div>
 <p>With the correction off, INLA’s fixed effects equal tulpa’s to within
 2e-4 and the linear predictors of the 100 regions agree to within 2e-4,
 so the two packages build the same model, the same scaling and the same
@@ -605,7 +609,7 @@ comparison that carry one.</p>
 </h2>
 <p>The tables give the tulpa equivalent of each formula term, family,
 structured effect, prior and accessor of the four packages. Every tulpa
-function named here is exported by tulpa 0.7.8.</p>
+function named here is exported by tulpa 0.8.0.</p>
 <div class="section level3">
 <h3 id="formula-terms-and-data">Formula terms and data<a class="anchor" aria-label="anchor" href="#formula-terms-and-data"></a>
 </h3>
@@ -1047,7 +1051,7 @@ whose SD is smaller.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>tulpa_eb <span class="op">=</span> <span class="va">f_e</span><span class="op">$</span><span class="va">map</span><span class="op">$</span><span class="va">sigma</span>, glmmTMB_reml <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu">glmmTMB</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/nlme/man/VarCorr.html" class="external-link">VarCorr</a></span><span class="op">(</span><span class="va">f_r</span><span class="op">)</span><span class="op">$</span><span class="va">cond</span><span class="op">$</span><span class="va">g</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">)</span>,</span>
 <span>  ml <span class="op">=</span> <span class="va">f_t</span><span class="op">$</span><span class="va">sigma_re</span><span class="op">)</span></span>
 <span><span class="co">#&gt;     tulpa_eb glmmTMB_reml           ml </span></span>
-<span><span class="co">#&gt;    0.8423350    0.8440785    0.8160032</span></span></code></pre></div>
+<span><span class="co">#&gt;    0.8423351    0.8440785    0.8160032</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="a-dispersion-is-estimated-only-on-request">A dispersion is estimated only on request<a class="anchor" aria-label="anchor" href="#a-dispersion-is-estimated-only-on-request"></a>
@@ -1086,7 +1090,7 @@ numbers.</p>
 <span>      inla_vb_off <span class="op">=</span> <span class="va">a_i0</span><span class="op">$</span><span class="va">summary.fixed</span><span class="op">$</span><span class="va">mean</span><span class="op">)</span></span>
 <span><span class="co">#&gt;             (Intercept)         x</span></span>
 <span><span class="co">#&gt; tulpa        -0.2244064 0.4416127</span></span>
-<span><span class="co">#&gt; inla_vb_on   -0.2424737 0.4467936</span></span>
+<span><span class="co">#&gt; inla_vb_on   -0.2424738 0.4467937</span></span>
 <span><span class="co">#&gt; inla_vb_off  -0.2244228 0.4423572</span></span></code></pre></div>
 <p>The two choices answer different questions about a skewed posterior:
 INLA’s corrected mean moves the estimate towards the posterior mean,
@@ -1106,8 +1110,8 @@ backend refuses it.</p>
 <div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">d_na</span> <span class="op">&lt;-</span> <span class="va">d</span>; <span class="va">d_na</span><span class="op">$</span><span class="va">x</span><span class="op">[</span><span class="fl">3</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="cn">NA</span></span>
 <span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d_na</span>, family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"agq"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Non-finite value(s) in the model matrix (1 row(s), first at row 3). tulpa does not drop incomplete cases; remove or impute NA/NaN/Inf in the predictors before fitting.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Non-finite value(s) in the model matrix (1 row(s), first at row 3). tulpa does not drop incomplete cases; remove or impute NA/NaN/Inf in the predictors before fitting.</span></span></code></pre></div>
 <div class="sourceCode" id="cb27"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/nobs.html" class="external-link">nobs</a></span><span class="op">(</span><span class="fu">lme4</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/lme4/man/glmer.html" class="external-link">glmer</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d_na</span>, family <span class="op">=</span> <span class="va">binomial</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] 319</span></span></code></pre></div>
@@ -1138,7 +1142,7 @@ differs from glmmTMB’s by 1e-7. The fits above set
 </h2>
 <p>The timings are elapsed seconds of one run of each fit above,
 measured on a shared Windows 11 workstation (beast) with R 4.6.1, two
-threads where a fitter takes them, with tulpa 0.7.8. The data sizes are
+threads where a fitter takes them, with tulpa 0.8.0. The data sizes are
 320 binary responses in 40 groups (GLMM), 720 counts in 60 groups
 (random slope) and 100 regions (BYM2). One run of a fit under a second
 carries noise of the order of its own value, so the table shows the
@@ -1148,18 +1152,18 @@ packages scale to larger data.</p>
 <code class="sourceCode R"><span><span class="va">tm</span><span class="op">$</span><span class="va">brms</span> <span class="op">&lt;-</span> <span class="va">tm_brms</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>fit <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">tm</span><span class="op">)</span>, seconds <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">tm</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span>, row.names <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span>
 <span><span class="co">#&gt;            fit seconds</span></span>
-<span><span class="co">#&gt; 1    tulpa_agq    0.14</span></span>
-<span><span class="co">#&gt; 2        glmer    0.11</span></span>
-<span><span class="co">#&gt; 3      glmmTMB    0.08</span></span>
+<span><span class="co">#&gt; 1    tulpa_agq    0.05</span></span>
+<span><span class="co">#&gt; 2        glmer    0.09</span></span>
+<span><span class="co">#&gt; 3      glmmTMB    0.07</span></span>
 <span><span class="co">#&gt; 4     tulpa_eb    0.13</span></span>
-<span><span class="co">#&gt; 5 glmmTMB_reml    0.11</span></span>
+<span><span class="co">#&gt; 5 glmmTMB_reml    0.08</span></span>
 <span><span class="co">#&gt; 6   tulpa_bym2    0.31</span></span>
-<span><span class="co">#&gt; 7    inla_bym2    1.76</span></span>
-<span><span class="co">#&gt; 8   tulpa_aghq   10.98</span></span>
-<span><span class="co">#&gt; 9         brms   49.78</span></span></code></pre></div>
+<span><span class="co">#&gt; 7    inla_bym2    0.91</span></span>
+<span><span class="co">#&gt; 8   tulpa_aghq    3.72</span></span>
+<span><span class="co">#&gt; 9         brms   36.05</span></span></code></pre></div>
 <p>The three maximum-likelihood fits of the random-intercept model take
 the same time to the precision of one run. The BYM2 fit took 0.31
-seconds in tulpa and 1.76 seconds in INLA. The brms time includes
+seconds in tulpa and 0.91 seconds in INLA. The brms time includes
 compiling the Stan model, which a cached model skips on the next run,
 and the tulpa AGQ integration of the same model spends its time on
 nine-node quadrature inside each group at every grid cell.</p>

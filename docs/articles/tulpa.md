@@ -14,7 +14,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
+pak::pak("gcol33/tulpa@v0.8.0")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
@@ -159,6 +159,10 @@ summary(fit)
 #> (Intercept)   0.4956   0.04000 0.4172  0.574
 #> x             1.1715   0.04087 1.0913  1.252
 #> 
+#> Random effects:
+#>       term coef  sd      source
+#> 1 Residual <NA> 0.8 conditioned
+#> 
 #> Fixed-effect prior: normal(0, 2.5)
 ```
 
@@ -266,11 +270,11 @@ variance.
 ``` r
 
 head(ranef(fit_re), 4)
-#>   term   estimate sd conf.low conf.high source
-#> 1 g[1] -1.1829526 NA       NA        NA   mode
-#> 2 g[2] -0.6775484 NA       NA        NA   mode
-#> 3 g[3] -0.8049470 NA       NA        NA   mode
-#> 4 g[4] -0.4488576 NA       NA        NA   mode
+#>   term   estimate        sd   conf.low   conf.high  source
+#> 1 g[1] -1.1829526 0.2174268 -1.6091013 -0.75680396 laplace
+#> 2 g[2] -0.6775484 0.2134346 -1.0958725 -0.25922428 laplace
+#> 3 g[3] -0.8049470 0.2102497 -1.2170288 -0.39286517 laplace
+#> 4 g[4] -0.4488576 0.2134537 -0.8672191 -0.03049612 laplace
 ```
 
 This fit conditions on `sigma_re` rather than estimating it: you pass
@@ -373,19 +377,20 @@ each criterion.
 ## Prediction
 
 A fitted model earns its keep when it predicts.
-[`predict()`](https://rdrr.io/r/stats/predict.html) gives the
-fixed-effect prediction at new covariate values you supply through
-`newdata`. Random effects are held at their population mean of zero, so
-the result is the marginal trend: what the covariate does on average
-across groups, rather than what happens in any one group.
-`se.fit = TRUE` adds the link-scale standard error and credible bounds,
-drawn from the same fixed-effect covariance the summary reports, so the
-band on the prediction inherits the uncertainty in the coefficients.
+[`predict()`](https://rdrr.io/r/stats/predict.html) gives the prediction
+at new covariate values you supply through `newdata`. A row whose group
+the fit saw takes that group’s estimated effect, so `newdata` carries
+the grouping column `g` by default. `re_form = NA` holds every random
+effect at its population mean of zero instead, so the result is the
+marginal trend: what the covariate does on average across groups, rather
+than what happens in any one group. `se.fit = TRUE` adds the link-scale
+standard error and credible bounds, so the band on the prediction
+inherits the uncertainty in the coefficients.
 
 ``` r
 
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
-pr <- predict(fit_re, newdata = nd, se.fit = TRUE)
+pr <- predict(fit_re, newdata = nd, se.fit = TRUE, re_form = NA)
 head(pr, 3)
 #>         fit    se.fit     lower     upper
 #> 1 -1.927484 0.1958178 -2.311280 -1.543688
@@ -469,14 +474,41 @@ The common choices are:
 
 - counts: `poisson`, or `neg_binomial_2` when the counts vary more than
   a Poisson distribution allows;
+
 - binary outcomes and successes out of a number of trials: `binomial`,
   used in the sections that follow;
+
 - proportions strictly between 0 and 1: `beta`;
+
 - positive continuous values: `gamma` or `lognormal`.
 
-Detection and occupancy models are in tulpaObs, and ratio, rate and
-zero-inflated models in tulpaRatio. Both packages add their own
-likelihood to this engine.
+Excess zeros in a count response are a second linear predictor, given as
+a one-sided `ziformula`: with probability `plogis(X_zi beta_zi)` an
+observation is a structural zero, otherwise it is drawn from `family`.
+The counts below are simulated with a structural-zero probability of
+`plogis(-0.5)`, about 0.38.
+
+``` r
+
+zi <- rbinom(n, 1, plogis(-0.5))
+dz <- data.frame(y = ifelse(zi == 1, 0, rpois(n, exp(0.2 + 0.6 * x))), x = x)
+coef(tulpa(y ~ x, data = dz, family = "poisson", ziformula = ~ 1,
+           mode = "laplace"))
+#>    (Intercept)              x zi_(Intercept) 
+#>      0.2625185      0.5663277     -0.3223195
+```
+
+The count coefficients come back next to the zero-inflation intercept,
+which sits on the logit scale. With `truncated_poisson` or
+`truncated_neg_binomial_2` as the family the same argument gives the
+hurdle model; [EM +
+Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html) fits
+the same mixture through two callbacks, for latent-variable models the
+formula does not cover.
+
+Detection and occupancy models are in tulpaObs, and ratio and rate
+models in tulpaRatio. Both packages add their own likelihood to this
+engine.
 
 ## Inference modes
 
@@ -518,11 +550,15 @@ fit_lap <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
 fit_mala <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
                   control = list(n_iter = 450, warmup = 150))
-#> Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.00, bulk-ESS
-#> 58; (Intercept): Rhat 1.01, bulk-ESS 59. Its estimates and intervals are not
-#> yet the posterior. Run longer (control$n_iter / control$warmup), or use mode =
-#> 'hmc'; see check_diagnostics().
+#> Warning: tulpa(): the 'mala' chain has not converged -- x: Rhat 1.03, bulk-ESS
+#> 38. Its estimates and intervals are not yet the posterior. Run longer
+#> (control$n_iter / control$warmup), or use mode = 'hmc'; see
+#> check_diagnostics().
 ```
+
+This short MALA run warns that its chain has not converged, at a bulk
+ESS of 38 for the slope; `control$n_iter` and `control$warmup` lengthen
+it.
 
 The two tiers agree on the fixed effects to within their uncertainty,
 which is the expected outcome when the posterior is near-Gaussian: the
@@ -539,8 +575,8 @@ data.frame(
   mala    = round(coef(fit_mala), 3)
 )
 #>                    term laplace   mala
-#> (Intercept) (Intercept)  -0.468 -0.493
-#> x                     x   1.085  1.087
+#> (Intercept) (Intercept)  -0.433 -0.435
+#> x                     x   1.007  1.077
 ```
 
 The agreement here is itself a signal that Laplace was safe for this
@@ -602,8 +638,7 @@ pay for a sampler is the moment that drift would matter to your
 conclusion.
 
 [`inference_mode_info()`](https://gillescolling.com/tulpa/reference/inference_mode_info.md)
-lists every backend, including the ones reachable only from model
-packages through the C interface. The inference-modes vignette fits one
+lists every backend with its tier. The inference-modes vignette fits one
 model at Laplace, MALA, and Pathfinder side by side, times each, and
 shows exactly where the cost of the exact guarantee turns into a reason
 to pay it.
@@ -639,8 +674,8 @@ fit_sp <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                 spatial = list(type = "icar", adjacency = W),
                 mode = "laplace")
 coef(fit_sp)
-#>  (Intercept)            x 
-#> -0.008787351  0.751041095
+#> (Intercept)           x 
+#>  -0.1805943   0.7511978
 ```
 
 The slope recovers near its true 0.7 while the ICAR field absorbs the
@@ -713,9 +748,11 @@ dt    <- data.frame(y = rpois(n, exp(0.4 + 0.5 * xt + trend[time])),
 
 fit_t <- tulpa(y ~ x, data = dt, family = "poisson",
                temporal = temporal_rw1("time"), mode = "auto")
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 coef(fit_t)
 #> (Intercept)           x 
-#>   0.3297003   0.5500785
+#>   0.4425575   0.4911166
 ```
 
 The slope lands near its true 0.5 with the trend absorbed into the field
@@ -746,11 +783,14 @@ ggplot(data.frame(time = seq_len(Tt),
 truth](tulpa_files/figure-html/temporal-plot-1.png)
 
 The estimated walk follows the wave, centred to remove the level the
-sum-to-zero handling leaves free. The front door carries
-[`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md)
-today; the second-order walk, the AR(1) process, and per-group panel
-trends have direct fitters the temporal vignette covers, which walks the
-full path from model to recovery to honest uncertainty.
+sum-to-zero handling leaves free. The front door also carries the
+second-order walk
+[`temporal_rw2()`](https://gillescolling.com/tulpa/reference/temporal_rw2.md),
+the AR(1) process
+[`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
+and per-group panel trends, and a row with an `NA` response is forecast.
+The temporal vignette covers them and walks the full path from model to
+recovery to honest uncertainty.
 
 ## Priors
 
@@ -812,7 +852,7 @@ A wide prior predictive that spills past the plausible range says the
 priors are too vague; tightening `prior_normal(0, 2.5)` toward
 `prior_normal(0, 1)` pulls it in. The priors vignette covers all seven
 constructors, the penalised-complexity prior
-[`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_pc.md)
+[`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
 for scale parameters, the defaults, and how to move a prior and watch
 the posterior follow.
 
@@ -881,7 +921,7 @@ central diagonals. The
 [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md) vignette
 builds a periodic AR(1) block end to end, fits it through the full tier
 ladder from nested Laplace to exact sampling, and shows how one block
-written once reaches all four tiers without modification.
+written once reaches all three tiers without modification.
 
 ## S3 methods
 
@@ -902,7 +942,7 @@ base R and broom.
 | [`glance()`](https://generics.r-lib.org/reference/glance.html) | one-row model summary |
 | [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md) | convergence or approximation reliability, per parameter |
 | [`tulpa_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_outer_grid.md) | a nested-Laplace fit’s hyperparameter grid: nodes, weights, per-cell modes |
-| [`predict()`](https://rdrr.io/r/stats/predict.html), [`fitted()`](https://rdrr.io/r/stats/fitted.values.html) | fixed-effect prediction / in-sample mean |
+| [`predict()`](https://rdrr.io/r/stats/predict.html), [`fitted()`](https://rdrr.io/r/stats/fitted.values.html) | prediction at new data, fitted groups conditioned on (`re_form = NA` for the population level) / in-sample mean |
 | [`logLik()`](https://rdrr.io/r/stats/logLik.html) | log marginal likelihood (Laplace) or mean log-density |
 | [`plot()`](https://rdrr.io/r/graphics/plot.default.html) | fixed-effect densities (or trace for sampler fits) |
 
@@ -930,7 +970,7 @@ diagnostics that say whether the chain mixed.
 
 glance(fit_mala)[c("n_samples", "logLik", "mean_accept", "n_divergent")]
 #>   n_samples    logLik mean_accept n_divergent
-#> 1       300 -233.0712   0.6733333          NA
+#> 1       300 -239.2498   0.6466667          NA
 ```
 
 [`plot()`](https://rdrr.io/r/graphics/plot.default.html) defaults to the
@@ -976,31 +1016,70 @@ A few rules of thumb for everyday use:
   0.4 to 0.8, or any divergences, means the chain needs more warmup or a
   smaller step size (`control$epsilon`). A Tier-1 fit is only nominally
   exact until the chain has been shown to mix.
-- **Reach for a model package when the likelihood is not built in.** The
-  five families here cover the common cases. Zero-inflation, hurdles,
-  detection and occupancy, ratio responses, and posterior-predictive
-  checking live in the packages built on this engine, not in
-  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
-  itself, and they inherit every tier and accessor shown here.
+- **Reach for a model package when the likelihood is not built in.**
+  Detection and occupancy models and ratio responses live in the
+  packages built on this engine, and they inherit every tier and
+  accessor shown here.
 
 ## Where to go next
 
-- Inference details and the tier guarantees: the inference-modes and
-  algorithm vignettes.
+- The vocabulary used across these articles:
+  [Concepts](https://gillescolling.com/tulpa/articles/concepts.html).
 
-- Spatial and temporal fields, spatially varying coefficients: the
-  spatial, temporal, and SVC vignettes.
+- Preparing the input: [Data
+  formatting](https://gillescolling.com/tulpa/articles/data-formatting.html).
 
-- Priors and prior predictive checks: the priors vignette and
-  [`prior_predict()`](https://gillescolling.com/tulpa/reference/prior_predict.md).
+- Model types: [Random
+  slopes](https://gillescolling.com/tulpa/articles/random-slopes.html),
+  [Spatial
+  models](https://gillescolling.com/tulpa/articles/spatial-models.md),
+  [Temporal
+  models](https://gillescolling.com/tulpa/articles/temporal-models.html),
+  [Space-time
+  models](https://gillescolling.com/tulpa/articles/space-time.html),
+  [Varying
+  coefficients](https://gillescolling.com/tulpa/articles/varying-coefficients.html),
+  [Continuous fields with the
+  SPDE](https://gillescolling.com/tulpa/articles/spde.html), [Spatial
+  confounding](https://gillescolling.com/tulpa/articles/spatial-confounding.html),
+  [Joint
+  models](https://gillescolling.com/tulpa/articles/joint-models.html),
+  [Multivariate areal
+  fields](https://gillescolling.com/tulpa/articles/multivariate-spatial.html),
+  [Latent
+  factors](https://gillescolling.com/tulpa/articles/latent-factors.html),
+  [Categorical and ordinal
+  responses](https://gillescolling.com/tulpa/articles/categorical-responses.html),
+  [Censored, truncated and zero-inflated
+  responses](https://gillescolling.com/tulpa/articles/censored-responses.html).
 
-- User-defined latent structure: the
-  [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md)
-  vignette.
+- Checking and comparing fits:
+  [Diagnostics](https://gillescolling.com/tulpa/articles/diagnostics.html),
+  [Model
+  comparison](https://gillescolling.com/tulpa/articles/model-comparison.html),
+  [Sequential Monte Carlo and
+  WBIC](https://gillescolling.com/tulpa/articles/smc-wbic.html),
+  [Priors](https://gillescolling.com/tulpa/articles/priors.html).
 
-- Model comparison by marginal likelihood, WAIC, and LOO: the
-  model-comparison vignette.
+- Predicting from a fit: [Prediction and
+  forecasting](https://gillescolling.com/tulpa/articles/prediction.html).
 
-- Posterior-predictive checks, WAIC, and LOO on a full observation
-  model: the model packages (tulpaObs, tulpaRatio) that build on this
-  engine. \`\`\`
+- When a fit stops with an error:
+  [Troubleshooting](https://gillescolling.com/tulpa/articles/troubleshooting.html).
+
+- A full analysis on real data: [sudden infant deaths in North
+  Carolina](https://gillescolling.com/tulpa/articles/case-study-sids.html).
+
+- How the inference works: [Inference
+  modes](https://gillescolling.com/tulpa/articles/inference-modes.md),
+  [Identifiability](https://gillescolling.com/tulpa/articles/identifiability.html),
+  [Reliability
+  diagnostics](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html),
+  [Simulation-based
+  calibration](https://gillescolling.com/tulpa/articles/sbc.html).
+
+- Agreement with lme4, glmmTMB, brms and INLA:
+  [Compatibility](https://gillescolling.com/tulpa/articles/compatibility.html).
+
+- Your own latent structure: [Custom latent
+  blocks](https://gillescolling.com/tulpa/articles/tgmrf.html).

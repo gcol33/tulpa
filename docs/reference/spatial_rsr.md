@@ -21,11 +21,13 @@ print(x, ...)
 
 - spatial:
 
-  An areal specification –
+  An areal specification – an ICAR field
   [`spatial_car()`](https://gillescolling.com/tulpa/reference/spatial_car.md),
-  `spatial_icar()`,
+  a proper CAR
+  [`spatial_car_proper()`](https://gillescolling.com/tulpa/reference/spatial_car_proper.md)
+  or
   [`spatial_bym2()`](https://gillescolling.com/tulpa/reference/spatial_bym2.md)
-  or a proper-CAR spec – or an NNGP one,
+  – or an NNGP one,
   [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md).
   The projection is applied by the binomial Polya-Gamma Gibbs sampler
   and by nested Laplace, both of which carry the field's own prior
@@ -114,7 +116,9 @@ projector `S P_perp` (`S` the observation-to-unit or
 observation-to-location incidence), or, for a binomial response, by the
 Polya-Gamma Gibbs sampler (`mode = "gibbs"`). `mode = "auto"` selects
 Gibbs for a binomial response and nested Laplace otherwise. Areal and
-NNGP fields take both routes.
+NNGP fields take both routes. `mode = "laplace"` fits the same
+restricted model at the field's fixed hyperparameters (the conditional
+door's), solved by the nested-Laplace driver on a one-point grid.
 
 ## References
 
@@ -188,7 +192,7 @@ fit <- tulpa(
   mode = "auto",
   control = list(n_iter = 500L, warmup = 250L)
 )
-#> Warning: tulpa(): the 'gibbs' chain has not converged -- log_tau_spatial: Rhat 1.01, bulk-ESS 52. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
+#> Warning: tulpa(): the 'gibbs' chain has not converged -- log_tau_spatial: Rhat 1.00, bulk-ESS 35. Its estimates and intervals are not yet the posterior. Run longer (control$n_iter / control$warmup), or use mode = 'hmc'; see check_diagnostics().
 summary(fit)
 #> tulpa fit  (gibbs, tier 1) 
 #> Call: tulpa(formula = y ~ x + spatial(region), data = df, family = "binomial", mode = "auto", n_trials = rep(20L, nrow(df)), spatial = spatial_rsr(spatial_car(W, level = "obs"), restrict_to = ~x), control = list(n_iter = 500L, warmup = 250L))
@@ -200,16 +204,16 @@ summary(fit)
 #> 
 #> Fixed effects:
 #>             estimate std.error   2.5 %   97.5 %
-#> (Intercept)  -0.3172   0.11295 -0.5502 -0.09914
-#> x             0.5278   0.06516  0.4023  0.65217
+#> (Intercept)  -0.3073   0.11586 -0.5143 -0.06732
+#> x             0.5257   0.06116  0.4166  0.64575
 #> 
 #> Fixed-effect prior: normal(0, 2.5)
 #> 
 #> Reliability (chain draws):
-#>   max Rhat 1.022, min bulk-ESS 51.96, min tail-ESS 87.51
+#>   max Rhat 1.026, min bulk-ESS 34.72, min tail-ESS 87.51
 #>   verdict: not converged
 #> 
-#> WARNING: chain not converged (max Rhat 1.01, min bulk-ESS 52 on log_tau_spatial);
+#> WARNING: chain not converged (max Rhat 1.00, min bulk-ESS 35 on log_tau_spatial);
 #>   these estimates are not yet the posterior. See check_diagnostics().
 
 # The same modifier on a continuous field: one observation per location,

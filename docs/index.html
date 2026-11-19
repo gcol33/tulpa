@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -58,21 +58,44 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
@@ -204,38 +227,38 @@
 <tr>
 <td align="left">spray[A]</td>
 <td align="right">0.74</td>
-<td align="right">-0.02</td>
-<td align="right">1.48</td>
+<td align="right">-0.06</td>
+<td align="right">1.56</td>
 </tr>
 <tr>
 <td align="left">spray[B]</td>
 <td align="right">0.79</td>
-<td align="right">0.00</td>
-<td align="right">1.53</td>
+<td align="right">0.01</td>
+<td align="right">1.61</td>
 </tr>
 <tr>
 <td align="left">spray[C]</td>
-<td align="right">-1.14</td>
-<td align="right">-1.96</td>
-<td align="right">-0.34</td>
+<td align="right">-1.13</td>
+<td align="right">-1.98</td>
+<td align="right">-0.28</td>
 </tr>
 <tr>
 <td align="left">spray[D]</td>
-<td align="right">-0.33</td>
-<td align="right">-1.11</td>
-<td align="right">0.43</td>
+<td align="right">-0.34</td>
+<td align="right">-1.14</td>
+<td align="right">0.52</td>
 </tr>
 <tr>
 <td align="left">spray[E]</td>
-<td align="right">-0.67</td>
+<td align="right">-0.66</td>
 <td align="right">-1.48</td>
-<td align="right">0.10</td>
+<td align="right">0.15</td>
 </tr>
 <tr>
 <td align="left">spray[F]</td>
-<td align="right">0.87</td>
+<td align="right">0.88</td>
 <td align="right">0.10</td>
-<td align="right">1.61</td>
+<td align="right">1.72</td>
 </tr>
 </tbody>
 </table>
@@ -320,14 +343,14 @@
 <pre class="text"><code>Colling G (2026). _tulpa: Templated Unified Library for Posterior
 Approximation in Bayesian Hierarchical Models_.
 doi:10.32614/CRAN.package.tulpa
-&lt;https://doi.org/10.32614/CRAN.package.tulpa&gt;. R package version 0.7.5,
+&lt;https://doi.org/10.32614/CRAN.package.tulpa&gt;. R package version 0.8.0,
 &lt;https://CRAN.R-project.org/package=tulpa&gt;.</code></pre>
 <p>BibTeX:</p>
 <div class="sourceCode" id="cb10"><pre class="sourceCode bibtex"><code class="sourceCode bibtex"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="va">@Manual</span>{<span class="ot">colling2026tulpa</span>,</span>
 <span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="dt">title</span> = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},</span>
 <span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="dt">author</span> = {Gilles Colling},</span>
 <span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="dt">year</span> = {2026},</span>
-<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="dt">note</span> = {R package version 0.7.5},</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="dt">note</span> = {R package version 0.8.0},</span>
 <span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="dt">doi</span> = {10.32614/CRAN.package.tulpa},</span>
 <span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>  <span class="dt">url</span> = {https://CRAN.R-project.org/package=tulpa},</span>
 <span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>}</span></code></pre></div>

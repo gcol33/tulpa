@@ -77,6 +77,19 @@ A `tulpa_fit` object with:
 - `accept_prob`, `divergent`, `treedepth`, `epsilon` – NUTS diagnostics
   from the underlying chain.
 
+## Computation device
+
+`control$device` is `"auto"`, `"cpu"`, or `"cuda"`. The default `"auto"`
+uses CUDA for registered operations above their measured size crossover.
+Operations with no measured crossover run on CPU. `"cuda"` requests CUDA
+for each registered operation and errors with the reason from
+[`gpu_info()`](https://gillescolling.com/tulpa/reference/gpu_info.md)
+when its device or library is unavailable. Host inference stages run on
+CPU. The fit's `device$stages` table records CPU and CUDA call counts
+per stage; [`print()`](https://rdrr.io/r/base/print.html) and
+[`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+report these stages.
+
 ## See also
 
 [`tulpa_laplace_beta()`](https://gillescolling.com/tulpa/reference/tulpa_laplace_beta.md)
@@ -95,7 +108,7 @@ y <- rbeta(n, mu * phi, (1 - mu) * phi)
 # \donttest{
 fit <- tulpa_nuts_beta(y, X, control = list(n_iter = 500L, n_warmup = 250L))
 colMeans(fit$draws)
-#>    beta[1]    beta[2]    log_phi 
-#> 0.08856396 0.66671059 2.16537679 
+#>   beta[1]   beta[2]   log_phi 
+#> 0.0903092 0.6679765 2.1454850 
 # }
 ```

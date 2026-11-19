@@ -1,26 +1,7 @@
 # Model comparison
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -59,10 +40,10 @@ specification against the data it saw. The Bayes factor turns two such
 scores into a ratio, the odds one structure gives the data over another.
 WAIC and LOO step outside that frame and ask how well a model predicts
 data it has not yet met. The first two the engine computes from a single
-deterministic solve; the third needs a pointwise log-likelihood that
-only a full observation model supplies, so it lives in the model
-packages. Knowing which number answers your question saves a great deal
-of confused staring at tables.
+deterministic solve; the third needs a pointwise log-likelihood, which
+the engine reconstructs from the fit’s linear-predictor draws and its
+family density. Knowing which number answers your question saves a great
+deal of confused staring at tables.
 
 ## Marginal likelihood from a Laplace fit
 
@@ -276,8 +257,8 @@ c(full = round(as.numeric(logLik(m3)), 2),
 #>    -632.00    -636.17      -4.17
 ```
 
-The noise covariate buys a gain near zero, often slightly negative once
-the determinant penalty is paid. A maximised likelihood would have risen
+The noise covariate lowers the evidence by 4.2 log units once the
+determinant penalty is paid. A maximised likelihood would have risen
 here, since `w` can always soak up a sliver of residual variance at its
 best-fitting coefficient. The marginal likelihood declines to pay,
 because the fit `w` unlocks is smaller than the posterior concentration
@@ -582,9 +563,9 @@ left to read.
 A base [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
 fit does not store that matrix. The Laplace tier stores a mode and a
 curvature, not a stack of draws, and even the sampler tiers store
-parameter draws rather than a per-observation log-likelihood. So an
-external tool that expects the stored matrix has nothing to read on a
-plain fit, and it says so:
+parameter draws rather than a per-observation log-likelihood.
+[`loo::waic()`](https://mc-stan.org/loo/reference/waic.html) on a plain
+fit builds the matrix from the fit itself:
 
 ``` r
 
@@ -598,12 +579,13 @@ loo::waic(b2)
 #> waic         512.7 21.4
 ```
 
-The message names the missing piece: a stored pointwise log-likelihood.
-Model packages built on this engine, such as tulpaObs and tulpaRatio,
-sample the observation model and populate `$draws$log_lik`, plus
-`$draws$y_rep` for posterior predictive checks, so external tools that
-read that matrix work on their fits directly. The engine’s own criteria
-layer – `compare_models(..., criterion = "waic")`,
+The printout reports the matrix it was computed from: 400 draws by 500
+observations, reconstructed from the linear-predictor posterior draws
+and the binomial density. Model packages built on this engine, such as
+tulpaObs and tulpaRatio, sample the observation model and populate
+`$draws$log_lik`, plus `$draws$y_rep` for posterior predictive checks,
+so external tools that read that matrix work on their fits directly. The
+engine’s own criteria layer – `compare_models(..., criterion = "waic")`,
 [`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md),
 and
 [`model_average()`](https://gillescolling.com/tulpa/reference/model_average.md)
@@ -618,11 +600,9 @@ the mode, so the resulting WAIC inherits that approximation.
 The split is deliberate. The engine owns the structural model and scores
 it by evidence, which it can compute from the Laplace fit alone. The
 model packages own the observation likelihood and the predictive
-machinery that rides on it. If you need cross-validated predictive
-comparison, fit through the relevant model package; for evidence-based
-comparison of structural specifications, the engine’s marginal
-likelihood is the tool, and it needs nothing beyond the Laplace fit you
-already have.
+machinery that rides on it. For evidence-based comparison of structural
+specifications, the engine’s marginal likelihood is the tool, and it
+needs nothing beyond the Laplace fit you already have.
 
 ## model_average() for prediction
 
@@ -645,7 +625,7 @@ ma$weights
 #>        slope     slope_re         full 
 #> 5.979363e-22 3.175864e-30 1.000000e+00
 head(round(ma$averaged, 3))
-#> [1]  0.605 -2.695  1.146  2.395  0.151 -0.009
+#> [1]  0.926 -3.887  1.717  2.043  0.266 -0.540
 ```
 
 The weights are genuine WAIC weights:
@@ -734,8 +714,8 @@ A short set of habits covers most comparison work:
   forecasts fresh observations best”. The two verdicts usually coincide;
   where they diverge, the mismatch flags overfitting, since a model can
   hug its training rows yet generalise poorly. For the predictive
-  question, route the analysis through a model package that supplies the
-  pointwise log-likelihood.
+  question, compare with `criterion = "waic"` or
+  [`loo::loo()`](https://mc-stan.org/loo/reference/loo.html).
 
 ## Where to go next
 

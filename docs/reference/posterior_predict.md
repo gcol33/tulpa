@@ -29,14 +29,24 @@ Where the draws come from follows what the fit carries:
   fixed effects under the joint Laplace precision of `[beta | b]` at the
   mode, so the two carry their posterior correlation (on a conditional
   Laplace fit this is the joint Gaussian draw; an EB fit is conditional
-  on the estimated variance components). A conditional-Laplace spatial
-  fit holds its random effects and areal field at their posterior mode,
-  which over-disperses the linear predictor wherever the intercept is
-  aliased with them; an SPDE field enters at its posterior mean.
+  on the estimated variance components). A conditional-Laplace fit with
+  an NNGP, HSGP, SPDE or areal field draws the coefficients, the group
+  effects and the field jointly from the Laplace Gaussian of its one
+  cell (`.field_eta_draws()`), the cell solved again by the kernel of
+  its block.
 
-At `newdata` the prediction is population level (random effects at
-zero), matching
-[`predict.tulpa_fit()`](https://gillescolling.com/tulpa/reference/predict.tulpa_fit.md).
+At `newdata` each replicate carries the formula random effects, as
+[`predict.tulpa_fit()`](https://gillescolling.com/tulpa/reference/predict.tulpa_fit.md)
+does: a row of a group the fit saw takes that group's effect, drawn
+jointly with the fixed effects of the replicate, and a row of a group it
+did not see takes a new effect drawn from the term's covariance – at the
+replicate's own draw of it where the fit samples or integrates the
+covariance (`re_cov = "gibbs"`, `"nested"`, the samplers), at its
+estimate or conditioned value otherwise. Rows of one new group share its
+effect. `re_form = NA` drops them (the population level). A spatially or
+temporally varying coefficient enters at the `newdata` coordinates /
+times, drawn per replicate from its conditional given that posterior
+draw.
 
 A zero-inflated fit (`ziformula`) draws the structural-zero logit from
 the same posterior draw as the count predictor; each replicate
@@ -56,6 +66,7 @@ posterior_predict(
   ndraws = NULL,
   n_trials = NULL,
   seed = NULL,
+  re_form = NULL,
   ...
 )
 ```
@@ -73,9 +84,9 @@ posterior_predict(
 
 - newdata:
 
-  Optional data frame of covariates to predict at. Population level
-  (fixed effects only); `NULL` (default) replicates at the training data
-  with every fitted component included.
+  Optional data frame of covariates to predict at, with the grouping
+  columns of the random-effect terms `re_form` keeps. `NULL` (default)
+  replicates at the training data with every fitted component included.
 
 - ndraws:
 
@@ -90,6 +101,13 @@ posterior_predict(
 - seed:
 
   Optional integer seed (RNG state is restored on exit).
+
+- re_form:
+
+  Which formula random-effect terms to condition on, as lme4's
+  `re.form`: `NULL` (default) every term, `NA` or `~0` none (the
+  population level), or a one-sided formula naming a subset, e.g.
+  `~ (1 | site)`.
 
 ## Value
 

@@ -1,26 +1,7 @@
 # Spatial models
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -259,6 +240,8 @@ with a message rather than guessing.
 fit <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
              spatial = list(type = "icar", adjacency = W),
              mode = "nested_laplace")
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 summary(fit)$inference$backend
 #> [1] "nested_laplace"
 ```
@@ -291,7 +274,7 @@ The fixed effects come back from
 
 coef(fit)
 #> (Intercept)           x 
-#>  -0.3185314   0.8184737
+#>  -0.3180747   0.8172562
 ```
 
 The slope lands near the simulated $`0.8`$. With the regional wave
@@ -324,18 +307,20 @@ summary(fit)
 #> 
 #> Fixed effects:
 #>             estimate std.error   2.5 %  97.5 %
-#> (Intercept)  -0.3185   0.08391 -0.4830 -0.1541
-#> x             0.8185   0.09491  0.6326  1.0046
-#>   interval read: mixture_cdf 
-#>   interval declined: NA 
+#> (Intercept)  -0.3181   0.08385 -0.4872 -0.1586
+#> x             0.8173   0.09479  0.6519  1.0235
+#>   interval read: skew_map_cell 
+#>   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had 
 #> 
 #> Hyperparameters:
-#>  parameter  mean    sd median ci_lo ci_hi
-#>        tau 4.848 2.357  4.353 1.665 10.76
+#>  parameter mean  sd median ci_lo ci_hi
+#>        tau  Inf Inf  4.356 1.667 10.76
+#> 
+#> Fixed-effect prior: normal(0, 2.5)
 #> 
 #> Reliability (iid draws):
-#>   outer pareto_k -1.494 (good); grid ESS 5.987 of 12 cells; inner skew NA (NA)
-#>   verdict: outer integration good; inner Laplace not assessed
+#>   outer pareto_k -1.517 (good); grid ESS 5.987 of 12 cells; inner skew 0.0689 (good)
+#>   verdict: reliable (both layers good)
 ```
 
 ### Extracting the field per region
@@ -362,7 +347,7 @@ of the fixed effects.
 g         <- tulpa_outer_grid(fit)
 field_hat <- colSums(g$weights * g$modes)[g$n_fixed + seq_len(K)]
 round(head(field_hat), 3)
-#> [1] 0.272 0.374 0.805 0.774 1.501 1.499
+#> [1] 0.272 0.374 0.805 0.773 1.501 1.499
 ```
 
 That recipe is the same one the temporal path uses for a random-walk
@@ -395,7 +380,7 @@ the identity line](spatial-models_files/figure-html/field-plot-1.png)
 ``` r
 
 cor(field_true, field_hat)
-#> [1] 0.9809531
+#> [1] 0.9809454
 ```
 
 The points fall along the identity line and the correlation is high. The
@@ -411,15 +396,18 @@ mean removes that free constant and leaves the contrasts, which are what
 the model actually identifies.
 
 The precision $`\tau`$ is summarised in the `hyperparameters` table of
-[`summary()`](https://rdrr.io/r/base/summary.html): `mean` is the
-posterior mean over the grid, on the natural precision scale, and
-`ci_lo` / `ci_hi` give a credible interval.
+[`summary()`](https://rdrr.io/r/base/summary.html): `median` is the
+posterior median, on the natural precision scale, and `ci_lo` / `ci_hi`
+give a credible interval. The `mean` column reads `Inf` for a precision:
+the default prior is exponential in the field’s standard deviation,
+which leaves the precision a tail of $`\tau^{-3/2}`$ and no posterior
+mean.
 
 ``` r
 
-summary(fit)$hyperparameters[, c("parameter", "mean", "ci_lo", "ci_hi")]
-#>   parameter     mean    ci_lo    ci_hi
-#> 1       tau 4.848278 1.664748 10.76048
+summary(fit)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
+#>   parameter median    ci_lo    ci_hi
+#> 1       tau 4.3559 1.667424 10.75661
 ```
 
 A larger $`\tau`$ would mean a stiffer penalty on neighbour differences
@@ -449,15 +437,15 @@ the fixed-effect covariance.
 
 confint(fit)
 #>                  2.5 %     97.5 %
-#> (Intercept) -0.4830167 -0.1540832
-#> x            0.6325718  1.0045989
+#> (Intercept) -0.4872383 -0.1585693
+#> x            0.6519301  1.0235047
 #> attr(,"skew_applied")
 #> (Intercept)           x 
-#>       FALSE       FALSE 
+#>        TRUE        TRUE 
 #> attr(,"interval_source")
-#> [1] "mixture_cdf"
+#> [1] "skew_map_cell"
 #> attr(,"interval_declined")
-#> [1] NA
+#> [1] "skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had"
 #> attr(,"retained_mass")
 #> [1] 1
 ```
@@ -467,34 +455,28 @@ rank-deficiency of the ICAR precision. Under an intrinsic field the
 overall level of $`\phi`$ and the intercept $`\beta_0`$ are confounded:
 shifting every $`\phi_r`$ up by a constant and the intercept down by the
 same constant leaves the linear predictor, and therefore the likelihood,
-unchanged. The two parameters trade off along a flat ridge, and no
-amount of data can pin them both. tulpa handles this by letting the
-intercept float against a near-flat prior, which shows up as a very wide
-intercept standard error in the summary above. The slopes are
-unaffected, because a covariate’s effect does not live on that ridge.
-Read the slopes, which are identified, and treat the intercept as a
-nuisance level rather than a quantity to interpret.
+unchanged. tulpa removes that direction with a hard sum-to-zero
+constraint on $`\phi`$: the field’s mean is held at zero, so the
+intercept is the overall level and the field carries only the departures
+from it. The data inform that level directly, and its standard error is
+of the size a model with one fixed effect per region under sum-to-zero
+contrasts would give.
 
 ``` r
 
 coef(summary(fit))["(Intercept)", "std.error"]
-#> [1] 0.08391077
+#> [1] 0.0838457
 ```
 
-The wide value here is by design, not a fitting failure. A proper CAR or
-a BYM2 field with its IID part tamed will narrow it, at the cost of an
-extra estimated parameter. Whenever you report results from an intrinsic
-model, say so plainly: the intercept is a floating reference, the slopes
-are the inferential payload, and a reader who treats the intercept as an
-absolute baseline rate will be misled. This caveat travels with every
-disease-map or species-distribution table that smooths over an adjacency
-graph.
+What the intercept means follows from the constraint: it is the level at
+the average over regions, not a baseline rate of any one region. A table
+reporting it from an intrinsic model says which average it refers to.
 
 ## Prediction
 
 [`predict()`](https://rdrr.io/r/stats/predict.html) gives the
-fixed-effect prediction at new covariate values. The spatial field is
-held at its population level, so the result is the marginal covariate
+fixed-effect prediction at new covariate values. The areal field is held
+at zero, its population level, so the result is the marginal covariate
 trend with the regional signal averaged out. This is the right default
 for a question like “what does the covariate do on average across the
 map”, as opposed to “what happens in region 7”, which needs that
@@ -505,12 +487,13 @@ grid-marginalised fixed-effect covariance the summary uses.
 ``` r
 
 nd <- data.frame(x = seq(-2.5, 2.5, length.out = 50))
-pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
+pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE,
+              include_field = FALSE)
 head(pr, 3)
 #>         fit    se.fit     lower     upper
-#> 1 -2.364716 0.2590453 -2.872435 -1.856996
-#> 2 -2.281198 0.2498980 -2.770989 -1.791407
-#> 3 -2.197680 0.2407926 -2.669625 -1.725735
+#> 1 -2.361215 0.2587212 -2.868299 -1.854131
+#> 2 -2.277822 0.2495854 -2.767000 -1.788643
+#> 3 -2.194428 0.2404916 -2.665783 -1.723073
 ```
 
 Plot the trend on the link scale with its credible band.
@@ -563,13 +546,13 @@ cmp <- compare_models(nonspatial = m0, spatial = fit, criterion = "loglik")
 cmp
 #>        model n_params    logLik     quantity conditioned_on
 #> 1 nonspatial        2 -511.5366 log_evidence               
-#> 2    spatial        2 -466.0906 log_evidence
+#> 2    spatial        2 -455.5594 log_evidence
 ```
 
 ``` r
 
 diff(cmp$logLik)
-#> [1] 45.44601
+#> [1] 55.9772
 ```
 
 The spatial fit carries the higher evidence by a wide margin, matching
@@ -610,13 +593,12 @@ actionable.
   zero eigenvalues of the graph Laplacian `diag(rowSums(W)) - W` counts
   the connected components; more than one means the graph is split.
 
-- **Read slopes, never the intercept, under ICAR.** The intercept
-  confounds with the field level and its standard error runs to the
-  prior scale, on the order of 100 on the link scale, against slope
-  errors three orders of magnitude smaller. That gap is expected and is
-  the signature of the intrinsic ridge, not a convergence problem. If
-  you need a clean intercept, move to a proper CAR or a BYM2 field,
-  whose IID part breaks the exact confounding.
+- **Read the intercept as the level of a centred field.** The ICAR field
+  is constrained to sum to zero, so the intercept carries the overall
+  level and the field only the departures from it; the fit above reports
+  an intercept standard error of 0.084.
+  [Identifiability](https://gillescolling.com/tulpa/articles/identifiability.html)
+  shows the alias the constraint removes.
 
 - **ICAR versus BYM2.** Reach for `icar` when you want the simplest
   smooth field and do not need to separate structured from unstructured
@@ -700,13 +682,13 @@ fit  <- fit_spde(y = y, X = model.matrix(~ xcov), spatial = spde,
                  family = "poisson", range = 0.4, sigma = 0.9)
 round(coef(fit), 3)
 #> (Intercept)        xcov 
-#>       0.988       0.540
+#>       0.807       0.552
 ```
 
-The fixed-effect estimates land on the generating intercept and slope;
-`field_effects(fit)` returns the field at each mesh node, ready to
-project onto a prediction grid. Leaving `range` and `sigma` at their
-default `NULL` switches
+The slope lands near the generating 0.5, and the intercept reads 0.81
+against the generating 1.0; `field_effects(fit)` returns the field at
+each mesh node, ready to project onto a prediction grid. Leaving `range`
+and `sigma` at their default `NULL` switches
 [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md) to
 nested Laplace over the two hyperparameters and adds an outer
 Pareto-k-hat, which

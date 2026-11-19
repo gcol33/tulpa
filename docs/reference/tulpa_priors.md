@@ -128,12 +128,12 @@ PC priors (Simpson et al., 2017) provide principled regularization that:
 
 For other parameters, standard distributions are available via helper
 functions:
-[`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_normal.md),
-[`prior_half_normal()`](https://gillescolling.com/tulpa/reference/prior_half_normal.md),
-[`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_half_cauchy.md),
-[`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_gamma.md),
-[`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_beta.md),
-[`prior_exponential()`](https://gillescolling.com/tulpa/reference/prior_exponential.md).
+[`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md),
+[`prior_half_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md),
+[`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_distributions.md),
+[`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_distributions.md),
+[`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_distributions.md),
+[`prior_exponential()`](https://gillescolling.com/tulpa/reference/prior_distributions.md).
 
 ## References
 

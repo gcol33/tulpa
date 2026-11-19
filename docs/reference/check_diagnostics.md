@@ -57,7 +57,7 @@ fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
                             seed = 1L))
 check_diagnostics(fit)
 #> Convergence warnings:
-#>   - 1 parameter(s) with Rhat > 1.01
+#>   - 2 parameter(s) with Rhat > 1.01
 #>   - 2 parameter(s) with bulk-ESS < 400
 # }
 ```

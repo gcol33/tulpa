@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.6</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -45,14 +45,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -109,10 +113,14 @@
         <dd><p>What a spatial field does to the slope of a spatially smooth covariate, the two slopes a model can target, and how spatial_rsr() switches between them on areal and NNGP fields.</p>
         </dd><dt><a href="joint-models.html">Joint models</a></dt>
         <dd><p>Two response arms sharing one spatial field through a copy scale: simulate, fit, read the copy scale and its point mass at zero, compare with separate fits, predict where one arm has no data.</p>
+        </dd><dt><a href="multivariate-spatial.html">Multivariate areal fields</a></dt>
+        <dd><p>Two responses with correlated spatial fields on one graph (MCAR) or correlated unit effects without a graph (MIID): simulate, fit, recover the cross-response correlation, predict where one response has no data, and compare with two independent fits.</p>
         </dd><dt><a href="latent-factors.html">Latent factors</a></dt>
         <dd><p>Many species counted at the same sites, sharing two latent site factors with a loading per species: simulate a long-format data set, fit it with tulpa(factors = ), and read loadings, the covariance between species they imply, and the site scores.</p>
         </dd><dt><a href="categorical-responses.html">Categorical and ordinal responses</a></dt>
         <dd><p>Responses that fall into one of several classes: the baseline-category logit for unordered classes and the cumulative logit for ordered ones, each simulated, fitted, checked, predicted and compared.</p>
+        </dd><dt><a href="censored-responses.html">Censored, truncated and zero-inflated responses</a></dt>
+        <dd><p>Fit measurements below a detection limit as censored, samples above a reporting ceiling as truncated, and counts with excess zeros as zero-inflated, each against a known truth and a naive Gaussian or Poisson fit.</p>
       </dd></dl></div>
     <div class="section ">
       <h3>Workflows</h3>
@@ -124,8 +132,12 @@
         <dd><p>The prior families, the defaults, priors on fixed effects and hyperparameters, and prior predictive checks.</p>
         </dd><dt><a href="diagnostics.html">Diagnostics</a></dt>
         <dd><p>One Poisson areal model checked through every diagnostic tulpa offers: simulated residuals, spatial and temporal structure, sampler convergence, approximation reliability, model comparison and prior sensitivity, with a misspecified twin that shows what failing looks like.</p>
+        </dd><dt><a href="prediction.html">Prediction and forecasting</a></dt>
+        <dd><p>Predict for fitted and new groups, forecast by masking the response, predict at new locations and map the result, each checked against held-out simulated values.</p>
         </dd><dt><a href="model-comparison.html">Model comparison</a></dt>
         <dd><p>Compare fits by marginal likelihood, Bayes factors, WAIC and LOO, and average models for prediction.</p>
+        </dd><dt><a href="smc-wbic.html">Sequential Monte Carlo and WBIC</a></dt>
+        <dd><p>Fit with the sequential Monte Carlo sampler, check its draws against a closed-form posterior and NUTS, and rank models by WBIC.</p>
         </dd><dt><a href="troubleshooting.html">Troubleshooting</a></dt>
         <dd><p>The errors and warnings a tulpa fit most often stops on, grouped by stage, each with the message as printed and a corrected call that runs.</p>
         </dd><dt><a href="checkpoint.html">Checkpointing</a></dt>
@@ -133,7 +145,7 @@
         </dd><dt><a href="tgmrf.html">Custom latent blocks</a></dt>
         <dd><p>Write a latent block in R or C++ and fit it at every inference tier.</p>
         </dd><dt><a href="em-laplace.html">EM + Laplace</a></dt>
-        <dd><p>Fit a model with a discrete latent variable by writing two callbacks for the EM + Laplace driver, then correct its standard errors by multiple imputation or Gibbs sampling.</p>
+        <dd><p>Fit a model with a discrete latent variable through EM + Laplace, pool multiple imputations, or sample its joint posterior with true-density MH-within-Gibbs.</p>
       </dd></dl></div>
     <div class="section ">
       <h3>Case studies</h3>

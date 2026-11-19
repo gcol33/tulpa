@@ -338,7 +338,7 @@ round(res_mesh, 3)
 
 Times are elapsed seconds on the machine that built this page, 300
 observations, two threads. All three meshes report a range between 0.37 and
-0.40, within the posterior SD of the range; the coarsest mesh, with edges as
+0.40, inside the range's 95% interval of 0.21 to 0.71; the coarsest mesh, with edges as
 long as the range, reports a larger SD, 1.17 against 0.93 and 0.97 on the two
 finer meshes. The finest takes about twelve times as long as the middle one
 for a grid error 0.006 lower.
@@ -385,7 +385,7 @@ tab <- cbind(tab, seconds = time[rownames(tab)],
 round(tab, 3)
 ```
 
-The three fields reach grid errors within about 0.03 of each other, the SPDE
+The three fields reach grid errors within about 0.01 of each other, the NNGP
 field the lowest, and agree on the slope to within 0.015. On this dataset the
 non-spatial slope, 0.402, is closer to the simulated 0.4, and its standard
 error is smaller than those of the spatial fits; every slope interval contains
@@ -400,10 +400,10 @@ compare_models(nonspatial = fits$nonspatial, spde = fits$spde,
                nngp = fits$nngp, hsgp = fits$hsgp, criterion = "waic")
 ```
 
-All three spatial fits sit about 165 to 177 units of expected log predictive
-density above the non-spatial one. Among them the SPDE field ranks first, the
-NNGP field 7.6 below it with a standard error of 4.6 on the difference, and
-the HSGP field 12.6 below with a standard error of 4.8.
+All three spatial fits sit about 164 to 169 units of expected log predictive
+density above the non-spatial one. Among them the NNGP field ranks first, the
+SPDE field 0.9 below it with a standard error of 2.0 on the difference, and
+the HSGP field 5.3 below with a standard error of 4.4.
 
 ## Fractional smoothness
 
@@ -447,13 +447,13 @@ rbind(spatial_spde = coef(fit), spatial_spde_custom = coef(f_custom))
 ## Practical guidance
 
 - **Mesh edge against the range.** On these data, inner edges of a sixth and
-  a half of the range (0.05 and 0.15 against 0.3) gave the same
-  hyperparameters within their posterior SD and grid errors 0.006 apart, while
+  a half of the range (0.05 and 0.15 against 0.3) gave ranges of 0.38 and
+  0.39, both inside the 95% interval, and grid errors 0.006 apart, while
   edges as long as the range raised the SD estimate from 0.93 to 1.17. Start with an inner
   `max_edge` at most half the range you expect, and refit at half that edge:
   if the range and the slope do not move, the coarser mesh is enough.
 - **Cost grows with the vertices.** The fine mesh of the comparison above had
-  about eight times the vertices of the middle one and took about thirteen
+  about eight times the vertices of the middle one and took about twelve
   times as long. `cutoff` is the lever for clustered data, since every point
   closer than `cutoff` to another shares its vertex.
 - **Priors.** With 300 observations, prior medians for the range twenty times

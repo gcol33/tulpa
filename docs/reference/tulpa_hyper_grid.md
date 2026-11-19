@@ -32,6 +32,8 @@ tulpa_hyper_grid(
   n_draws = 2000L,
   seed = NULL,
   beta_names = NULL,
+  design = c("grid", "ccd"),
+  ccd_start = NULL,
   control = list()
 )
 ```
@@ -61,8 +63,14 @@ tulpa_hyper_grid(
 
   - `beta_cov` – `p x p` numeric matrix of fixed-effect marginal
     covariance at the cell. Required when
-    `combine = "law_of_total_cov"`. `hypers` is a named numeric vector
-    with the current cell's axis values (names match
+    `combine = "law_of_total_cov"`.
+
+  - `extras` – optional named list of numeric vectors (one length per
+    name across cells): per-cell quantities the fit reports as their
+    posterior mean over the grid (a latent field's mode, a
+    per-observation offset), returned in `extras_mean` under the same
+    weights as `beta`. `hypers` is a named numeric vector with the
+    current cell's axis values (names match
     `vapply(hyper_specs, `\[\[`, character(1), "name")`). Errors thrown
     by `inner_fit` are caught and treated as a failed cell
     (`log_marginal = -Inf`, no beta contribution).
@@ -101,6 +109,24 @@ tulpa_hyper_grid(
   `NULL` (default) the names are taken from the first successful cell's
   `beta_mean` (or `beta1`, `beta2`, ... if it is unnamed).
 
+- design:
+
+  `"grid"` (default) integrates on the Cartesian product of the axis
+  grids. `"ccd"` places a mode-centred central composite design
+  ([`tulpa_ccd_outer_grid()`](https://gillescolling.com/tulpa/reference/tulpa_ccd_outer_grid.md))
+  over the axes whose grid has more than one level (log-scale axes in
+  the log, the grid's range as the box, the others held at their single
+  level), weighting each node by its design weight times its marginal;
+  when the design declines, or no node is finite, the tensor grid is
+  used and `ccd_declined` says why. The refinement passes in `control`
+  apply to the tensor grid only.
+
+- ccd_start:
+
+  Optional named physical starting values of the CCD mode-find; an axis
+  left out starts at the centre of its grid (in its integration
+  coordinate).
+
 - control:
 
   Optional list of refinement / tuning knobs:
@@ -122,8 +148,10 @@ tulpa_hyper_grid(
     adjacent nodes that carry the axis's mass, each new point a level
     laid in every row of the other axes that holds the posterior, and
     repeat until the axis reaches `var_of_means_min_ess` or has taken
-    `.nl_diag("axis_refine_nodes")` new levels. One kernel call per
-    round.
+    `.nl_diag("axis_refine_nodes")` new levels inside its span. An end
+    whose read places more than `.nl_diag("edge_tail_mass")` of the axis
+    past it gains a level beyond it, at most
+    `.nl_diag("edge_extend_max")` per end. One kernel call per round.
 
   - `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) – the quadrature
     effective sample size an axis marginal has to reach for the pass to
@@ -179,6 +207,17 @@ A list of class `c("tulpa_fit", "list")` with:
 - `means`, `param_names`, `process_info`, `n_samples`, `n_params`, `N` –
   the `tulpa_fit` accessor surface, populated when a fixed-effect
   posterior is assembled.
+
+- `extras_mean` – named list, the weighted mean of each `extras`
+  quantity `inner_fit` returned (`NULL` when it returned none).
+
+- `mixture` – `list(weights, modes, covs)` over the cells carrying mass,
+  the per-cell fixed-effect posteriors `beta` / `beta_cov` pool (`covs`
+  `NULL` unless `combine = "law_of_total_cov"`).
+
+- `design`, `ccd_declined`, `pareto_k` – the integration design used,
+  the reason a requested CCD fell back to the grid (`NULL` otherwise),
+  and the CCD's outer PSIS k-hat (`NA` on the grid).
 
 - `hyper_specs` – echoed list of `hyper_axis_spec` objects (the
   normalised form).

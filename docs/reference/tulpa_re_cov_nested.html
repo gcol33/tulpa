@@ -36,7 +36,7 @@ headline summary should be the marginalized median, not the mode.'><meta propert
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -61,14 +61,18 @@ headline summary should be the marginalized median, not the mode.'><meta propert
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -308,21 +312,22 @@ fixed effects, <code><a href="ranef.html">ranef()</a></code>, <code><a href="pos
 criteria all read the node centres. <code>FALSE</code> keeps the mode. Off at
 <code>n_quad &gt; 1</code> and whenever the subspace debias runs. Which nodes were
 centred is recorded in <code>mean_shift</code> on the returned fit.</p></li>
-<li><p><code>subspace_debias</code>: subspace debias, <code>FALSE</code> by
-default. <code>TRUE</code> takes every default; a list overrides <code>band</code> (the
-inner-reliability floor a coordinate is selected at, default <code>"ok"</code>),
-<code>idx</code> (pin the corrected set explicitly, skipping the selector),
-<code>probe</code> (the latent indices scored, default the fixed effects),
-<code>closure</code> (<code>FALSE</code>, <code>TRUE</code>, or a partial-correlation threshold: grow
-the set by the precision-graph neighbours it is strongly coupled to),
-<code>closure_max</code>, and the sampler budget <code>n_iter</code> / <code>warmup</code> / <code>thin</code>.
-When the selected set is non-empty, each integration node reports the
-selected fixed-effect coordinates from Metropolis on the true density
-along the Gaussian-conditional-mean surface, and the rest
-from the Gaussian conditional given them; an EMPTY set leaves the fit
-bit-for-bit identical to the plain path. What was selected is recorded
-in <code>subspace_debias</code> on the returned fit. The Gaussian nuisance carry
-and approximate outer integration remain; the fit stays Tier 2.</p></li>
+<li><p><code>subspace_debias</code>: latent Metropolis correction, <code>FALSE</code> by
+default. <code>TRUE</code> takes the defaults; a list accepts <code>method</code> (<code>"fast"</code>
+or <code>"exact"</code>), <code>band</code> (default <code>"ok"</code>), <code>idx</code>, <code>probe</code>, <code>closure</code>,
+<code>closure_max</code>, <code>n_iter</code>, <code>warmup</code>, <code>thin</code>, and <code>n_draws</code>.
+Fast correction samples the joint density on the selected Gaussian
+conditional-mean surface, carries Gaussian nuisance conditionals, and
+keeps the Laplace cell weights. Exact correction uses full-latent
+true-density MH, including the Gaussian nuisance proposal density in
+the ratio, and corrects each cell's integral with the shared unbiased
+t importance estimator. Independent pilots calibrate the particle
+count; the existing PSIS k gate decides whether the correction applies.
+The finite outer design and importance estimates keep the result
+Tier 2. Applied exact correction returns paired fixed-effect, random-
+effect and covariance-node draws, with retained source chains and IS
+diagnostics in <code>subspace_debias</code>. Fast empty selections preserve the
+plain fit; exact empty selections use full Gaussian independence MH.</p></li>
 </ul></dd>
 
 </dl></div>
@@ -455,19 +460,23 @@ hyperparameters.</p></div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">12L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span>
-<span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
-<span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.7</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span>     <span class="co"># random intercept + slope</span></span>
-<span><span class="va">eta</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">x</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">2L</span>, Z <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>,</span>
-<span>                correlated <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_re_cov_nested</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>,</span>
-<span>                           family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">Sigma_mean</span>        <span class="co"># marginalized RE covariance</span></span>
-<span><span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">12L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span></span>
+<span class="r-in"><span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.7</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span>     <span class="co"># random intercept + slope</span></span></span>
+<span class="r-in"><span><span class="va">eta</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">x</span></span></span>
+<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">2L</span>, Z <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>                correlated <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_re_cov_nested</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>,</span></span>
+<span class="r-in"><span>                           family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">Sigma_mean</span>        <span class="co"># marginalized RE covariance</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>             [,1]        [,2]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1,]  0.41707224 -0.03130594</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [2,] -0.03130594  0.24348548</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

@@ -209,8 +209,8 @@ them.
 
 Expect the mixture and collapsed arms to score close together. They carry the
 same first two moments, and the CRPS integrates the whole squared CDF
-difference, which those moments dominate. Here their `delta` has a `t` of 0.30
-and 0.72, and both pass every ECDF read. The `narrow` arm scores worse on
+difference, which those moments dominate. Here their `delta` has a `t` of 0.25
+and 0.68, and both pass every ECDF read. The `narrow` arm scores worse on
 `beta2` (`t` = 2.01) and leaves the band on the ECDF reads, which carry the
 larger signal for a mis-scaled posterior.
 

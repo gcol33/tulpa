@@ -38,8 +38,13 @@ spatial_spde(
 
 - boundary:
 
-  Optional boundary: a two-column matrix of polygon vertices, an sf
-  polygon, or NULL for convex hull with extension.
+  Optional boundary: a two-column matrix of polygon vertices, or an sf
+  polygon. NULL (the default) is the convex hull of the coordinates
+  widened on every side by a fifth of their bounding-box diagonal (the
+  default range prior's median), so the observations sit away from the
+  band near the domain edge where the SPDE's boundary condition inflates
+  the field variance. A boundary that ends at the data biases the fitted
+  sigma and range low.
 
 - max_edge:
 
@@ -55,9 +60,9 @@ spatial_spde(
   Matern smoothness parameter. A positive number. Integer `nu` (1, 2, 3,
   ...) gives an exact FEM construction (operator order
   `alpha = nu + 1`). Fractional `nu` (e.g. 0.5, 1.5) uses the
-  operator-based rational SPDE approximation with BRASIL best-rational
-  coefficients (Bolin & Kirchner 2020; Hofreither 2021); supported by
-  the Laplace fitter
+  covariance-based rational SPDE approximation with BRASIL best-rational
+  coefficients (Bolin, Simas & Xiong 2024; Hofreither 2021); supported
+  by the Laplace fitter
   [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)
   (single-point and nested over range/sigma). NUTS and analytic marginal
   SEs remain integer-only. Default 1.
@@ -87,8 +92,8 @@ coords <- cbind(runif(50), runif(50))
 spec <- spatial_spde(coords)
 print(spec)
 #> tulpa_spatial: SPDE (Matern, nu = 1 )
-#>   Mesh nodes: 63 
-#>   Triangles:  111 
+#>   Mesh nodes: 79 
+#>   Triangles:  127 
 #>   Observations: 50 
 #>   Prior range: P(range < 0.2782498 ) = 0.5 
 #>   Prior sigma: P(sigma > 3 ) = 0.01 

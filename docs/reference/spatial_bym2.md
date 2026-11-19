@@ -22,7 +22,8 @@ spatial_bym2(
   group_var = NULL,
   shared = NULL,
   scale_factor = NULL,
-  parameterization = c("standard", "collapsed")
+  parameterization = c("auto", "standard", "collapsed"),
+  prior_sigma = NULL
 )
 ```
 
@@ -58,7 +59,18 @@ spatial_bym2(
 
 - parameterization:
 
-  `"standard"` (default) or `"collapsed"` (deprecated).
+  `"auto"` scales field amplitudes using prior and observation
+  information; `"standard"` samples effects directly. For ICAR and BYM2,
+  `"collapsed"` analytically integrates Gaussian spatial effects under
+  NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+  collapsing is refused; use `"auto"` for full-field NUTS.
+
+- prior_sigma:
+
+  Optional PC prior on the field's standard deviation, `c(U, alpha)`
+  with \\P(\sigma \> U) = \alpha\\, read by the nested-Laplace and
+  sampler paths, carried to the precision for CAR and ICAR fields.
+  `NULL` uses the engine's default anchor \\P(\sigma \> 3) = 0.01\\.
 
 ## Value
 
@@ -124,7 +136,7 @@ summary(fit)
 #> 
 #> Fixed effects:
 #>              estimate std.error     2.5 %   97.5 %
-#> (Intercept) -1.957898  0.331077 -2.606797 -1.30900
-#> age          0.006391  0.004661 -0.002745  0.01553
+#> (Intercept) -1.924190  0.330895 -2.572733 -1.27565
+#> age          0.006046  0.004658 -0.003084  0.01518
 # }
 ```

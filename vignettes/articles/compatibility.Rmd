@@ -655,7 +655,7 @@ data.frame(fit = names(tm), seconds = round(unlist(tm), 2), row.names = NULL)
 
 The three maximum-likelihood fits of the random-intercept model take the same
 time to the precision of one run. The BYM2 fit took 0.31 seconds in tulpa and
-1.76 seconds in INLA. The brms time includes compiling the Stan model, which a
+0.91 seconds in INLA. The brms time includes compiling the Stan model, which a
 cached model skips on the next run, and the tulpa AGQ integration of the same
 model spends its time on nine-node quadrature inside each group at every grid
 cell.

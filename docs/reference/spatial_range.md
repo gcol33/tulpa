@@ -39,6 +39,12 @@ A `mode = "laplace"` fit conditions on the field's hyperparameters
 rather than inferring them, so it carries no posterior for this function
 to summarise.
 
+Physical range moments are determined by the model's prior tail and
+likelihood limit. A divergent mean or SD is reported as `Inf`.
+`object$moment_existence` carries the reason. Quantiles remain
+available; the summary's `log_moments` attribute gives finite log-range
+means and SDs.
+
 ## Examples
 
 ``` r
@@ -52,8 +58,10 @@ field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.5))))
 d$y <- rpois(nrow(d), exp(0.3 + 0.4 * d$x + field[d$region]))
 fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
              spatial = spatial_car(adj, level = "group", group_var = "region"))
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 8/8 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 spatial_range(fit)
-#>            mean        sd      q2.5    q97.5
-#> sigma 0.6657209 0.2016541 0.3646487 1.148533
+#>            mean        sd      q2.5   q97.5
+#> sigma 0.6660589 0.2017354 0.3649507 1.14908
 # }
 ```

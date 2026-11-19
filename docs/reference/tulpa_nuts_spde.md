@@ -154,7 +154,23 @@ A list with `draws` (matrix `n_samples x n_params`), `means`,
 spec. In `joint = TRUE` mode additionally: `w_draws` (transformed
 `z -> w` per draw), `range_draws`, `sigma_draws`, `kappa_draws`,
 `tau_draws`, and `range_summary`, `sigma_summary` (mean/median/5%/95%
-quantiles).
+quantiles). `range_summary` also includes `sd`, reported as `Inf` when
+the model's range variance diverges. `moment_existence` records the
+model-based reason; `theta_log_mean` and `theta_log_sd` retain the
+log-range moments.
+
+## Computation device
+
+`control$device` is `"auto"`, `"cpu"`, or `"cuda"`. The default `"auto"`
+uses CUDA for registered operations above their measured size crossover.
+Operations with no measured crossover run on CPU. `"cuda"` requests CUDA
+for each registered operation and errors with the reason from
+[`gpu_info()`](https://gillescolling.com/tulpa/reference/gpu_info.md)
+when its device or library is unavailable. Host inference stages run on
+CPU. The fit's `device$stages` table records CPU and CUDA call counts
+per stage; [`print()`](https://rdrr.io/r/base/print.html) and
+[`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+report these stages.
 
 ## See also
 
@@ -181,9 +197,9 @@ fit <- tulpa_nuts_spde(y, cbind(1, x), spatial = spec, family = "gaussian",
                                       seed = 1L))
 colMeans(fit$draws[, c("beta[1]", "beta[2]")])
 #>    beta[1]    beta[2] 
-#>  0.7120346 -0.9037404 
+#>  0.7248073 -0.8516661 
 fit$phi_summary
 #>      mean    median       q05       q95 
-#> 0.2856609 0.2806777 0.2321932 0.3384912 
+#> 0.2905253 0.2897761 0.2298089 0.3614401 
 # }
 ```

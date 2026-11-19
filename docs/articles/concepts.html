@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -305,13 +309,14 @@ over it.</p>
 <code class="sourceCode R"><span><span class="va">fit_t</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dt</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>               temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>,</span>
 <span>               control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
+<span><span class="co">#&gt; [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA &gt;=0s | 0.02s/cells</span></span>
 <span><span class="co">#&gt; [nested-laplace] 6/6 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span><span class="va">fit_t</span></span>
 <span><span class="co">#&gt; tulpa nested-Laplace fit </span></span>
 <span><span class="co">#&gt;   hyperparameters: tau  (grid: 12 cells)</span></span>
 <span><span class="co">#&gt;   outer pareto-k: -1.44 (reliable)</span></span>
 <span><span class="co">#&gt;   fit in 0.4s (grid 0.0s)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_cholesky=cpu</span></span>
 <span><span class="co">#&gt; Call: tulpa(formula = y ~ x, data = dt, family = "poisson", temporal = temporal_rw1("time"), control = list(n_threads = 2))</span></span>
 <span><span class="co">#&gt;   n_obs: 300 </span></span>
 <span><span class="co">#&gt; </span></span>
@@ -426,6 +431,7 @@ fit can be trusted, and what it reports follows the method. For a
 sampler it is the per-parameter Rhat and effective sample sizes.</p>
 <div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_imh</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu</span></span>
 <span><span class="co">#&gt;     parameter     rhat ess_bulk  ess_tail</span></span>
 <span><span class="co">#&gt; 1 (Intercept) 1.000504 351.9338 238.17123</span></span>
 <span><span class="co">#&gt; 2           x 1.001796 195.7508  57.24726</span></span>
@@ -436,6 +442,7 @@ and notes on its resolution. <a href="reliability-pareto-k.html">Reliability dia
 each line.</p>
 <div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit_t</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Device: inference=cpu, laplace_dense=cpu, sparse_cholesky=cpu</span></span>
 <span><span class="co">#&gt; Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)</span></span>
 <span><span class="co">#&gt;   two layers: the outer hyperparameter-grid integration, and the inner</span></span>
 <span><span class="co">#&gt;     Gaussian Laplace on the latent field</span></span>
@@ -495,6 +502,7 @@ components, hyperparameters and the reliability verdict.</p>
 <div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit1</span></span>
 <span><span class="co">#&gt; tulpa fit  (laplace, tier 2) </span></span>
+<span><span class="co">#&gt; Device: inference=cpu, dense_spec=cpu</span></span>
 <span><span class="co">#&gt; Call: tulpa(formula = y ~ x + (1 | g), data = d, family = "gaussian", mode = "laplace", sigma_re = 0.6, phi = 0.8^2)</span></span>
 <span><span class="co">#&gt;   n_obs: 300 </span></span>
 <span><span class="co">#&gt; </span></span>
@@ -629,8 +637,8 @@ stops the fit and names the place it belongs.</p>
 <div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
 <span>      phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! unknown argument(s) to tulpa(): n_threads. Tuning knobs go in `control = list()`.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> unknown argument(s) to tulpa(): n_threads. Tuning knobs go in `control = list()`.</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="misplaced-knobs-are-errors">Misplaced knobs are errors<a class="anchor" aria-label="anchor" href="#misplaced-knobs-are-errors"></a>
@@ -640,9 +648,9 @@ of the knobs it does read. A Laplace fit has no iterations to set.</p>
 <div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>
 <span>      phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">2000</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Error:</span></span>
-<span><span class="co">#&gt; ! Unknown control knob(s) for tulpa[mode = 'laplace'](): 'n_iter'.</span></span>
-<span><span class="co">#&gt; Allowed: max_iter, n_threads, tol.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Unknown control knob(s) for tulpa[mode = 'laplace'](): 'n_iter'.</span></span>
+<span><span class="co">#&gt; Allowed: device, max_iter, n_threads, tol.</span></span></code></pre></div>
 <p>The same call with a knob the Laplace backend reads runs.</p>
 <div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>,</span>

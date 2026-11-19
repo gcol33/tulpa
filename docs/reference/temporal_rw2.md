@@ -7,7 +7,13 @@ deviations from linearity, resulting in smoother trends than RW1:
 ## Usage
 
 ``` r
-temporal_rw2(time_var, group_var = NULL, cyclic = FALSE, shared = NULL)
+temporal_rw2(
+  time_var,
+  group_var = NULL,
+  cyclic = FALSE,
+  shared = NULL,
+  parameterization = c("auto", "centered")
+)
 ```
 
 ## Arguments
@@ -36,6 +42,11 @@ temporal_rw2(time_var, group_var = NULL, cyclic = FALSE, shared = NULL)
   process-specific effects and emits a warning about unshared
   confounding.
 
+- parameterization:
+
+  Sampler coordinates: `"auto"` uses field information to scale field
+  amplitudes; `"centered"` samples effect coordinates.
+
 ## Value
 
 A `tulpa_temporal` object
@@ -47,6 +58,10 @@ derivative (curvature) rather than the first derivative (slope). It
 requires at least 3 time points.
 
 The precision matrix is rank T-2 (two constraints needed).
+
+The SD sigma of the walk's second differences carries a PC prior with
+`P(sigma > 3) = 0.01`, the same on the nested-Laplace and the sampler
+routes.
 
 ## Examples
 
@@ -77,6 +92,10 @@ fit <- tulpa(
   temporal = temporal_rw2("year"),
   mode = "auto"
 )
+#> [nested-laplace] 1/9 cells (11%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+#> [nested-laplace] 1/5 cells (20%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 5/5 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 summary(fit)
 #> tulpa fit  (nested_laplace, tier 2) 
 #> Call: tulpa(formula = count ~ x, data = df, family = "poisson", mode = "auto", temporal = temporal_rw2("year"))
@@ -87,17 +106,19 @@ summary(fit)
 #> 
 #> Fixed effects:
 #>             estimate std.error  2.5 % 97.5 %
-#> (Intercept)   1.6663   0.05080 1.5667 1.7658
-#> x             0.2927   0.05272 0.1895 0.3962
-#>   interval read: mixture_cdf 
-#>   interval declined: NA 
+#> (Intercept)   1.6658   0.05081 1.5592 1.7583
+#> x             0.2924   0.05272 0.1893 0.3959
+#>   interval read: skew_map_cell 
+#>   interval declined: skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had 
 #> 
 #> Hyperparameters:
-#>  parameter mean   sd median ci_lo ci_hi
-#>        tau 3346 7360  984.2 56.35 36619
+#>  parameter mean  sd median ci_lo  ci_hi
+#>        tau  Inf Inf   1010 56.61 101345
+#> 
+#> Fixed-effect prior: normal(0, 2.5)
 #> 
 #> Reliability (iid draws):
-#>   outer pareto_k 0.6048 (ok); grid ESS 5.555 of 7 cells; inner skew NA (NA)
-#>   verdict: scoped: outer integration borderline; inner Laplace not assessed
+#>   outer pareto_k -1.574 (good); grid ESS 5.821 of 13 cells; inner skew 0.05647 (good)
+#>   verdict: reliable (both layers good)
 # }
 ```

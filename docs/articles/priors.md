@@ -1,26 +1,7 @@
 # Priors
 
-## Installation
-
-``` r
-
-# Current release, built for Windows and macOS
-install.packages("tulpa",
-                 repos = c("https://gcol33.r-universe.dev",
-                           "https://cloud.r-project.org"))
-
-# Development version from GitHub
-install.packages("pak")
-pak::pak("gcol33/tulpa")
-
-# Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
-```
-
-`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
-for SPDE mesh construction). `tulpa` compiles its C++ backend on first
-install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI
-tools on macOS, `r-base-dev` on Linux.
+Installation is covered in [Get
+started](https://gillescolling.com/tulpa/articles/tulpa.md).
 
 ``` r
 
@@ -35,8 +16,12 @@ prior for each kind of parameter the engine knows about. You build it
 with
 [`tulpa_priors()`](https://gillescolling.com/tulpa/reference/tulpa_priors.md),
 fill the slots with `prior_*()` constructors, and hand the result to the
-functions that need it. The same object drives prior predictive
-simulation, so the priors you check are the priors you fit with.
+functions that need it. The object drives prior predictive simulation; a
+[`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) fit does
+not read it and takes its own defaults through `beta_prior` and
+`re_prior`, which
+[`priors_default()`](https://gillescolling.com/tulpa/reference/priors_default.md)
+lists.
 
 This vignette walks through the prior families, the defaults, how to
 move a fixed-effect prior and watch the posterior follow, and how to
@@ -276,11 +261,11 @@ A short map from parameter to natural prior family:
 
 | Parameter | Lives on | Natural priors |
 |----|----|----|
-| Fixed effects (`beta`) | whole real line | [`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_normal.md) |
-| Random-effect SD (`sigma`) | positive | [`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_pc.md), [`prior_half_normal()`](https://gillescolling.com/tulpa/reference/prior_half_normal.md), [`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_half_cauchy.md) |
-| Dispersion / precision (`phi`) | positive | [`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_pc.md), [`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_gamma.md), [`prior_exponential()`](https://gillescolling.com/tulpa/reference/prior_exponential.md) |
-| Temporal AR(1) (`rho_temporal`) | `(0, 1)` | [`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_beta.md) |
-| Spatial mixing (`rho_spatial`) | `(0, 1)` | [`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_beta.md) |
+| Fixed effects (`beta`) | whole real line | [`prior_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md) |
+| Random-effect SD (`sigma`) | positive | [`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_distributions.md), [`prior_half_normal()`](https://gillescolling.com/tulpa/reference/prior_distributions.md), [`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_distributions.md) |
+| Dispersion / precision (`phi`) | positive | [`prior_pc()`](https://gillescolling.com/tulpa/reference/prior_distributions.md), [`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_distributions.md), [`prior_exponential()`](https://gillescolling.com/tulpa/reference/prior_distributions.md) |
+| Temporal AR(1) (`rho_temporal`) | `(0, 1)` | [`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_distributions.md) |
+| Spatial mixing (`rho_spatial`) | `(0, 1)` | [`prior_beta()`](https://gillescolling.com/tulpa/reference/prior_distributions.md) |
 
 Matching a positive prior to a positive parameter is on you: the
 constructors accept any combination, so the table is the convention to
@@ -467,13 +452,16 @@ on what each parameter means for that likelihood, which is the quick way
 to check whether a family even has a dispersion or a temporal slot
 before you try to set it.
 
-These five slots cover the direct / conditioning paths and the ModelData
-samplers. The nested-Laplace integrator states its hyperpriors on its
+These five slots are what
+[`prior_predict()`](https://gillescolling.com/tulpa/reference/prior_predict.md)
+and
+[`tulpa_simulate()`](https://gillescolling.com/tulpa/reference/tulpa_simulate.md)
+draw from. The nested-Laplace integrator states its hyperpriors on its
 own outer grid, and every default axis there carries a proper prior. A
 field’s standard deviation, variance or precision (`icar`, `rw1`, `rw2`,
 `ar1`‘s `tau`, `bym2` and `iid`’s `sigma`, a GP variance) takes the PC
 prior `P(sigma > 3) = 0.01`, carried to whichever of the three the axis
-integrates. That anchor is wider than the sampler slot’s
+integrates. That anchor is wider than the `sigma` slot’s
 `P(sigma > 1) = 0.01`: on a binary response with a field of standard
 deviation 3, the tighter anchor pulled the posterior mean down to about
 1.5. A Matern range or lengthscale takes the PC range prior with
@@ -503,8 +491,9 @@ through the `beta_prior` argument of
 [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md), written
 as `list(mean =, sd =)`. The `sd` is required; `mean` defaults to 0.
 Each may be a scalar applied to every coefficient or a vector with one
-entry per coefficient. Leaving `beta_prior` at `NULL` keeps a weak
-built-in prior that barely moves the fit.
+entry per coefficient. Leaving `beta_prior` at `NULL` keeps the engine
+default, a normal with mean 0 and standard deviation 2.5 on every
+coefficient, the same on every backend.
 
 A prior earns its keep when the data are thin. Simulate a small Gaussian
 dataset with a slope of 1.2, the kind of sample where the likelihood
@@ -590,15 +579,16 @@ prior standard deviation is much larger than the coefficient’s standard
 error the likelihood dominates and the prior is nearly invisible; when
 it is much smaller the prior wins and the estimate sits near the prior
 mean. The slope’s standard error here is on the order of the residual
-standard deviation over `sqrt(n)` times the predictor spread, a few
-tenths, so a prior standard deviation of 0.2 is comparable to the data’s
-own precision and the two split the difference, which is what the table
-shows. Setting a vector `sd` is then a per-coefficient choice of where
-on that continuum to sit.
+standard deviation over `sqrt(n)` times the predictor spread, about 0.4
+from the weak fit’s interval, so a prior standard deviation of 0.2
+carries about four times the data’s precision and the slope lands about
+a fifth of the way from zero to its weakly informed value, which is what
+the table shows. Setting a vector `sd` is then a per-coefficient choice
+of where on that continuum to sit.
 
-The fixed-effect prior threads through the plain Laplace and sampler
-paths. Some structured paths (spatial fields, the SPDE integrator) carry
-their own built-in fixed-effect prior and will tell you so if you pass
+The fixed-effect prior threads through the plain Laplace, SPDE and
+sampler paths. The spatial Laplace path for a field other than SPDE and
+the AGQ path hold the engine default and stop with an error if you pass
 `beta_prior` there.
 
 ## Prior predictive checks
@@ -757,8 +747,7 @@ sigma](priors_files/figure-html/pc-pp-plot-1.png)
 Reading this plot is the variance-component analogue of the count check:
 the question is whether the spread the prior expects between groups
 matches what you would believe before seeing the data, and the wide
-prior’s mass near the right edge of the unit interval is the warning
-sign.
+prior’s tail past a spread of 0.3 is the warning sign.
 
 ## Choosing priors
 
@@ -777,7 +766,7 @@ A working order of operations for setting priors in tulpa:
   you would call large on the link scale and `alpha` to a small
   probability of exceeding it. When you expect the occasional genuinely
   large standard deviation, reach for
-  [`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_half_cauchy.md):
+  [`prior_half_cauchy()`](https://gillescolling.com/tulpa/reference/prior_distributions.md):
   its heavier tail tolerates that case where the firm PC penalty would
   fight it.
 
@@ -808,12 +797,13 @@ A working order of operations for setting priors in tulpa:
   variance slot will build cleanly and then bite at fit time. The map in
   the families section is the safe default to copy.
 
-- **Keep the prior object you checked.** A single `tulpa_priors` object
-  feeds both
+- **Carry the prior you checked into the fit.**
   [`prior_predict()`](https://gillescolling.com/tulpa/reference/prior_predict.md)
-  and the fit, so a prior that survives the predictive check is the
-  prior you go on to fit with, with no second specification drifting out
-  of sync behind it.
+  reads the `tulpa_priors` object and
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) does
+  not, so a fixed-effect prior that survives the predictive check goes
+  to the fit as `beta_prior = list(mean =, sd =)` with the same mean and
+  standard deviation.
 
 ### Numbers to start from
 
@@ -842,7 +832,7 @@ below assumes a unit predictor and a link-scale coefficient.
 
 - **Dispersion.** `prior_pc(U = 10, alpha = 0.01)` regularises a
   negative- binomial size toward the Poisson limit. Use
-  [`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_gamma.md)
+  [`prior_gamma()`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
   with an interior mode only when you can bound the dispersion away from
   both zero and infinity.
 
@@ -858,8 +848,8 @@ range.
 ## See also
 
 - [`?tulpa_priors`](https://gillescolling.com/tulpa/reference/tulpa_priors.md),
-  [`?prior_normal`](https://gillescolling.com/tulpa/reference/prior_normal.md),
-  [`?prior_pc`](https://gillescolling.com/tulpa/reference/prior_pc.md)
+  [`?prior_normal`](https://gillescolling.com/tulpa/reference/prior_distributions.md),
+  [`?prior_pc`](https://gillescolling.com/tulpa/reference/prior_distributions.md)
   and the other `prior_*` constructor pages.
 
 - [`?prior_predict`](https://gillescolling.com/tulpa/reference/prior_predict.md)

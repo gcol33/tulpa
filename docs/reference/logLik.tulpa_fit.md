@@ -22,8 +22,9 @@ logLik(object, ...)
 
 ## Value
 
-A `logLik` object with `quantity` and `conditioned_on` attributes, and a
-`declined` attribute naming the reason when no value could be read.
+A `logLik` object with `quantity` and `conditioned_on` attributes, a
+`declined` attribute naming the reason when no value could be read, and
+an `mc_se` attribute on a Monte Carlo evidence.
 
 ## Details
 
@@ -35,17 +36,18 @@ A `logLik` object with `quantity` and `conditioned_on` attributes, and a
   samplers (`hmc`, `ess`, `sghmc`, `sgld`, `mclmc`, `smc`, `vi`), and
   the natural scale each quantity is sampled on for the RE-covariance
   and Polya-Gamma Gibbs samplers. Values are therefore comparable across
-  fits of the same backend only.
+  fits of the same backend only. An `smc` fit reports this only when it
+  estimated no evidence (see below).
 
 - `"log_evidence"`:
 
-  a deterministic fit that estimated no hyperparameter from the data:
-  the log marginal probability of the data under the model as specified.
-  A hyperparameter the fit integrated counts, and so does one the caller
-  supplied (a `phi`, a `sigma_re`, an outer grid laid at one value),
-  which is part of the model rather than an estimate. A Laplace fit of a
-  model with nothing to integrate reports its log marginal likelihood
-  here, which already is that quantity.
+  a deterministic fit that estimated no hyperparameter from the data, or
+  an `smc` fit: the log marginal probability of the data under the model
+  as specified. A hyperparameter the fit integrated counts, and so does
+  one the caller supplied (a `phi`, a `sigma_re`, an outer grid laid at
+  one value), which is part of the model rather than an estimate. A
+  Laplace fit of a model with nothing to integrate reports its log
+  marginal likelihood here, which already is that quantity.
 
 - `"log_marginal_likelihood"`:
 
@@ -74,9 +76,38 @@ an axis with no proper prior (a flat random-effect covariance prior, a
 dispersion whose family has no PC prior yet, an axis on a block that
 does not carry its coordinates) reports `NA` with
 `declined = "improper_hyperprior"` and names the axes in a
-`declined_axes` attribute. A central-composite (CCD) design reproduces
-moments and carries no cell volume, so a fit integrated on one reports
-`NA` with a `declined` attribute.
+`declined_axes` attribute. A central-composite (CCD) design carries no
+cell volume. On the random-effect covariance integrator
+([`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md),
+the [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+random-slope door) each CCD node's weight is calibrated against the
+Gaussian the design was laid on, which makes the evidence exact when the
+ratio of the hyperparameter posterior to that Gaussian is a cubic in the
+whitened coordinates; the other nested doors report `NA` on a CCD design
+with a `declined` attribute.
+
+An `smc` fit (`mode = "smc"`) estimates the evidence directly: its
+tempered path runs from a normalized reference to the posterior, and the
+sum over tempering steps of the log mean incremental weight, plus the
+normalizing constants of the prior and likelihood it tempered, is
+`log p(y)`. The Monte Carlo standard error rides along as an `mc_se`
+attribute: the square root of the sum over steps of `1 / ESS_t - 1 / N`,
+the variance of each step's log mean weight over `N` independent
+particles (Chopin 2004). Correlation the mutations leave between
+particles is not in it, which is why the sampler moves its population
+after every tempering step until each coordinate has decorrelated from
+where the step started (Buchholz, Chopin and Jacob 2021); a run capped
+below that (`control$smc_max_moves`) can sit low by more than the SE
+reports. Every latent block the sampler fits carries its prior's
+normalizing constant (areal, temporal, continuous and multi-scale GP,
+HSGP, varying-coefficient and multi-scale temporal fields included). The
+fit reports no evidence, and
+[`logLik()`](https://rdrr.io/r/stats/logLik.html) falls back to
+`"log_posterior_mean"`, when the prior has no normalizing constant
+because it is improper (an acyclic RW2, or an RW1 / RW2 over several
+groups, whose group contrasts are left free), when a restricted (RSR)
+field is evaluated at its projection, or when the likelihood is not a
+built-in family's; the fit's `log_evidence_declined` names which.
 
 A sampler fit whose producer kept no per-draw log posterior reports `NA`
 with `quantity = "log_posterior_mean"` and

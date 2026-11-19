@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,7 +54,7 @@
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -298,6 +302,7 @@ routes the fit to the nested-Laplace integration over
 <span>             mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">fit</span></span>
 <span><span class="co">#&gt; tulpa fit  (re_cov_nested, tier 2) </span></span>
+<span><span class="co">#&gt; Device: inference=cpu, sparse_cholesky=cpu</span></span>
 <span><span class="co">#&gt; Call: tulpa(formula = y ~ x + (1 + x | g), data = d, family = "poisson", mode = "laplace", control = list(n_threads = 2))</span></span>
 <span><span class="co">#&gt;   n_obs: 720 </span></span>
 <span><span class="co">#&gt; </span></span>
@@ -420,7 +425,7 @@ in a few steep groups, so the plot is cut at 15 to show the bulk.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/pp_check.html">pp_check</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span> <span class="op">+</span> <span class="fu">ggplot2</span><span class="fu">::</span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/coord_cartesian.html" class="external-link">coord_cartesian</a></span><span class="op">(</span>xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">15</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Coordinate system already present.</span></span>
-<span><span class="co">#&gt; ℹ Adding new coordinate system, which will replace the existing one.</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Adding new coordinate system, which will replace the existing one.</span></span></code></pre></div>
 <p><img src="random-slopes_files/figure-html/ppcheck-1.png" class="r-plt" alt="Densities of 50 posterior predictive replicate count data sets overlaid on the density of the observed counts, for counts from 0 to 15" width="576"></p>
 <p>The observed density lies inside the band of replicates over the
 whole range.</p>
@@ -793,10 +798,10 @@ fits warn about chain length, and the nested fits of replicates whose
 slope SD collapses repeat a warning that the marginal fixed-effect
 precision could not be formed. On a single analysis they are worth
 reading. Averaged over the replicates, the nested Laplace estimates both
-standard deviations below their true values, the slope SD most (0.45
-against 0.7), and in 5 of the 20 replicates it places the slope SD at
-zero. The Gibbs averages are within 0.1 of the truth, and none of its
-fits collapses.</p>
+standard deviations below their true values (0.77 against 1 and 0.52
+against 0.7), and it places the slope SD at zero in none of the 20
+replicates. The Gibbs averages are within about 0.1 of the truth, and
+none of its fits collapses.</p>
 <div class="section level3">
 <h3 id="adaptive-gauss-hermite-quadrature">Adaptive Gauss-Hermite quadrature<a class="anchor" aria-label="anchor" href="#adaptive-gauss-hermite-quadrature"></a>
 </h3>
@@ -830,9 +835,9 @@ and
 for the same data set. Quadrature of order 3 raises both standard
 deviations above the Laplace values:
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\sigma_1</annotation></semantics></math>
-from 0.45 to 0.54, against 0.65 from the Gibbs sampler, and
+from 0.43 to 0.51, against 0.61 from the Gibbs sampler, and
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
-from 0.80 to 0.91, against 0.99.</p>
+from 0.79 to 0.91, against 0.87.</p>
 </div>
 </div>
 <div class="section level2">
@@ -901,7 +906,7 @@ with 12 observations per group, and binary responses with 6.</p>
 <td>10 groups, full 2 x 2 block</td>
 <td>
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
-interval width 1.20 of 2; 1 of 3 fits collapsed the slope SD</td>
+interval width 1.42 of 2; 0 of 3 fits collapsed the slope SD</td>
 <td>read
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
 as unidentified; drop the correlation or the slope</td>
@@ -910,7 +915,7 @@ as unidentified; drop the correlation or the slope</td>
 <td>20 to 40 groups</td>
 <td>
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
-width 0.93 to 0.78</td>
+width 0.91 to 0.76</td>
 <td>
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
 gives its sign at best</td>
@@ -919,7 +924,7 @@ gives its sign at best</td>
 <td>80 groups</td>
 <td>
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ρ</mi><annotation encoding="application/x-tex">\rho</annotation></semantics></math>
-width 0.49,
+width 0.46,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
 width 0.21</td>
 <td>the full block is informed</td>
@@ -928,7 +933,7 @@ width 0.21</td>
 <td>6 binary observations per group</td>
 <td>nested
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
-0.45 against 0.7; 5 of 20 fits collapsed</td>
+0.52 against 0.7; 0 of 20 fits collapsed</td>
 <td><code>control$re_cov = "gibbs"</code></td>
 </tr>
 <tr class="odd">

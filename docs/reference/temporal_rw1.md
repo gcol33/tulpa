@@ -7,7 +7,13 @@ other: `phi[t] - phi[t-1] ~ N(0, sigma^2)`.
 ## Usage
 
 ``` r
-temporal_rw1(time_var, group_var = NULL, cyclic = FALSE, shared = NULL)
+temporal_rw1(
+  time_var,
+  group_var = NULL,
+  cyclic = FALSE,
+  shared = NULL,
+  parameterization = c("auto", "centered")
+)
 ```
 
 ## Arguments
@@ -36,6 +42,11 @@ temporal_rw1(time_var, group_var = NULL, cyclic = FALSE, shared = NULL)
   process-specific effects and emits a warning about unshared
   confounding.
 
+- parameterization:
+
+  Sampler coordinates: `"auto"` uses field information to scale field
+  amplitudes; `"centered"` samples effect coordinates.
+
 ## Value
 
 A `tulpa_temporal` object.
@@ -47,6 +58,10 @@ least smooth of the random-walk priors; for smoother trends see
 [`temporal_rw2()`](https://gillescolling.com/tulpa/reference/temporal_rw2.md),
 and for a stationary alternative see
 [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md).
+
+The SD sigma of the walk's increments carries a PC prior with
+`P(sigma > 3) = 0.01`, the same on the nested-Laplace and the sampler
+routes.
 
 ## See also
 

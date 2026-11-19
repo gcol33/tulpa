@@ -24,7 +24,7 @@ variation from point-referenced coordinates."><meta property="og:image" content=
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -37,21 +37,44 @@ variation from point-referenced coordinates."><meta property="og:image" content=
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -80,16 +103,16 @@ variation from point-referenced coordinates.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">spatial_gp</span><span class="op">(</span></span>
 <span>  <span class="va">coords</span>,</span>
 <span>  approx <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"nngp"</span>, <span class="st">"hsgp"</span><span class="op">)</span>,</span>
-<span>  cov <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"exponential"</span>, <span class="st">"matern"</span><span class="op">)</span>,</span>
+<span>  cov <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  nu <span class="op">=</span> <span class="fl">1.5</span>,</span>
 <span>  nn <span class="op">=</span> <span class="fl">15</span>,</span>
-<span>  m <span class="op">=</span> <span class="fl">6</span>,</span>
-<span>  c <span class="op">=</span> <span class="fl">1.5</span>,</span>
+<span>  m <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  c <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  sigma_prior_U <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  sigma_prior_alpha <span class="op">=</span> <span class="fl">0.01</span>,</span>
 <span>  shared <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  scale_coords <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  parameterization <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"noncentered"</span>, <span class="st">"centered"</span>, <span class="st">"collapsed"</span><span class="op">)</span></span>
+<span>  parameterization <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"auto"</span>, <span class="st">"noncentered"</span>, <span class="st">"centered"</span>, <span class="st">"collapsed"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'tulpa_gp'</span></span>
@@ -116,12 +139,15 @@ sampler mode, because both store coordinates at a fixed 2-D stride.</p></dd>
 <dt id="arg-approx">approx<a class="anchor" aria-label="anchor" href="#arg-approx"></a></dt>
 <dd><p>GP approximation: <code>"nngp"</code> (default, a nearest-neighbour GP with
 the <code>cov</code> / <code>nu</code> / <code>nn</code> arguments) or <code>"hsgp"</code> (a Hilbert-space
-basis GP with <code>m</code> functions per dimension and boundary factor <code>c</code>).</p></dd>
+basis GP with <code>m</code> functions per dimension and boundary factor <code>c</code>, which
+approximates the kernel <code>cov</code> / <code>nu</code> name).</p></dd>
 
 
 <dt id="arg-cov">cov<a class="anchor" aria-label="anchor" href="#arg-cov"></a></dt>
-<dd><p>Covariance function (NNGP only). One of <code>"exponential"</code> or
-<code>"matern"</code>.</p></dd>
+<dd><p>Covariance function. With <code>approx = "nngp"</code>, <code>"exponential"</code>
+(the default) or <code>"matern"</code>. With <code>approx = "hsgp"</code>, <code>"matern"</code> (the
+default, at <code>nu = 1.5</code>) or <code>"squared_exponential"</code>; the exponential kernel
+has no HSGP basis rule. <code>NULL</code> takes the approximation's default.</p></dd>
 
 
 <dt id="arg-nu">nu<a class="anchor" aria-label="anchor" href="#arg-nu"></a></dt>
@@ -134,11 +160,14 @@ basis GP with <code>m</code> functions per dimension and boundary factor <code>c
 
 
 <dt id="arg-m">m<a class="anchor" aria-label="anchor" href="#arg-m"></a></dt>
-<dd><p>Number of HSGP basis functions per dimension (<code>approx = "hsgp"</code>).</p></dd>
+<dd><p>Number of HSGP basis functions per dimension (<code>approx = "hsgp"</code>),
+between 3 and 50. <code>NULL</code> (default) chooses it from the data; see Details.</p></dd>
 
 
 <dt id="arg-c">c<a class="anchor" aria-label="anchor" href="#arg-c"></a></dt>
-<dd><p>HSGP boundary factor, <code>&gt;= 1</code> (<code>approx = "hsgp"</code>).</p></dd>
+<dd><p>HSGP boundary factor, <code>&gt;= 1</code> (<code>approx = "hsgp"</code>): the basis lives
+on the coordinates' bounding box widened by <code>c</code>. <code>NULL</code> (default) chooses
+it from the data; see Details.</p></dd>
 
 
 <dt id="arg-sigma-prior-u-sigma-prior-alpha">sigma_prior_U, sigma_prior_alpha<a class="anchor" aria-label="anchor" href="#arg-sigma-prior-u-sigma-prior-alpha"></a></dt>
@@ -146,7 +175,9 @@ basis GP with <code>m</code> functions per dimension and boundary factor <code>c
 field's marginal standard deviation (<code>approx = "hsgp"</code>), calibrated so that
 <code>P(sigma &gt; sigma_prior_U) = sigma_prior_alpha</code>. Defaults to
 <code>P(sigma &gt; 1) = 0.01</code>. <code>sigma_prior_U</code> must be positive and
-<code>sigma_prior_alpha</code> must lie in <code>(0, 1)</code>.</p></dd>
+<code>sigma_prior_alpha</code> must lie in <code>(0, 1)</code>.
+Sampler and nested-Laplace routes use these anchors. Under
+<code>hyperprior = "flat"</code>, nested Laplace retains explicitly supplied anchors.</p></dd>
 
 
 <dt id="arg-shared">shared<a class="anchor" aria-label="anchor" href="#arg-shared"></a></dt>
@@ -165,10 +196,12 @@ original coordinate units either way.</p></dd>
 
 <dt id="arg-parameterization">parameterization<a class="anchor" aria-label="anchor" href="#arg-parameterization"></a></dt>
 <dd><p>Latent parameterization for the exact-NUTS field.
-One of <code>"noncentered"</code> (default; samples <code>z ~ N(0, I)</code> and reconstructs the
-field as <code>w = f(z, sigma2, phi)</code>, avoiding the field/hyperparameter funnel),
-<code>"centered"</code> (places the NNGP density on the field directly), or
-<code>"collapsed"</code> (deprecated).</p></dd>
+<code>"auto"</code> scales covariance-whitened coordinates using prior and observation
+information. <code>"noncentered"</code> samples <code>z ~ N(0, I)</code> and reconstructs the
+field as <code>w = f(z, sigma2, phi)</code>. <code>"centered"</code> samples field values.
+<code>"collapsed"</code> analytically integrates a Gaussian-likelihood NNGP field
+under NUTS/HMC and returns exact conditional field draws. Non-Gaussian
+collapsing is refused; use <code>"auto"</code> for full-field NUTS.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
@@ -182,6 +215,61 @@ field as <code>w = f(z, sigma2, phi)</code>, avoiding the field/hyperparameter f
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>A <code>tulpa_gp</code> object (also of class <code>tulpa_spatial</code>).</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p><strong>HSGP kernel.</strong> The basis approximates a Matern kernel of smoothness 3/2
+(the default) or 5/2, <code>sigma^2 (1 + sqrt(3) d / ell) exp(-sqrt(3) d / ell)</code>
+and <code>sigma^2 (1 + sqrt(5) d / ell + 5 d^2 / (3 ell^2)) exp(-sqrt(5) d / ell)</code>
+at distance <code>d</code>, or the squared-exponential kernel
+<code>sigma^2 exp(-d^2 / (2 ell^2))</code>, through each kernel's spectral density
+(Riutort-Mayol et al. 2023, Eqs. 1-3). The squared-exponential kernel draws
+fields smoother than any Matern one, and a field rougher than the kernel
+assumes is smoothed and its intervals narrowed.</p>
+<p>For nested Laplace and Hamiltonian inference, the default PC (penalised
+complexity) prior places half its probability
+below an effective range of one fifth of the coordinate bounding-box
+diagonal. The effective range is <code>rho = 2 * ell</code>, where <code>ell</code> is the kernel
+lengthscale (<code>phi</code> in the NNGP kernels). Both approximations use this
+anchor. <code><a href="spatial_multiscale.html">spatial_multiscale()</a></code> takes each scale's anchor
+from its declared range interval.</p>
+<p><strong>HSGP basis size.</strong> A Hilbert-space basis of <code>m</code> functions per dimension on
+a domain widened by <code>c</code> has a lower lengthscale cutoff
+<code>a c max(S) / m</code>, where <code>S</code> contains the coordinate half-widths and
+<code>c &gt;= 1.2</code>. The coefficient <code>a</code>
+retains 99% of the joint two-dimensional spectral variance using the
+tensor expansion and cumulative-variance recommendation of Riutort-Mayol
+et al. (2023, Eqs. 9-12, Section 4.2). It is at least their one-dimensional
+covariance-error coefficient (Eqs. 19, 21, 23). The boundary factor follows
+Eqs. 20, 22, 24 and bounds the variance removed by the Dirichlet boundary
+at the domain's corners by 1%, using the kernel correlations at twice the
+distance to each face. A rough
+field asks for a short lengthscale, and a basis too small for it smooths the
+field and narrows its intervals. Left unset, <code>m</code> and <code>c</code> follow the
+iterative procedure of the paper's Section 4.5.1. In its Phase A the first
+fit takes them from the prior median of the lengthscale, and while the
+posterior median lengthscale falls below the smallest one the fitted basis
+represents (the paper's diagnostic, with its slack of 0.01 on the
+lengthscale divided by <code>S</code>), the field is fitted again with the <code>m</code> and <code>c</code>
+that estimate asks for. In its Phase B five functions per dimension are
+added and the field fitted again until the refit passes the diagnostic and
+is stable against the fit before it: the paper names the lengthscale
+estimate and the predictive accuracy as what has to be stable and gives no
+threshold, and stable is read here as the refitted posterior mean of the
+lengthscale, and of the linear predictor at every observation, lying inside
+the previous fit's 95% interval. <code>m</code> never shrinks below a size already
+fitted and stops at 50. A supplied <code>m</code> or <code>c</code> is kept as given, and a
+supplied <code>m</code> ends the procedure after Phase A.
+<code><a href="diagnostics.html">diagnostics()</a></code> reports when the posterior median lengthscale lies outside
+the window of the fitted basis at either end; above it, the field is
+smoother than the boundary factor allows for, and a larger <code>c</code> covers it.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>
+    <p>Riutort-Mayol, G., Buerkner, P.-C., Andersen, M. R., Solin, A. and Vehtari,
+A. (2023). Practical Hilbert space approximate Bayesian Gaussian processes
+for probabilistic programming. <em>Statistics and Computing</em> 33, 17.
+<a href="https://doi.org/10.1007/s11222-022-10167-2" class="external-link">doi:10.1007/s11222-022-10167-2</a></p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -206,6 +294,15 @@ field as <code>w = f(z, sigma2, phi)</code>, avoiding the field/hyperparameter f
 <span class="r-out co"><span class="r-pr">#&gt;</span> Coordinates: lon, lat </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Covariance: matern (nu = 1.5) </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Neighbors (NNGP): 15 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Shared: Yes (enters both processes) </span>
+<span class="r-in"><span><span class="fu">spatial_gp</span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span>, approx <span class="op">=</span> <span class="st">"hsgp"</span>, cov <span class="op">=</span> <span class="st">"squared_exponential"</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa Hilbert Space GP (HSGP) spatial specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> =====================================================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Coordinates: lon, lat </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Kernel: squared exponential </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Basis functions: chosen from the data</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Boundary factor: chosen from the data</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Shared: Yes (enters both processes) </span>
 <span class="r-in"><span></span></span>
 </code></pre></div>

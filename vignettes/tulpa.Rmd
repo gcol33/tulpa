@@ -35,7 +35,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.6.0")
+pak::pak("gcol33/tulpa@v0.8.0")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used for SPDE mesh construction). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
@@ -523,8 +523,7 @@ the true spread through that drift; the Laplace fit keeps reporting the
 symmetric interval its assumption forces. The moment to pay for a sampler is
 the moment that drift would matter to your conclusion.
 
-`inference_mode_info()` lists every backend, including the ones reachable only
-from model packages through the C interface. The inference-modes vignette
+`inference_mode_info()` lists every backend with its tier. The inference-modes vignette
 fits one model at Laplace, MALA, and Pathfinder side by side, times each, and
 shows exactly where the cost of the exact guarantee turns into a reason to
 pay it.
@@ -750,7 +749,7 @@ is conditionally independent of every non-neighbour given its neighbours, and
 that independence is exactly a zero off the three central diagonals. The
 `tgmrf()` vignette builds a periodic AR(1) block end to end, fits it through
 the full tier ladder from nested Laplace to exact sampling, and shows how one
-block written once reaches all four tiers without modification.
+block written once reaches all three tiers without modification.
 
 ## S3 methods
 

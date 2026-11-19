@@ -21,8 +21,10 @@ spatial_spde_custom(
 
 - C:
 
-  Mass matrix (n_mesh x n_mesh sparse matrix, e.g. from
-  `fmesher::fm_fem()$c0`).
+  Mass matrix (n_mesh x n_mesh sparse matrix), either the lumped
+  diagonal one (e.g. `fmesher::fm_fem()$c0`) or the consistent one (e.g.
+  `tulpaMesh::fem_matrices()$C`). The precision uses the lumped mass,
+  which is the row sum of either.
 
 - G:
 

@@ -210,6 +210,7 @@ df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
 fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "laplace")
 fit
 #> tulpa fit  (laplace, tier 2) 
+#> Device: inference=cpu, dense_spec=cpu
 #> Call: tulpa(formula = y ~ x, data = df, family = "poisson", mode = "laplace")
 #>   n_obs: 60 
 #> 

@@ -22,7 +22,7 @@ binomial and negative binomial GLMMs."><meta property="og:image" content="https:
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -35,21 +35,44 @@ binomial and negative binomial GLMMs."><meta property="og:image" content="https:
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -216,23 +239,24 @@ priors define.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span>    beta[1]    beta[2] </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 0.05113498 0.47895299 </span>
 <span class="r-in"><span><span class="fu"><a href="diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Device: inference=cpu, dense_precision=cpu</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>       parameter      rhat  ess_bulk  ess_tail</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1       beta[1] 0.9994892 174.67795 171.50405</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1       beta[1] 0.9998043 174.67795 171.50405</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2       beta[2] 1.0079899 195.29629 222.99091</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3  log_sigma_re 1.0189955  30.08361  44.55205</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3  log_sigma_re 1.0189508  30.08361  44.55205</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 4         re[1] 0.9981450 248.67134 205.65889</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 5         re[2] 1.0103747 159.72752 169.70804</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 6         re[3] 1.0014289  62.42346 180.58399</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 7         re[4] 0.9999902  86.58332 183.94880</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 8         re[5] 1.0055948 258.88968  98.48576</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9         re[6] 1.0006344  78.93758 157.76480</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9         re[6] 1.0006635  78.93758 157.76480</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 10        re[7] 1.0067015 160.72260 190.56408</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 11        re[8] 1.0035467 217.12126 240.08551</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 12        re[9] 1.0114679 129.51291 138.50106</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 13       re[10] 1.0020908 155.25306 216.15668</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 14       re[11] 1.0002456 230.14582 232.21690</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15       re[12] 1.0077990 261.31527 187.34137</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16       re[13] 1.0043439 208.37927 234.64435</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15       re[12] 1.0080660 261.31527 187.34137</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16       re[13] 1.0043083 208.37927 234.64435</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 17       re[14] 0.9994984 217.48683 260.27161</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 18       re[15] 0.9997324 228.78774 208.60393</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 19       re[16] 0.9967272 171.25306 165.00215</span>

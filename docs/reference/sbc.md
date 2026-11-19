@@ -32,16 +32,16 @@ sbc(
   ...
 )
 
-# S3 method for class 'sbc'
+# S3 method for class 'tulpa_sbc'
 print(x, ...)
 
-# S3 method for class 'sbc'
+# S3 method for class 'tulpa_sbc'
 summary(object, baseline = NULL, ...)
 
-# S3 method for class 'sbc_summary'
+# S3 method for class 'tulpa_sbc_summary'
 print(x, ...)
 
-# S3 method for class 'sbc'
+# S3 method for class 'tulpa_sbc'
 plot(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
 ```
 
@@ -49,7 +49,7 @@ plot(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
 
 - object:
 
-  An `sbc` result.
+  A `tulpa_sbc` result from `sbc()`.
 
 - ...:
 
@@ -104,7 +104,7 @@ plot(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
 
 - x:
 
-  An `sbc` result.
+  A `tulpa_sbc` result from `sbc()`.
 
 - baseline:
 
@@ -124,7 +124,7 @@ plot(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
 
 ## Value
 
-An object of class `sbc`:
+An object of class `tulpa_sbc`:
 
 - `pit`:
 
@@ -229,13 +229,12 @@ is not `p(y | theta')`.
 ## Two guards
 
 The prior-predictive experiment draws the truth from the prior, so an
-IMPROPER prior cannot be used – and the nested-Laplace door puts no
-prior on the fixed effects. A scored quantity whose truth does not move
-across simulations was not drawn from a proper prior, and `sbc()` errors
-on it before spending the fits, pointing at `experiment = "posterior"`.
-A location parameter whose flat prior leaves the PIT uniform by a
-structural argument is admitted through `flat_prior`, which is itself
-checked and travels on the result.
+IMPROPER prior cannot be used. A scored quantity whose truth does not
+move across simulations was not drawn from a proper prior, and `sbc()`
+errors on it before spending the fits, pointing at
+`experiment = "posterior"`. A location parameter whose flat prior leaves
+the PIT uniform by a structural argument is admitted through
+`flat_prior`, which is itself checked and travels on the result.
 
 The posterior experiment rests on two premises, each of which silently
 invalidates the result when broken. The augmented posterior must

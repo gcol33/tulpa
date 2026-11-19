@@ -36,6 +36,8 @@ second run replays each fit with its main grid solve served from the
 fused result. Every other kernel call a fit makes (placement,
 refinement, diagnostics) runs as it always does, so each returned fit is
 the object its ordinary fit would have returned, built by the same code.
+Device stage counters in each result include the shared solve's calls
+for the complete response batch. The fits use one common device policy.
 
 The fits replay one after another from the random number state the batch
 was called at, so they draw the same stream the same fits called in

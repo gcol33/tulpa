@@ -8,7 +8,7 @@ that unit, the quantity a covariate is read against.
 ## Usage
 
 ``` r
-field_effects(object)
+field_effects(object, component = NULL)
 ```
 
 ## Arguments
@@ -16,6 +16,12 @@ field_effects(object)
 - object:
 
   A `tulpa_fit` carrying a spatial field.
+
+- component:
+
+  For a multi-scale field, `NULL` (default) for the sum of its scales,
+  or `"local"` / `"regional"` for one scale. Must be `NULL` for every
+  other field.
 
 ## Value
 
@@ -46,18 +52,15 @@ Where the posterior comes from follows what the fit computes:
   `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)` the sampler
   path reports. The rows summarize those draws.
 
-- A nested-Laplace fit with an ICAR or proper-CAR field: each outer cell
-  contributes its conditional mode, and its marginal variance where the
-  fit retained one, weighted by the cell's posterior weight. With the
-  variances the summary is the exact mean, SD and quantiles of that
-  Gaussian mixture (`source = "mixture"`); without them the weighted
-  mean of the cell modes, with no spread (`source = "mode"`). A BYM2
-  field is reported where the fit stores its grid-weighted combined
-  field
-  ([`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md));
-  a [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
-  nested BYM2 fit carries its two components with cell-dependent mixing
-  and errors.
+- A nested-Laplace fit with an ICAR, proper-CAR or BYM2 field: each
+  outer cell contributes the per-unit field's conditional mean, and its
+  marginal variance under the cell's latent Gaussian, weighted by the
+  cell's posterior weight; for BYM2 the field is the combined
+  `sigma * (sqrt(rho) * s * phi + sqrt(1 - rho) * theta)` at that cell's
+  `sigma` and `rho`. With the variances the summary is the exact mean,
+  SD and quantiles of that Gaussian mixture (`source = "mixture"`);
+  without them (a field whose per-unit variances were not retained) the
+  weighted mean of the cell means, with no spread (`source = "mode"`).
 
 - A conditional-Laplace areal fit (`mode = "laplace"` / `"eb"`) reports
   the field at its mode, with no spread. For BYM2 this is the combined
@@ -65,12 +68,25 @@ Where the posterior comes from follows what the fit computes:
 
 - An SPDE fit
   ([`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md))
-  reports the mesh-node field: its draws on the sampler path, its mode
-  (the posterior-mean hyperparameters' fit on the nested path)
-  otherwise.
+  reports the mesh-node field: its draws on the sampler path; on the
+  nested `(range, sigma)` path the Gaussian mixture over the integration
+  cells, each cell's inner Laplace mode and per-node marginal variance
+  weighted by the cell's posterior weight (`source = "mixture"`); at
+  fixed hyperparameters, and for a fractional-`nu` field, its mode.
 
-A fit whose field cannot be located this way (a continuous GP / NNGP /
-HSGP field, a restricted field, an inline
+A multi-scale field
+([`spatial_multiscale()`](https://gillescolling.com/tulpa/reference/spatial_multiscale.md))
+is reported per distinct location (one row per row of
+`fit$spatial$unique_coords`). By default the row is the field's whole
+contribution to the linear predictor, the sum of its two scales;
+`component = "local"` or `"regional"` reads one scale. On the
+nested-Laplace path the sum is the loading of both scales' coordinates
+on each cell's latent Gaussian, so its spread carries their posterior
+correlation; on the sampler path it is summed draw by draw.
+
+A fit whose field cannot be located this way (a single-scale continuous
+GP / NNGP / HSGP field, a multi-scale HSGP field, a restricted field, an
+inline
 [`spatial()`](https://gillescolling.com/tulpa/reference/spatial.md)
 varying-coefficient field) errors naming the field and the backend, as
 does a fit with no spatial field. A temporal field is read by

@@ -33,9 +33,11 @@ f <- as.numeric(arima.sim(list(ar = 0.7), 20, sd = 0.4))
 df$count <- rpois(60, exp(1 + 0.3 * df$x + f[df$year]))
 fit <- tulpa(count ~ x, data = df, family = "poisson",
              temporal = temporal_ar1("year"))
+#> [nested-laplace] 1/25 cells (4%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 20/20 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 temporal_corr(fit)
-#>                mean        sd     q2.5     q97.5
-#> precision 8.4591944 5.1750858 2.286663 24.285980
-#> rho_ar1   0.6618371 0.2234641 0.136503  1.193266
+#>                mean        sd      q2.5      q97.5
+#> precision       Inf       Inf 2.3351334 27.5725630
+#> rho_ar1   0.6598756 0.2309653 0.1157768  0.9770774
 # }
 ```

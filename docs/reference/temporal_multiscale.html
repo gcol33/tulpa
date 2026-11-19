@@ -26,7 +26,7 @@ modelled jointly."><meta property="og:image" content="https://gillescolling.com/
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.5</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,21 +39,44 @@ modelled jointly."><meta property="og:image" content="https://gillescolling.com/
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
-    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Concepts</h6></li>
+    <li><a class="dropdown-item" href="../articles/concepts.html">Concepts</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Models</h6></li>
     <li><a class="dropdown-item" href="../articles/random-slopes.html">Random slopes</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-models.html">Spatial models</a></li>
     <li><a class="dropdown-item" href="../articles/temporal-models.html">Temporal models</a></li>
+    <li><a class="dropdown-item" href="../articles/space-time.html">Space-time models</a></li>
+    <li><a class="dropdown-item" href="../articles/varying-coefficients.html">Varying coefficients</a></li>
+    <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
+    <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
+    <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
+    <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
+    <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
+    <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
+    <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
+    <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
     <li><a class="dropdown-item" href="../articles/em-laplace.html">EM + Laplace</a></li>
     <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Case studies</h6></li>
+    <li><a class="dropdown-item" href="../articles/case-study-sids.html">Case study: sudden infant deaths in North Carolina</a></li>
+    <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Background</h6></li>
     <li><a class="dropdown-item" href="../articles/inference-modes.html">Inference modes</a></li>
+    <li><a class="dropdown-item" href="../articles/identifiability.html">Identifiability</a></li>
     <li><a class="dropdown-item" href="../articles/reliability-pareto-k.html">Reliability diagnostics</a></li>
     <li><a class="dropdown-item" href="../articles/sbc.html">Simulation-based calibration</a></li>
+    <li><a class="dropdown-item" href="../articles/compatibility.html">Compatibility with lme4, glmmTMB, brms and INLA</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -85,8 +108,8 @@ modelled jointly.</p>
 <span>  trend <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"rw2"</span>, <span class="st">"rw1"</span>, <span class="st">"none"</span><span class="op">)</span>,</span>
 <span>  seasonal <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  short_term <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"ar1"</span>, <span class="st">"iid"</span>, <span class="st">"none"</span><span class="op">)</span>,</span>
-<span>  group_var <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  shared <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  shared <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  parameterization <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"auto"</span>, <span class="st">"noncentered"</span>, <span class="st">"centered"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'tulpa_temporal_multiscale'</span></span>
@@ -117,15 +140,22 @@ seasonal component.</p></dd>
 <code>"iid"</code>, or <code>"none"</code>.</p></dd>
 
 
-<dt id="arg-group-var">group_var<a class="anchor" aria-label="anchor" href="#arg-group-var"></a></dt>
-<dd><p>Optional character string naming a grouping variable for
-group-specific temporal effects.</p></dd>
-
-
 <dt id="arg-shared">shared<a class="anchor" aria-label="anchor" href="#arg-shared"></a></dt>
 <dd><p>Whether the effect is shared across processes in a
 multi-process model. <code>NULL</code> (default) shares it; <code>FALSE</code> fits
 process-specific effects and emits a warning.</p></dd>
+
+
+<dt id="arg-parameterization">parameterization<a class="anchor" aria-label="anchor" href="#arg-parameterization"></a></dt>
+<dd><p>How the exact sampler (<code>mode = "hmc"</code>) samples the
+components. <code>"auto"</code> scales field amplitudes using prior and observation
+information. <code>"noncentered"</code> samples the trend walk's level, its
+slope (RW2) and its innovations divided by the trend SD, the seasonal
+walk's level and its innovations divided by the seasonal SD, and the
+short-term component's innovations divided by its SD, and builds the
+fields from them; <code>"centered"</code> samples the fields' values. Both are the
+same model. The nested-Laplace and Gibbs routes do not read it, and the
+other sampler backends sample the fields' values.</p></dd>
 
 
 <dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
@@ -143,6 +173,26 @@ process-specific effects and emits a warning.</p></dd>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>At least one of <code>trend</code>, <code>seasonal</code>, or <code>short_term</code> must be active.</p>
+<p><code>mode = "auto"</code>, <code>"structured"</code> and <code>"nested_laplace"</code> fit the field by
+nested Laplace, one block per component: the trend an RW1 / RW2 walk over
+the time points, the seasonal cycle a cyclic RW1 over the period (time point
+<code>t</code> reads position <code>(t - 1) mod seasonal + 1</code>), the short-term component an AR1
+or iid block. Each component's SD (and the AR1 correlation) is its own axis
+of the outer grid. The walks carry a sum-to-zero restriction, so the
+intercept holds the level; the trend is told apart from the short-term
+component by its structure, since a walk leaves a smooth path unpenalised
+where an AR1 or iid block shrinks every time point to zero. Every route uses
+the same priors: a PC prior with <code>P(sigma &gt; 1) = 0.01</code> on each component's
+SD and a Beta(2, 2) on <code>(rho + 1) / 2</code>. <code><a href="temporal.html">temporal()</a></code> returns each
+component's posterior. The exact sampler (<code>mode = "hmc"</code>) samples the
+trend, the seasonal and the short-term component non-centred by default:
+under the centred parameterization the spread of each walk's differences
+follows its SD, and the spread of the short-term values the short-term SD,
+each a funnel whose divergent transitions concentrate at the smallest
+variances.
+<code>mode = "gibbs"</code> runs the binomial Polya-Gamma sampler for a field with an
+RW1 trend (or none). The field is one walk per component shared by every
+observation.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

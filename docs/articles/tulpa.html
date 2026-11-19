@@ -43,7 +43,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.7.8</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.8.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -52,7 +52,7 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
+<li class="active nav-item"><a class="nav-link" href="../articles/tulpa.html">Get started</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
@@ -70,14 +70,18 @@
     <li><a class="dropdown-item" href="../articles/spde.html">Continuous fields with the SPDE</a></li>
     <li><a class="dropdown-item" href="../articles/spatial-confounding.html">Spatial confounding and restricted spatial regression</a></li>
     <li><a class="dropdown-item" href="../articles/joint-models.html">Joint models</a></li>
+    <li><a class="dropdown-item" href="../articles/multivariate-spatial.html">Multivariate areal fields</a></li>
     <li><a class="dropdown-item" href="../articles/latent-factors.html">Latent factors</a></li>
     <li><a class="dropdown-item" href="../articles/categorical-responses.html">Categorical and ordinal responses</a></li>
+    <li><a class="dropdown-item" href="../articles/censored-responses.html">Censored, truncated and zero-inflated responses</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Workflows</h6></li>
     <li><a class="dropdown-item" href="../articles/data-formatting.html">Data formatting</a></li>
     <li><a class="dropdown-item" href="../articles/priors.html">Priors</a></li>
     <li><a class="dropdown-item" href="../articles/diagnostics.html">Diagnostics</a></li>
+    <li><a class="dropdown-item" href="../articles/prediction.html">Prediction and forecasting</a></li>
     <li><a class="dropdown-item" href="../articles/model-comparison.html">Model comparison</a></li>
+    <li><a class="dropdown-item" href="../articles/smc-wbic.html">Sequential Monte Carlo and WBIC</a></li>
     <li><a class="dropdown-item" href="../articles/troubleshooting.html">Troubleshooting</a></li>
     <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpointing</a></li>
     <li><a class="dropdown-item" href="../articles/tgmrf.html">Custom latent blocks</a></li>
@@ -136,7 +140,7 @@
 <span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Pin a release</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.8.0"</span><span class="op">)</span></span></code></pre></div>
 <p><code>pak</code> resolves the dependency tree, including
 <code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction).
 <code>tulpa</code> compiles its C++ backend on first install, so a C++17
@@ -697,11 +701,10 @@ samplers track the true spread through that drift; the Laplace fit keeps
 reporting the symmetric interval its assumption forces. The moment to
 pay for a sampler is the moment that drift would matter to your
 conclusion.</p>
-<p><code><a href="../reference/inference_mode_info.html">inference_mode_info()</a></code> lists every backend, including the
-ones reachable only from model packages through the C interface. The
-inference-modes vignette fits one model at Laplace, MALA, and Pathfinder
-side by side, times each, and shows exactly where the cost of the exact
-guarantee turns into a reason to pay it.</p>
+<p><code><a href="../reference/inference_mode_info.html">inference_mode_info()</a></code> lists every backend with its tier.
+The inference-modes vignette fits one model at Laplace, MALA, and
+Pathfinder side by side, times each, and shows exactly where the cost of
+the exact guarantee turns into a reason to pay it.</p>
 </div>
 <div class="section level2">
 <h2 id="spatial-fields">Spatial fields<a class="anchor" aria-label="anchor" href="#spatial-fields"></a>
@@ -811,7 +814,7 @@ the smoothing precision, then plot the recovered walk against the
 truth.</p>
 <div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">g</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_outer_grid.html">tulpa_outer_grid</a></span><span class="op">(</span><span class="va">fit_t</span><span class="op">)</span></span>
-<span><span class="va">te</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colSums</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">weights</span> <span class="op">*</span> <span class="va">g</span><span class="op">$</span><span class="va">modes</span><span class="op">)</span><span class="op">[</span><span class="va">g</span><span class="op">$</span><span class="va">n_fixed</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">Tt</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">te</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/colSums-methods.html" class="external-link">colSums</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">weights</span> <span class="op">*</span> <span class="va">g</span><span class="op">$</span><span class="va">modes</span><span class="op">)</span><span class="op">[</span><span class="va">g</span><span class="op">$</span><span class="va">n_fixed</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">Tt</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>time <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">Tt</span><span class="op">)</span>,</span>
 <span>                  est <span class="op">=</span> <span class="va">te</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">te</span><span class="op">)</span>,</span>
 <span>                  truth <span class="op">=</span> <span class="va">trend</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">trend</span><span class="op">)</span><span class="op">)</span>,</span>
@@ -936,7 +939,7 @@ neighbours, and that independence is exactly a zero off the three
 central diagonals. The <code><a href="../reference/tgmrf.html">tgmrf()</a></code> vignette builds a periodic
 AR(1) block end to end, fits it through the full tier ladder from nested
 Laplace to exact sampling, and shows how one block written once reaches
-all four tiers without modification.</p>
+all three tiers without modification.</p>
 </div>
 <div class="section level2">
 <h2 id="s3-methods">S3 methods<a class="anchor" aria-label="anchor" href="#s3-methods"></a>
@@ -1098,12 +1101,17 @@ models</a>, <a href="https://gillescolling.com/tulpa/articles/varying-coefficien
 coefficients</a>, <a href="https://gillescolling.com/tulpa/articles/spde.html">Continuous
 fields with the SPDE</a>, <a href="https://gillescolling.com/tulpa/articles/spatial-confounding.html">Spatial
 confounding</a>, <a href="https://gillescolling.com/tulpa/articles/joint-models.html">Joint
-models</a>, <a href="https://gillescolling.com/tulpa/articles/latent-factors.html">Latent
+models</a>, <a href="https://gillescolling.com/tulpa/articles/multivariate-spatial.html">Multivariate
+areal fields</a>, <a href="https://gillescolling.com/tulpa/articles/latent-factors.html">Latent
 factors</a>, <a href="https://gillescolling.com/tulpa/articles/categorical-responses.html">Categorical
-and ordinal responses</a>.</p></li>
+and ordinal responses</a>, <a href="https://gillescolling.com/tulpa/articles/censored-responses.html">Censored,
+truncated and zero-inflated responses</a>.</p></li>
 <li><p>Checking and comparing fits: <a href="https://gillescolling.com/tulpa/articles/diagnostics.html">Diagnostics</a>,
 <a href="https://gillescolling.com/tulpa/articles/model-comparison.html">Model
-comparison</a>, <a href="https://gillescolling.com/tulpa/articles/priors.html">Priors</a>.</p></li>
+comparison</a>, <a href="https://gillescolling.com/tulpa/articles/smc-wbic.html">Sequential
+Monte Carlo and WBIC</a>, <a href="https://gillescolling.com/tulpa/articles/priors.html">Priors</a>.</p></li>
+<li><p>Predicting from a fit: <a href="https://gillescolling.com/tulpa/articles/prediction.html">Prediction
+and forecasting</a>.</p></li>
 <li><p>When a fit stops with an error: <a href="https://gillescolling.com/tulpa/articles/troubleshooting.html">Troubleshooting</a>.</p></li>
 <li><p>A full analysis on real data: <a href="https://gillescolling.com/tulpa/articles/case-study-sids.html">sudden
 infant deaths in North Carolina</a>.</p></li>
