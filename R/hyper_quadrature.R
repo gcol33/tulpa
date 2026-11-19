@@ -237,6 +237,23 @@
   if (is.null(d)) NULL else d$bounds
 }
 
+# The `bounds` of a spec whose block adds its own interval (`support`,
+# `.hp_axis_support()`) to the one the axis name fixes (`named`): their
+# intersection, taken PER SIDE and only on a side the declared `nodes` do not
+# contradict. That is `.hyper_domain_clamp()`'s convention for a node outside a
+# declared domain -- the declaration is set aside on that side rather than the
+# data moved -- applied where the spec is built, so a caller's proper-CAR nodes
+# below zero keep the name's bound on that side.
+.hyper_bounds_meet <- function(named, support, nodes = NULL) {
+  if (is.null(support) || length(support) != 2L || anyNA(support)) return(named)
+  b <- if (is.null(named)) c(-Inf, Inf) else as.numeric(named)
+  nodes <- as.numeric(nodes)
+  nodes <- nodes[is.finite(nodes)]
+  if (support[1L] > b[1L] && !any(nodes < support[1L])) b[1L] <- support[1L]
+  if (support[2L] < b[2L] && !any(nodes > support[2L])) b[2L] <- support[2L]
+  if (!is.finite(b[1L]) && !is.finite(b[2L])) NULL else b
+}
+
 # Coordinate bounds the cells of one node set tile: the half-node-step
 # extrapolation, widened to the declared span (`.hyper_span_coord_bounds()`) and
 # closed inside the axis's declared domain. The ONE construction behind both
@@ -1021,6 +1038,9 @@ tulpa_hyper_check_copy_slab <- function(x) .hyper_check_copy_slab(x)
 #' @param refining Optional refinement tag vector (see
 #'   [tulpa_hyper_slice_home()]); when supplied, specs are rebuilt from the
 #'   grid's declared cells only.
+#' @param axis_support Optional named list of `c(lower, upper)` intervals a
+#'   block defines its axes on (see `?tulpa_joint_axis_specs_from_grid`); a
+#'   fit carries its own as `fit$log_hyperprior_support`.
 #' @return Numeric vector of per-cell log quadrature weights, length
 #'   `nrow(theta_grid)`, or `NULL` if `theta_grid` has no axis names.
 #' @seealso [tulpa_theta_matrix()], [tulpa_normalise_weights_safe()],
@@ -1049,23 +1069,24 @@ tulpa_hyper_check_copy_slab <- function(x) .hyper_check_copy_slab(x)
 tulpa_grid_log_quad <- function(theta_grid, specs = NULL,
                                  copy_slab = "exponential",
                                  close_domain = TRUE, folded_axes = NULL,
-                                 refining = NULL) {
+                                 refining = NULL, axis_support = NULL) {
   .nl_grid_log_quad(theta_grid, specs = specs, copy_slab = copy_slab,
                     close_domain = close_domain, folded_axes = folded_axes,
-                    refining = refining)
+                    refining = refining, axis_support = axis_support)
 }
 
 .nl_grid_log_quad <- function(theta_grid, specs = NULL,
                               copy_slab = "exponential",
                               close_domain = TRUE, folded_axes = NULL,
-                              refining = NULL) {
+                              refining = NULL, axis_support = NULL) {
   if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
   theta_grid <- as.matrix(theta_grid)
   if (is.null(specs)) {
     base <- !nzchar(.hyper_slice_home(refining, nrow(theta_grid)))
     specs <- .joint_axis_specs_from_grid(theta_grid[base, , drop = FALSE],
                                          copy_slab = copy_slab,
-                                         folded_axes = folded_axes)
+                                         folded_axes = folded_axes,
+                                         axis_support = axis_support)
   }
   .hyper_log_quad_weights(theta_grid, specs, close_domain = close_domain,
                           refining = refining)

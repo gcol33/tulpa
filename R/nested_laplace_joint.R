@@ -2360,7 +2360,8 @@ tulpa_nested_laplace_joint <- function(responses,
         user_priors = list(sigma = fn_sigma, alpha = fn_alpha, phi = fn_phi),
         copy_atom_mass = copy_atom_mass, copy_slab = copy_slab,
         axis_refine = axis_refine_modes,
-        folded_axes = hp_init$axes)
+        folded_axes = hp_init$axes,
+        axis_support = hp_init$support)
     screen_offset <- if (prune_tol_eff > 0)
         .nl_screen_log_offset(theta_grid_init, list(hp_init), specs = specs)
 

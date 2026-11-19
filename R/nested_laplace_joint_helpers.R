@@ -717,7 +717,8 @@
                               copy_slab = "exponential",
                               axis_refine = NULL,
                               folded_axes = NULL,
-                              linear_axes = NULL) {
+                              linear_axes = NULL,
+                              axis_support = NULL) {
     copy_slab <- .hyper_check_copy_slab(copy_slab)
     axes <- .joint_spec_axis_names(grids, cp)
     lapply(axes, function(a) {
@@ -731,7 +732,12 @@
         bare <- sub("^b[0-9]+[.]", "", a)
         scale_known <- if (a %in% linear_axes) FALSE else .hyper_axis_scale(bare)
         log_scale <- isTRUE(scale_known)
-        bounds <- .hyper_spec_bounds(bare)
+        # `axis_support` is the interval the block that owns the axis defines it
+        # on (the hyperprior record's `support`, keyed by the full axis name),
+        # which the name alone cannot give: `rho` is a BYM2 mixing weight on
+        # (0, 1) in one family and a correlation reaching below zero in others.
+        bounds <- .hyper_bounds_meet(.hyper_spec_bounds(bare),
+                                     axis_support[[a]], grids[[a]])
         # How far refinement may move this axis: whether it participates at all,
         # and whether it may place a node past the nodes it was given. Both come
         # from `axis_refine`, resolved from the caller's provenance one level up
@@ -830,6 +836,10 @@
 #' @param logchol Free-covariance block design(s) as returned by
 #'   `.hp_logchol_designs()`; defaults to the design `theta_grid` itself
 #'   declares.
+#' @param axis_support Optional named list of `c(lower, upper)` intervals, one
+#'   per axis whose block defines it on a narrower interval than its name
+#'   fixes (a BYM2 mixing weight `rho` on `(0, 1)`). A fit carries its own as
+#'   `fit$log_hyperprior_support`.
 #' @return A named list of per-axis spec lists, or `NULL` if `theta_grid` has
 #'   no axis names.
 #' @seealso [tulpa_theta_matrix()], [tulpa_grid_log_quad()],
@@ -855,9 +865,10 @@
 #' @export
 tulpa_joint_axis_specs_from_grid <- function(
     theta_grid, copy_slab = "exponential", folded_axes = NULL,
-    logchol = .hp_logchol_designs(theta_grid)) {
+    logchol = .hp_logchol_designs(theta_grid), axis_support = NULL) {
   .joint_axis_specs_from_grid(theta_grid, copy_slab = copy_slab,
-                              folded_axes = folded_axes, logchol = logchol)
+                              folded_axes = folded_axes, logchol = logchol,
+                              axis_support = axis_support)
 }
 
 .joint_axis_specs_from_grid <- function(theta_grid,
@@ -865,7 +876,8 @@ tulpa_joint_axis_specs_from_grid <- function(
                                         folded_axes = NULL,
                                         logchol = .hp_logchol_designs(theta_grid),
                                         axis_refine = NULL,
-                                        linear_axes = NULL) {
+                                        linear_axes = NULL,
+                                        axis_support = NULL) {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     theta_grid <- as.matrix(theta_grid)
     grids <- stats::setNames(
@@ -883,7 +895,8 @@ tulpa_joint_axis_specs_from_grid <- function(
     specs <- .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab,
                                folded_axes = folded_axes,
                                axis_refine = axis_refine,
-                               linear_axes = linear_axes)
+                               linear_axes = linear_axes,
+                               axis_support = axis_support)
     lapply(specs, function(sp) {
         if (.hp_is_logchol_col(.hyper_axis_bare(sp$name))) {
             sp$logchol_design <- logchol[[.hp_logchol_key(.hp_col_prefix(sp$name))]]

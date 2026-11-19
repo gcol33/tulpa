@@ -26,7 +26,8 @@
 # AR1 correlation evenly, so those are the coordinates their cell widths are
 # measured on and an unrefined grid carries equal weights. A recentred grid
 # keeps the same coordinates and only moves the nodes.
-.nl_st_axis_specs <- function(theta_grid, folded_axes = NULL) {
+.nl_st_axis_specs <- function(theta_grid, folded_axes = NULL,
+                              axis_support = NULL) {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     tg <- as.matrix(theta_grid)
     lapply(colnames(tg), function(a) {
@@ -41,7 +42,9 @@
         log_scale <- startsWith(a, "tau") || startsWith(a, "sigma") ||
           a %in% c("lengthscale", "phi_gp")
         spec <- hyper_axis_spec(name = a, grid = lv, log_scale = log_scale,
-                                bounds = if (log_scale) c(0, Inf) else NULL,
+                                bounds = .hyper_bounds_meet(
+                                    if (log_scale) c(0, Inf),
+                                    axis_support[[a]], lv),
                                 refinable = FALSE)
         pos <- lv[lv > 0]
         if (log_scale && length(pos) >= 2L && !a %in% folded_axes)
@@ -133,7 +136,8 @@
                                      axes = .hp_integrated_axes(out$theta_grid),
                                      hyperprior = hyperprior, block = block)))
     st_specs <- .nl_st_axis_specs(out$theta_grid,
-                                  folded_axes = out$log_hyperprior_axes)
+                                  folded_axes = out$log_hyperprior_axes,
+                                  axis_support = out$log_hyperprior_support)
     out$log_quad     <- .hyper_log_quad_weights(out$theta_grid, st_specs)
     out$axis_support <- .hyper_grid_supports(out$theta_grid, st_specs)
     out$weights <- .nl_normalise_weights_safe(out$log_marginal,

@@ -1050,11 +1050,13 @@
 .joint_multi_measure_specs <- function(grid, folded_axes, joint_grid,
                                        axis_offsets, B, fn_sigma, fn_alpha,
                                        fn_phi, copy_slab, copy_atom_mass,
-                                       logchol, axis_refine = NULL) {
+                                       logchol, axis_refine = NULL,
+                                       axis_support = NULL) {
     specs <- .joint_axis_specs_from_grid(grid, copy_slab = copy_slab,
                                          folded_axes = folded_axes,
                                          logchol = logchol,
-                                         axis_refine = axis_refine)
+                                         axis_refine = axis_refine,
+                                         axis_support = axis_support)
     specs <- lapply(specs, function(sp) {
         if (!is.null(sp$atom_mass)) sp$atom_mass <- copy_atom_mass
         sp
@@ -1096,11 +1098,13 @@
     res$log_hyperprior          <- hp$lp
     res$log_hyperprior_axes     <- hp$axes
     res$log_hyperprior_declined <- hp$declined
+    res$log_hyperprior_support  <- hp$support
     base <- !nzchar(.hyper_slice_home(refining, nrow(res$theta_grid)))
     specs <- .joint_multi_measure_specs(
         res$theta_grid[base, , drop = FALSE], hp$axes, joint_grid, axis_offsets,
         B, fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
-        logchol = hp_declared$logchol, axis_refine = axis_refine)
+        logchol = hp_declared$logchol, axis_refine = axis_refine,
+        axis_support = hp$support)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
                                              refining = refining)
     res <- .joint_attach_cell_measure(res, specs, refining)
@@ -2040,7 +2044,8 @@
                                   joint_grid, hp_base$axes, joint_grid,
                                   axis_offsets, B, fn_sigma, fn_alpha, fn_phi,
                                   copy_slab, copy_atom_mass,
-                                  logchol = hp_declared$logchol))
+                                  logchol = hp_declared$logchol,
+                                  axis_support = hp_base$support))
 
     # A placement pilot's detecting grid is read off the screen alone
     # (`.nl_pilot_control()`); the full-grid fallback below never is.
@@ -2185,7 +2190,8 @@
         refine_specs <- .joint_multi_measure_specs(
             view$grid, hp_base$axes, view$grid, axis_offsets, B,
             fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
-            logchol = view$logchol, axis_refine = axis_refine_modes)
+            logchol = view$logchol, axis_refine = axis_refine_modes,
+            axis_support = hp_base$support)
         refine_specs <- .hyper_specs_with_tags(refine_specs, .joint_axis_tags_raw(
             list(theta_grid = view$grid, axis_offsets = axis_offsets,
                  blocks = prepared)))
@@ -2299,7 +2305,8 @@
         # measure serves every node; an uneven base has no single value to share.
         base_specs <- .joint_axis_specs_from_grid(
             base_grid, copy_slab = copy_slab,
-            folded_axes = res$log_hyperprior_axes)
+            folded_axes = res$log_hyperprior_axes,
+            axis_support = res$log_hyperprior_support)
         base_lq <- .hyper_log_quad_weights(base_grid, base_specs, absolute = TRUE)
         even <- all(is.finite(base_lq)) && diff(range(base_lq)) < 1e-8
         res <- .nl_attach_evidence(

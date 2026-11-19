@@ -189,6 +189,25 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   as.numeric(p$prior_sigma %||% p$default_sigma_prior %||% .nl_scale_anchor())[1:2]
 }
 
+# The natural-scale interval a BLOCK defines one of its axes on, as
+# `c(lower, upper)`, or NULL where the block adds nothing to what the axis name
+# already fixes (`.NL_AXIS_DOMAIN`). The name `rho` is a BYM2 mixing weight on
+# (0, 1), a proper-CAR correlation on the adjacency eigenvalue interval, and an
+# AR1 or multi-output correlation on (-1, 1), so only the block can say which.
+# The uniform densities of `.hp_axis_default()` are normalised over this
+# interval, and the axis spec closes its outer cells inside it
+# (`.joint_axis_specs()`), so the prior and the cell measure hold one support.
+.hp_axis_support <- function(bare, block = list()) {
+  type <- tolower(block$type %||% "")
+  b <- switch(paste(type, bare, sep = ":"),
+    "bym2:rho"       = c(0, 1),
+    "car_proper:rho" = block$rho_bounds %||% .nl_grid_par("car_rho", "bounds"),
+    "hsgp_mo:rho"    = c(-1, 1),
+    "ar1:rho"        = c(-1, 1),
+    if (identical(bare, "rho_car")) .nl_grid_par("car_rho", "bounds"))
+  if (is.null(b)) NULL else as.numeric(b)[1:2]
+}
+
 # The default density of ONE axis. `bare` is the axis name without a block
 # prefix, `block` the prior block that owns it (its `type` and the fields a
 # density reads), `family` the arm family of a `phi_<arm>` dispersion axis.
@@ -207,9 +226,9 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     force(kind); force(anchor)
     list(fn = function(x) .hp_log_scale_density(x, kind, anchor))
   }
-  uniform <- function(bounds) {
-    force(bounds)
-    list(fn = function(x) rep(-log(diff(as.numeric(bounds))), length(x)))
+  uniform <- function() {
+    bounds <- .hp_axis_support(bare, block)
+    list(fn = function(x) rep(-log(diff(bounds)), length(x)))
   }
   range_pc <- function() {
     ra <- .hp_range_anchor(block)
@@ -223,10 +242,9 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     return(list(group = "logchol"))
   }
   switch(paste(type, bare, sep = ":"),
-    "bym2:rho"       = return(uniform(c(0, 1))),
-    "car_proper:rho" = return(uniform(block$rho_bounds %||%
-                                        .nl_grid_par("car_rho", "bounds"))),
-    "hsgp_mo:rho"    = return(uniform(c(-1, 1))),
+    "bym2:rho"       = return(uniform()),
+    "car_proper:rho" = return(uniform()),
+    "hsgp_mo:rho"    = return(uniform()),
     "ar1:rho" = {
       # Beta(a, b) on u = (rho + 1) / 2, normalised and carried to rho.
       ab <- .ar1_rho_beta_ab(block$rho_prior)
@@ -239,9 +257,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   )
   if (bare %in% .SPATIAL_LENGTH_AXES) return(range_pc())
   if (identical(bare, "alpha")) return(list(spec = TRUE))
-  if (identical(bare, "rho_car")) {
-    return(uniform(.nl_grid_par("car_rho", "bounds")))
-  }
+  if (identical(bare, "rho_car")) return(uniform())
   if (startsWith(bare, "phi_")) {
     fam <- tolower(family %||% "")
     # A residual VARIANCE (`.phi_is_variance()`) carries the SD PC prior by
@@ -294,18 +310,25 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   startsWith(bare, "tau") || startsWith(bare, "sigma")
 }
 
+#
+# The record also carries `support`, the block's own interval for the axis
+# (`.hp_axis_support()`), under either choice: where the parameter exists does
+# not depend on which density it is given.
 .hp_axis_prior <- function(bare, block = list(), family = NULL,
                            hyperprior = "proper") {
-  if (identical(.hp_choice(hyperprior), "proper")) {
-    return(.hp_axis_default(bare, block, family))
+  r <- if (identical(.hp_choice(hyperprior), "proper")) {
+    .hp_axis_default(bare, block, family)
+  } else {
+    type <- tolower(block$type %||% "")
+    stated <- identical(bare, "alpha") ||
+      (identical(type, "ar1") && identical(bare, "rho") && !is.null(block$rho_prior)) ||
+      (!is.null(block$prior_sigma) && .hp_is_scale_axis(bare)) ||
+      (bare %in% .SPATIAL_LENGTH_AXES && !is.null(block$prior_range))
+    if (stated) .hp_axis_default(bare, block, family)
+    else list(reason = .hp_decline("flat_hyperprior"))
   }
-  type <- tolower(block$type %||% "")
-  stated <- identical(bare, "alpha") ||
-    (identical(type, "ar1") && identical(bare, "rho") && !is.null(block$rho_prior)) ||
-    (!is.null(block$prior_sigma) && .hp_is_scale_axis(bare)) ||
-    (bare %in% .SPATIAL_LENGTH_AXES && !is.null(block$prior_range))
-  if (stated) return(.hp_axis_default(bare, block, family))
-  list(reason = .hp_decline("flat_hyperprior"))
+  r$support <- .hp_axis_support(bare, block)
+  r
 }
 
 # Fold densities over the integrated columns of `tg` into a record: the summed
@@ -335,6 +358,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   groups <- list()
   for (a in axes) {
     r <- resolve(a)
+    if (!is.null(r$support)) out$support[[name(a)]] <- r$support
     if (identical(r$group, "logchol")) {
       key <- .hp_logchol_key(.hp_col_prefix(a))
       groups[[key]] <- c(groups[[key]], a)
@@ -705,7 +729,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     if (!is.null(fn)) {
       log_scale <- isTRUE(.hyper_axis_scale(bare))
       is_alpha  <- identical(role, "alpha")
-      return(list(fn = function(x) {
+      return(list(support = .hp_axis_support(bare, bo$block), fn = function(x) {
         lp <- .hyper_prior_carry(x, fn, log_scale, "natural")
         # The copy scale's zero is its declared point mass, which the density
         # does not describe (gcol33/tulpa#624, gcol33/tulpa#626).
@@ -734,6 +758,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     res$log_hyperprior_axes <- union(res$log_hyperprior_axes %||% character(0),
                                      hp$axes)
     res$log_hyperprior_declined <- c(res$log_hyperprior_declined, hp$declined)
+    for (a in names(hp$support)) res$log_hyperprior_support[[a]] <- hp$support[[a]]
     for (a in names(hp$range_tail)) res$range_tail[[a]] <- hp$range_tail[[a]]
   }
   res
@@ -755,6 +780,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   if (length(hp$axes)) hp$axes <- paste0(prefix, hp$axes)
   if (length(hp$declined)) names(hp$declined) <- paste0(prefix, names(hp$declined))
   if (length(hp$range_tail)) names(hp$range_tail) <- paste0(prefix, names(hp$range_tail))
+  if (length(hp$support)) names(hp$support) <- paste0(prefix, names(hp$support))
   hp
 }
 

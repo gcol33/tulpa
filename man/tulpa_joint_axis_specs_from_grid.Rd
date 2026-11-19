@@ -8,7 +8,8 @@ tulpa_joint_axis_specs_from_grid(
   theta_grid,
   copy_slab = "exponential",
   folded_axes = NULL,
-  logchol = .hp_logchol_designs(theta_grid)
+  logchol = .hp_logchol_designs(theta_grid),
+  axis_support = NULL
 )
 }
 \arguments{
@@ -23,6 +24,11 @@ continuum measure (see \code{\link[=tulpa_hyper_check_copy_slab]{tulpa_hyper_che
 \item{logchol}{Free-covariance block design(s) as returned by
 \code{.hp_logchol_designs()}; defaults to the design \code{theta_grid} itself
 declares.}
+
+\item{axis_support}{Optional named list of \code{c(lower, upper)} intervals, one
+per axis whose block defines it on a narrower interval than its name
+fixes (a BYM2 mixing weight \code{rho} on \verb{(0, 1)}). A fit carries its own as
+\code{fit$log_hyperprior_support}.}
 }
 \value{
 A named list of per-axis spec lists, or \code{NULL} if \code{theta_grid} has

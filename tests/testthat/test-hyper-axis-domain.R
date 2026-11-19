@@ -163,6 +163,109 @@ test_that("an engine axis named rho accepts the nodes its families lay", {
     }
 })
 
+test_that("a block's own support closes the axis its name leaves open", {
+    skip_on_cran_budget()
+    # The name `rho` fixes the upper end only; the block that owns the axis
+    # says which parameter it is (gcol33/tulpa#1188).
+    expect_equal(tulpa:::.hp_axis_support("rho", list(type = "bym2")), c(0, 1))
+    expect_equal(tulpa:::.hp_axis_support("rho", list(type = "ar1")), c(-1, 1))
+    expect_equal(tulpa:::.hp_axis_support("rho", list(type = "hsgp_mo")),
+                 c(-1, 1))
+    expect_equal(tulpa:::.hp_axis_support(
+        "rho", list(type = "car_proper", rho_bounds = c(-0.3, 1))), c(-0.3, 1))
+    expect_null(tulpa:::.hp_axis_support("sigma", list(type = "bym2")))
+    expect_null(tulpa:::.hp_axis_support("rho", list()))
+
+    # The record every door folds carries it, under either hyperprior choice.
+    for (hp in c("proper", "flat")) {
+        r <- tulpa:::.hp_axis_prior("rho", list(type = "bym2"), hyperprior = hp)
+        expect_equal(r$support, c(0, 1), info = hp)
+    }
+
+    # Nodes whose half-step mirror crosses zero: by name alone the lower outer
+    # cell closes below zero, and stays there however many levels are laid
+    # toward zero, so the outermost level's width never shrinks.
+    lv <- c(0.0666, 0.247, 0.425, 0.603, 0.739, 0.875, 0.97)
+    grid_of <- function(rho) {
+        tg <- as.matrix(expand.grid(sigma = c(0.3, 0.6), rho = rho))
+        tg
+    }
+    by_name <- tulpa:::.joint_axis_specs_from_grid(grid_of(lv))
+    by_block <- tulpa:::.joint_axis_specs_from_grid(
+        grid_of(lv), axis_support = list(rho = c(0, 1)))
+    rho_spec <- function(specs) Filter(function(s) s$name == "rho", specs)[[1L]]
+    expect_equal(rho_spec(by_name)$bounds, c(-Inf, 1))
+    expect_equal(rho_spec(by_block)$bounds, c(0, 1))
+    expect_lt(tulpa:::.hyper_axis_measure(lv, rho_spec(by_name))$edges[1L], 0)
+    expect_equal(tulpa:::.hyper_axis_measure(lv, rho_spec(by_block))$edges[1L],
+                 lv[1L] / 2)
+
+    # With the support declared, the outer cell follows a ladder of levels
+    # in: it runs from half the lowest level to the midpoint with the next
+    # one, so its width falls as the ladder descends.
+    ladders <- list(0.02, c(0.002, 0.02), c(0.0002, 0.002, 0.02))
+    widths <- vapply(ladders, function(lo) {
+        m <- tulpa:::.hyper_axis_measure(c(lo, lv), rho_spec(by_block),
+                                         declared = lv)
+        expect_lt(tulpa:::.hyper_axis_measure(
+            c(lo, lv), rho_spec(by_name), declared = lv)$edges[1L], 0)
+        expect_gt(m$edges[1L], 0)
+        diff(m$edges[1:2])
+    }, numeric(1))
+    expect_true(all(diff(widths) < 0))
+    expect_equal(widths, c(lv[1L], 0.02, 0.002) / 2)
+
+    # A prefixed column is keyed by its full name.
+    tg <- grid_of(lv); colnames(tg) <- c("b1.sigma", "b1.rho")
+    sp <- tulpa:::.joint_axis_specs_from_grid(
+        tg, axis_support = list(b1.rho = c(0, 1)))
+    expect_equal(Filter(function(s) s$name == "b1.rho", sp)[[1L]]$bounds,
+                 c(0, 1))
+
+    # A side the declared nodes contradict is set aside, the other one holds.
+    expect_equal(tulpa:::.hyper_bounds_meet(c(-Inf, 1), c(0, 1), c(-0.4, 0.4)),
+                 c(-Inf, 1))
+    expect_equal(tulpa:::.hyper_bounds_meet(NULL, c(0, 1), c(0.2, 0.8)),
+                 c(0, 1))
+    expect_equal(tulpa:::.hyper_bounds_meet(c(0, Inf), NULL, 1), c(0, Inf))
+})
+
+test_that("a BYM2 fit whose rho posterior reaches zero closes its lower edge", {
+    skip_on_cran()
+    skip_if_fast()
+    # The fit of gcol33/tulpa#1188: its placed rho nodes start at 0.067, the
+    # posterior is flat toward zero, and the edge-closing rounds laid levels
+    # down to rho = 0 because the outer cell kept its width.
+    k <- 7L
+    W <- matrix(0, k * k, k * k)
+    id <- function(i, j) (i - 1L) * k + j
+    for (i in seq_len(k)) for (j in seq_len(k)) {
+        if (i < k) W[id(i, j), id(i + 1L, j)] <- W[id(i + 1L, j), id(i, j)] <- 1
+        if (j < k) W[id(i, j), id(i, j + 1L)] <- W[id(i, j + 1L), id(i, j)] <- 1
+    }
+    set.seed(4)
+    e <- eigen(diag(rowSums(W)) - W, symmetric = TRUE)
+    keep <- e$values > 1e-8
+    V <- e$vectors[, keep]
+    scale_u <- exp(mean(log(diag(V %*% (t(V) / e$values[keep])))))
+    u <- as.numeric(V %*% (rnorm(sum(keep)) / sqrt(e$values[keep])))
+    phi <- 0.6 * (sqrt(0.5) * u / sqrt(scale_u) + sqrt(0.5) * rnorm(k * k))
+    r <- rep(seq_len(k * k), each = 10L)
+    x <- rnorm(length(r))
+    d <- data.frame(y = rpois(length(r), exp(1 + 0.3 * x + phi[r])), x = x,
+                    region = factor(r))
+    fit <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
+                 spatial = spatial_bym2(W, group_var = "region"),
+                 mode = "nested_laplace",
+                 control = list(n_threads = 2, progress = FALSE))
+    rho <- sort(unique(tulpa_theta_matrix(fit)[, "rho"]))
+    expect_equal(fit$log_hyperprior_support$rho, c(0, 1))
+    expect_gt(fit$axis_support$rho[1L], 0)
+    expect_lt(fit$axis_support$rho[2L], 1)
+    expect_gt(min(rho), 1e-4)
+    expect_true(all(is.finite(coef(fit))))
+})
+
 test_that("the level weights are normalised over the same closed interval", {
     skip_on_cran_budget()
     g <- c(0.5, 0.8, 0.95, 0.99)

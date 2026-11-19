@@ -768,7 +768,8 @@ auto_grid_place <- function(x)
            span      = if (is.null(res$log_quad)) NULL else
                            .nl_grid_log_quad(.nl_theta_matrix(res),
                                              close_domain = FALSE,
-                                             refining = res$refining_axis))
+                                             refining = res$refining_axis,
+                                             axis_support = res$log_hyperprior_support))
 }
 
 # One axis's marginal over its own sorted distinct nodes, normalized.
@@ -976,7 +977,8 @@ auto_grid_place <- function(x)
     res$refining_axis <- ref[keep]
     if (!is.null(res$log_quad)) {
         res$log_quad <- .nl_grid_log_quad(res$theta_grid,
-                                          folded_axes = res$log_hyperprior_axes)
+                                          folded_axes = res$log_hyperprior_axes,
+                                          axis_support = res$log_hyperprior_support)
     }
     res
 }

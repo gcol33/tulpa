@@ -182,7 +182,8 @@
                                        auto, user)
     specs <- .joint_axis_specs_from_grid(
         tg, folded_axes = res$log_hyperprior_axes, axis_refine = modes,
-        linear_axes = .nl_linear_axes(res))
+        linear_axes = .nl_linear_axes(res),
+        axis_support = res$log_hyperprior_support)
     if (is.null(specs)) return(res)
     specs <- .hyper_specs_with_tags(specs, tags)
     n_base <- nrow(tg)

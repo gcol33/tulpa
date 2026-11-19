@@ -10,7 +10,8 @@ tulpa_grid_log_quad(
   copy_slab = "exponential",
   close_domain = TRUE,
   folded_axes = NULL,
-  refining = NULL
+  refining = NULL,
+  axis_support = NULL
 )
 }
 \arguments{
@@ -32,6 +33,10 @@ correlation axis reflected at 0).}
 \item{refining}{Optional refinement tag vector (see
 \code{\link[=tulpa_hyper_slice_home]{tulpa_hyper_slice_home()}}); when supplied, specs are rebuilt from the
 grid's declared cells only.}
+
+\item{axis_support}{Optional named list of \code{c(lower, upper)} intervals a
+block defines its axes on (see \code{?tulpa_joint_axis_specs_from_grid}); a
+fit carries its own as \code{fit$log_hyperprior_support}.}
 }
 \value{
 Numeric vector of per-cell log quadrature weights, length

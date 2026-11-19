@@ -10,6 +10,17 @@
   device gates to one summary. Fit benchmarks record factorization, solves
   and selected inversion separately in the shared calibration table.
 
+* An outer axis is closed inside the interval its block defines it on: a BYM2
+  mixing weight `rho` on (0, 1), a proper-CAR `rho` on its adjacency
+  eigenvalue interval, an AR1 or multi-output `rho` on (-1, 1). The axis name
+  alone fixed only the upper end, so the lowest `rho` cell of a BYM2 grid
+  whose nodes started near zero closed below zero, kept its width as
+  refinement laid levels toward zero, and the fit could run those levels down
+  to `rho = 0` and stop with `missing value where TRUE/FALSE needed`. A fit
+  carries the intervals as `log_hyperprior_support`, and
+  `tulpa_joint_axis_specs_from_grid()` and `tulpa_grid_log_quad()` take them
+  as `axis_support` (#1188).
+
 * Inner Laplace Newton solves accept near-mode steps within the objective's
   relative numerical resolution and check the Newton decrement in curvature
   units. Large temporal fields retain full Newton steps at tight tolerances.

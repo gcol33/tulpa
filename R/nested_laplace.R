@@ -1910,9 +1910,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   n  <- nrow(tg)
   lp <- numeric(n)
   axes <- character(0)
+  support <- list()
   for (hp in hp_parts) {
     lp <- lp + hp$lp
     axes <- union(axes, hp$axes)
+    support[names(hp$support)] <- hp$support
   }
   lq <- if (!is.null(screen)) {
     if (length(screen$log_measure) != n) {
@@ -1922,7 +1924,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     screen$log_measure
   } else {
     if (is.null(specs) && !is.null(colnames(tg))) {
-      specs <- .joint_axis_specs_from_grid(tg, folded_axes = axes)
+      specs <- .joint_axis_specs_from_grid(tg, folded_axes = axes,
+                                           axis_support = support)
     }
     .hyper_log_quad_weights(tg, specs)
   }
@@ -1980,7 +1983,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   base  <- !nzchar(.hyper_slice_home(refining, nrow(tg)))
   specs <- .joint_axis_specs_from_grid(
     tg[base, , drop = FALSE], folded_axes = res$log_hyperprior_axes,
-    linear_axes = .nl_linear_axes(res))
+    linear_axes = .nl_linear_axes(res),
+    axis_support = res$log_hyperprior_support)
   res$log_quad     <- .hyper_log_quad_weights(tg, specs, refining = refining)
   res$axis_support <- .hyper_grid_supports(tg, specs, refining = refining)
   res$outer_axis_specs <- specs
