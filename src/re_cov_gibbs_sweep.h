@@ -211,15 +211,22 @@ inline double log_re_gaussian(const Eigen::MatrixXd& B, const Eigen::MatrixXd& S
 // precision  G P'QP + diag(1 / s^2)  and linear term
 // P'Q sum_g b_g - (beta_A - m_A) / s^2, where P selects the aliased
 // coefficients. One joint draw per block, every aliased coefficient at once.
+//
+// A term that enters several linear predictors is aliased to one fixed effect
+// in each (the intercept of every predictor against a shared (1 | g)), and the
+// translation moves all of them by the same d: `alias[c]` lists the entries of
+// `beta` coefficient c is aliased to, empty where it is aliased to none. Each
+// listed entry adds its own prior term, so the precision gains sum_k 1 / s_k^2
+// and the linear term loses sum_k (beta_k - m_k) / s_k^2.
 // ---------------------------------------------------------------------------
 inline bool translate_aliased_block(Eigen::MatrixXd& B_m, Eigen::VectorXd& beta,
                                     const Eigen::MatrixXd& Q_m,
-                                    const std::vector<int>& alias,
+                                    const std::vector<std::vector<int>>& alias,
                                     const Eigen::VectorXd& prior_mean,
                                     const Eigen::VectorXd& prior_sd) {
     std::vector<int> cs;
     for (int c = 0; c < static_cast<int>(alias.size()); ++c)
-        if (alias[c] >= 0) cs.push_back(c);
+        if (!alias[c].empty()) cs.push_back(c);
     const int a = static_cast<int>(cs.size());
     if (a == 0) return false;
     const double G = static_cast<double>(B_m.rows());
@@ -229,11 +236,13 @@ inline bool translate_aliased_block(Eigen::MatrixXd& B_m, Eigen::VectorXd& beta,
     Eigen::VectorXd h(a);
     for (int i = 0; i < a; ++i) {
         for (int k = 0; k < a; ++k) Lam(i, k) = G * Q_m(cs[i], cs[k]);
-        const int j = alias[cs[i]];
-        const double s = prior_sd(j);
-        const double prec = (std::isfinite(s) && s > 0.0) ? 1.0 / (s * s) : 0.0;
-        Lam(i, i) += prec;
-        h(i) = Qb(cs[i]) - prec * (beta(j) - prior_mean(j));
+        h(i) = Qb(cs[i]);
+        for (int j : alias[cs[i]]) {
+            const double s = prior_sd(j);
+            const double prec = (std::isfinite(s) && s > 0.0) ? 1.0 / (s * s) : 0.0;
+            Lam(i, i) += prec;
+            h(i) -= prec * (beta(j) - prior_mean(j));
+        }
     }
     Eigen::LLT<Eigen::MatrixXd> llt(0.5 * (Lam + Lam.transpose()));
     if (llt.info() != Eigen::Success) return false;
@@ -242,10 +251,23 @@ inline bool translate_aliased_block(Eigen::MatrixXd& B_m, Eigen::VectorXd& beta,
     // d = Lam^-1 h + L^-T z, with Lam = L L'.
     const Eigen::VectorXd d = llt.solve(h) + llt.matrixU().solve(z);
     for (int i = 0; i < a; ++i) {
-        beta(alias[cs[i]]) += d(i);
+        for (int j : alias[cs[i]]) beta(j) += d(i);
         B_m.col(cs[i]).array() -= d(i);
     }
     return true;
+}
+
+// The same draw for a term aliased to at most one fixed effect per coefficient
+// (`alias[c]` the entry of `beta`, -1 for none).
+inline bool translate_aliased_block(Eigen::MatrixXd& B_m, Eigen::VectorXd& beta,
+                                    const Eigen::MatrixXd& Q_m,
+                                    const std::vector<int>& alias,
+                                    const Eigen::VectorXd& prior_mean,
+                                    const Eigen::VectorXd& prior_sd) {
+    std::vector<std::vector<int>> lists(alias.size());
+    for (size_t c = 0; c < alias.size(); ++c)
+        if (alias[c] >= 0) lists[c].push_back(alias[c]);
+    return translate_aliased_block(B_m, beta, Q_m, lists, prior_mean, prior_sd);
 }
 
 // ---------------------------------------------------------------------------

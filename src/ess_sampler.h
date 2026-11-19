@@ -569,13 +569,14 @@ struct AdaptiveProposal {
 
 // One random-effect term as the moves read it: its layout, whether its latent
 // block holds z (re = sigma L z) or the effects themselves, and per coefficient
-// the process-0 fixed-effect column whose design repeats the coefficient's
-// (-1 where none does).
+// the fixed effects whose design columns repeat the coefficient's: one
+// parameter index in every linear predictor the term enters, or none at all
+// when any of those predictors lacks such a column.
 struct EssReTerm {
     int t = 0;                        // the term's index in the layout
     tulpa::priors::ReTermView v;
     bool noncentered = true;
-    std::vector<int> alias;
+    std::vector<std::vector<int>> alias;
 };
 
 // Group of observation i under term t (1-based, 0 = none), read the way the
@@ -622,9 +623,9 @@ inline bool ess_re_design_column(const ModelData& data,
     return nonzero;
 }
 
-// The single linear predictor's design, or null: with several processes an
-// effect can be shared into more than one, and one fixed effect cannot absorb
-// a move of it.
+// The single linear predictor's design, or null. The fixed-shift move
+// projects one predictor's column onto the group effects, which with several
+// predictors would have to hold in each of them at once.
 inline const tulpa::ProcessData* ess_single_process(const ModelData& data) {
     if (data.n_processes != 1 || data.processes.empty()) return nullptr;
     if (!data.sharing.re.empty() && !data.sharing.re[0]) return nullptr;
@@ -633,29 +634,56 @@ inline const tulpa::ProcessData* ess_single_process(const ModelData& data) {
     return &proc;
 }
 
-// The fixed-effect column, if any, equal on every observation to coefficient
-// c's random-effect design column. The move that reads this is
-// Metropolis-corrected, so a column read as aliased that is not costs
-// rejections, never correctness.
-inline std::vector<int> ess_re_fixed_alias(const ModelData& data,
-                                           const ParamLayout& layout, int t,
-                                           int n_coefs) {
-    std::vector<int> alias(n_coefs, -1);
-    const tulpa::ProcessData* proc = ess_single_process(data);
-    if (!proc) return alias;
-    const int p = proc->p, N = data.N;
+// The linear predictors a random-effect term is added to
+// (add_to_shared_processes over sharing.re), or none when a design cannot be
+// read.
+inline std::vector<int> ess_re_processes(const ModelData& data) {
+    std::vector<int> procs;
+    if ((int)data.processes.size() < data.n_processes) return procs;
+    for (int k = 0; k < data.n_processes; k++) {
+        const bool shared = k >= (int)data.sharing.re.size() || data.sharing.re[k];
+        if (!shared) continue;
+        const auto& proc = data.processes[k];
+        if (proc.p <= 0 || (int)proc.X_flat.size() < data.N * proc.p) return {};
+        procs.push_back(k);
+    }
+    return procs;
+}
+
+// Per coefficient, the fixed effects (parameter indices) whose design columns
+// equal the coefficient's random-effect design column on every observation:
+// one in each linear predictor the term enters. The term adds the same effect
+// to all of them, so a translation of the coefficient is absorbed only when
+// every one has such a column, and a coefficient missing one in any predictor
+// is aliased to none. The move that reads this is Metropolis-corrected, so a
+// column read as aliased that is not costs rejections, never correctness.
+inline std::vector<std::vector<int>> ess_re_fixed_alias(
+    const ModelData& data, const ParamLayout& layout, int t, int n_coefs) {
+    std::vector<std::vector<int>> alias(n_coefs);
+    const std::vector<int> procs = ess_re_processes(data);
+    if (procs.empty()) return alias;
+    const int N = data.N;
     std::vector<double> z;
     std::vector<int> grp;
     for (int c = 0; c < n_coefs; c++) {
         if (!ess_re_design_column(data, layout, t, c, n_coefs, z, grp)) continue;
-        for (int j = 0; j < p && alias[c] < 0; j++) {
-            bool same = true;
-            for (int i = 0; i < N && same; i++) {
-                const double xij = proc->X_flat[(size_t)i * p + j];
-                same = std::abs(xij - z[i]) <= 1e-10 * (1.0 + std::abs(z[i]));
+        std::vector<int> found;
+        for (int k : procs) {
+            const auto& proc = data.processes[k];
+            const int p = proc.p;
+            int col = -1;
+            for (int j = 0; j < p && col < 0; j++) {
+                bool same = true;
+                for (int i = 0; i < N && same; i++) {
+                    const double xij = proc.X_flat[(size_t)i * p + j];
+                    same = std::abs(xij - z[i]) <= 1e-10 * (1.0 + std::abs(z[i]));
+                }
+                if (same) col = j;
             }
-            if (same) alias[c] = j;
+            if (col < 0 || k >= (int)layout.process_beta_start.size()) break;
+            found.push_back(layout.process_beta_start[k] + col);
         }
+        if (found.size() == procs.size()) alias[c] = std::move(found);
     }
     return alias;
 }
@@ -747,11 +775,9 @@ double ess_translate_alias(std::vector<double>& params, const EssReTerm& term,
                            bool& accepted) {
     accepted = false;
     bool any = false;
-    for (int j : term.alias) any = any || j >= 0;
-    const int p = layout.process_beta_count.empty() ? 0
-                  : layout.process_beta_count[0];
+    for (const auto& js : term.alias) any = any || !js.empty();
+    const int p = static_cast<int>(params.size());
     if (!any || p <= 0) return current_log_post;
-    const int beta0 = layout.process_beta_start[0];
     const Eigen::MatrixXd A = ess_re_scale_factor(params, term);
     Eigen::LLT<Eigen::MatrixXd> llt_cov(A * A.transpose());
     if (llt_cov.info() != Eigen::Success) return current_log_post;
@@ -759,9 +785,11 @@ double ess_translate_alias(std::vector<double>& params, const EssReTerm& term,
         llt_cov.solve(Eigen::MatrixXd::Identity(A.rows(), A.cols()));
     if (!Q.allFinite()) return current_log_post;
 
+    // The aliased fixed effects are addressed by parameter index, so the
+    // translation reads and writes the parameter vector itself.
     Eigen::MatrixXd B = ess_re_effects(params, term, A);
     Eigen::VectorXd beta(p);
-    for (int j = 0; j < p; j++) beta(j) = params[beta0 + j];
+    for (int j = 0; j < p; j++) beta(j) = params[j];
     const Eigen::VectorXd mean0 = Eigen::VectorXd::Zero(p);
     const Eigen::VectorXd sd = Eigen::VectorXd::Constant(p, data.sigma_beta);
 
@@ -769,8 +797,8 @@ double ess_translate_alias(std::vector<double>& params, const EssReTerm& term,
     const double prec_beta = 1.0 / (data.sigma_beta * data.sigma_beta);
     auto log_q = [&](const Eigen::MatrixXd& Bm, const Eigen::VectorXd& bt) {
         double lq = -0.5 * (Bm * Q).cwiseProduct(Bm).sum();
-        for (int j : term.alias)
-            if (j >= 0) lq -= 0.5 * prec_beta * bt(j) * bt(j);
+        for (const auto& js : term.alias)
+            for (int j : js) lq -= 0.5 * prec_beta * bt(j) * bt(j);
         return lq;
     };
     const double lq_old = log_q(B, beta);
@@ -778,7 +806,8 @@ double ess_translate_alias(std::vector<double>& params, const EssReTerm& term,
     const std::vector<double> saved = params;
     if (!tulpa::translate_aliased_block(B, beta, Q, term.alias, mean0, sd))
         return current_log_post;
-    for (int j = 0; j < p; j++) params[beta0 + j] = beta(j);
+    for (const auto& js : term.alias)
+        for (int j : js) params[j] = beta(j);
     ess_re_store_effects(params, term, A, B);
 
     const double lp_new = log_post_fn(params);
@@ -1036,10 +1065,12 @@ inline std::vector<EssFixedShift> ess_fixed_shifts(
     const tulpa::ProcessData* proc = ess_single_process(data);
     if (!proc || terms.empty()) return shifts;
     const int p = proc->p, N = data.N;
+    const int beta0 = layout.process_beta_start[0];
     std::vector<bool> aliased(p, false);
     for (const auto& term : terms)
-        for (int j : term.alias)
-            if (j >= 0) aliased[j] = true;
+        for (const auto& js : term.alias)
+            for (int j : js)
+                if (j >= beta0 && j < beta0 + p) aliased[j - beta0] = true;
 
     // Per term and coefficient, the design column and groups (read once).
     std::vector<std::vector<std::vector<double>>> Z(terms.size());

@@ -169,11 +169,14 @@
 #'   off is how one demonstrates that. `ess_joint_proposal_sd` (default 0.1) is
 #'   those moves' initial slice width.
 #'
-#'   Two further moves run whenever the model has a random-effect term and a
-#'   single linear predictor, with no knob: an exact draw of the level a fixed
-#'   effect shares with a random-effect coefficient whose design column repeats
-#'   it (the intercept against `(1 | g)`), and a slice update moving every other
-#'   fixed effect together with the between-group part of it the group effects
+#'   Two further moves run whenever the model has a random-effect term, with
+#'   no knob. The first is an exact draw of the level a fixed effect shares
+#'   with a random-effect coefficient whose design column repeats it (the
+#'   intercept against `(1 | g)`); when the term enters several linear
+#'   predictors of a model package's likelihood, the level is shared with the
+#'   repeating column of each of them and they move together. The second, on a
+#'   single linear predictor, is a slice update moving every other fixed
+#'   effect together with the between-group part of it the group effects
 #'   carry (gcol33/tulpa#877).
 #'
 #'   The elliptical-slice kernel draws from R's own RNG, so `control$seed` does

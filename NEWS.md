@@ -28,6 +28,14 @@
   Quantiles are unchanged, and a field SD derived from the precision keeps
   its moments. `temporal_corr()` applies the same rule to a precision a
   sampler draws under that prior (`precision`, `tau_tvc`) (#1189).
+* The elliptical-slice sampler's exact draw of the level an intercept shares
+  with a `(1 | g)` term also runs when the term enters several linear
+  predictors of a model package's likelihood, moving the repeating fixed
+  effect of each predictor together. It ran for one predictor only, so on
+  tulpaRatio's numerator/denominator model the intercept was left to the
+  ellipse and read a bulk ESS of 3 to 10 in 2,000 draws; it now reads 1,921
+  to 2,049, with every mean within 0.11 posterior SD of NUTS over four seeds
+  (gcol33/tulpaRatio#235).
 * The grid-resolution note of `diagnostics()` names the axis of a single-axis
   grid (`tau`); it printed `value`.
 
