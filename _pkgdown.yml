@@ -243,15 +243,19 @@ articles:
   - articles/spde
   - articles/spatial-confounding
   - articles/joint-models
+  - articles/multivariate-spatial
   - articles/latent-factors
   - articles/categorical-responses
+  - articles/censored-responses
 - title: Workflows
   navbar: Workflows
   contents:
   - articles/data-formatting
   - articles/priors
   - articles/diagnostics
+  - articles/prediction
   - articles/model-comparison
+  - articles/smc-wbic
   - articles/troubleshooting
   - articles/checkpoint
   - articles/tgmrf

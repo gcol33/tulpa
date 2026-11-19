@@ -55,8 +55,8 @@ R users fitting models with grouped, spatial, or temporal observations. The READ
 - README.Rmd / README.md: overview, installation, first model, routing, help, and citation.
 - vignettes/tulpa.Rmd: Get started, a tutorial through model fitting with a taste of each feature.
 - Concepts (articles/concepts): the vocabulary and the fitted object.
-- Models: random-slopes, spatial-models, temporal-models, space-time, varying-coefficients, spde, spatial-confounding, joint-models, latent-factors, categorical-responses; one model type each, simulate to compare.
-- Workflows: data-formatting, priors, diagnostics, model-comparison, troubleshooting, checkpoint, tgmrf, em-laplace; one task each.
+- Models: random-slopes, spatial-models, temporal-models, space-time, varying-coefficients, spde, spatial-confounding, joint-models, multivariate-spatial, latent-factors, categorical-responses, censored-responses; one model type each, simulate to compare.
+- Workflows: data-formatting, priors, diagnostics, prediction, model-comparison, smc-wbic, troubleshooting, checkpoint, tgmrf, em-laplace; one task each.
 - Case studies: case-study-sids, real county data end to end.
 - Background: inference-modes, identifiability, reliability-pareto-k, sbc, compatibility.
 - Help pages: argument and return-value contracts.

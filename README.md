@@ -155,12 +155,12 @@ effects <- ranef(fit)
 
 | Treatment  | Estimate | Lower | Upper |
 |:-----------|---------:|------:|------:|
-| spray\[A\] |     0.74 | -0.02 |  1.48 |
-| spray\[B\] |     0.79 |  0.00 |  1.53 |
-| spray\[C\] |    -1.14 | -1.96 | -0.34 |
-| spray\[D\] |    -0.33 | -1.11 |  0.43 |
-| spray\[E\] |    -0.67 | -1.48 |  0.10 |
-| spray\[F\] |     0.87 |  0.10 |  1.61 |
+| spray\[A\] |     0.74 | -0.06 |  1.56 |
+| spray\[B\] |     0.79 |  0.01 |  1.61 |
+| spray\[C\] |    -1.13 | -1.98 | -0.28 |
+| spray\[D\] |    -0.34 | -1.14 |  0.52 |
+| spray\[E\] |    -0.66 | -1.48 |  0.15 |
+| spray\[F\] |     0.88 |  0.10 |  1.72 |
 
 Supply a data frame with the response, predictors, and grouping
 variables named in the formula. Choose an observation family appropriate
@@ -298,7 +298,7 @@ To cite the tulpa package in publications, use:
 Colling G (2026). _tulpa: Templated Unified Library for Posterior
 Approximation in Bayesian Hierarchical Models_.
 doi:10.32614/CRAN.package.tulpa
-<https://doi.org/10.32614/CRAN.package.tulpa>. R package version 0.7.5,
+<https://doi.org/10.32614/CRAN.package.tulpa>. R package version 0.8.0,
 <https://CRAN.R-project.org/package=tulpa>.
 ```
 
@@ -309,7 +309,7 @@ BibTeX:
   title = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
   author = {Gilles Colling},
   year = {2026},
-  note = {R package version 0.7.5},
+  note = {R package version 0.8.0},
   doi = {10.32614/CRAN.package.tulpa},
   url = {https://CRAN.R-project.org/package=tulpa},
 }
