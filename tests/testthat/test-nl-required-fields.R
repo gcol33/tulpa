@@ -45,13 +45,19 @@ test_that("the joint converter names the missing field too", {
 # unconditionally and must be declared, or a future field lands back in the
 # segfault path the declaration exists to close.
 # Under covr every statement and condition arrives as
-# `if (TRUE) { covr:::count(key); expr }`; unwrap that back to `expr` so the
-# branch walk reads the converter as written.
+# `if (TRUE) { <counter call>; expr }`; unwrap that back to `expr` so the
+# branch walk reads the converter as written. The counter call names a covr
+# internal either as its function (`covr:::count(key)`) or as an argument
+# (`.Call(covr:::covr_count, key)`).
+.nlreq_is_covr_internal <- function(e) {
+  is.call(e) && length(e) == 3L &&
+    identical(e[[1L]], as.name(":::")) &&
+    identical(e[[2L]], as.name("covr"))
+}
+
 .nlreq_is_covr_count <- function(e) {
-  is.call(e) && is.call(e[[1L]]) &&
-    identical(e[[1L]][[1L]], as.name(":::")) &&
-    identical(e[[1L]][[2L]], as.name("covr")) &&
-    identical(e[[1L]][[3L]], as.name("count"))
+  is.call(e) &&
+    any(vapply(as.list(e), .nlreq_is_covr_internal, logical(1)))
 }
 
 .nlreq_uninstrument <- function(e) {
@@ -63,7 +69,8 @@ test_that("the joint converter names the missing field too", {
     return(.nlreq_uninstrument(e[[3L]][[3L]]))
   }
   for (i in seq_along(e)) {
-    if (is.call(e[[i]])) e[[i]] <- .nlreq_uninstrument(e[[i]])
+    # A wrapped `NULL` branch unwraps to NULL, which `[[<-` would delete.
+    if (is.call(e[[i]])) e[i] <- list(.nlreq_uninstrument(e[[i]]))
   }
   e
 }
