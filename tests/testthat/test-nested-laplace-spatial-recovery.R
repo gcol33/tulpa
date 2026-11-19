@@ -151,6 +151,8 @@ test_that("nested-Laplace ICAR precision moves inversely with the field amplitud
   skip_if_not_slow()
   S <- 40L; reps <- 12L; adj <- .chain_adj(S)
   sidx <- rep(seq_len(S), each = reps); N <- length(sidx)
+  # The precision has no posterior mean under the PC prior (tail tau^(-3/2)),
+  # so its location is read on the log scale.
   icar_tau <- function(amp, seed) {                       # icar axis is the precision tau
     phi <- .structured_field(S, seed); set.seed(seed + 1L)
     y <- rbinom(N, 1L, plogis(-0.1 + amp * phi[sidx]))
@@ -161,7 +163,7 @@ test_that("nested-Laplace ICAR precision moves inversely with the field amplitud
     fit <- suppressWarnings(tulpa_nested_laplace(
       as.integer(y), rep(1L, N), matrix(1, N, 1), prior = prior,
       family = "binomial", control = list(diagnose_k = FALSE)))
-    fit$theta_mean[[1]]
+    exp(fit$theta_log_mean[[1]])
   }
   lo <- vapply(1:5, function(s) icar_tau(0.4, 300L + s), numeric(1))  # small amplitude
   hi <- vapply(1:5, function(s) icar_tau(1.7, 400L + s), numeric(1))  # large amplitude

@@ -171,18 +171,12 @@ test_that("ICAR pins the field level instead of aliasing it into the intercept",
   phi_cols <- grep("^phi", colnames(dr))
   phi_sum <- rowSums(dr[, phi_cols, drop = FALSE])
 
-  # The constant direction is not penalised to a fixed width any more: under the
-  # augmented Q_aug = Q + sum_c 1_c 1_c'/J_c it carries the field's OWN
-  # precision, so the per-component mean has precision tau*J and the field sum
-  # sits at sd = sqrt(J / tau). Its width no longer has to be small, because the
-  # field is centred on its way into eta and the direction never reaches the
-  # likelihood -- what the assertions below check.
-  #
-  # This discriminates every regime: the soft pin this replaced held the sum at
-  # kappa*J = 0.036, dropping the augmentation entirely leaves it far wider than
-  # sqrt(J/tau), and only the augmented prior lands on it.
-  tau_draws <- exp(dr[, grep("log_tau_spatial", colnames(dr))[1]])
-  expect_lt(abs(sd(phi_sum) / sqrt(S / mean(tau_draws)) - 1), 0.5)
+  # The sampler coordinate's constant direction carries the field's own
+  # precision under Q_aug = Q + sum_c 1_c 1_c'/J_c and never reaches the
+  # likelihood; the stored draw is the field as it enters eta, centred within
+  # each component (test-areal-component-constraints.R checks the projection
+  # against a dense one), so its sum is zero on every draw.
+  expect_lt(max(abs(phi_sum)), 1e-8)
 
   # With the level pinned, the intercept is identified: it no longer trades
   # one-for-one against the field mean, and its posterior is tight on truth.

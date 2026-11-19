@@ -100,13 +100,13 @@ test_that("Tier-3 VI recovers the well-identified slope", {
 # That encoding maximizes the exact expected complete-data log-likelihood, so    #
 # the raw EM point estimate is already at the MLE and MI / Gibbs have no point   #
 # bias to remove: measured over these 8 seeds the median |b0 - truth| is 0.0817  #
-# raw, 0.0863 under MI, 0.0856 under Gibbs. What the corrections add is the      #
-# latent-state uncertainty the raw Laplace conditions away -- V_between is       #
-# identically 0 on the raw path, and the pooled V_total exceeds V_within, which  #
-# is the basis for the corrected CI. An earlier revision of this block asserted  #
-# a raw-EM intercept bias that the corrections reduced; it read a fractional-y   #
-# encoding that the count-family guard had made unrunnable, so that claim was    #
-# never measured.                                                                #
+# raw and 0.0863 under MI. What the corrections add is the latent-state          #
+# uncertainty the raw Laplace conditions away. Under MI, V_between is            #
+# identically 0 on the raw path and the pooled V_total exceeds V_within. Gibbs   #
+# samples the joint posterior p(beta, z | y), so its posterior SD exceeds the    #
+# complete-data SE at the EM weights: on seeds 51-53 it read 0.104, 0.108, 0.113 #
+# for b0 against complete-data SEs of 0.094, 0.094, 0.096 and Louis SEs of       #
+# 0.105, 0.103, 0.110.                                                           #
 # --------------------------------------------------------------------------- #
 
 test_that("EM+Laplace occupancy recovery; MI/Gibbs add the latent-state variance", {
@@ -121,7 +121,7 @@ test_that("EM+Laplace occupancy recovery; MI/Gibbs add the latent-state variance
     h <- ifelse(z == 1L, rbinom(G, J, p_det), 0L) # detections out of J visits
     list(x = x, h = h)
   }
-  em_occ <- function(d, correction = "none") {
+  em_occ <- function(d, correction = "none", n_gibbs = 2000L) {
     X <- cbind(1, d$x)
     e_step <- function(fits, ...) {
       psi <- if (length(fits) == 0L) rep(0.5, G)
@@ -136,29 +136,29 @@ test_that("EM+Laplace occupancy recovery; MI/Gibbs add the latent-state variance
     )
     tulpa_em_laplace(e_step, m_step_encode, correction = correction,
                      max_iter = 200L, tol = 1e-6, damping = 0,
-                     n_imputations = 20L, n_gibbs = 12L, verbose = FALSE)
+                     n_imputations = 20L, n_gibbs = n_gibbs, verbose = FALSE)
   }
 
   n_seed <- 8L
   raw_b0 <- raw_b1 <- numeric(n_seed)
   mi_b0  <- mi_b1  <- mi_vb  <- mi_vw <- mi_vt <- numeric(n_seed)
-  gi_b0  <- gi_b1  <- gi_vb  <- gi_vw <- gi_vt <- numeric(n_seed)
+  gi_b0  <- gi_b1  <- gi_sd  <- cd_se <- numeric(n_seed)
   for (s in seq_len(n_seed)) {
     d  <- sim_occ(50L + s)
-    nm <- em_occ(d, "none")$fits$psi$mode
+    raw <- em_occ(d, "none")$fits$psi
+    nm <- raw$mode
     mi <- em_occ(d, "mi"); gi <- em_occ(d, "gibbs")
     raw_b0[s] <- nm[1];               raw_b1[s] <- nm[2]
+    cd_se[s]  <- raw$se[1]
     mi_b0[s]  <- mi$pooled$psi$mean[1]; mi_b1[s] <- mi$pooled$psi$mean[2]
-    gi_b0[s]  <- gi$pooled$psi$mean[1]; gi_b1[s] <- gi$pooled$psi$mean[2]
+    gi_b0[s]  <- gi$means[["psi:beta1"]]; gi_b1[s] <- gi$means[["psi:beta2"]]
+    gi_sd[s]  <- gi$sds[["psi:beta1"]]
     mi_vb[s]  <- mi$pooled$psi$V_between[1]
-    gi_vb[s]  <- gi$pooled$psi$V_between[1]
     mi_vw[s]  <- mi$pooled$psi$V_within[1]; mi_vt[s] <- mi$pooled$psi$V_total[1]
-    gi_vw[s]  <- gi$pooled$psi$V_within[1]; gi_vt[s] <- gi$pooled$psi$V_total[1]
   }
 
   # (a) all three paths recover both coefficients. Measured medians over these
-  # seeds: raw (0.194, -0.715), MI (0.197, -0.701), Gibbs (0.193, -0.726)
-  # against truth (0.2, -0.8).
+  # seeds: raw (0.194, -0.715), MI (0.197, -0.701) against truth (0.2, -0.8).
   for (v in list(raw_b0, mi_b0, gi_b0)) expect_lt(abs(stats::median(v) - b0), 0.10)
   for (v in list(raw_b1, mi_b1, gi_b1)) expect_lt(abs(stats::median(v) - b1), 0.20)
 
@@ -168,14 +168,13 @@ test_that("EM+Laplace occupancy recovery; MI/Gibbs add the latent-state variance
   expect_lt(stats::median(abs(mi_b0 - b0)), stats::median(abs(raw_b0 - b0)) + 0.05)
   expect_lt(stats::median(abs(gi_b0 - b0)), stats::median(abs(raw_b0 - b0)) + 0.05)
 
-  # (c) the corrections carry a strictly positive between-imputation variance --
-  # the latent-occupancy uncertainty the raw Laplace EM conditions away
-  # (V_between == 0 there), so the pooled total exceeds the within-draw
-  # variance the raw path alone would report.
-  expect_true(all(mi_vb >= 0) && all(gi_vb >= 0))
+  # (c) the corrections carry the latent-occupancy uncertainty the raw Laplace
+  # EM conditions away: MI through a strictly positive between-imputation
+  # variance (V_between == 0 on the raw path), Gibbs through a posterior SD
+  # above the complete-data SE at the EM weights.
+  expect_true(all(mi_vb >= 0))
   expect_gt(stats::median(mi_vb), 0)
-  expect_gt(stats::median(gi_vb), 0)
   expect_true(all(mi_vt > mi_vw))
-  expect_true(all(gi_vt > gi_vw))
+  expect_true(all(gi_sd > cd_se))
 })
 
