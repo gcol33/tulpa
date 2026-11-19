@@ -222,9 +222,15 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   type <- tolower(block$type %||% "")
   # A block's `prior_sigma = c(U, alpha)` anchors the PC prior on its field SD,
   # carried to whichever scale coordinate the axis is laid on.
+  # The PC prior is exponential in the SD, so carried to a precision
+  # tau = sigma^-2 its upper tail is tau^(-1 - 1/2): the record's `tail`, read
+  # by the moment-existence rule (`.hyper_moment_rule()`). On an SD or a
+  # variance the same prior has an exponential upper tail and every moment.
   scale <- function(kind, anchor = .hp_scale_anchor(block)) {
     force(kind); force(anchor)
-    list(fn = function(x) .hp_log_scale_density(x, kind, anchor))
+    c(list(fn = function(x) .hp_log_scale_density(x, kind, anchor)),
+      if (identical(kind, "precision"))
+        list(tail = list(prior_power = 0.5, field = type)))
   }
   uniform <- function() {
     bounds <- .hp_axis_support(bare, block)
@@ -345,8 +351,12 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   n <- nrow(tg)
   out <- list(lp = numeric(n), lp_in_kernel = numeric(n),
               axes = character(0), declined = character(0))
-  lengths <- colnames(tg)[sub("^b[0-9]+[.]", "", colnames(tg)) %in% .SPATIAL_LENGTH_AXES]
-  for (a in lengths) {
+  # The axes whose prior has a power-law tail: a spatial length, and a
+  # precision under the PC prior on its SD.
+  bare_cols <- sub("^b[0-9]+[.]", "", colnames(tg))
+  tailed <- colnames(tg)[bare_cols %in% .SPATIAL_LENGTH_AXES |
+                         startsWith(bare_cols, "tau")]
+  for (a in tailed) {
     r <- resolve(a)
     if (is.null(r$tail) && !a %in% axes) r$tail <- list(prior_power = NA_real_, field = "")
     if (!is.null(r$tail)) {

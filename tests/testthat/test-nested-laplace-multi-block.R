@@ -177,7 +177,9 @@ test_that("multi-block (BYM2 + AR1 + IID) recovers hyperparameters", {
       sigma_bym2 = bm[[1]]$mean["sigma"],
       sigma_sd   = bm[[1]]$sd["sigma"],
       rho_bym2   = bm[[1]]$mean["rho"],
-      tau_ar1    = bm[[2]]$mean["tau"],
+      # The precision has no posterior mean under the PC prior; its
+      # location is the geometric mean.
+      tau_ar1    = exp(res$theta_log_mean[["b2.tau"]]),
       tau_sd     = bm[[2]]$sd["tau"],
       rho_ar1    = bm[[2]]$mean["rho"],
       sigma_iid  = bm[[3]]$mean["sigma"],
@@ -235,8 +237,11 @@ test_that("multi-block (BYM2 + AR1 + IID) runs end-to-end and roughly recovers",
   # Posterior means within wide bands around truth.
   expect_true(res$block_moments[[1]]$mean["sigma"] > 0.2)
   expect_true(res$block_moments[[1]]$mean["sigma"] < 1.4)
-  expect_true(res$block_moments[[2]]$mean["tau"]   > 3)
-  expect_true(res$block_moments[[2]]$mean["tau"]   < 30)
+  # A precision under the PC prior has no posterior mean (its tail is
+  # tau^(-3/2)), so its location is read on the log scale.
+  expect_identical(res$block_moments[[2]]$mean[["tau"]], Inf)
+  expect_true(exp(res$theta_log_mean[["b2.tau"]]) > 3)
+  expect_true(exp(res$theta_log_mean[["b2.tau"]]) < 30)
   expect_true(res$block_moments[[3]]$mean["sigma"] > 0.05)
   expect_true(res$block_moments[[3]]$mean["sigma"] < 1.0)
 })

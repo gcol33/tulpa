@@ -20,6 +20,16 @@
   carries the intervals as `log_hyperprior_support`, and
   `tulpa_joint_axis_specs_from_grid()` and `tulpa_grid_log_quad()` take them
   as `axis_support` (#1188).
+* A precision axis under the PC prior reports `Inf` for its posterior mean and
+  SD, with the reason in `moment_existence`. The prior is exponential in the
+  field SD, so the precision keeps a `tau^(-3/2)` tail and has no mean; the
+  number printed before was a sum over the cells the grid happened to hold
+  (179.5 with an interval of 2.6 to 68.6 on the North Carolina SIDS fit).
+  Quantiles are unchanged, and a field SD derived from the precision keeps
+  its moments. `temporal_corr()` applies the same rule to a precision a
+  sampler draws under that prior (`precision`, `tau_tvc`) (#1189).
+* The grid-resolution note of `diagnostics()` names the axis of a single-axis
+  grid (`tau`); it printed `value`.
 
 * Inner Laplace Newton solves accept near-mode steps within the objective's
   relative numerical resolution and check the Newton decrement in curvature

@@ -1374,6 +1374,12 @@
   if (is.null(r) || !length(r)) return(NULL)
   ok <- is.finite(r)
   nm <- names(r) %||% as.character(seq_along(r))
+  # A single-axis grid is stored as a vector, whose resolution record is
+  # keyed `value`; the axis's own name is the one the fit carries.
+  if (identical(nm, "value") && length(jf$theta_names) == 1L) {
+    nm <- as.character(jf$theta_names)
+    names(r) <- nm
+  }
   dec <- jf$outer_grid_resolution_declined
   if (is.null(dec) || length(dec) != length(r)) {
     dec <- setNames(rep(NA_character_, length(r)), nm)

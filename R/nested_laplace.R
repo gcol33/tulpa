@@ -444,9 +444,11 @@
 #'   * `log_marginal`: log p(y, mode | theta_k) at each grid point.
 #'   * `weights`: integration weights normalising to sum 1.
 #'   * `theta_mean`, `theta_sd`: posterior moments per hyperparameter.
-#'     A physical range moment that diverges is `Inf`. `moment_existence`
-#'     records each range's prior tail, likelihood boundary decay, fixed or
-#'     bounded support, and the reason for its moment-existence result.
+#'     A range or precision moment that diverges is `Inf`: a precision
+#'     under the PC prior on its SD keeps the prior's `tau^(-3/2)` tail, so it
+#'     has neither a mean nor an SD. `moment_existence` records each such
+#'     axis's prior tail, likelihood boundary decay, fixed or bounded support,
+#'     and the reason for its moment-existence result.
 #'     `theta_log_mean` and `theta_log_sd` retain the finite log-range moments.
 #'   * `n_iter`: inner Newton iterations per grid point.
 #'   * `modes`: matrix `[n_grid x n_x]` of inner modes, when stored.

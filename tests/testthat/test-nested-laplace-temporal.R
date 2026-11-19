@@ -98,9 +98,11 @@ test_that("nested_laplace RW1 returns interior-peaked log-marginal", {
   expect_equal(length(res$log_marginal), 9L)
   expect_cells_solved(res)
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
-  # Posterior mean within the grid
-  expect_true(res$theta_mean > min(prior$tau_grid))
-  expect_true(res$theta_mean < max(prior$tau_grid))
+  # Posterior location within the grid. The precision has no posterior mean
+  # under the PC prior, so the location is the geometric mean.
+  expect_identical(as.numeric(res$theta_mean), Inf)
+  expect_true(exp(res$theta_log_mean[["tau"]]) > min(prior$tau_grid))
+  expect_true(exp(res$theta_log_mean[["tau"]]) < max(prior$tau_grid))
 })
 
 test_that("nested_laplace RW1 stores per-grid-point modes", {

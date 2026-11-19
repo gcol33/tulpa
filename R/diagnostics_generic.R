@@ -351,7 +351,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 # guessed.
 .SPATIAL_HYPER_TRANSFORM <- list(
   tau         = list(name = "sigma", fn = .hyper_nat$sigma_from_precision,
-                     domain = "positive"),
+                     domain = "positive", moment_power = -0.5),
   sigma2      = list(name = "sigma", fn = .hyper_nat$sigma_from_var,
                      domain = "positive"),
   phi_gp      = list(name = "range", fn = .hyper_nat$range_from_lengthscale,
@@ -379,7 +379,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 # block's precision, an iid block's SD) the nested grid laid.
 .MS_TEMPORAL_HYPER_TRANSFORM <- list(
   tau   = list(name = "sigma", fn = .hyper_nat$sigma_from_precision,
-               domain = "positive"),
+               domain = "positive", moment_power = -0.5),
   sigma = list(name = "sigma", fn = .hyper_nat$identity),
   rho   = list(name = "rho",   fn = .hyper_nat$identity)
 )
@@ -738,12 +738,21 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     axis <- cn[indices[i]]
     tr <- transform_fn(labels[i], draws[, indices[i]], axis)
     qs  <- stats::quantile(tr$vals, probs = probs)
-    mm <- .hyper_moment_read(models[[axis]], mean(tr$vals), stats::sd(tr$vals))
+    model <- models[[axis]]
+    # A precision sampled under the PC prior on its SD keeps the prior's
+    # tau^(-1 - 1/2) tail wherever the likelihood stays positive as the field
+    # vanishes, the case `.hp_axis_default()` records for a grid's `tau` axis.
+    if (is.null(model) && isTRUE(tr$pc_precision)) {
+      model <- list(prior_power = 0.5, field = "temporal", fixed = FALSE,
+                    likelihood_power = if (.hyper_positive_boundary(object)) 0
+                                       else NA_real_)
+    }
+    mm <- .hyper_moment_read(model, mean(tr$vals), stats::sd(tr$vals))
     out <- data.frame(mean = mm$mean, sd = mm$sd,
                       row.names = tr$row, stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)
     list(row = out, existence = mm$existence,
-      log_moments = if (!is.null(models[[axis]]))
+      log_moments = if (!is.null(model))
         c(mean = mean(log(tr$vals)), sd = stats::sd(log(tr$vals))))
   })
   out <- do.call(rbind, lapply(rows, `[[`, "row"))
@@ -838,7 +847,9 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
   )
   transform_fn <- function(nm, raw, label) {
     if (nm == "tau") {
-      list(vals = exp(raw), row = "precision")          # log_tau -> tau (precision)
+      # log_tau -> tau (precision), sampled under the PC prior on its SD
+      # (src/tulpa_priors_temporal.h).
+      list(vals = exp(raw), row = "precision", pc_precision = TRUE)
     } else if (nm == "rho") {
       list(vals = 1 / (1 + exp(-raw)), row = "rho_ar1") # logit -> rho in (0,1)
     } else if (nm == "sigma") {
@@ -856,7 +867,9 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
       # (src/tulpa_priors_mstemporal.h), not the (0, 1) of logit_rho_ar1 above.
       list(vals = 2 / (1 + exp(-raw)) - 1, row = nm)
     } else if (grepl("^log_tau_tvc", label)) {
-      list(vals = exp(raw), row = nm)                   # log_tau -> tau (precision)
+      # log_tau -> tau (precision), sampled under the PC prior on its SD
+      # (src/tulpa_priors_tvc.h).
+      list(vals = exp(raw), row = nm, pc_precision = TRUE)
     } else if (grepl("^logit_rho_tvc", label)) {
       list(vals = 2 / (1 + exp(-raw)) - 1, row = nm)     # (-1, 1), like rho_short
     } else {
@@ -864,7 +877,8 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
     }
   }
   .hyperparam_summary(.fit_draws(object), patterns, transform_fn, probs,
-                      .hyper_empty_msg(object, "temporal", "temporal"))
+                      .hyper_empty_msg(object, "temporal", "temporal"),
+                      object = object)
 }
 
 # spatial_range()/temporal_corr()'s draw-column table and `.nl_block_roles()`

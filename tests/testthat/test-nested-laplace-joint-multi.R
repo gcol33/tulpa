@@ -349,8 +349,11 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
     expect_true(bm1[["sigma"]] > 0 && bm1[["sigma"]] < 1.5)
     expect_true(bm1[["alpha"]] >= 0.5 && bm1[["alpha"]] <= 1.5)
     expect_true(bm1[["rho"]]   >= 0.5 && bm1[["rho"]] <= 0.85)
-    bm2 <- fit$block_moments[[2L]]$mean
-    expect_true(bm2[["tau"]] >= 3 && bm2[["tau"]] <= 20)
+    # A precision under the PC prior has no posterior mean (its tail is
+    # tau^(-3/2)), so its location is read on the log scale.
+    expect_identical(fit$block_moments[[2L]]$mean[["tau"]], Inf)
+    tau_geo <- exp(fit$theta_log_mean[["b2.tau"]])
+    expect_true(tau_geo >= 3 && tau_geo <= 20)
     bm3 <- fit$block_moments[[3L]]$mean
     expect_true(bm3[["sigma"]] >= 0.2 && bm3[["sigma"]] <= 0.5)
 

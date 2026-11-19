@@ -979,7 +979,7 @@
 #'      weights (sum to 1).
 #'   * `theta_mean`, `theta_sd` -- posterior moments per hyperparameter,
 #'      including `alpha` when `copy` is set.
-#'      Divergent physical range moments are `Inf`; `moment_existence`
+#'      Divergent range and precision moments are `Inf`; `moment_existence`
 #'      records the prior tail, likelihood boundary decay and the reason.
 #'      `theta_log_mean` and `theta_log_sd` retain finite log-range moments.
 #'   * `theta_median`, `theta_ci_lo`, `theta_ci_hi` -- weighted-quantile

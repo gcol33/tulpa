@@ -186,3 +186,55 @@ test_that("importance integration obeys the same analytic range moment limit", {
   expect_equal(fit$theta_log_sd[["b2.phi_gp"]], exact[["sd"]], tolerance = .02)
   expect_true(all(is.finite(fit$theta_median)))
 })
+
+test_that("a precision under the PC prior has no posterior mean or SD", {
+  skip_on_cran()
+  skip_if_fast()
+  # The PC prior is exponential in the field SD, so the precision keeps a
+  # tau^(-1 - 1/2) tail against a likelihood that tends to the field-free
+  # model's as tau grows (gcol33/tulpa#1189).
+  rule <- tulpa:::.hyper_moment_rule(
+    list(prior_power = 0.5, likelihood_power = 0, field = "icar"))
+  expect_false(rule$mean_exists)
+  expect_false(rule$sd_exists)
+  # The field SD is tau^(-1/2), a non-positive power, and keeps its moments.
+  expect_true(tulpa:::.hyper_moment_rule(
+    list(prior_power = 0.5, likelihood_power = 0, field = "icar"),
+    power = -0.5)$mean_exists)
+  expect_equal(tulpa:::.hp_axis_default("tau", list(type = "icar"))$tail$prior_power,
+               0.5)
+  expect_null(tulpa:::.hp_axis_default("sigma", list(type = "bym2"))$tail)
+  expect_null(tulpa:::.hp_axis_default("sigma2", list(type = "nngp"))$tail)
+
+  set.seed(1)
+  k <- 8L
+  W <- matrix(0, k * k, k * k)
+  id <- function(i, j) (i - 1L) * k + j
+  for (i in seq_len(k)) for (j in seq_len(k)) {
+    if (i < k) W[id(i, j), id(i + 1L, j)] <- W[id(i + 1L, j), id(i, j)] <- 1
+    if (j < k) W[id(i, j), id(i, j + 1L)] <- W[id(i, j + 1L), id(i, j)] <- 1
+  }
+  r <- rep(seq_len(k * k), each = 4L)
+  x <- rnorm(length(r))
+  u <- as.numeric(scale(rnorm(k * k))) * 0.3
+  d <- data.frame(y = rpois(length(r), exp(0.5 + 0.3 * x + u[r])), x = x,
+                  region = factor(r))
+  fit_under <- function(hp) {
+    tulpa(y ~ x + spatial(region), data = d, family = "poisson",
+          spatial = list(type = "icar", adjacency = W),
+          mode = "nested_laplace", hyperprior = hp,
+          control = list(n_threads = 2, progress = FALSE))
+  }
+  proper <- summary(fit_under("proper"))$hyperparameters
+  expect_identical(proper$parameter, "tau")
+  expect_identical(proper$mean, Inf)
+  expect_identical(proper$sd, Inf)
+  expect_true(all(is.finite(unlist(proper[c("median", "ci_lo", "ci_hi")]))))
+  expect_false(attr(proper, "moment_existence")$tau$mean_exists)
+  sg <- spatial_range(fit_under("proper"))
+  expect_true(all(is.finite(unlist(sg["sigma", ]))))
+
+  # A flat hyperprior integrates the precision over a bounded span.
+  flat <- summary(fit_under("flat"))$hyperparameters
+  expect_true(is.finite(flat$mean) && is.finite(flat$sd))
+})

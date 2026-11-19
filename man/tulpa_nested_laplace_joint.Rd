@@ -999,7 +999,7 @@ A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "l
 weights (sum to 1).
 \item \code{theta_mean}, \code{theta_sd} -- posterior moments per hyperparameter,
 including \code{alpha} when \code{copy} is set.
-Divergent physical range moments are \code{Inf}; \code{moment_existence}
+Divergent range and precision moments are \code{Inf}; \code{moment_existence}
 records the prior tail, likelihood boundary decay and the reason.
 \code{theta_log_mean} and \code{theta_log_sd} retain finite log-range moments.
 \item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} -- weighted-quantile

@@ -12,7 +12,7 @@
     else if (isTRUE(model$bounded)) "bounded prior support"
     else if (logarithm) "finite log-range moments under the range prior"
     else if (length(limit) != 1L || is.na(limit)) "likelihood boundary limit unclassified"
-    else paste0("range prior tail r^(-1-", model$prior_power,
+    else paste0("prior tail r^(-1-", model$prior_power,
       "), likelihood boundary decay r^(-", model$likelihood_power,
       "); moment order must be < ", limit)
   c(model, list(moment_limit = limit, power = power, logarithm = logarithm,
@@ -234,10 +234,16 @@
     model <- models[[a]]
     object$moment_existence[[a]] <- .hyper_moment_rule(model)
     if (!is.null(tg) && a %in% colnames(tg)) {
-      mm <- .hyper_moment_read(model, object$theta_mean[[a]], object$theta_sd[[a]])
-      object$theta_mean[[a]] <- mm$mean
-      object$theta_sd[[a]] <- mm$sd
-      if (is.infinite(mm$sd)) object$theta_sd_source[[a]] <- "nonexistent"
+      # A single-axis fit carries its moments unnamed, in grid-column order.
+      k <- if (is.null(names(object$theta_mean))) match(a, colnames(tg)) else a
+      mm <- .hyper_moment_read(model, object$theta_mean[[k]], object$theta_sd[[k]])
+      object$theta_mean[[k]] <- mm$mean
+      object$theta_sd[[k]] <- mm$sd
+      if (is.infinite(mm$sd)) {
+        ks <- if (is.null(names(object$theta_sd_source)) &&
+                  length(object$theta_sd_source)) match(a, colnames(tg)) else a
+        object$theta_sd_source[[ks]] <- "nonexistent"
+      }
       z <- log(tg[, a]); w <- object$weights / sum(object$weights)
       lm <- sum(w * z)
       object$theta_log_mean[[a]] <- lm

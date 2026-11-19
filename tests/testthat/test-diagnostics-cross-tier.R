@@ -166,7 +166,10 @@ test_that("temporal_corr covers multiscale, tvc and a latent AR(p) block", {
                    temporal = temporal_tvc("tidx", terms = "x", structure = "rw1"))
   tc_tvc <- temporal_corr(fit_tvc)
   expect_identical(rownames(tc_tvc), "tau_tvc")
-  expect_true(is.finite(tc_tvc["tau_tvc", "mean"]))
+  # The precision is sampled under the PC prior on its SD, which leaves it a
+  # tau^(-3/2) tail and no posterior mean (gcol33/tulpa#1189).
+  expect_identical(tc_tvc["tau_tvc", "mean"], Inf)
+  expect_true(all(is.finite(unlist(tc_tvc["tau_tvc", c("q2.5", "q97.5")]))))
 
   fit_ar2 <- tulpa(y ~ x + latent(temporal_ar2(Tm$tidx)), data = Tm, family = "poisson")
   tc_ar2 <- temporal_corr(fit_ar2)

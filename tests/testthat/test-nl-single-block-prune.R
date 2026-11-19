@@ -181,8 +181,9 @@ test_that("a pruned fit agrees with the full grid on the fixed effects", {
   # estimates move by at most the mass it dropped. This is a dropped-mass
   # bound, not machine precision.
   expect_lt(max(abs(coef(pruned) - coef(full))), 0.02)
-  expect_lt(max(abs(pruned$theta_mean - full$theta_mean)) /
-              max(1, max(abs(full$theta_mean))), 0.05)
+  # The precision has no posterior mean under the PC prior, so the two fits
+  # are compared on its log.
+  expect_lt(max(abs(pruned$theta_log_mean - full$theta_log_mean)), 0.05)
 })
 
 test_that("the screen is the default, and prune = FALSE solves every cell", {
