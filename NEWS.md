@@ -40,6 +40,12 @@
   matching column of every predictor together: over 12 seeds at 2,000 draws
   the slope's median bulk ESS goes from 64 to 227, and from 279-423 to
   714-956 at 8,000 draws on three of them (#1190).
+* `tulpa_re_cov_nested()` maps all placement points to log-Cholesky
+  coordinates in one vectorised pass, where it mapped them one row at a time,
+  and the within-cell axis read builds each row's CDF once for all 32
+  quadrature uniforms, where it rebuilt it per uniform. Every field of the
+  fit is bit-identical; a correlated `(1 + x | g)` binomial fit over 1318
+  outer cells takes 7.5 s against 18.6 s (#1192).
 * The grid-resolution note of `diagnostics()` names the axis of a single-axis
   grid (`tau`); it printed `value`.
 

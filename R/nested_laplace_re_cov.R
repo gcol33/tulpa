@@ -1679,11 +1679,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     cols <- pos + seq_len(bl$k)
     pos <- pos + bl$k
     if (!isTRUE(bl$full)) next
-    for (r in seq_len(nrow(V))) {
-      b <- .re_cpc_block_to_logchol(V[r, cols], bl$nc)
-      theta[r, cols] <- b$theta
-      log_jac[r] <- log_jac[r] + b$log_jac
-    }
+    b <- .re_cpc_batch_to_logchol(V[, cols, drop = FALSE], bl$nc)
+    theta[, cols] <- b$theta
+    log_jac <- log_jac + b$log_jac
   }
   list(theta = theta, log_jac = log_jac)
 }

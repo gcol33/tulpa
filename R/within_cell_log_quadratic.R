@@ -336,16 +336,19 @@
 # intervals tile `[0, 1]`, so the draws reproduce the row's reconstruction
 # exactly, and the axis's whatever the cell allocation. NA for a cell outside
 # every row (a declared point mass, a massless cell), which the caller keeps at
-# its node.
+# its node. `u` is one uniform per cell, or a matrix with one row per cell and
+# one column per uniform; each row's CDF is built once and inverted at all of
+# its cells' uniforms.
 .nl_lq_axis_draw <- function(geom, k, u) {
-  out <- rep(NA_real_, length(k))
+  U <- matrix(u, length(k))
+  out <- matrix(NA_real_, length(k), ncol(U))
   g <- geom$group[k]
   for (s in .nl_lq_group_cells(g)) {
     gi <- g[s[1L]]
-    p <- geom$c0[k[s]] + u[s] * (geom$c1[k[s]] - geom$c0[k[s]])
+    c0 <- geom$c0[k[s]]
+    p <- c0 + U[s, , drop = FALSE] * (geom$c1[k[s]] - c0)
     curve <- cpp_nl_lq_group_cdf(geom$pieces[[gi]], geom$x)
-    Fg <- curve$F
-    out[s] <- geom$from(.nl_lq_inverse(geom$x[curve$index], Fg, p))
+    out[s, ] <- geom$from(.nl_lq_inverse(geom$x[curve$index], curve$F, p))
   }
-  out
+  if (is.matrix(u)) out else out[, 1L]
 }

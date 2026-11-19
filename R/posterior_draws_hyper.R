@@ -151,7 +151,8 @@
 #
 # `u` is the draw's uniform on this axis. Each cell-conditional is reached by
 # its inverse CDF, so ANY uniform input -- independent across axes or tied
-# through a copula -- reproduces the per-axis marginal exactly.
+# through a copula -- reproduces the per-axis marginal exactly. A matrix `u`
+# (one row per cell, one column per uniform) returns the matching matrix.
 .nl_hyper_axis_draw <- function(geom, v_cell, cells = NULL,
                                 u = stats::runif(length(v_cell))) {
   if (identical(geom$kind, "none")) return(v_cell)
@@ -169,7 +170,8 @@
            geom$values[k] + (2 * u - 1) * (geom$hi[k] - geom$values[k]))
   }
   miss <- is.na(k) | !is.finite(out)
-  out[miss] <- v_cell[miss]
+  out[miss] <- (if (is.matrix(out)) matrix(v_cell, nrow(out), ncol(out))
+                else v_cell)[miss]
   out
 }
 
@@ -189,10 +191,8 @@
   uq <- c(gl$x / 2, 0.5 + gl$x / 2)
   wq <- c(gl$w, gl$w) / 2
   cells <- seq_len(n)
-  tq <- vapply(uq, function(u) {
-    to(.nl_hyper_axis_draw(geom, v, cells, rep(u, n)))
-  }, numeric(n))
-  tq <- matrix(tq, n)
+  tq <- matrix(to(.nl_hyper_axis_draw(geom, v, cells,
+                                      matrix(rep(uq, each = n), n))), n)
   m <- drop(tq %*% wq)
   s <- sqrt(pmax(drop(tq^2 %*% wq) - m^2, 0))
   k <- .nl_hyper_axis_index(geom, v, cells)
