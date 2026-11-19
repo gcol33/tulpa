@@ -623,17 +623,6 @@ inline bool ess_re_design_column(const ModelData& data,
     return nonzero;
 }
 
-// The single linear predictor's design, or null. The fixed-shift move
-// projects one predictor's column onto the group effects, which with several
-// predictors would have to hold in each of them at once.
-inline const tulpa::ProcessData* ess_single_process(const ModelData& data) {
-    if (data.n_processes != 1 || data.processes.empty()) return nullptr;
-    if (!data.sharing.re.empty() && !data.sharing.re[0]) return nullptr;
-    const auto& proc = data.processes[0];
-    if (proc.p <= 0 || (int)proc.X_flat.size() < data.N * proc.p) return nullptr;
-    return &proc;
-}
-
 // The linear predictors a random-effect term is added to
 // (add_to_shared_processes over sharing.re), or none when a design cannot be
 // read.
@@ -650,41 +639,49 @@ inline std::vector<int> ess_re_processes(const ModelData& data) {
     return procs;
 }
 
-// Per coefficient, the fixed effects (parameter indices) whose design columns
-// equal the coefficient's random-effect design column on every observation:
-// one in each linear predictor the term enters. The term adds the same effect
-// to all of them, so a translation of the coefficient is absorbed only when
-// every one has such a column, and a coefficient missing one in any predictor
-// is aliased to none. The move that reads this is Metropolis-corrected, so a
-// column read as aliased that is not costs rejections, never correctness.
+// The fixed effects (parameter indices) whose design columns equal x on
+// every observation: one in each of the linear predictors procs, or none when
+// any of them lacks such a column. A random-effect term adds the same effect
+// to every predictor it enters, so a move trading a fixed effect against it
+// keeps all of them in step only by moving the matching column in each.
+inline std::vector<int> ess_matching_fixed(const ModelData& data,
+                                           const ParamLayout& layout,
+                                           const std::vector<int>& procs,
+                                           const std::vector<double>& x) {
+    const int N = data.N;
+    std::vector<int> found;
+    for (int k : procs) {
+        const auto& proc = data.processes[k];
+        const int p = proc.p;
+        int col = -1;
+        for (int j = 0; j < p && col < 0; j++) {
+            bool same = true;
+            for (int i = 0; i < N && same; i++) {
+                const double xij = proc.X_flat[(size_t)i * p + j];
+                same = std::abs(xij - x[i]) <= 1e-10 * (1.0 + std::abs(x[i]));
+            }
+            if (same) col = j;
+        }
+        if (col < 0 || k >= (int)layout.process_beta_start.size()) return {};
+        found.push_back(layout.process_beta_start[k] + col);
+    }
+    return found;
+}
+
+// Per coefficient, the fixed effects whose design columns repeat the
+// coefficient's random-effect design column (ess_matching_fixed). The move
+// that reads this is Metropolis-corrected, so a column read as aliased that
+// is not costs rejections, never correctness.
 inline std::vector<std::vector<int>> ess_re_fixed_alias(
     const ModelData& data, const ParamLayout& layout, int t, int n_coefs) {
     std::vector<std::vector<int>> alias(n_coefs);
     const std::vector<int> procs = ess_re_processes(data);
     if (procs.empty()) return alias;
-    const int N = data.N;
     std::vector<double> z;
     std::vector<int> grp;
-    for (int c = 0; c < n_coefs; c++) {
-        if (!ess_re_design_column(data, layout, t, c, n_coefs, z, grp)) continue;
-        std::vector<int> found;
-        for (int k : procs) {
-            const auto& proc = data.processes[k];
-            const int p = proc.p;
-            int col = -1;
-            for (int j = 0; j < p && col < 0; j++) {
-                bool same = true;
-                for (int i = 0; i < N && same; i++) {
-                    const double xij = proc.X_flat[(size_t)i * p + j];
-                    same = std::abs(xij - z[i]) <= 1e-10 * (1.0 + std::abs(z[i]));
-                }
-                if (same) col = j;
-            }
-            if (col < 0 || k >= (int)layout.process_beta_start.size()) break;
-            found.push_back(layout.process_beta_start[k] + col);
-        }
-        if (found.size() == procs.size()) alias[c] = std::move(found);
-    }
+    for (int c = 0; c < n_coefs; c++)
+        if (ess_re_design_column(data, layout, t, c, n_coefs, z, grp))
+            alias[c] = ess_matching_fixed(data, layout, procs, z);
     return alias;
 }
 
@@ -1052,9 +1049,12 @@ double ess_re_pncp_move(std::vector<double>& params, const EssReTerm& term,
 // lag-1 autocorrelation at 0.65 on the #877 poisson fixture (bulk ESS ~100 of
 // 1000, against ~600 with no random effect). A column aliased to a coefficient
 // (a_{g,c} = 1 in every group) is the exact translation above and is left to
-// it.
+// it. When the terms enter several linear predictors the move shifts the
+// column's fixed effect in each of them (ess_matching_fixed), so every
+// predictor keeps only the within-group change; a column some predictor
+// lacks gets no move.
 struct EssFixedShift {
-    int j = -1;
+    std::vector<int> idx;             // parameter indices, one per predictor
     std::vector<Eigen::MatrixXd> a;   // per term in re_terms
 };
 
@@ -1062,15 +1062,15 @@ inline std::vector<EssFixedShift> ess_fixed_shifts(
     const ModelData& data, const ParamLayout& layout,
     const std::vector<EssReTerm>& terms) {
     std::vector<EssFixedShift> shifts;
-    const tulpa::ProcessData* proc = ess_single_process(data);
-    if (!proc || terms.empty()) return shifts;
+    const std::vector<int> procs = ess_re_processes(data);
+    if (procs.empty() || terms.empty()) return shifts;
+    const tulpa::ProcessData* proc = &data.processes[procs[0]];
     const int p = proc->p, N = data.N;
-    const int beta0 = layout.process_beta_start[0];
-    std::vector<bool> aliased(p, false);
+    std::vector<bool> aliased(layout.total_params, false);
     for (const auto& term : terms)
         for (const auto& js : term.alias)
             for (int j : js)
-                if (j >= beta0 && j < beta0 + p) aliased[j - beta0] = true;
+                if (j >= 0 && j < layout.total_params) aliased[j] = true;
 
     // Per term and coefficient, the design column and groups (read once).
     std::vector<std::vector<std::vector<double>>> Z(terms.size());
@@ -1086,10 +1086,15 @@ inline std::vector<EssFixedShift> ess_fixed_shifts(
                                             Z[t][c], GR[t][c]);
     }
 
+    std::vector<double> xj(N);
     for (int j = 0; j < p; j++) {
-        if (aliased[j]) continue;
+        for (int i = 0; i < N; i++) xj[i] = proc->X_flat[(size_t)i * p + j];
         EssFixedShift sh;
-        sh.j = j;
+        sh.idx = ess_matching_fixed(data, layout, procs, xj);
+        if (sh.idx.empty()) continue;
+        bool is_aliased = false;
+        for (int k : sh.idx) is_aliased = is_aliased || aliased[k];
+        if (is_aliased) continue;
         bool any = false;
         for (size_t t = 0; t < terms.size(); t++) {
             const int G = terms[t].v.n_groups, nc = terms[t].v.n_coefs;
@@ -1102,7 +1107,7 @@ inline std::vector<EssFixedShift> ess_fixed_shifts(
                     const int g = GR[t][c][i] - 1;
                     if (g < 0 || g >= G) continue;
                     const double zi = Z[t][c][i];
-                    num(g) += proc->X_flat[(size_t)i * p + j] * zi;
+                    num(g) += xj[i] * zi;
                     den(g) += zi * zi;
                 }
                 for (int g = 0; g < G; g++)
@@ -1129,7 +1134,7 @@ double ess_fixed_shift_move(std::vector<double>& params,
                             LogPostFn log_post_fn, double current_log_post) {
     const std::vector<double> base = params;
     std::vector<double> u(params.size(), 0.0);
-    u[layout.process_beta_start[0] + shift.j] = 1.0;
+    for (int k : shift.idx) u[k] = 1.0;
     for (size_t t = 0; t < terms.size(); t++) {
         if (shift.a[t].cwiseAbs().maxCoeff() <= 1e-12) continue;
         ess_re_store_effects(u, terms[t], ess_re_scale_factor(base, terms[t]),

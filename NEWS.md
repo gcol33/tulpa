@@ -35,7 +35,11 @@
   tulpaRatio's numerator/denominator model the intercept was left to the
   ellipse and read a bulk ESS of 3 to 10 in 2,000 draws; it now reads 1,921
   to 2,049, with every mean within 0.11 posterior SD of NUTS over four seeds
-  (gcol33/tulpaRatio#235).
+  (gcol33/tulpaRatio#235). The slice move that shifts a fixed effect against
+  the between-group part the group effects carry runs there too, moving the
+  matching column of every predictor together: over 12 seeds at 2,000 draws
+  the slope's median bulk ESS goes from 64 to 227, and from 279-423 to
+  714-956 at 8,000 draws on three of them (#1190).
 * The grid-resolution note of `diagnostics()` names the axis of a single-axis
   grid (`tau`); it printed `value`.
 

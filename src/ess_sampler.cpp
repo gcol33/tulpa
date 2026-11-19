@@ -88,7 +88,7 @@ ESSResult run_ess_sampler(
     };
     for (int k = 0; k < (int)shifts.size(); k++)
         slice_moves.push_back({1, k, 0,
-                               layout.process_beta_start[0] + shifts[k].j,
+                               shifts[k].idx[0],
                                config.joint_sigma_proposal_sd});
     int slice_n = 0;
 
