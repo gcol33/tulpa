@@ -46,6 +46,22 @@
   quadrature uniforms, where it rebuilt it per uniform. Every field of the
   fit is bit-identical; a correlated `(1 + x | g)` binomial fit over 1318
   outer cells takes 7.5 s against 18.6 s (#1192).
+* `tulpa_re_cov_nested()` screens its tensor grid, as the joint and registry
+  doors do: each cell is scored by a two-step inner Newton from the centre
+  cell's mode in one compiled batch, and a cell below `prune_tol` (1e-4) of
+  the grid's mass is left out without its full solve. The mass the left-out
+  cells may carry is bounded by the worst screening error measured on a
+  solved cell, and above 1e-4 of the grid (`.NL_SCREEN$re_cov_gate_mass`)
+  the cells carrying it are solved; each round of the tensor's growth is
+  screened against the grid it joins, with screened cells read at their bound
+  by the growth rule. On a correlated `(1 + x | g)` binary fit with 25 groups
+  of 3 (seeds 201-208) every reported mean, SD and median of the covariance
+  stays within 0.065 of its posterior SD of the unscreened fit, at 1.2-1.7x
+  the speed; on a 30 x 25 gaussian fit within 0.003, at 2.2-2.4x. The gate is
+  tighter than the joint door's 1% because a variance component's far tail
+  holds its largest SDs: at 1% the reported SD of a scale moved by up to 1.3
+  posterior SDs. `control$prune = FALSE` solves every cell, bit-identical to
+  before; `screen` reports what was left out (#1192).
 * The grid-resolution note of `diagnostics()` names the axis of a single-axis
   grid (`tau`); it printed `value`.
 

@@ -118,6 +118,20 @@ axis still carries more than 0.1\\% of its marginal, the tensor gains
 a level past it, laid in the rows of the other axes that hold that
 level's mass, until no end does: the left tail of a log-scale
 posterior runs past the span of the Gaussian at the mode.
+\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-4}), \code{prune_log_gap},
+\code{screen_iters} (\code{2}): cheap-pass screening of the tensor grid. Each
+cell is first scored by a \code{screen_iters}-step inner Newton started
+from the centre cell's mode, and a cell scored below \code{prune_tol} of
+the grid's mass (or more than \code{prune_log_gap} nats under it) is left
+out without its full solve. The mass the screened cells may carry is
+bounded by lifting each by the worst screening error measured on a
+solved cell; above 0.01\\% of the grid's mass the cells carrying
+the bound are solved. Each
+round of the tensor's growth past its ends is screened against the
+grid it joins. \code{screen} reports the cells left out, the cells
+repaired, the bound and the screening error. Grid integration with
+the joint-field inner solve (\code{n_quad = 1}) only; \code{prune = FALSE}
+solves every cell.
 \item \code{n_draws}: posterior draws of the fixed effects synthesized from the
 node mixture (default 2000), exposed as \code{draws} for the generic
 \code{tulpa_fit} methods. The \code{Sigma} posterior is summarized directly from

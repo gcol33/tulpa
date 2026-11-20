@@ -993,7 +993,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   # optimizer calls. The model arguments are the ones the inner solves above
   # validate on their first call through tulpa_laplace(), so the batch reads
   # them as validated.
-  inner_logmarg_batch <- function(L_lists, x_init = NULL, n_threads_outer = 1L) {
+  inner_logmarg_batch <- function(L_lists, x_init = NULL, n_threads_outer = 1L,
+                                  max_iter_ = max_iter) {
     if (!length(L_lists)) return(numeric(0))
     model_args <- .laplace_multi_re_model_args(
       y = .numeric_response(family, y), n_trials = n_trials, X = X,
@@ -1004,7 +1005,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     batch <- lapply(L_lists, function(L_list)
       .laplace_multi_re_sigma_list(.re_cov_build_re_list(L_list, layout)))
     do.call(cpp_laplace_log_marginal_multi_re_batch, c(model_args, list(
-      re_sigma_batch = batch, max_iter = as.integer(max_iter), tol = tol,
+      re_sigma_batch = batch, max_iter = as.integer(max_iter_), tol = tol,
       n_threads_outer = as.integer(n_threads_outer),
       x_init = if (is.null(x_init)) NULL else as.numeric(x_init))))
   }
@@ -1141,7 +1142,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     # There is no latent mode to warm start from (`x_init` is the joint-field
     # solve's); every point starts from `beta_warm`.
     inner_logmarg_batch <- function(L_lists, x_init = NULL,
-                                    n_threads_outer = 1L) {
+                                    n_threads_outer = 1L, max_iter_ = NULL) {
       if (!length(L_lists)) return(numeric(0))
       sc_rows <- do.call(rbind, lapply(L_lists, .re_cov_L_list_to_theta,
                                        layout = layout))
@@ -1945,6 +1946,20 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'       a level past it, laid in the rows of the other axes that hold that
 #'       level's mass, until no end does: the left tail of a log-scale
 #'       posterior runs past the span of the Gaussian at the mode.
+#'     \item `prune` (`TRUE`), `prune_tol` (`1e-4`), `prune_log_gap`,
+#'       `screen_iters` (`2`): cheap-pass screening of the tensor grid. Each
+#'       cell is first scored by a `screen_iters`-step inner Newton started
+#'       from the centre cell's mode, and a cell scored below `prune_tol` of
+#'       the grid's mass (or more than `prune_log_gap` nats under it) is left
+#'       out without its full solve. The mass the screened cells may carry is
+#'       bounded by lifting each by the worst screening error measured on a
+#'       solved cell; above 0.01\% of the grid's mass the cells carrying
+#'       the bound are solved. Each
+#'       round of the tensor's growth past its ends is screened against the
+#'       grid it joins. `screen` reports the cells left out, the cells
+#'       repaired, the bound and the screening error. Grid integration with
+#'       the joint-field inner solve (`n_quad = 1`) only; `prune = FALSE`
+#'       solves every cell.
 #'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
 #'       node mixture (default 2000), exposed as `draws` for the generic
 #'       `tulpa_fit` methods. The `Sigma` posterior is summarized directly from
@@ -2163,6 +2178,16 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   integration <- design$integration
   n_per_axis  <- design$n_per_axis
   span        <- design$span
+  # Cheap-pass screening of the tensor (`.NL_SCREEN`, the joint / registry
+  # doors' rule): validated whatever `prune` says, so a misspecified value is
+  # reported where the user set it.
+  prune        <- isTRUE(control[["prune"]] %||%
+                           .nl_screen("prune")[["re_cov"]])
+  prune_tol    <- .nl_prune_tol_from_control(
+    control,
+    .nl_check_prune_tol(control$prune_tol %||% .nl_screen("prune_tol")))
+  screen_iters <- .nl_check_screen_iters(
+    control$screen_iters %||% .nl_screen("iters"))
 
   # --- subspace debias: which latent directions need the exact sampler? -----
   # One probe solve at the fitted MAP covariance, scored by the inner-layer
@@ -2316,8 +2341,77 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     }
     rec
   }
-  recs <- lapply(seq_len(ng), function(i) solve_node(i, theta_grid[i, ]))
   rec_logm <- function(r) r$logm %||% -Inf
+
+  # --- cheap-pass screen of the tensor --------------------------------------
+  # The joint and registry doors' rule (`.NL_SCREEN`): each candidate cell is
+  # scored by a `screen_iters`-step inner Newton from the centre cell's mode,
+  # one compiled batch, and a cell scored below `prune_tol` of the grid's mass
+  # is left out without its full solve. A cell whose cheap solve failed is
+  # solved, since nothing bounds it. The mass the left-out cells may carry is
+  # bounded by lifting each by the worst screening error measured on a solved
+  # cell (full log weight minus screened one); past `re_cov_gate_mass` of the
+  # grid, the cells carrying the bound are solved, largest first. Grid
+  # integration with the joint-field inner solve only: the CCD is a moment
+  # rule whose nodes all carry their design weight, and the AGHQ solve has no
+  # mode to start a short Newton from.
+  screen_on <- prune && identical(integration, "grid") && re_cond
+  recs     <- vector("list", ng)
+  solved   <- logical(ng)
+  screened <- logical(ng)
+  lb_cell  <- rep(-Inf, ng)          # a screened cell's lifted log weight
+  screen_err <- 0
+  screen_repaired <- 0L
+  i_ctr <- which.min(rowSums(z^2))
+  lw_full <- function() vapply(recs, rec_logm, numeric(1)) + node_log_jac
+  solve_idx <- function(idx) {
+    for (i in idx) recs[i] <<- list(solve_node(i, theta_grid[i, ]))
+    solved[idx] <<- TRUE
+  }
+  screen_round <- function(cand) {
+    if (!screen_on || length(cand) < 2L) return(solve_idx(cand))
+    if (!solved[i_ctr]) {
+      solve_idx(i_ctr)
+      cand <- setdiff(cand, i_ctr)
+    }
+    x0 <- recs[[i_ctr]]$mode_raw
+    th <- theta_grid[cand, , drop = FALSE]
+    L_lists <- lapply(seq_len(nrow(th)), function(i)
+      .re_cov_theta_to_L_list(th[i, ], layout))
+    lws <- core$inner_logmarg_batch(L_lists, x_init = x0,
+                                    n_threads_outer = n_threads,
+                                    max_iter_ = screen_iters) +
+      apply(th, 1L, log_prior_theta) + node_log_jac[cand]
+    lf <- lw_full()
+    ref <- .tulpa_logsumexp(c(-Inf, lf[solved & is.finite(lf)],
+                              lws[is.finite(lws)]))
+    keep <- !is.finite(lws) | lws - ref >= log(prune_tol)
+    solve_idx(cand[keep])
+    repeat {
+      lf <- lw_full()
+      pair <- keep & is.finite(lws) & is.finite(lf[cand])
+      err <- max(c(0, lf[cand][pair] - lws[pair]))
+      drop <- which(!keep)
+      if (!length(drop)) break
+      lb <- lws[drop] + err
+      tot <- .tulpa_logsumexp(c(-Inf, lf[solved & is.finite(lf)], lb,
+                                lb_cell[screened]))
+      left <- .tulpa_logsumexp(c(-Inf, lb, lb_cell[screened]))
+      if (exp(left - tot) <= .nl_screen("re_cov_gate_mass")) break
+      o <- drop[order(lws[drop], decreasing = TRUE)]
+      rest <- rev(cumsum(rev(exp(lws[o] + err - tot))))
+      n_take <- max(1L, sum(rest > .nl_screen("re_cov_gate_mass")))
+      take <- o[seq_len(n_take)]
+      keep[take] <- TRUE
+      solve_idx(cand[take])
+      screen_repaired <<- screen_repaired + n_take
+    }
+    screen_err <<- max(screen_err, err)
+    screened[cand[!keep]] <<- TRUE
+    lb_cell[cand[!keep]] <<- lws[!keep] + err
+    invisible(NULL)
+  }
+  screen_round(seq_len(ng))
 
   # A tensor whose outermost level still carries mass grows past it
   # (`.nl_tensor_edge_cells()`), one level per side and round, until no end
@@ -2327,7 +2421,12 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   extend_capped <- FALSE
   if (identical(integration, "grid")) {
     repeat {
+      # A screened cell enters the growth rule at its bound: an end level made
+      # of cells each below the screen's cut can still carry the tail mass that
+      # grows the tensor, and reading them as massless would stop the growth
+      # short of the tail.
       lw_now <- vapply(recs, rec_logm, numeric(1)) + node_log_jac
+      lw_now[screened] <- lb_cell[screened]
       grown <- .nl_tensor_edge_cells(z, lw_now, tens$h)
       if (is.null(grown) || !any(grown$solve)) break
       if (extend_rounds >= .nl_diag("edge_extend_max")) {
@@ -2340,12 +2439,15 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       z_new <- grown$z[grown$solve, , drop = FALSE]
       map_new <- place_nodes(z_new)
       idx <- ng + seq_len(nrow(z_new))
-      recs <- c(recs, lapply(seq_along(idx), function(m)
-        solve_node(idx[m], map_new$theta[m, ])))
       z <- rbind(z, z_new)
       theta_grid <- rbind(theta_grid, map_new$theta)
       node_log_jac <- c(node_log_jac, map_new$log_jac)
+      recs <- c(recs, vector("list", length(idx)))
+      solved <- c(solved, logical(length(idx)))
+      screened <- c(screened, logical(length(idx)))
+      lb_cell <- c(lb_cell, rep(-Inf, length(idx)))
       ng <- nrow(theta_grid)
+      screen_round(idx)
     }
     if (extend_capped) {
       warning("tulpa_re_cov_nested(): the integration tensor still carries ",
@@ -2354,9 +2456,29 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
               "the interval ends of a scale whose tail runs past it are cut. ",
               "Check the hyperprior.", call. = FALSE)
     }
+    # A screened cell stayed in the tensor's key set while it grew, so the
+    # growth rule did not lay it again; it leaves the grid now, as a cell the
+    # growth rule leaves unsolved does.
+    if (any(screened)) {
+      kp <- !screened
+      z <- z[kp, , drop = FALSE]
+      theta_grid <- theta_grid[kp, , drop = FALSE]
+      node_log_jac <- node_log_jac[kp]
+      recs <- recs[kp]
+      ng <- nrow(theta_grid)
+    }
     tens$z <- z
     dnode <- rep(1, ng)
   }
+  lf_final <- vapply(recs, rec_logm, numeric(1)) + node_log_jac
+  screen_rec <- list(
+    applied = screen_on, prune_tol = prune_tol, iters = screen_iters,
+    dropped = sum(screened), repaired = screen_repaired,
+    max_error = screen_err,
+    bound = if (any(screened)) exp(
+      .tulpa_logsumexp(lb_cell[screened]) -
+      .tulpa_logsumexp(c(lf_final[is.finite(lf_final)], lb_cell[screened])))
+      else 0)
   # Each node's absolute measure in theta. The tensor's is its cell volume: the
   # whitened spacing to the k-th power, scaled by the whitening map's
   # determinant. The CCD's is its moment-rule weight calibrated against the
@@ -2655,6 +2777,10 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # Rounds in which the tensor grew past its ends (`.nl_tensor_edge_cells()`);
     # 0 for a CCD and for a tensor whose ends hold no mass.
     tensor_extended = extend_rounds,
+    # The cheap-pass screen: cells left out without a full solve, cells it
+    # repaired, the bound on the share of the mass the left-out cells may
+    # carry, and the worst screening error measured on a solved cell (nats).
+    screen      = screen_rec,
     weights     = w,
     log_marginal = logm,
     # The node log-marginals already carry the hyperparameter log-prior, so the

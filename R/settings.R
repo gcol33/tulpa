@@ -1623,12 +1623,24 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # trend SD's upper end at 0.0490 and the AR1 correlation's lower end at 0.094,
 # against 0.0523 and 0.061 on a dense 31^3 grid; at 1e-4 the fit reads 0.0518
 # and 0.063, within 0.002 of the same fit with no screen at all.
+#
+# `re_cov_gate_mass` is the random-effect covariance door's gate
+# (`tulpa_re_cov_nested()`). Its dropped cells sit at the far end of a
+# variance component's tail, where the SDs are largest, so the mass they carry
+# bounds an interval end but not the posterior SD of that scale. On a
+# correlated (1 + x | g) binary fixture with 25 groups of 3, seed 202, the
+# screen at a 1% gate moved the reported SD of a scale by 1.23 of its own
+# posterior SDs and at 0.1% by 1.34, while the medians moved by 0.02. At 1e-4
+# every mean, SD and median over seeds 201-203 stayed within 0.052 posterior
+# SDs of the unscreened fit, and within 0.003 on a 30 x 25 gaussian fixture,
+# at 1.3-1.4x and 2.0-2.4x the speed.
 .NL_SCREEN <- list(
-    prune     = c(joint = TRUE, registry = TRUE, spde = FALSE),
+    prune     = c(joint = TRUE, registry = TRUE, spde = FALSE, re_cov = TRUE),
     prune_tol = 1e-4,
     iters     = 2L,
     min_keep  = 5L,
-    gate_mass = 0.01
+    gate_mass = 0.01,
+    re_cov_gate_mass = 1e-4
 )
 
 .nl_screen <- function(par) {

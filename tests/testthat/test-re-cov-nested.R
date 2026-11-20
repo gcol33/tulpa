@@ -237,10 +237,12 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   d <- fx$d; re_term <- fx$re_term; res <- fx$res
 
   # default layout at k = c(c+1)/2 = 3: the aligned tensor (`.nl_outer_design()`),
-  # grown past any end that still carries mass
+  # grown past any end that still carries mass. The cells laid are the grid's
+  # plus those the cheap-pass screen left out.
   n3 <- .nl_outer_design(3L)$n_per_axis
-  expect_gte(res$n_grid, n3^3L)
-  expect_identical(res$n_grid == n3^3L, res$tensor_extended == 0L)
+  laid <- res$n_grid + res$screen$dropped
+  expect_gte(laid, n3^3L)
+  expect_identical(laid == n3^3L, res$tensor_extended == 0L)
   res_ccd <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
                                  family = "binomial",
                                  control = .rcn_ctl(integration = "ccd"))
@@ -257,7 +259,7 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
                                   control = .rcn_ctl(integration = "grid",
                                                      n_per_axis = 3L, span = 3))
   expect_gt(res_grid$tensor_extended, 0L)
-  expect_gt(res_grid$n_grid, 3L^3L)
+  expect_gt(res_grid$n_grid + res_grid$screen$dropped, 3L^3L)
   expect_identical(res_ccd$tensor_extended, 0L)
   expect_equal(sum(res_grid$weights), 1, tolerance = 1e-10)
 
