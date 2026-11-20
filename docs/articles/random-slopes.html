@@ -317,11 +317,11 @@ routes the fit to the nested-Laplace integration over
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/fixef.html">fixef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;   0.1558283   0.4995184</span></span>
+<span><span class="co">#&gt;   0.1558289   0.4995177</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">coefficients</span></span>
 <span><span class="co">#&gt;              estimate  std.error       2.5 %    97.5 %</span></span>
-<span><span class="co">#&gt; (Intercept) 0.1558283 0.09675611 -0.04133764 0.3397208</span></span>
-<span><span class="co">#&gt; x           0.4995184 0.08116211  0.34390156 0.6626894</span></span></code></pre></div>
+<span><span class="co">#&gt; (Intercept) 0.1558289 0.09675362 -0.04115038 0.3396505</span></span>
+<span><span class="co">#&gt; x           0.4995177 0.08116026  0.34390156 0.6643153</span></span></code></pre></div>
 <p><code><a href="../reference/VarCorr.html">VarCorr()</a></code> reports the standard deviation of each
 random-effect coefficient; its <code>cov</code> attribute holds the
 posterior mean of
@@ -331,16 +331,16 @@ with the correlation matrix attached.</p>
 <code class="sourceCode R"><span><span class="va">vc</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="va">vc</span></span>
 <span><span class="co">#&gt;   term        coef        sd    source</span></span>
-<span><span class="co">#&gt; 1    g (Intercept) 0.6790617 estimated</span></span>
-<span><span class="co">#&gt; 2    g           x 0.5498792 estimated</span></span>
+<span><span class="co">#&gt; 1    g (Intercept) 0.6790457 estimated</span></span>
+<span><span class="co">#&gt; 2    g           x 0.5498654 estimated</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">vc</span>, <span class="st">"cov"</span><span class="op">)</span><span class="op">$</span><span class="va">g</span></span>
 <span><span class="co">#&gt;             (Intercept)          x</span></span>
-<span><span class="co">#&gt; (Intercept)  0.46112476 0.09294939</span></span>
-<span><span class="co">#&gt; x            0.09294939 0.30236712</span></span>
+<span><span class="co">#&gt; (Intercept)  0.46110301 0.09298493</span></span>
+<span><span class="co">#&gt; x            0.09298493 0.30235197</span></span>
 <span><span class="co">#&gt; attr(,"correlation")</span></span>
 <span><span class="co">#&gt;             (Intercept)         x</span></span>
-<span><span class="co">#&gt; (Intercept)   1.0000000 0.2489259</span></span>
-<span><span class="co">#&gt; x             0.2489259 1.0000000</span></span></code></pre></div>
+<span><span class="co">#&gt; (Intercept)   1.0000000 0.2490332</span></span>
+<span><span class="co">#&gt; x             0.2490332 1.0000000</span></span></code></pre></div>
 <p>The full posterior summary of the covariance is the
 <code>hyperparameters</code> table of <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code>: the two
 standard deviations, the correlation, and the three entries of
@@ -349,12 +349,12 @@ each with a 95% interval.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">$</span><span class="va">hyperparameters</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="co">#&gt;   parameter     median       ci_lo     ci_hi</span></span>
-<span><span class="co">#&gt; 1   sigma_1 0.66910023  0.53930147 0.8410680</span></span>
-<span><span class="co">#&gt; 2   sigma_2 0.54153967  0.43160669 0.6866828</span></span>
-<span><span class="co">#&gt; 3    rho_12 0.25813411 -0.05405206 0.5306970</span></span>
-<span><span class="co">#&gt; 4  Sigma_11 0.44769511  0.29084608 0.7073954</span></span>
-<span><span class="co">#&gt; 5  Sigma_12 0.09138158 -0.02076807 0.2156442</span></span>
-<span><span class="co">#&gt; 6  Sigma_22 0.29326521  0.18628434 0.4715332</span></span></code></pre></div>
+<span><span class="co">#&gt; 1   sigma_1 0.66910774  0.53931735 0.8409894</span></span>
+<span><span class="co">#&gt; 2   sigma_2 0.54142114  0.43164007 0.6865874</span></span>
+<span><span class="co">#&gt; 3    rho_12 0.25822025 -0.05343861 0.5306057</span></span>
+<span><span class="co">#&gt; 4  Sigma_11 0.44770516  0.29086321 0.7072632</span></span>
+<span><span class="co">#&gt; 5  Sigma_12 0.09141367 -0.02053039 0.2156178</span></span>
+<span><span class="co">#&gt; 6  Sigma_22 0.29313685  0.18631315 0.4714023</span></span></code></pre></div>
 <p>The intervals contain the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mn>1</mn></msub><mo>=</mo><mn>0.7</mn></mrow><annotation encoding="application/x-tex">\sigma_1 = 0.7</annotation></semantics></math>,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mn>2</mn></msub><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\sigma_2 = 0.5</annotation></semantics></math>
@@ -372,11 +372,11 @@ uncertainty and the uncertainty in
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">re</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span><span class="fu"><a href="../reference/ranef.html">ranef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">re</span>, <span class="fl">4</span><span class="op">)</span></span>
-<span><span class="co">#&gt;     term   estimate        sd   conf.low  conf.high  source</span></span>
-<span><span class="co">#&gt; 1   g[1]  1.0500600 0.1800964  0.6987102  1.4049765 mixture</span></span>
-<span><span class="co">#&gt; 2 g.x[1]  1.0986018 0.1215947  0.8609155  1.3379796 mixture</span></span>
-<span><span class="co">#&gt; 3   g[2] -1.1001988 0.3758995 -1.8542529 -0.3783968 mixture</span></span>
-<span><span class="co">#&gt; 4 g.x[2] -0.0520496 0.3794415 -0.7865480  0.7041457 mixture</span></span></code></pre></div>
+<span><span class="co">#&gt;     term    estimate        sd   conf.low  conf.high  source</span></span>
+<span><span class="co">#&gt; 1   g[1]  1.05005856 0.1800943  0.6987120  1.4049696 mixture</span></span>
+<span><span class="co">#&gt; 2 g.x[1]  1.09860308 0.1215931  0.8609195  1.3379772 mixture</span></span>
+<span><span class="co">#&gt; 3   g[2] -1.10019196 0.3758895 -1.8542157 -0.3783991 mixture</span></span>
+<span><span class="co">#&gt; 4 g.x[2] -0.05205437 0.3794331 -0.7865437  0.7041160 mixture</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="interpreting-the-per-group-effects">Interpreting the per-group effects<a class="anchor" aria-label="anchor" href="#interpreting-the-per-group-effects"></a>
@@ -391,7 +391,7 @@ true value, and count how many intervals contain the truth.</p>
 <span><span class="co">#&gt; intercept     slope </span></span>
 <span><span class="co">#&gt; 0.9500000 0.9833333</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="va">re_slp</span><span class="op">$</span><span class="va">conf.high</span> <span class="op">-</span> <span class="va">re_slp</span><span class="op">$</span><span class="va">conf.low</span><span class="op">)</span>   <span class="co"># slope interval widths</span></span>
-<span><span class="co">#&gt; [1] 0.4342901 1.4906937</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 0.4342817 1.4906596</span></span></code></pre></div>
 <p>The figure orders the groups by their estimated slope deviation and
 draws each 95% interval with the true value as an open circle.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
@@ -443,13 +443,13 @@ variance against its replicate distribution.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">cm</span><span class="op">)</span></span>
 <span><span class="co">#&gt;       ks_p disp_ratio </span></span>
-<span><span class="co">#&gt;  0.2869773  0.9989860</span></span></code></pre></div>
-<p><code>ks_p</code> is 0.29 and <code>disp_ratio</code> is 1: the PIT
-residuals are consistent with uniformity and the replicates reproduce
-the spread of the counts. The middle panel reads <code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>,
-which returns the conditional mean with each group’s own effect;
-<code>fitted(fit, effects = "population")</code> holds the group effects
-at zero.</p>
+<span><span class="co">#&gt;  0.2892692  0.9889141</span></span></code></pre></div>
+<p><code>ks_p</code> is 0.29 and <code>disp_ratio</code> is 0.99: the
+PIT residuals are consistent with uniformity and the replicates
+reproduce the spread of the counts. The middle panel reads
+<code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>, which returns the conditional mean with each
+group’s own effect; <code>fitted(fit, effects = "population")</code>
+holds the group effects at zero.</p>
 <p>The exact Metropolis-within-Gibbs fit samples
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi mathvariant="normal">Σ</mi><annotation encoding="application/x-tex">\Sigma</annotation></semantics></math>
 and the group effects together and gives an independent read of the
@@ -480,9 +480,9 @@ zero.</p>
 <span><span class="va">pop</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span>, re_form <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pop</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co">#&gt;          fit    se.fit     lower      upper</span></span>
-<span><span class="co">#&gt; 1 -0.8432084 0.1793983 -1.194823 -0.4915942</span></span>
-<span><span class="co">#&gt; 2 -0.7932566 0.1725761 -1.131499 -0.4550137</span></span>
-<span><span class="co">#&gt; 3 -0.7433047 0.1658745 -1.068413 -0.4181968</span></span></code></pre></div>
+<span><span class="co">#&gt; 1 -0.8432065 0.1796599 -1.195334 -0.4910796</span></span>
+<span><span class="co">#&gt; 2 -0.7932548 0.1728284 -1.131992 -0.4545173</span></span>
+<span><span class="co">#&gt; 3 -0.7433030 0.1661174 -1.068887 -0.4177189</span></span></code></pre></div>
 <p>A new group draws its own
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>b</mi><mn>0</mn></msub><mo>,</mo><msub><mi>b</mi><mn>1</mn></msub><msup><mo stretchy="false" form="postfix">)</mo><mi>⊤</mi></msup></mrow><annotation encoding="application/x-tex">b = (b_0, b_1)^\top</annotation></semantics></math>
 from
@@ -617,8 +617,8 @@ coordinates.</p>
 <span>                  mode <span class="op">=</span> <span class="st">"laplace"</span>, control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit_diag</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   term        coef        sd    source</span></span>
-<span><span class="co">#&gt; 1    g (Intercept) 0.6935839 estimated</span></span>
-<span><span class="co">#&gt; 2    g           x 0.5591409 estimated</span></span></code></pre></div>
+<span><span class="co">#&gt; 1    g (Intercept) 0.6935786 estimated</span></span>
+<span><span class="co">#&gt; 2    g           x 0.5591342 estimated</span></span></code></pre></div>
 <p>The two standard deviations are close to those of the correlated fit.
 With the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi><mo>=</mo><mn>0.4</mn></mrow><annotation encoding="application/x-tex">\rho = 0.4</annotation></semantics></math>
@@ -643,8 +643,8 @@ assigned at random, with intercept SD 0.5.</p>
 <span>                     control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"nested"</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit_crossed</span><span class="op">)</span></span>
 <span><span class="co">#&gt;   term        coef        sd    source</span></span>
-<span><span class="co">#&gt; 1    g (Intercept) 0.7756095 estimated</span></span>
-<span><span class="co">#&gt; 2    h (Intercept) 0.4165296 estimated</span></span></code></pre></div>
+<span><span class="co">#&gt; 1    g (Intercept) 0.7756047 estimated</span></span>
+<span><span class="co">#&gt; 2    h (Intercept) 0.4165067 estimated</span></span></code></pre></div>
 <p>The true intercept SDs are 0.7 for <code>g</code> (the same
 <code>u[, 1]</code> as above) and 0.5 for <code>h</code>.</p>
 </div>
@@ -669,8 +669,8 @@ across sites.</p>
 <span>                    control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>re_cov <span class="op">=</span> <span class="st">"nested"</span>, n_threads <span class="op">=</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/VarCorr.html">VarCorr</a></span><span class="op">(</span><span class="va">fit_nested</span><span class="op">)</span></span>
 <span><span class="co">#&gt;        term        coef        sd    source</span></span>
-<span><span class="co">#&gt; 1      site (Intercept) 0.6001453 estimated</span></span>
-<span><span class="co">#&gt; 2 site:plot (Intercept) 0.3272891 estimated</span></span></code></pre></div>
+<span><span class="co">#&gt; 1      site (Intercept) 0.6000716 estimated</span></span>
+<span><span class="co">#&gt; 2 site:plot (Intercept) 0.3272813 estimated</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -724,14 +724,14 @@ with <code>eta = 4</code>, and a uniform correlation prior.</p>
 <span><span class="va">sens</span></span>
 <span><span class="co">#&gt;     prior parameter median  ci_lo ci_hi</span></span>
 <span><span class="co">#&gt; 1 default   sigma_1  0.669  0.539 0.841</span></span>
-<span><span class="co">#&gt; 2 default   sigma_2  0.542  0.432 0.687</span></span>
-<span><span class="co">#&gt; 3 default    rho_12  0.258 -0.054 0.531</span></span>
+<span><span class="co">#&gt; 2 default   sigma_2  0.541  0.432 0.687</span></span>
+<span><span class="co">#&gt; 3 default    rho_12  0.258 -0.053 0.531</span></span>
 <span><span class="co">#&gt; 4   tight   sigma_1  0.652  0.528 0.814</span></span>
 <span><span class="co">#&gt; 5   tight   sigma_2  0.529  0.423 0.666</span></span>
 <span><span class="co">#&gt; 6   tight    rho_12  0.238 -0.052 0.498</span></span>
 <span><span class="co">#&gt; 7 uniform   sigma_1  0.669  0.539 0.841</span></span>
 <span><span class="co">#&gt; 8 uniform   sigma_2  0.542  0.432 0.687</span></span>
-<span><span class="co">#&gt; 9 uniform    rho_12  0.272 -0.048 0.548</span></span></code></pre></div>
+<span><span class="co">#&gt; 9 uniform    rho_12  0.271 -0.047 0.548</span></span></code></pre></div>
 <p>With 60 groups the medians move by a few hundredths across the three
 priors, and the tighter prior shifts all three parameters slightly
 toward zero. The Gibbs backend uses a conjugate inverse-Wishart prior
@@ -788,8 +788,8 @@ the fits whose slope SD collapsed (posterior median below 0.05).</p>
 <span>           gibbs     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">rowMeans</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span><span class="fl">4</span><span class="op">:</span><span class="fl">5</span>, <span class="op">]</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>           row.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"sigma_1"</span>, <span class="st">"sigma_2"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt;         truth nested gibbs</span></span>
-<span><span class="co">#&gt; sigma_1   1.0  0.769 0.897</span></span>
-<span><span class="co">#&gt; sigma_2   0.7  0.520 0.759</span></span>
+<span><span class="co">#&gt; sigma_1   1.0  0.769 0.898</span></span>
+<span><span class="co">#&gt; sigma_2   0.7  0.518 0.758</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>nested <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span><span class="fl">2</span>, <span class="op">]</span> <span class="op">&lt;</span> <span class="fl">0.05</span><span class="op">)</span>, gibbs <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span><span class="fl">5</span>, <span class="op">]</span> <span class="op">&lt;</span> <span class="fl">0.05</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; nested  gibbs </span></span>
 <span><span class="co">#&gt;      0      0</span></span></code></pre></div>
@@ -826,7 +826,7 @@ where the Laplace fit takes about 50.</p>
 <span><span class="co">#&gt; 2   sigma_2 0.90974587  0.20144000 1.5745693</span></span>
 <span><span class="co">#&gt; 3    rho_12 0.08522013 -0.67092129 0.7677516</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">reps</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>   <span class="co"># nested Laplace, then Gibbs, on the same data set</span></span>
-<span><span class="co">#&gt; [1] 0.428 0.787 0.086 0.614 0.870 0.150</span></span></code></pre></div>
+<span><span class="co">#&gt; [1]  0.428  0.785  0.086  0.606  0.837 -0.095</span></span></code></pre></div>
 <p><code>reps[, 1]</code> holds the nested and Gibbs medians of
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\sigma_1</annotation></semantics></math>,
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
@@ -837,7 +837,7 @@ deviations above the Laplace values:
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>1</mn></msub><annotation encoding="application/x-tex">\sigma_1</annotation></semantics></math>
 from 0.43 to 0.51, against 0.61 from the Gibbs sampler, and
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>σ</mi><mn>2</mn></msub><annotation encoding="application/x-tex">\sigma_2</annotation></semantics></math>
-from 0.79 to 0.91, against 0.87.</p>
+from 0.79 to 0.91, against 0.84.</p>
 </div>
 </div>
 <div class="section level2">

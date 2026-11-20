@@ -553,8 +553,8 @@ reports the standard deviations and carries the matrix in its
 <span><span class="co">#&gt; x                 0.251 0.551</span></span>
 <span><span class="co">#&gt; attr(,"correlation")</span></span>
 <span><span class="co">#&gt;             (Intercept)         x</span></span>
-<span><span class="co">#&gt; (Intercept)   1.0000000 0.3381203</span></span>
-<span><span class="co">#&gt; x             0.3381203 1.0000000</span></span></code></pre></div>
+<span><span class="co">#&gt; (Intercept)   1.0000000 0.3381312</span></span>
+<span><span class="co">#&gt; x             0.3381312 1.0000000</span></span></code></pre></div>
 <p>Integrating the covariance through a Gaussian grid over the
 hyperparameters means the fit carries a Pareto-k-hat accuracy
 diagnostic, the nested-approximation counterpart to the Rhat a sampler
@@ -628,9 +628,9 @@ elapsed time into one table.</p>
 <span>  seconds  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">t_lap</span>, <span class="va">t_mala</span>, <span class="va">t_pf</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span><span class="co">#&gt;      backend tier slope slope_se seconds</span></span>
-<span><span class="co">#&gt; 1    laplace    2 0.800    0.128    0.01</span></span>
-<span><span class="co">#&gt; 2       mala    1 0.834    0.132    0.38</span></span>
-<span><span class="co">#&gt; 3 pathfinder    2 0.808    0.124    0.04</span></span></code></pre></div>
+<span><span class="co">#&gt; 1    laplace    2 0.800    0.128    0.02</span></span>
+<span><span class="co">#&gt; 2       mala    1 0.834    0.132    0.36</span></span>
+<span><span class="co">#&gt; 3 pathfinder    2 0.808    0.124    0.03</span></span></code></pre></div>
 <p>Three patterns sit in this table. The slope estimates agree across
 all three backends to within their standard errors. That is expected:
 the posterior mean is the easy quantity, and every method finds it. The
