@@ -1139,10 +1139,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     inner_logmarg <- function(L_list, phi_ = phi) {
       r <- core_solve(L_list); if (is.null(r)) -Inf else r$log_marginal
     }
-    # There is no latent mode to warm start from (`x_init` is the joint-field
-    # solve's); every point starts from `beta_warm`.
-    inner_logmarg_batch <- function(L_lists, x_init = NULL,
-                                    n_threads_outer = 1L, max_iter_ = NULL) {
+    # Same signature as the joint-field batch above. There is no latent mode to
+    # warm start from (`x_init` is the joint-field solve's), so every point
+    # starts from `beta_warm`, and the compiled profile runs its own Newton
+    # budget, so `max_iter_` is unused.
+    inner_logmarg_batch <- function(L_lists, x_init = NULL, n_threads_outer = 1L,
+                                    max_iter_ = max_iter) {
       if (!length(L_lists)) return(numeric(0))
       sc_rows <- do.call(rbind, lapply(L_lists, .re_cov_L_list_to_theta,
                                        layout = layout))
