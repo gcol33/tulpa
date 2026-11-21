@@ -46,6 +46,9 @@ runs:
       with:
         r-version: ${{ inputs.r-version }}
         use-public-rspm: true
+        # The suggested tulpaGPU is published on r-universe only, and pak does
+        # not read Additional_repositories from DESCRIPTION.
+        extra-repositories: https://gcol33.r-universe.dev
 
     # A compiler contracts a multiply and an add into a single FMA wherever the
     # target has the instruction, and the fused result carries one rounding
