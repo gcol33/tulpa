@@ -65,6 +65,11 @@ jobs:
           r-version: release
           use-public-rspm: true
 
+      # The tarball ships the CRAN smoke files only; the .Rbuildignore line
+      # that selects them is written from CRAN_SMOKE_FILES.
+      - name: Smoke-file build line
+        run: Rscript tools/cran-tests.R --check
+
       - id: shards
         run: |
           source(".github/scripts/tier-files.R")

@@ -68,7 +68,10 @@
 # the 245 files CRAN ran held 4 s of block time and took 43 s on win-builder --
 # so the file count is what the budget reads. A smoke file is one whose tier-1
 # part covers its subsystem's constructors and closed forms cheaply; the CI tier1
-# job (TULPA_CRAN_BUDGET=off) and every other profile run all files.
+# job (TULPA_CRAN_BUDGET=off) and every other profile run all files. The source
+# tarball carries the smoke files alone, with every helper and fixture: the
+# .Rbuildignore line that leaves out the rest is written from CRAN_SMOKE_FILES by
+# tools/cran-tests.R, so the full suite runs from the repository.
 #
 # A block that drives the engine through a C++ test fixture (load_cpp_fixture(),
 # helper-cpp-fixtures.R) never runs on CRAN or in fast mode, whatever its own

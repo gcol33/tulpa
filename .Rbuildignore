@@ -47,3 +47,5 @@
 ^CITATION\.cff$
 ^vignettes/articles$
 ^\.run.*$
+^tests/testthat/cpp/
+^tests/testthat/test-(?!(?:adjacency|auto-grid-provenance|beta-nuts|ccd-modefind-budget|control-check|criteria-tulpa-fit|diagnostics|em-laplace|family-count-extensions|formula|methods-interop|nested-laplace-joint-multi|nested-posterior-draws|pg-index-validation|posterior-sbc|prior-predict|psis|re-cov-prior|simulate|spatial-spde-api|temporal|tgmrf)\.R$)
