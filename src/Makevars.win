@@ -62,7 +62,6 @@ unity_core.o: \
   fastmath_data.cpp \
   device.cpp \
   device_batch.cpp \
-  device_sparse.cpp \
   device_likelihood.cpp \
   device_likelihood_exports.cpp \
   device_dense.cpp \
@@ -92,14 +91,12 @@ unity_core.o: \
   device.h \
   device_batch.h \
   linalg_fast.h \
-  device_sparse.h \
   device_likelihood.h \
   laplace_builtin_family_spec.h \
   sampler_model_data.h \
   log_post_impl.h \
   sysmem.h \
   device_dense.h \
-  ../inst/device/dense_covariance.cu \
   dense_basis_apply.h \
   temporal_gp_kernel.h \
   hsgp_field.h \
@@ -224,7 +221,6 @@ unity_exports.o: \
   hmc_sampler_chain_state.h \
   hmc_sampler_funcs.h \
   hmc_sampler_config.h \
-  device_sparse.h \
   device_batch.h \
   mclmc.h \
   smc_sampler.h \
@@ -257,7 +253,6 @@ unity_exports.o: \
   omp_threads.h \
   glmm_family_elt.h \
   coordinate_linalg.h \
-  ../inst/device/dense_covariance.cu \
   st_null_space.h \
   laplace_cholesky_dispatch.h \
   laplace_family_curvature.h \
@@ -371,7 +366,6 @@ unity_glmm.o: \
   hmc_hsgp_kernels.h \
   coordinate_linalg.h \
   device_dense.h \
-  ../inst/device/dense_covariance.cu \
   hsgp_spectral.h \
   svc_range.h \
   hmc_svc_autodiff.h \
@@ -406,7 +400,6 @@ unity_glmm.o: \
   linear_constraint_rows.h \
   device_batch.h \
   sobol_direction_numbers.h \
-  device_sparse.h \
   laplace_cholesky_dispatch.h \
   laplace_family_curvature.h \
   inner_laplace_is.h \
@@ -517,10 +510,8 @@ unity_hmc.o: \
   laplace_cholesky.h \
   laplace_family_link.h \
   device_dense.h \
-  ../inst/device/dense_covariance.cu \
   device.h \
   laplace_types.h \
-  device_sparse.h \
   device_batch.h \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
@@ -642,7 +633,6 @@ unity_laplace.o: \
   device_likelihood.h \
   builtin_family_zi.h \
   curvature3_contract.h \
-  device_sparse.h \
   hmc_svc.h \
   hmc_gp.h \
   hmc_temporal_multiscale.h \
@@ -696,7 +686,6 @@ unity_laplace.o: \
   log_post_device_impl.h \
   sobol_direction_numbers.h \
   coordinate_linalg.h \
-  ../inst/device/dense_covariance.cu \
   st_null_space.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
@@ -817,7 +806,6 @@ unity_nl.o: \
   inner_laplace_probe.h \
   rwmh.h \
   curvature3_contract.h \
-  device_sparse.h \
   joint_pd_step.h \
   laplace_spec_curvature3.h \
   joint_inner_vcov.h \
@@ -881,7 +869,6 @@ unity_nl_joint.o: \
   row_classes.h \
   small_dense_sym.h \
   laplace_types.h \
-  device_sparse.h \
   device_batch.h \
   laplace_profile.h \
   coupled_scatter_plan.h \
@@ -1077,7 +1064,6 @@ unity_samplers.o: \
   glmm_oracle.h \
   coordinate_linalg.h \
   device_dense.h \
-  ../inst/device/dense_covariance.cu \
   fastmath.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
@@ -1187,7 +1173,6 @@ unity_spatial.o: \
   laplace_likelihoods.h \
   subspace_debias.h \
   checkpoint_io.h \
-  device_sparse.h \
   device_batch.h \
   joint_pd_step.h \
   laplace_cholesky_dispatch.h \
@@ -1211,6 +1196,5 @@ unity_spatial.o: \
   rwmh.h \
   curvature3_contract.h \
   coordinate_linalg.h \
-  ../inst/device/dense_covariance.cu \
   st_null_space.h
 # unity-build: end

@@ -75,7 +75,9 @@ Suggests:
     stars,
     statmod,
     survival,
+    tulpaGPU,
     withr
+Additional_repositories: https://gcol33.r-universe.dev
 LinkingTo:
     Rcpp,
     RcppEigen,

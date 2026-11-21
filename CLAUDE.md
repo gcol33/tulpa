@@ -20,6 +20,17 @@ likelihood in via `LikelihoodSpec` and inherit the rest.
   hyperparameter standard errors, empirical-Bayes dispersion estimation, and
   `VarCorr()`). Do not add a GLMM feature there.
 - **tulpaMesh** (>= 0.1.3) — constrained Delaunay meshes for SPDE fields (an engine dependency, not a consumer).
+- **tulpaGPU** (0.1.0, `C:\GillesC\Documents\dev\tulpaGPU`, gcol33/tulpagpu, r-universe only) — the
+  CUDA backend. It implements `tulpa::device::Backend` from
+  `inst/include/tulpa/device_backend.h` and registers it through the
+  `tulpa_device_register` callable when it loads. The engine keeps the dispatch
+  policy (`Policy`, thresholds read from the backend), every CPU route, the CPU
+  verification of device factors, and the `cpp_device_*` probes the device tests
+  drive; `control$device` "auto"/"cuda" loads tulpaGPU on demand
+  (`.device_backend_load()`). CUDA code, the kernels, the crossover table, the
+  device tests and the bench tools live in tulpaGPU. Changing the interface
+  bumps `TULPA_DEVICE_BACKEND_ABI`; no exception and no non-virtual call crosses
+  the DLL boundary.
 
 Consumers depend on the engine via `Imports: tulpa (>= 0.0.13)` +
 `LinkingTo: tulpa` and plug likelihoods in through `LikelihoodSpec`

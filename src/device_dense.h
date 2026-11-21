@@ -6,8 +6,6 @@
 
 namespace tulpa { namespace device {
 
-enum class DenseSystem { Symmetric, Lower, LowerTranspose };
-
 // Matrices crossing this interface are column-major unless row_major is set.
 // A factor owns its device workspace across evaluations and multiple solves.
 class DenseFactor {

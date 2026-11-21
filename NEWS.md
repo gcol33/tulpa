@@ -110,8 +110,11 @@
   CUDA workspaces retain covariance inputs and bases across evaluations.
   Cholesky pullbacks use measured CPU or CUDA matrix operations.
 
-* `control$device` selects `auto`, `cpu`, or `cuda` through one runtime-loaded
-  CUDA layer. `gpu_info()` reports the device and library availability.
+* `control$device` selects `auto`, `cpu`, or `cuda`. The CUDA routes ship in the
+  separate tulpaGPU package (r-universe), which registers its backend with the
+  engine through `inst/include/tulpa/device_backend.h` and is loaded when a fit
+  asks for `auto` or `cuda`; without it every operation runs on the CPU.
+  `tulpaGPU::gpu_info()` reports the device and library availability.
   Fits record device use per stage for `print()` and `diagnostics()`; the
   convergence check after a chain fit and the diagnostic plots read the
   table without printing that record.

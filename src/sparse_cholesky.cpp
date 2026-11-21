@@ -286,9 +286,12 @@ void SparseCholeskySolver::analyze(cholmod_sparse* A,
         analyzed_ = true; ++analysis_count_;
         return;
     }
-    device_factor_.reset(new device::SparseFactor);
-    analyzed_ = device_result(device_factor_->analyze(n, p, i,
-        static_cast<const double*>(A->x), stream_));
+    if (device::Backend* backend = device::backend()) device_factor_ = backend->sparse_factor();
+    status = device_factor_ ? device::Status{} : device::backend_status();
+    if (status && !device_factor_)
+        status = device::Status::read("device", -1, "analyze", "the backend returned no sparse route");
+    if (status) status = device_factor_->analyze(n, p, i, static_cast<const double*>(A->x), stream_);
+    analyzed_ = device_result(status);
     if (analyzed_) {
         permutation_ = device_factor_->permutation();
         ++analysis_count_;

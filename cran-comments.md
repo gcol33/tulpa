@@ -2,67 +2,42 @@
 
 ## Update
 
-This is an update of tulpa 0.6.0, published on 2026-09-24. It follows closely
-because 0.6.0 returns wrong numbers without an error on several paths. The main
-items:
+This is an update of tulpa 0.7.5, published on 2026-10-19. The main items:
 
-* The Polya-Gamma Gibbs areal kernels (binomial ICAR, BYM2 and restricted
-  ICAR, negative-binomial ICAR) gave each connected component's level a flat
-  prior and an isolated area a near-flat N(0, 1000) one. On a graph with an
-  island the island's effect read 14.5 against 0.32 under the package's
-  Hamiltonian Monte Carlo sampler, and pulled the intercept with it; it now
-  reads 0.30 (gcol33/tulpa#963). `field_effects()` and `posterior_predict()`
-  on a Gibbs BYM2 fit summed the two unit-scale components instead of the
-  scaled field that enters the linear predictor (gcol33/tulpa#964).
+* `control$device` selects `"auto"`, `"cpu"` or `"cuda"`. The CUDA routes are in
+  a separate package, tulpaGPU, suggested and available from
+  https://gcol33.r-universe.dev (Additional_repositories). tulpa loads it only
+  when a fit asks for `"auto"` or `"cuda"` and it is installed; without it every
+  fit runs on the CPU as before, which is what the CRAN machines exercise.
 
-* The binomial Polya-Gamma samplers saved, with each draw, the linear
-  predictor of the previous draw (gcol33/tulpa#941).
+* An outer hyperparameter axis is closed inside the interval its block
+  defines it on (a BYM2 mixing weight on (0, 1), a proper-CAR `rho` on its
+  eigenvalue interval, an AR1 `rho` on (-1, 1)). A BYM2 grid starting near
+  zero could otherwise run its lowest level below zero and stop with an error
+  (gcol33/tulpa#1188).
 
-* `mode = "ess"` did not mix on hierarchical models: each sweep left the
-  intercept, the covariates and the random-effect scales where they started
-  (gcol33/tulpa#877). It now draws them every sweep.
+* A precision axis under the penalized-complexity prior has no posterior
+  mean; it now reports `Inf` with the reason instead of a sum over the cells
+  the grid happened to hold (gcol33/tulpa#1189).
 
-* `mode = "smc"` bridged to the wrong target, and `mode = "ess"` did not update
-  the log-SD and correlation parameters of a random-slope block. Both now
-  target the stated posterior.
+* The elliptical-slice sampler draws the intercept level exactly also when a
+  random-intercept term enters several linear predictors of a model
+  package's likelihood (gcol33/tulpa#1190).
 
-* Fixed-effect standard errors under an intrinsic field (ICAR, BYM2, RW1 / RW2)
-  and the per-component scaling of `spatial_bym2()` on a disconnected graph are
-  corrected; `weights =` no longer changes which backend `mode = "auto"`
-  selects.
+* `tulpa_re_cov_nested()` screens its tensor grid with a bounded cheap pass,
+  as the other nested-Laplace entry points do (gcol33/tulpa#1192).
 
-* An explicit `control$integration = "grid_adaptive"` ran a different
-  integration design at four or more hyperparameter axes and reported it
-  without saying so (gcol33/tulpa#914).
-
-* `family = Gamma()` fits the inverse link it names, and `VarCorr()` /
-  `ranef()` report the quantities a fit actually used or sampled.
-
-* `control$max_grid_cells` counted the latent cells before a dispersion grid
-  was crossed on top, so it admitted several times the inner solves it named;
-  it now counts the crossed grid. A declined `"grid_adaptive"` lattice records
-  why on the fit instead of reporting a plain grid (gcol33/tulpa#915).
-
-Messages: a one-level categorical predictor is named in the error rather than
-reaching `model.matrix()`'s bare contrasts error, and a refused outer grid
-names the axes that produced its cell count (gcol33/tulpa#913).
+The full list is in NEWS.md under 0.7.6 to 0.8.0.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 0 notes on win-builder (R-devel r90707: check time
-531 s; R-release 4.6.1: 499 s).
-
-The expected NOTE on the incoming check is "Days since last update", explained
-above.
+RESULTS
 
 ## Test environments
 
-* local: Windows 11, R 4.6.1, `R CMD check --as-cran` including the PDF manual
-  (Status: OK)
-* win-builder: R-devel and R-release (4.6.1)
+* win-builder: R-devel and R-release
 * GitHub Actions, on every push: ubuntu-latest (R-release and R-devel),
   macos-latest (R-release), windows-latest (R-release and R-devel)
-* Ubuntu 24.04 (WSL), gcc 13, `-fsanitize=undefined`
 
 ## Notes
 
@@ -76,29 +51,20 @@ above.
   runs the structural tests of one file per subsystem; every file runs on
   GitHub Actions on four platforms.
 
-* Nine examples are in \dontrun{}. Seven reference symbols the user supplies
-  (a fit produced by a consumer model package, a per-model E-step / M-step
-  callback pair, a compiled latent block, a mesh-backed SPDE spec, an
-  outer-grid inner fitter, a joint fit's own sparse blocks) and so have
-  nothing to execute. One (spatiotemporal_effects) needs a
-  Knorr-Held interaction block, which no backend in this package fits, so the
-  fit can only come from a companion model package. One (tulpa_cache_clear)
-  would delete the caller's own cached builds.
-
 * tgmrf_cpp() compiles a user-supplied C++ latent block and caches the result
   under tools::R_user_dir("tulpa", "cache"). Nothing is written unless a
   compile happens, the contents are user-manageable through
   tulpa_cache_clear(older_than = ), and no example, vignette or test writes
   there.
 
-* The vignettes set `eval` from NOT_CRAN in their setup chunk, so the code is
-  shown but not run on the check farm.
+* The vignettes read the fits they show from vignettes/fits/, built by
+  data-raw/build-article-fits.R, so no model is fitted on the check farm.
 
 * Intra-chain OpenMP teams are capped at two threads under
   `_R_CHECK_LIMIT_CORES_` (`tulpa_omp_team_size()`, src/omp_threads.h).
 
-* Internal helpers that seed the RNG run inside `.with_preserved_seed()`,
-  which restores the caller's `.Random.seed` on exit.
+* Internal helpers that seed the RNG restore the caller's `.Random.seed` on
+  exit.
 
 ## Downstream dependencies
 

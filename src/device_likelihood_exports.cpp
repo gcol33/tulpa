@@ -99,12 +99,8 @@ void fused_cpu_evaluate(const tulpa::device::ObservationPlan& plan,
 // [[Rcpp::export]]
 Rcpp::List cpp_device_likelihood_resources() {
     std::size_t free=0,total=0;
-    auto& context=tulpa::device::Context::instance();
-    auto status=context.initialize();
-    if (status) {
-        tulpa::device::Lease lease(context,status);
-        if (status) status=context.memory_available(free,total);
-    }
+    auto status=tulpa::device::backend_status();
+    if (status) status=tulpa::device::backend()->memory(free,total);
     return Rcpp::List::create(Rcpp::Named("host_available")=static_cast<double>(tulpa::available_ram_bytes()),
         Rcpp::Named("device_available")=static_cast<double>(free),
         Rcpp::Named("device_total")=static_cast<double>(total),Rcpp::Named("device_reason")=status.message);

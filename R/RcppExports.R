@@ -133,20 +133,12 @@ cpp_device_sparse <- function(p, i, values, b, choice, full_inverse = FALSE, rep
     .Call(`_tulpa_cpp_device_sparse`, p, i, values, b, choice, full_inverse, repetitions)
 }
 
-cpp_device_info <- function() {
-    .Call(`_tulpa_cpp_device_info`)
-}
-
 cpp_device_operations <- function() {
     .Call(`_tulpa_cpp_device_operations`)
 }
 
 cpp_device_validate <- function(value) {
     .Call(`_tulpa_cpp_device_validate`, value)
-}
-
-cpp_device_configure <- function(table, sources) {
-    invisible(.Call(`_tulpa_cpp_device_configure`, table, sources))
 }
 
 cpp_device_begin <- function(choice, inherit = TRUE) {
@@ -167,10 +159,6 @@ cpp_device_snapshot <- function() {
 
 cpp_device_probe <- function(operation, size, variant, choice) {
     .Call(`_tulpa_cpp_device_probe`, operation, size, variant, choice)
-}
-
-cpp_device_test <- function(action, input, source = "", threads = 8L) {
-    .Call(`_tulpa_cpp_device_test`, action, input, source, threads)
 }
 
 cpp_device_axpy <- function(x, y, a, choice, repetitions = 1L) {

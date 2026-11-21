@@ -1,28 +1,21 @@
-skip_if_no_cuda <- function(capability = "driver") {
-  info <- tulpa::gpu_info()
-  if (!isTRUE(info$available)) testthat::skip(paste("CUDA unavailable:", info$reason))
+# CUDA routes come from tulpaGPU; a CUDA test runs only when it is installed
+# and its device and the named libraries are usable.
+cuda_unavailable <- function(capability = "driver") {
+  if (!requireNamespace("tulpaGPU", quietly = TRUE)) return("tulpaGPU is not installed")
+  info <- tulpaGPU::gpu_info()
+  if (!isTRUE(info$available)) return(paste("CUDA unavailable:", info$reason))
   for (required in capability) {
     reason <- info$library_reasons[[required]]
     if (is.null(reason)) stop("unknown CUDA capability")
-    if (nzchar(reason)) testthat::skip(paste("CUDA", required, "unavailable:", reason))
+    if (nzchar(reason)) return(paste("CUDA", required, "unavailable:", reason))
   }
-  invisible(info)
+  NULL
 }
 
-device_nngp_fixture <- function(batch, nn) {
-  n <- as.integer(batch + 1L)
-  i <- seq_len(n)
-  coords <- cbind(i * 0.02, sin(i * 0.73) * 0.1)
-  idx <- matrix(0L, n, nn)
-  distances <- matrix(0, n, nn)
-  for (k in seq_len(nn)) {
-    rows <- seq.int(k + 1L, n)
-    idx[rows, k] <- rows - k
-    distances[rows, k] <- sqrt(rowSums((coords[rows, , drop = FALSE] -
-                                       coords[rows - k, , drop = FALSE])^2))
-  }
-  list(w = sin(i * 0.33), coords = coords, nn_idx = idx, nn_dist = distances,
-       nn_order = seq.int(0L, n - 1L), sigma2 = 0.9, phi = 0.4, cov_type = 0L)
+skip_if_no_cuda <- function(capability = "driver") {
+  reason <- cuda_unavailable(capability)
+  if (!is.null(reason)) testthat::skip(reason)
+  invisible(NULL)
 }
 
 expect_device_equal <- function(actual, expected, tolerance, quantity) {

@@ -201,16 +201,17 @@ Rcpp::List cpp_device_sparse_state(std::string choice, int threads = 4, bool bat
             for (int j = 0; ok && j < 3; ++j) ok = std::abs(diagonal[j] - 1/values[j]) < 1e-12;
             ok = ok && solver.apply_inv_chol_factor(rhs, x, 3, 1);
             for (int j = 0; j < 3; ++j) ok = ok && std::abs(x[j]*x[j] - 1/values[j]) < 1e-12;
-            if (solver.uses_cuda()) {
-                tulpa::device::SparseFactor subset;
-                auto status = subset.analyze(3, p, i, values, solver.stream());
+            auto* backend = tulpa::device::backend();
+            if (solver.uses_cuda() && backend) {
+                auto subset = backend->sparse_factor();
+                auto status = subset->analyze(3, p, i, values, solver.stream());
                 bool positive = false;
-                if (status) status = subset.refactor(values, positive);
+                if (status) status = subset->refactor(values, positive);
                 std::vector<double> selected;
                 ok = ok && bool(status) && positive;
-                const auto invalid = subset.inverse_entries({0, 4, 2, 3}, {0, 1, 2}, {0, 1, 2}, selected);
+                const auto invalid = subset->inverse_entries({0, 4, 2, 3}, {0, 1, 2}, {0, 1, 2}, selected);
                 ok = ok && !invalid;
-                if (status) status = subset.inverse_diagonal({2, 0, 2}, selected);
+                if (status) status = subset->inverse_diagonal({2, 0, 2}, selected);
                 ok = ok && bool(status) && selected.size() == 3;
                 if (ok) ok = std::abs(selected[0] - 1/values[2]) < 1e-12 &&
                     std::abs(selected[1] - 1/values[0]) < 1e-12 && selected[0] == selected[2];
@@ -346,27 +347,6 @@ Rcpp::List cpp_device_sparse(Rcpp::IntegerVector p, Rcpp::IntegerVector i,
 }
 
 // [[Rcpp::export]]
-Rcpp::List cpp_device_info() {
-    auto info = tulpa::device::Context::instance().info();
-    Rcpp::CharacterVector libraries = Rcpp::wrap(info.libraries);
-    Rcpp::CharacterVector reasons = Rcpp::wrap(info.library_reasons);
-    Rcpp::CharacterVector names = Rcpp::CharacterVector::create("driver", "cusolver", "cublas", "nvrtc", "cudss");
-    libraries.names() = names; reasons.names() = names;
-    return Rcpp::List::create(Rcpp::Named("available") = info.available,
-        Rcpp::Named("compiled") = info.compiled,
-        Rcpp::Named("backend") = info.available ? "cuda" : "cpu",
-        Rcpp::Named("reason") = info.reason,
-        Rcpp::Named("device_count") = info.count,
-        Rcpp::Named("name") = info.name,
-        Rcpp::Named("memory_mb") = info.memory_mb,
-        Rcpp::Named("compute_capability") = info.compute_capability,
-        Rcpp::Named("driver_version") = info.driver_version,
-        Rcpp::Named("initializations") = info.init_count,
-        Rcpp::Named("libraries") = libraries,
-        Rcpp::Named("library_reasons") = reasons);
-}
-
-// [[Rcpp::export]]
 Rcpp::CharacterVector cpp_device_operations() {
     Rcpp::CharacterVector result;
     for (const auto& operation : tulpa::device::operations()) result.push_back(operation.name);
@@ -380,29 +360,8 @@ std::string cpp_device_validate(SEXP value) {
     std::string name = Rcpp::as<std::string>(value);
     auto choice = tulpa::device::parse_choice(name);
     if (choice == tulpa::device::Choice::Cuda)
-        device_check(tulpa::device::Context::instance().initialize());
+        device_check(tulpa::device::backend_status());
     return name;
-}
-
-// [[Rcpp::export]]
-void cpp_device_configure(Rcpp::DataFrame table, Rcpp::List sources) {
-    Rcpp::CharacterVector operation = table["operation"];
-    Rcpp::IntegerVector variant = table["variant"];
-    Rcpp::NumericVector size = table["threshold"];
-    Rcpp::NumericVector batch_size = table.containsElementNamed("batch_threshold")
-        ? Rcpp::NumericVector(table["batch_threshold"]) : Rcpp::NumericVector(table.nrows(), 0.0);
-    std::vector<tulpa::device::Threshold> thresholds;
-    for (R_xlen_t i = 0; i < operation.size(); ++i) {
-        if (Rcpp::IntegerVector::is_na(variant[i]) || std::isnan(size[i]) || size[i] < 0 ||
-            std::isnan(batch_size[i]) || batch_size[i] < 0)
-            Rcpp::stop("invalid device threshold");
-        thresholds.push_back({Rcpp::as<std::string>(operation[i]), variant[i], size[i], batch_size[i]});
-    }
-    Rcpp::CharacterVector names = sources.names();
-    std::map<std::string, std::string> kernels;
-    for (R_xlen_t i = 0; i < sources.size(); ++i)
-        kernels.emplace(Rcpp::as<std::string>(names[i]), Rcpp::as<std::string>(sources[i]));
-    tulpa::device::configure(thresholds, kernels);
 }
 
 // [[Rcpp::export]]
@@ -476,40 +435,6 @@ Rcpp::List cpp_device_probe(std::string operation, double size, int variant,
     bool cuda = policy.select(operation, static_cast<std::size_t>(size), variant, status);
     device_check(status);
     return Rcpp::List::create(Rcpp::Named("device") = cuda ? "cuda" : "cpu");
-}
-
-// [[Rcpp::export]]
-Rcpp::List cpp_device_test(std::string action, Rcpp::NumericVector input,
-                           std::string source = "", int threads = 8) {
-    auto& context = tulpa::device::Context::instance();
-    Status status;
-    std::vector<double> output(input.begin(), input.end());
-    if (action == "status") device_check(Status::read("CUDA", 1, "test_status", "invalid value"));
-    if (action == "init") {
-        if (threads < 1 || threads > 64) Rcpp::stop("threads must be in [1, 64]");
-        std::vector<Status> statuses(threads);
-        std::vector<std::thread> workers;
-        for (int i = 0; i < threads; ++i) workers.emplace_back([&, i] { statuses[i] = context.initialize(); });
-        for (auto& worker : workers) worker.join();
-        for (const auto& s : statuses) status.absorb(s);
-    } else if (action == "buffer" || action == "bounds" || action == "compile") {
-        status = context.initialize();
-        {
-            tulpa::device::Lease lease(context, status);
-            if (action == "compile") {
-                void* module = nullptr; void* kernel = nullptr;
-                if (status) status = context.compile(source, "tulpa_axpy", module, kernel);
-                if (module) status.absorb(context.unload(module));
-            } else {
-                tulpa::device::Buffer buffer(context, output.size() * sizeof(double), status);
-                if (status) status = buffer.upload(output.data(), buffer.size() + (action == "bounds" ? 1 : 0));
-                if (status) status = buffer.download(output.data(), buffer.size());
-            }
-        }
-    } else if (action != "init") Rcpp::stop("unknown device test action");
-    device_check(status);
-    return Rcpp::List::create(Rcpp::Named("output") = output,
-        Rcpp::Named("initializations") = context.info().init_count);
 }
 
 // [[Rcpp::export]]

@@ -19,10 +19,10 @@ NULL
 # column post_hoc_lm() attaches to the model frame so lm() resolves it. None is a
 # tulpa symbol; register them as globals for the non-standard-evaluation sites above.
 utils::globalVariables(c("cpp_gradient_mode_names", ".data", "ratio", ".phl_w", "cpp_spde_orphan_mass",
-                         "cpp_device_info", "cpp_device_validate", "cpp_device_configure",
+                         "cpp_device_validate",
                          "cpp_device_begin", "cpp_device_end",
                          "cpp_device_replay_stages",
-                         "cpp_device_snapshot", "cpp_device_probe", "cpp_device_test",
+                         "cpp_device_snapshot", "cpp_device_probe",
                          "cpp_device_axpy", "cpp_device_cholesky", "cpp_device_nngp",
                          "cpp_device_operations", "cpp_device_sparse", "cpp_device_sparse_state",
                          "cpp_device_family", "cpp_device_model_gradient",

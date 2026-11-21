@@ -21,7 +21,7 @@ exact for polynomials of degree up to \verb{2n - 1}. Computed by Golub-Welsch:
 the nodes are the eigenvalues of the symmetric tridiagonal Jacobi matrix of
 the probabilists' Hermite recurrence (zero diagonal, off-diagonal
 \code{sqrt(k)}), the weights the squared first components of its eigenvectors.
-A normal \verb{N(m, s^2)} is integrated at \code{m + s * nodes} with the same weights.
+A normal \code{N(m, s^2)} is integrated at \code{m + s * nodes} with the same weights.
 }
 \examples{
 gh <- tulpa_gauss_hermite(5)

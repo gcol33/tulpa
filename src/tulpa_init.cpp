@@ -296,6 +296,10 @@ void tulpa_register_tgmrf_callables(DllInfo* dll);
 // load time.
 void tulpa_register_cell_coupling_callables(DllInfo* dll);
 
+// Defined in device.cpp -- registers the C callables an accelerator package
+// uses to attach its device backend.
+void tulpa_register_device_callables(DllInfo* dll);
+
 // Defined in cholmod_stub_resolve.cpp -- calls every Matrix CHOLMOD stub tulpa
 // uses once, so each resolves its target on the R main thread.
 namespace tulpa { void cholmod_resolve_stubs(); }
@@ -322,6 +326,7 @@ void tulpa_register_callables(DllInfo* dll) {
     tulpa_register_model_point(dll);
     tulpa_register_tgmrf_callables(dll);
     tulpa_register_cell_coupling_callables(dll);
+    tulpa_register_device_callables(dll);
 
     // Resolve the Matrix CHOLMOD stubs here, on the main thread: a stub's first
     // call runs R_GetCCallable(), which must not happen on an OpenMP worker.

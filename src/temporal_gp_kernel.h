@@ -31,7 +31,7 @@
 #include "tulpa/types.h"
 #include "coordinate_linalg.h"
 #include "device_dense.h"
-#include "../inst/device/dense_covariance.cu"
+#include "tulpa/dense_covariance.h"
 
 namespace tulpa_temporal_gp {
 

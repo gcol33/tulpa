@@ -507,16 +507,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_device_info
-Rcpp::List cpp_device_info();
-RcppExport SEXP _tulpa_cpp_device_info() {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    rcpp_result_gen = Rcpp::wrap(cpp_device_info());
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_device_operations
 Rcpp::CharacterVector cpp_device_operations();
 RcppExport SEXP _tulpa_cpp_device_operations() {
@@ -536,17 +526,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< SEXP >::type value(valueSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_device_validate(value));
     return rcpp_result_gen;
-END_RCPP
-}
-// cpp_device_configure
-void cpp_device_configure(Rcpp::DataFrame table, Rcpp::List sources);
-RcppExport SEXP _tulpa_cpp_device_configure(SEXP tableSEXP, SEXP sourcesSEXP) {
-BEGIN_RCPP
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::DataFrame >::type table(tableSEXP);
-    Rcpp::traits::input_parameter< Rcpp::List >::type sources(sourcesSEXP);
-    cpp_device_configure(table, sources);
-    return R_NilValue;
 END_RCPP
 }
 // cpp_device_begin
@@ -601,20 +580,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type variant(variantSEXP);
     Rcpp::traits::input_parameter< std::string >::type choice(choiceSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_device_probe(operation, size, variant, choice));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_device_test
-Rcpp::List cpp_device_test(std::string action, Rcpp::NumericVector input, std::string source, int threads);
-RcppExport SEXP _tulpa_cpp_device_test(SEXP actionSEXP, SEXP inputSEXP, SEXP sourceSEXP, SEXP threadsSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< std::string >::type action(actionSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type input(inputSEXP);
-    Rcpp::traits::input_parameter< std::string >::type source(sourceSEXP);
-    Rcpp::traits::input_parameter< int >::type threads(threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_device_test(action, input, source, threads));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4406,16 +4371,13 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_device_sparse_state", (DL_FUNC) &_tulpa_cpp_device_sparse_state, 3},
     {"_tulpa_cpp_device_sparse_batch", (DL_FUNC) &_tulpa_cpp_device_sparse_batch, 9},
     {"_tulpa_cpp_device_sparse", (DL_FUNC) &_tulpa_cpp_device_sparse, 7},
-    {"_tulpa_cpp_device_info", (DL_FUNC) &_tulpa_cpp_device_info, 0},
     {"_tulpa_cpp_device_operations", (DL_FUNC) &_tulpa_cpp_device_operations, 0},
     {"_tulpa_cpp_device_validate", (DL_FUNC) &_tulpa_cpp_device_validate, 1},
-    {"_tulpa_cpp_device_configure", (DL_FUNC) &_tulpa_cpp_device_configure, 2},
     {"_tulpa_cpp_device_begin", (DL_FUNC) &_tulpa_cpp_device_begin, 2},
     {"_tulpa_cpp_device_replay_stages", (DL_FUNC) &_tulpa_cpp_device_replay_stages, 1},
     {"_tulpa_cpp_device_end", (DL_FUNC) &_tulpa_cpp_device_end, 1},
     {"_tulpa_cpp_device_snapshot", (DL_FUNC) &_tulpa_cpp_device_snapshot, 0},
     {"_tulpa_cpp_device_probe", (DL_FUNC) &_tulpa_cpp_device_probe, 4},
-    {"_tulpa_cpp_device_test", (DL_FUNC) &_tulpa_cpp_device_test, 4},
     {"_tulpa_cpp_device_axpy", (DL_FUNC) &_tulpa_cpp_device_axpy, 5},
     {"_tulpa_cpp_device_cholesky", (DL_FUNC) &_tulpa_cpp_device_cholesky, 4},
     {"_tulpa_cpp_device_nngp", (DL_FUNC) &_tulpa_cpp_device_nngp, 10},

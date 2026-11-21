@@ -150,5 +150,5 @@ cor(res$factor$lambda, lam)
 \seealso{
 \code{\link[=tulpa_re_em]{tulpa_re_em()}} for a coefficient EM \code{em_fit} can wrap,
 \code{\link[=tulpa_hyper_grid]{tulpa_hyper_grid()}}, \code{\link[=tulpa_gauss_hermite]{tulpa_gauss_hermite()}}, \code{\link[=tulpa_car_precision_Q]{tulpa_car_precision_Q()}},
-\code{\link[=tulpa_spde_precision_Q]{tulpa_spde_precision_Q()}}
+\code{\link[=tulpa_spde_precision_Q]{tulpa_spde_precision_Q()}}.
 }

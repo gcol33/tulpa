@@ -13,20 +13,18 @@ public:
     explicit CellFailure(const Status& s) : std::runtime_error(s.message) {}
 };
 
-class BatchScope {
+class BatchScope final : public BatchView {
     struct Impl;
     std::unique_ptr<Impl> impl_;
 public:
     explicit BatchScope(int width);
-    ~BatchScope();
-    int width() const;
-    Status factor(unsigned long long address, int n, bool& positive,
-                  void* solver, void* stream, const std::string& operation);
+    virtual ~BatchScope();
+    int width() const override;
     Status submit(const void* key, void* request,
-                  const std::function<void(const std::vector<void*>&)>& process);
+                  const std::function<void(const std::vector<void*>&)>& process) override;
     std::shared_ptr<void> claim(const std::string& key,
         const std::function<std::shared_ptr<void>()>& create,
-        const std::function<bool(const std::shared_ptr<void>&)>& acquire);
+        const std::function<bool(const std::shared_ptr<void>&)>& acquire) override;
 };
 
 class CellScope {

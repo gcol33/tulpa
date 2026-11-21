@@ -12,7 +12,6 @@
 #include <vector>
 #include <cmath>
 #include "laplace_types.h"  // for tulpa::DenseMat
-#include "device_sparse.h"
 #include "device_batch.h"
 
 // CHOLMOD types from Matrix package.
@@ -299,7 +298,7 @@ private:
     void inverse_pattern();
     Purpose purpose_;
     std::shared_ptr<device::Policy> policy_;
-    std::unique_ptr<device::SparseFactor> device_factor_;
+    std::unique_ptr<device::SparseFactorRoute> device_factor_;
     std::unique_ptr<device::DenseFactor> dense_factor_;
     std::vector<double> dense_values_, dense_lower_;
     double dense_logdet_ = 0.0;
