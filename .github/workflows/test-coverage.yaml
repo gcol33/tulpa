@@ -154,6 +154,7 @@ jobs:
           packages: |
             any::covr
             any::xml2
+            tulpaGPU=?ignore
 
       - uses: actions/download-artifact@v4
         with:
