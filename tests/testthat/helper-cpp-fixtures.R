@@ -84,8 +84,6 @@
     list.files(file.path(root, "src"), pattern = "\\.(cpp|h|hpp|c)$|^Makevars",
                full.names = TRUE),
     list.files(file.path(root, "inst", "include"), recursive = TRUE,
-               full.names = TRUE),
-    list.files(file.path(root, "inst", "device"), pattern = "\\.cu$", recursive = TRUE,
                full.names = TRUE)
   )
   files <- sort(files)
@@ -123,8 +121,6 @@
     dir.create(file.path(tmp, "inst"), recursive = TRUE)
     file.copy(file.path(root, "src"), tmp, recursive = TRUE)
     file.copy(file.path(root, "inst", "include"), file.path(tmp, "inst"),
-              recursive = TRUE)
-    file.copy(file.path(root, "inst", "device"), file.path(tmp, "inst"),
               recursive = TRUE)
     src <- file.path(tmp, "src")
     unlink(list.files(src, pattern = "\\.(o|dll|so|dylib)$", full.names = TRUE))
