@@ -1632,9 +1632,11 @@ tulpa_nested_laplace_joint <- function(responses,
     # again with its refinement, handed the mode the placement read, and the
     # pass reads that fit as it reads any other.
     if (isTRUE(res$outer_refine_deferred)) {
-        op <- options(tulpa.nl_outer_mode = .nl_fit_outer_mode(res))
-        res <- fit_state(state)
-        options(op)
+        res <- local({
+            op <- options(tulpa.nl_outer_mode = .nl_fit_outer_mode(res))
+            on.exit(options(op), add = TRUE)
+            fit_state(state)
+        })
         res$k_quality_rounds     <- 0L
         res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
         res <- adopt(place(res, state))
