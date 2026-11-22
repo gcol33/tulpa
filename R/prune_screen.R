@@ -60,6 +60,29 @@
                         screen = screen)
 }
 
+# The dropped-mass bound of a screened grid (`.nl_prune_dropped_mass()`) cell by
+# cell. `full` and `cheap` are each cell's full and screened log posterior under
+# one measure, `mask` the cells the screen dropped, `ref` the log mass of a grid
+# the cells joined (-Inf for none). Every dropped cell is lifted by the worst
+# screening error measured on a kept cell, `e_max = max(full - cheap)`: `lift`
+# is that lifted log mass per cell (-Inf on a cell not dropped), `log_den` the
+# log mass the bound is a share of, and `bound` the dropped cells' summed share.
+# `bound` is `Inf` when no kept cell carries a screen to measure the error on,
+# 0 when nothing was dropped.
+.nl_prune_lifted <- function(full, cheap, mask, ref = -Inf) {
+  n <- length(full)
+  kept <- !mask & is.finite(full)
+  seen <- kept & is.finite(cheap)
+  drop <- mask & is.finite(cheap)
+  lift <- rep(-Inf, n)
+  if (!any(seen)) return(list(bound = Inf, lift = lift, log_den = NA_real_))
+  top <- max(c(full[kept], ref))
+  log_den <- top + log(exp(ref - top) + sum(exp(full[kept] - top)))
+  if (!any(drop)) return(list(bound = 0, lift = lift, log_den = log_den))
+  lift[drop] <- cheap[drop] + max(full[seen] - cheap[seen])
+  list(bound = sum(exp(lift[drop] - log_den)), lift = lift, log_den = log_den)
+}
+
 # The cheap-pass record of a grid whose cells were screened in more than one
 # call -- the declared grid, then each refinement round against the grid it
 # joined -- read over the merged grid: the count dropped, the offset every cell

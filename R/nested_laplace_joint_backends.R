@@ -422,14 +422,6 @@
         lm    <- lm + off
         cheap <- cheap + off
     }
-    kept <- !mask & is.finite(lm)
-    seen <- kept & is.finite(cheap)
-    drop <- mask & is.finite(cheap)
-    ref  <- as.numeric(res$prune_screen_log_ref %||% -Inf)
-    if (!any(seen)) return(Inf)
-    if (!any(drop)) return(0)
-    e_max <- max(lm[seen] - cheap[seen])
-    top   <- max(c(lm[kept], ref))
-    sum(exp(cheap[drop] + e_max - top)) /
-        (exp(ref - top) + sum(exp(lm[kept] - top)))
+    .nl_prune_lifted(lm, cheap, mask,
+                     as.numeric(res$prune_screen_log_ref %||% -Inf))$bound
 }

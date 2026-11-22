@@ -1,5 +1,14 @@
 # tulpa 0.8.0
 
+* The cells the cheap-pass screen drops across a refinement's rounds are held
+  to the screen's gate as a whole: each round bounded only its own, and past
+  the gate the dropped cells carrying the bound are now solved in full. On a
+  `fit_st_nested()` HSGP x AR(1) fit of 12 observations the dropped cells had
+  carried 5.1% of the posterior, and the temporal precision's 97.5% end read
+  2001 where the same levels solved in full read 4677; it now reads 3131. A
+  BYM2 x AR(1) fit's ends each move about half way to that full-grid read; fits
+  whose rounds stayed under the gate are unchanged (#1271).
+
 * A proper-CAR correlation's reported interval stays inside (0, 1): its cells
   are partitioned on the support its block declares, where the outer edge was
   mirrored on the natural scale. On a `fit_st_nested()` car_proper x AR(1) fit

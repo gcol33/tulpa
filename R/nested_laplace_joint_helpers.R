@@ -1031,9 +1031,20 @@ tulpa_joint_axis_specs_from_grid <- function(
         }
         consistency_info <- cons$info
     }
+    # Each round bounded only its own screened cells; the grid the caller
+    # reads is held to the gate as a whole.
+    repair_info <- NULL
+    if (n_added > 0L) {
+        rep <- .hyper_screen_repair(theta_grid, log_marginal, extras,
+                                    refining_axis, specs, kernel_fn, hp_fn)
+        log_marginal <- rep$log_marginal
+        extras       <- rep$extras
+        repair_info  <- rep$info
+    }
     list(theta_grid = theta_grid, log_marginal = log_marginal, extras = extras,
          refining_axis = refining_axis, adaptive_info = adaptive_info,
-         consistency_info = consistency_info, n_added = n_added)
+         consistency_info = consistency_info, screen_repair_info = repair_info,
+         n_added = n_added)
 }
 
 # Which cells of a per-cell `extras` list are solved and converged, solved and

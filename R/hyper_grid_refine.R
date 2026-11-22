@@ -983,6 +983,79 @@
        extras = extras, refining_axis = refining_axis, info = info)
 }
 
+# Solve the cells the cheap-pass screen dropped across the refinement rounds,
+# where together they may carry more of the posterior than the screen's gate.
+#
+# Each round's kernel call bounds the mass ITS dropped cells may carry against
+# the grid they join, and stays under `gate` by itself; nothing bounds the sum
+# over the rounds. A pass that extends four axes over twenty rounds stacks
+# twenty such shares: on a gaussian HSGP x AR(1) fit of 12 observations the
+# refined grid's 4444 dropped cells carried 5.1% of the posterior (the merged
+# bound read 5.5%), and the 97.5% end of the temporal precision read 2001
+# against 4677 on the same levels solved in full. The bound is read here over
+# the merged grid (`.nl_prune_lifted()`: each dropped cell lifted by the worst
+# screening error on a kept one, under the grid's measure and hyperprior), and
+# past `gate` the dropped cells carrying it are solved in full, heaviest lifted
+# mass first, until what is left is under it -- the rule the random-effect
+# covariance door applies to its own rounds.
+#
+# A cell's screened log posterior is its kernel's cheap log marginal plus the
+# hyperprior `hp_fn` folds into a solved cell's, so the two read on one scale.
+# Returns the grid's `log_marginal` and `extras` with the repaired cells solved,
+# and `info` (the bound before and after, the cells solved), NULL when the grid
+# carries no screen record.
+.hyper_screen_repair <- function(theta_grid, log_marginal, extras,
+                                 refining_axis, specs, kernel_fn, hp_fn = NULL,
+                                 gate = .nl_screen("gate_mass")) {
+  n <- length(log_marginal)
+  out <- list(log_marginal = log_marginal, extras = extras, info = NULL)
+  if (is.null(extras) || length(extras) != n) return(out)
+  pruned <- vapply(extras, function(e) isTRUE(e$pruned), logical(1))
+  if (!any(pruned)) return(out)
+  cheap <- vapply(extras, function(e) {
+    v <- e$cheap_lm
+    if (is.numeric(v) && length(v) == 1L) v else NA_real_
+  }, numeric(1))
+  hp <- if (is.null(hp_fn)) NULL else hp_fn(theta_grid)
+  if (length(hp) == n) cheap <- cheap + hp
+  bounds <- function() {
+    lq <- .hyper_log_quad_weights(theta_grid, specs, refining = refining_axis,
+                                  log_marginal = log_marginal)
+    if (length(lq) != n) lq <- numeric(n)
+    .nl_prune_lifted(log_marginal + lq, cheap + lq, pruned)
+  }
+  pb <- bounds()
+  before <- pb$bound
+  n_repaired <- 0L
+  while (is.finite(pb$bound) && pb$bound > gate) {
+    drop <- which(is.finite(pb$lift))
+    o <- drop[order(pb$lift[drop], decreasing = TRUE)]
+    rest <- rev(cumsum(rev(exp(pb$lift[o] - pb$log_den))))
+    take <- o[seq_len(max(1L, sum(rest > gate)))]
+    cells <- theta_grid[take, , drop = FALSE]
+    solved <- which(is.finite(log_marginal) & !pruned)
+    fallback <- extras[[solved[which.max(log_marginal[solved])]]]
+    fit_out <- kernel_fn(cells,
+                         warm_start = .hyper_row_warm_starts(
+                           cells, theta_grid, log_marginal, extras,
+                           colnames(theta_grid)[1L], fallback),
+                         store_extras = TRUE, screen = NULL)
+    new_lm <- fit_out$log_marginal
+    if (!is.null(hp_fn)) {
+      hp_new <- hp_fn(cells)
+      if (length(hp_new) == length(take)) new_lm <- new_lm + hp_new
+    }
+    log_marginal[take] <- new_lm
+    extras[take] <- fit_out$extras %||% vector("list", length(take))
+    pruned[take] <- FALSE
+    n_repaired <- n_repaired + length(take)
+    pb <- bounds()
+  }
+  list(log_marginal = log_marginal, extras = extras,
+       info = list(bound_before = before, bound_after = pb$bound,
+                   n_repaired = n_repaired))
+}
+
 # Where each proposed level `pts` lies against an axis's current continuum
 # levels `vals`: 0 inside their span, 1 below it, 2 above it. A level past an
 # end extends the axis into a tail no node measures, and is bounded by the tail

@@ -105,3 +105,56 @@ test_that("refinement cells are screened against the grid they join", {
     expect_true(all(abs(on$theta_mean - off$theta_mean) / sd_ref < 0.1))
     expect_equal(coef(on), coef(off), tolerance = 1e-2)
 })
+
+test_that("the cells screened across refinement rounds are held to the gate as a whole", {
+    # Five rounds' worth of dropped cells, each a small share by itself; the
+    # mock kernel's full log marginal sits at the screened one plus a 0.5-nat
+    # error, the worst error a kept cell shows.
+    tg <- cbind(a = seq_len(40), b = 1)
+    full <- -0.05 * (tg[, "a"] - 10)^2 / 10
+    pruned <- tg[, "a"] > 12
+    cheap <- full - 0.5
+    lm <- ifelse(pruned, -Inf, full)
+    ex <- lapply(seq_len(40), function(i)
+        list(pruned = pruned[i], cheap_lm = cheap[i], mode = c(0, 0)))
+    gate <- 0.01
+    pre <- tulpa:::.nl_prune_lifted(ifelse(pruned, -Inf, full),
+                                    cheap, pruned)
+    expect_gt(pre$bound, gate)
+    calls <- 0L
+    kfn <- function(cells, warm_start = NULL, store_extras = FALSE, screen = NULL) {
+        calls <<- calls + 1L
+        expect_null(screen)
+        i <- cells[, "a"]
+        list(log_marginal = full[i],
+             extras = lapply(i, function(k) list(pruned = FALSE, mode = c(0, 0))))
+    }
+    out <- tulpa:::.hyper_screen_repair(tg, lm, ex, rep("a", 40), list(), kfn,
+                                        gate = gate)
+    expect_gt(out$info$n_repaired, 0L)
+    expect_lte(out$info$bound_after, gate)
+    expect_equal(out$info$bound_before, pre$bound)
+    left <- vapply(out$extras, function(e) isTRUE(e$pruned), logical(1))
+    # Every repaired cell carries its full solve, the rest stay dropped.
+    expect_equal(out$log_marginal[!left], full[!left])
+    expect_true(all(!is.finite(out$log_marginal[left])))
+    # The heaviest dropped cells are the ones solved.
+    expect_true(max(tg[!left & pruned, "a"]) < min(tg[left, "a"]))
+})
+
+test_that("a refined HSGP x AR(1) fit holds the dropped-mass bound under the gate", {
+    skip_on_cran()
+    # The 12-observation fixture's consistency pass extends all four axes over
+    # about twenty rounds; their screened cells together carried 5.1% of the
+    # posterior before the merged grid was held to the gate.
+    set.seed(43)
+    n <- 12L
+    xy <- cbind(runif(n), runif(n))
+    tt <- rep(1:3, 4)
+    fit <- suppressWarnings(fit_st_nested(rnorm(n), matrix(1, n, 1), NULL, NULL,
+        tt, 3L, spatial_type = "hsgp", temporal_type = "ar1",
+        family = "gaussian", phi = .4, coords = xy, hsgp_m = 5L, hsgp_c = 1.8,
+        control = list(progress = FALSE)))
+    expect_true(any(nzchar(fit$refining_axis)))
+    expect_lte(fit$prune_dropped_mass_bound, tulpa:::.nl_screen("gate_mass"))
+})
