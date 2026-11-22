@@ -1052,7 +1052,8 @@
     if (identical(backend, "nested_laplace_joint")) {
       return(.joint_arm_args(bundle, family, all_blocks, sigma_re, n_trials,
                              phi, phi_axis, beta_prior %||% beta_prior_default,
-                             hyperprior, control))
+                             hyperprior, control, weights = weights,
+                             phi2 = phi2))
     }
     if (length(all_blocks) == 0L) {
       # An `iid` block for a `(1 | g)` term rides the multi-block driver only,
@@ -2815,8 +2816,7 @@ tulpa <- function(formula, data,
   joint_unfit <- .joint_arm_unfit(
     spatial_type = spatial_type, temporal_spec = temporal_spec,
     st_block = st_block, has_latent = has_latent,
-    zi = !is.null(bundle$X_zi), weights = !is.null(weights),
-    phi2 = !is.null(phi2))
+    zi = !is.null(bundle$X_zi))
   joint_planned <- !is.null(bundle$response_bounds) ||
     (!is.null(phi_axis) && is.null(joint_unfit) &&
        (sel$requested %||% mode) %in% .JOINT_ARM_PHI_MODES)

@@ -130,9 +130,10 @@ TIER_META <- list(
 #' * `cabi`     -- the registered C-ABI callable backing the backend (the symbol
 #'     a model package reaches via `LinkingTo: tulpa`, and the one an R wrapper
 #'     would call), or `NULL`.
-#' * `carries_weights` -- `TRUE` when a `"design"` backend threads observation
-#'     `weights` into its likelihood (non-spatially); absent otherwise. Every
-#'     `"logpost"` backend carries them through the log-posterior builder, and
+#' * `carries_weights` -- `TRUE` when a backend threads observation `weights`
+#'     into its likelihood: a `"design"` backend non-spatially, a `"nested"`
+#'     one whatever fields it carries; absent otherwise. Every `"logpost"`
+#'     backend carries them through the log-posterior builder, and
 #'     `.backend_carries_weights()` is the one predicate reading both.
 #' * `hyperprior` -- `TRUE` when the backend's fitter takes the outer
 #'     `hyperprior = c("proper", "flat")` choice `tulpa()` forwards; absent
@@ -326,6 +327,9 @@ BACKEND_REGISTRY <- list(
     # callable, and no callable backs the joint multi-block driver at all
     # (gcol33/tulpa#775).
     cabi = NULL, hyperprior = TRUE,
+    # The arm's built-in family response carries a per-row weight and a
+    # second dispersion (BuiltinFamilyResponse), whatever blocks ride along.
+    carries_weights = TRUE, phi2 = TRUE,
     # A tulpa() formula is one response, so the front door reaches this
     # driver as a ONE-arm fit (R/tulpa_joint_arm.R): the door whose arm
     # carries a censored / truncated response's bounds and whose outer grid
@@ -1260,17 +1264,19 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
 
 # Does `backend` carry observation weights on a call with (`spatial = TRUE`) or
 # without a spatial field? Every log-posterior backend does, through the R
-# log-posterior builder; a design backend does when the registry declares
-# `carries_weights`, and then non-spatially only -- the spatial Laplace solvers
-# have no weight channel. The one predicate the auto selector and the fitter
-# argument assembly both read, so what auto picks for a weighted call is what
-# dispatch accepts.
+# log-posterior builder; a backend declaring `carries_weights` does too, a
+# design backend non-spatially only -- the spatial Laplace solvers have no
+# weight channel -- and a nested one with any field, since its arm's response
+# carries the weight whatever blocks the latent holds. The one predicate the
+# auto selector and the fitter argument assembly both read, so what auto picks
+# for a weighted call is what dispatch accepts.
 #' @keywords internal
 .backend_carries_weights <- function(backend, spatial = FALSE) {
   reg <- BACKEND_REGISTRY[[backend]]
   if (is.null(reg)) return(FALSE)
   if (identical(reg$input, "logpost")) return(TRUE)
-  isTRUE(reg$carries_weights) && !isTRUE(spatial)
+  isTRUE(reg$carries_weights) &&
+    (!isTRUE(spatial) || identical(reg$input, "nested"))
 }
 
 

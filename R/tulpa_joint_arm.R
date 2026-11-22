@@ -39,12 +39,10 @@
 #' @keywords internal
 .joint_arm_unfit <- function(spatial_type = NULL, temporal_spec = NULL,
                              st_block = NULL, has_latent = FALSE,
-                             zi = FALSE, weights = FALSE, phi2 = FALSE) {
+                             zi = FALSE) {
   sp <- tolower(spatial_type %||% "")
   tt <- tolower(temporal_spec$type %||% "")
   if (zi) return("a zero-inflation formula")
-  if (weights) return("observation weights")
-  if (phi2) return("a second dispersion (`phi2`)")
   if (nzchar(sp) && !sp %in% c(.NL_FRONTDOOR_AREAL, "nngp", "gp", "hsgp")) {
     return(sprintf("a '%s' spatial field", sp))
   }
@@ -138,7 +136,8 @@
 # join them last, the order every nested accessor reads them in.
 #' @keywords internal
 .joint_arm_args <- function(bundle, family, blocks, sigma_re, n_trials, phi,
-                            phi_axis, beta_prior, hyperprior, control) {
+                            phi_axis, beta_prior, hyperprior, control,
+                            weights = NULL, phi2 = NULL) {
   N <- bundle$n_obs
   by_term <- .re_terms_to_nl_blocks(bundle$re_terms %||% list(), N, sigma_re)
   re_blocks <- unlist(by_term, recursive = FALSE)
@@ -152,7 +151,9 @@
     n_trials = n_trials %||% rep(1L, N),
     offset   = bundle$offset,
     beta_prior_mean = bp$mean,
-    beta_prior_prec = 1 / bp$sd^2
+    beta_prior_prec = 1 / bp$sd^2,
+    weights  = weights,
+    phi2     = phi2
   ), .response_bound_arm_fields(bundle$response_bounds))
   out <- list(
     responses  = stats::setNames(list(arm), .JOINT_ARM_NAME),

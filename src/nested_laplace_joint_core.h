@@ -163,6 +163,28 @@ inline int parse_joint_arms(
         arms_out[k].family   = Rcpp::as<std::string>(a["family"]);
         arms_out[k].phi      = Rcpp::as<double>(a["phi"]);
         arms_out[k].N        = (int)arms_out[k].y.size();
+        // Optional per-observation likelihood weight, scaling row i's
+        // log-density, score and Fisher curvature alike
+        // (BuiltinFamilyResponse::weights).
+        if (a.containsElementNamed("weights") && !Rf_isNull(a["weights"])) {
+            Rcpp::NumericVector w = Rcpp::as<Rcpp::NumericVector>(a["weights"]);
+            if ((int)w.size() != arms_out[k].N) {
+                tulpa::stop("Arm %d: length(weights) (%d) must equal length(y) "
+                           "(%d).", {k + 1, (int)w.size(), arms_out[k].N});
+            }
+            for (int i = 0; i < arms_out[k].N; i++) {
+                if (!R_finite(w[i]) || w[i] < 0.0) {
+                    tulpa::stop("Arm %d: weights[%d] is %g; every weight must be "
+                               "finite and non-negative.", {k + 1, i + 1, w[i]});
+                }
+            }
+            arms_out[k].weights = w;
+        }
+        // Optional second dispersion of a built-in family (Student-t df,
+        // Tweedie power), conditioned on rather than integrated.
+        if (a.containsElementNamed("phi2") && !Rf_isNull(a["phi2"])) {
+            arms_out[k].phi2 = Rcpp::as<double>(a["phi2"]);
+        }
         // A model-supplied likelihood (an XPtr<NestedLikelihood> built in a
         // model package's C++, e.g. tulpaObs occupancy) replaces the built-in
         // `family` for this arm: the inner solve reads its per-observation

@@ -209,8 +209,14 @@ test_that("a bounded response refuses what it cannot carry", {
                "family = 'gaussian'")
   expect_error(tulpa(y | cens(lo, hi) ~ x, d, mode = "hmc"),
                "does not carry them")
-  expect_error(tulpa(y | cens(lo, hi) ~ x, d, weights = rep(1, 100)),
-               "observation weights")
+})
+
+test_that("a bounded response carries observation weights", {
+  skip_on_cran()
+  d <- .rb_censored_data(n = 100L)
+  f0 <- tulpa(y | cens(lo, hi) ~ x, d)
+  f1 <- tulpa(y | cens(lo, hi) ~ x, d, weights = rep(1, 100))
+  expect_equal(coef(f1), coef(f0), tolerance = 1e-8)
 })
 
 test_that("the joint arm reads a censored / truncated phi as a variance", {

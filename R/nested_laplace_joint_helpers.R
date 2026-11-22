@@ -245,6 +245,27 @@
     a$sigma_re    <- as.numeric(a$sigma_re %||% 1.0)
     a$family      <- as.character(a$family)
     a$phi         <- as.numeric(a$phi %||% 1.0)
+    # Optional per-observation likelihood weights, scaling each row's
+    # log-density, score and curvature alike in the inner solve.
+    if (!is.null(a$weights)) {
+        w <- a$weights
+        if (!is.numeric(w) || length(w) != N || any(!is.finite(w)) ||
+            any(w < 0)) {
+            stop("Arm ", k, ": `weights` must be a finite non-negative numeric ",
+                 "vector of length(y) (", N, ").", call. = FALSE)
+        }
+        a$weights <- as.numeric(w)
+    }
+    # Optional second dispersion of a built-in family (Student-t df, Tweedie
+    # power), conditioned on.
+    if (!is.null(a$phi2) && is.null(a$likelihood)) {
+        a$phi2 <- as.numeric(.phi2_or_stop(.canonical_family(a$family), a$phi2))
+    }
+    if (identical(.family_base(.canonical_family(a$family)), "tweedie") &&
+        is.null(a$likelihood) && is.null(a$phi2)) {
+        stop("Arm ", k, ": family 'tweedie' needs `phi2`, the variance power.",
+             call. = FALSE)
+    }
     # A model-supplied likelihood replaces the built-in `family` on this arm:
     # an external pointer to a tulpa::NestedLikelihood built in a model
     # package's C++ from a LikelihoodSpec.

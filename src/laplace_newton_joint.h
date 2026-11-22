@@ -39,6 +39,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -62,6 +63,10 @@ struct JointArm {
     Rcpp::NumericVector weights;
     std::string         family;    // built-in family (ignored when spec != null)
     double              phi;        // built-in dispersion (ignored when spec)
+    // Built-in second dispersion: the Student-t degrees of freedom or the
+    // Tweedie variance power. NaN => the family's own default (none for
+    // tweedie, which BuiltinFamilyResponse::prepare refuses). Ignored when spec.
+    double              phi2 = std::numeric_limits<double>::quiet_NaN();
     int                 N;
     // Grouped beta responses sharing each row's linear predictor.
     std::vector<std::vector<BetaObservation>> beta_y;
@@ -213,6 +218,7 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             r.N        = a.N;
             r.family   = a.family;
             r.phi      = a.phi;
+            r.phi2     = a.phi2;
             r.weights  = (a.weights.size() > 0) ? REAL(a.weights) : nullptr;
             r.beta_y = a.beta_y;
             r.lower    = (a.lower.size()    > 0) ? REAL(a.lower)    : nullptr;

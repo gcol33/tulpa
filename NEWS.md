@@ -1,5 +1,15 @@
 # tulpa 0.8.0
 
+* The one-arm joint nested-Laplace door carries observation `weights` and a
+  second dispersion `phi2` (the Student-t degrees of freedom, the Tweedie
+  power), read by the arm's built-in family response, so a weighted call or
+  one with `phi2` no longer leaves that door. At one fixed random-intercept
+  scale the joint arm and `tulpa_laplace()` give the same log marginal and the
+  same mode to twelve digits on weighted Poisson and Student-t fixtures. A
+  weighted Gaussian response fitted with `phi` left out under `auto` /
+  `structured` now has its residual variance integrated on that door rather
+  than conditioned at 1 (#1269).
+
 * A single-block `tulpa_nested_laplace_joint()` fit with a proper-CAR prior
   and no copy integrates the model it reports. Its outer grid is laid on the
   field SD, and the SD was handed to the kernel as the precision, so the fit
