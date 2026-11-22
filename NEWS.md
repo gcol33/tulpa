@@ -18,6 +18,29 @@
   posterior density. A fractional-nu field integrates through
   `tulpa_hyper_grid()` on a mode-centred CCD (#1198).
 
+* A multi-block `tulpa_nested_laplace()` fit is a one-arm fit on the joint
+  driver's block parser: the registry's own parser and its entry
+  `cpp_nested_laplace_multi` are gone. Every multi-block fit in the registry
+  test files reproduces its earlier theta grid, log marginals, modes, weights,
+  coefficient and hyperparameter summaries exactly (#1195).
+
+* `tulpa_nested_laplace_joint()` takes an `st_interaction` block, honours a
+  block's `svc_weight` on every block type (an SPDE, HSGP or tgmrf field as
+  well as the areal, temporal, iid and NNGP ones), reads an arm's
+  `beta_prior = list(mean =, sd =)` with `sd = Inf` leaving a coefficient
+  unpenalized, and reports where each block's coefficients start in `modes`
+  (`block_latent_offsets`) (#1195).
+
+* An unweighted ICAR block over a disconnected graph folds its global level
+  into the intercept on the joint door, as it does on a connected graph and on
+  every registry path; the component contrasts stay with the precision
+  augmentation. The level was left to the augmentation alone, which put a
+  proper prior on a direction the intercept aliases and inflated the
+  intercept's posterior variance: on the replicated-field fit of
+  `test-spatial-field-by.R` the modal cell's intercept variance goes from
+  0.0226 to 0.000189, the field precision's posterior median from 1.5480 to
+  1.5477, the log marginals by up to 1e-5 relative (#1195).
+
 * Sparse GPU fit equivalence covers SPDE, ICAR, proper CAR, AR1 and joint
   CAR/AR1 grids at 2,000 and 15,000 latent nodes. CPU, automatic and forced
   CUDA execution agree on log marginals, modes and latent marginal variances.

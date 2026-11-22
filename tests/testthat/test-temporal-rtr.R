@@ -58,8 +58,8 @@ test_that("the nested prior reads a restricted walk through S P_perp", {
   # An intercept in restrict_to annihilates the walk's constant: A 1 = 0.
   expect_lt(max(abs(rowSums(blk$projector))), 1e-10)
 
-  cpp <- tulpa:::.nl_block_spec_for_cpp(blk, n_obs = nrow(sm$d),
-                                        block_index = 1L)
+  cpp <- tulpa:::.joint_block_spec_for_cpp(
+    blk, 1L, 1L, arms = list(list(y = numeric(nrow(sm$d)))))
   expect_null(cpp$temporal_idx)
   expect_length(cpp$projector$A_p[[1]], 13L)
 

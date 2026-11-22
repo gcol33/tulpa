@@ -1,8 +1,7 @@
 // nested_laplace_multi.h
 // The single-response LatentBlock driver: every single-block nested kernel
-// (nested_laplace.cpp, via length-1 LatentBlock vectors) and the multi-block
-// dispatch (nested_laplace_multi.cpp) solve their outer grid as a one-arm fit
-// on the joint driver (nested_laplace_joint_multi.h).
+// (nested_laplace.cpp, via length-1 LatentBlock vectors) solves its outer grid
+// as a one-arm fit on the joint driver (nested_laplace_joint_multi.h).
 
 #ifndef TULPA_NESTED_LAPLACE_MULTI_H
 #define TULPA_NESTED_LAPLACE_MULTI_H

@@ -138,6 +138,19 @@ inline int parse_joint_arms(
                 }
             }
         }
+        // A fixed-effect prior in the front doors' form, list(mean =, sd =) of
+        // length p, where sd = Inf leaves a coefficient unpenalized
+        // (read_beta_prior). It replaces the per-coefficient pair above.
+        if (a.containsElementNamed("beta_prior") && !Rf_isNull(a["beta_prior"])) {
+            if (a.containsElementNamed("beta_prior_mean") ||
+                a.containsElementNamed("beta_prior_prec")) {
+                tulpa::stop("Arm %d: pass `beta_prior` or the pair "
+                           "`beta_prior_mean` / `beta_prior_prec`, not both.",
+                           {k + 1});
+            }
+            apply_beta_prior(pa, read_beta_prior(
+                Rcpp::as<Rcpp::List>(a["beta_prior"]), pa.p));
+        }
         // Optional per-observation fixed offset on the linear predictor. Length
         // must match this arm's N (validated after arms_out[k].N is set below).
         if (a.containsElementNamed("offset") &&

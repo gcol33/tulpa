@@ -308,8 +308,8 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",
     families = NULL,
-    # cpp_nested_laplace_multi is an Rcpp export (an R-level entry point), not
-    # a registered C-ABI callable -- a model package reaches this driver's
+    # cpp_nested_laplace_joint_multi is an Rcpp export (an R-level entry point),
+    # not a registered C-ABI callable -- a model package reaches this driver's
     # per-field kernels individually instead, through the six symbols below
     # (gcol33/tulpa#775).
     cabi = c("tulpa_nested_laplace_icar", "tulpa_nested_laplace_bym2",

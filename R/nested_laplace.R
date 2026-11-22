@@ -1340,7 +1340,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #   axis   read by defaults() / theta() while the outer grid is built, so
 #          checked on every path.
 #   single extra fields pack() indexes for the single-block kernel.
-#   multi  extra fields .nl_block_spec_for_cpp() indexes.
+#   multi  extra fields .nl_block_as_arm() indexes to write a registry block
+#          in the one-arm form the joint converter reads.
 #   joint  extra fields .joint_block_spec_for_cpp() indexes.
 #   joint_single
 #          extra fields .joint_call_kernel_via_multi() indexes on the
@@ -1637,6 +1638,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # only (the hard constraints live in the sparse joint Newton).
     cpp_fn = NULL,
     required = list(multi = c("obs_idx", "n_latent", "S_p", "S_i", "S_x",
+                              "log_pdet"),
+                    joint = c("obs_idx", "n_latent", "S_p", "S_i", "S_x",
                               "log_pdet")),
     defaults = function(p, a) .nl_fill_family_axes(p, "st_interaction"),
     pack = function(p) stop(
@@ -1652,7 +1655,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # Unstructured (iid) Gaussian latent, integrated over a single sigma axis.
     # Multi-block-only: there is no single-arm iid kernel (a lone iid field is a
     # plain random intercept). Reached via .nl_dispatch_multi -- the C++
-    # build_blocks_from_spec builds the block with d_fac(k) = sigma_k and an
+    # joint block parser builds the block with d_fac(k) = sigma_k and an
     # N(0, 1) prior. A one-point sigma_grid conditions the field at a FIXED
     # sigma (an EM-estimated random-effect term on a nested block carries its
     # own grid this way; see .fit_block_via_nested_laplace).
@@ -1809,7 +1812,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # block$grid_span$upper[j], or block$init[j] +/- `half_width` if the block
     # states no span. Precomputed Q_k / logdet / log p(theta_k)
     # at every grid row are packed into the C++ block spec by
-    # `.nl_block_spec_for_cpp`.
+    # `.nl_tgmrf_per_grid()`.
     cpp_fn = NULL,
     # The multi-block converter builds the per-grid Q / logdet / log-prior from
     # the block's own closures; the joint one takes them already materialised.
@@ -2650,7 +2653,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
 # The random-effect loading of a multi-block fit: every `iid` block, in block
 # order (the order ranef() names the groups in). The block is non-centred, an
-# N(0, 1) coordinate entering eta as `sigma_k * z` (build_blocks_from_spec's
+# N(0, 1) coordinate entering eta as `sigma_k * z` (the joint block parser's
 # d_fac), so the random effect a cell implies is its coordinate times that
 # cell's sigma. NULL when the fit carries no iid block.
 .nl_re_field_load <- function(blocks, offsets, n_x, theta_grid) {
@@ -2784,218 +2787,143 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   res
 }
 
-# Structural spec for one block sent to cpp_nested_laplace_multi. Grid values
-# go in theta_grid separately; this function returns only the type-specific
-# data needed to build a LatentBlock (idx vector, sizes, adjacency, etc.).
-#
-# `block_joint_grid` is the joint-grid sub-matrix (n_joint x block$theta_dim)
-# already realised from the Cartesian product. tgmrf needs it to precompute
-# Q(theta_k) at every joint-grid row; built-in types ignore the argument
-# because they read theta values directly from theta_grid in the C++ side.
-.nl_block_spec_for_cpp <- function(p, block_joint_grid = NULL, n_obs = NULL,
-                                   block_index = NULL) {
+# A registry block in the one-arm form the joint block parser reads
+# (`.joint_block_spec_for_cpp()`). The registry spells a few single-response
+# fields as one object where the joint parser takes a per-arm list -- an HSGP
+# basis (`phi_basis`, `lambda_eig`) and an SPDE projector (`A_x`, `A_i`, `A_p`,
+# `n_obs`) -- and a tgmrf block carries its closures, which are evaluated at
+# every row of the block's columns of the outer grid (`block_joint_grid`).
+.nl_block_as_arm <- function(p, block_joint_grid, block_index) {
   type <- tolower(p$type)
-  projected <- .nl_block_is_projected(p)
-  .nl_check_block_fields(p, c("axis", if (projected) "projected" else "multi"),
-                         block_index)
-  # Optional per-observation design weight, attached after the type branch has
-  # built the spec: it turns any block into a varying coefficient whose eta
-  # contribution is svc_weight[i] * <the block's field at i>, and the C++ side
-  # honours it on every contribution kind. Reading it per type would decide
-  # which fields can vary by where the read happens to be written.
-  .with_svc <- function(out) {
-    if (is.null(p$svc_weight)) return(out)
-    out$svc_weight <- as.numeric(p$svc_weight)
-    out
+  .nl_check_block_fields(
+    p, c("axis", if (.nl_block_is_projected(p)) "projected" else "multi"),
+    block_index)
+  arm <- .nl_block_arm_fields(p, type, block_joint_grid)
+  p[names(arm)] <- arm
+  p
+}
+
+# The per-arm fields `.nl_block_as_arm()` writes onto a registry block, NULL
+# where the block already reads the same in both forms.
+.nl_block_arm_fields <- function(p, type, block_joint_grid) {
+  if (type == "hsgp" && is.null(p[["phi"]])) {
+    phi <- as.matrix(p$phi_basis)
+    storage.mode(phi) <- "double"
+    return(list(phi = list(phi), m_total = ncol(phi), n_obs_per_arm = nrow(phi),
+                eigenvalues = as.numeric(p$lambda_eig)))
   }
-  if (type %in% .NL_PROJECTABLE_AREAL) {
-    out <- list(
-      type            = type,
-      spatial_idx     = if (!projected) as.integer(p$spatial_idx),
-      n_spatial_units = as.integer(p$n_spatial_units),
-      adj_row_ptr     = as.integer(p$adj_row_ptr),
-      adj_col_idx     = as.integer(p$adj_col_idx),
-      n_neighbors     = as.integer(p$n_neighbors)
-    )
-    if (projected) {
-      out$projector <- .nl_block_projector(p, 1L, block_index %||% 1L, n_obs)
+  if (type == "spde" && !is.list(p$A_x)) {
+    return(list(A_x = list(as.numeric(p$A_x)), A_i = list(as.integer(p$A_i)),
+                A_p = list(as.integer(p$A_p)), n_obs_per_arm = as.integer(p$n_obs)))
+  }
+  if (type == "tgmrf") return(.nl_tgmrf_per_grid(p, block_joint_grid))
+  NULL
+}
+
+# A tgmrf block's precision at every row of its columns of the outer grid, as
+# CSC triples with log|Q| and log p(theta). Iterating over the block's columns
+# of the JOINT grid (rather than the block's own grid) is what lets a tgmrf
+# compose with other blocks: where other blocks vary across joint rows and the
+# tgmrf does not, the duplicated Q land at the right joint index. Q and the
+# log-prior come from the user's R closures (`backend == "r"`, the default) or
+# from the registered C++ spec (`backend == "cpp"`).
+.nl_tgmrf_per_grid <- function(p, block_joint_grid) {
+  tg <- as.matrix(block_joint_grid)
+  n_cells   <- nrow(tg)
+  n_latent  <- p$n_latent
+  Q_csc_p   <- vector("list", n_cells)
+  Q_csc_i   <- vector("list", n_cells)
+  Q_csc_x   <- vector("list", n_cells)
+  logdet_Q  <- numeric(n_cells)
+  log_pi_th <- numeric(n_cells)
+  use_cpp <- isTRUE(identical(p$backend, "cpp"))
+  if (use_cpp) {
+    if (is.null(p$cpp_id) || !nzchar(p$cpp_id)) {
+      stop("Internal error: tgmrf block has backend = 'cpp' ",
+           "but no cpp_id.", call. = FALSE)
     }
-    if (type == "bym2") {
-      out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
-      if (!is.null(p$node_prec)) out$node_prec <- as.numeric(p$node_prec)
+    if (!cpp_tgmrf_registry_has(p$cpp_id)) {
+      stop("tgmrf C++ spec '", p$cpp_id, "' is not registered in the ",
+           "current R session. Was the user .cpp file sourceCpp'd? ",
+           "(Re-load via tgmrf_cpp(cpp_file = ..., id = '", p$cpp_id,
+           "').)", call. = FALSE)
     }
-    .with_svc(out)
-  } else if (type == "nngp") {
-    out <- c(list(type        = "nngp",
-                  spatial_idx = if (!projected) as.integer(p$spatial_idx)),
-             .nl_nngp_field_args(p))
-    if (projected) {
-      out$projector <- .nl_block_projector(p, 1L, block_index %||% 1L, n_obs)
-    }
-    .with_svc(out)
-  } else if (type == "hsgp") {
-    .with_svc(list(
-      type       = "hsgp",
-      phi_basis  = as.matrix(p$phi_basis),
-      lambda_eig = as.numeric(p$lambda_eig),
-      kernel     = .hsgp_kernel_code(.hsgp_block_kernel(p)),
-      observation_space = !identical(p$observation_space, FALSE)
-    ))
-  } else if (type %in% .NL_PROJECTABLE_TEMPORAL) {
-    out <- list(
-      type         = type,
-      temporal_idx = if (!projected) as.integer(p$temporal_idx),
-      n_times      = as.integer(p$n_times)
-    )
-    if (projected) {
-      out$projector <- .nl_block_projector(p, 1L, block_index %||% 1L, n_obs)
-    }
-    if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
-    .with_svc(out)
-  } else if (type == "st_interaction") {
-    # A Knorr-Held interaction (.st_interaction_structure()): the structure R
-    # as a full symmetric CSC, its generalized log-determinant, and the hard
-    # null-space rows A the driver solves under.
-    .with_svc(list(
-      type     = "st_interaction",
-      obs_idx  = as.integer(p$obs_idx),
-      n_latent = as.integer(p$n_latent),
-      S_p      = as.integer(p$S_p),
-      S_i      = as.integer(p$S_i),
-      S_x      = as.numeric(p$S_x),
-      log_pdet = as.numeric(p$log_pdet),
-      constr   = .constraint_rows_for_cpp(p$constr)
-    ))
-  } else if (type == "iid") {
-    .with_svc(list(
-      type    = "iid",
-      obs_idx = as.integer(p$obs_idx),
-      n_units = as.integer(p$n_units)
-    ))
-  } else if (type == "spde") {
-    # FEM mesh + projection. The C++ side wraps the single A CSC in a length-1
-    # per-arm list and builds the LatentBlock via make_spde_block. Optional
-    # rational coefficients (fractional nu) pass through when present.
-    out <- list(
-      type    = "spde",
-      n_mesh  = as.integer(p$n_mesh),
-      n_obs   = as.integer(p$n_obs),
-      A_x     = as.numeric(p$A_x),
-      A_i     = as.integer(p$A_i),
-      A_p     = as.integer(p$A_p),
-      C0_diag = as.numeric(p$C0_diag),
-      G1_x    = as.numeric(p$G1_x),
-      G1_i    = as.integer(p$G1_i),
-      G1_p    = as.integer(p$G1_p),
-      nu      = as.numeric(p$nu)
-    )
-    if (!is.null(p$rational_poles) && !is.null(p$rational_weights)) {
-      out$rational_poles   <- as.numeric(p$rational_poles)
-      out$rational_weights <- as.numeric(p$rational_weights)
-    }
-    .with_svc(out)
-  } else if (type == "tgmrf") {
-    # Precompute Q(theta_k) for every joint-grid row and pack CSC triples +
-    # logdet + log p(theta_k). The C++ side reads them directly at grid
-    # point k - no R callback during the inner Newton loop. Iterating over
-    # block_joint_grid (rather than the block's own grid) is what lets
-    # tgmrf compose with other blocks in a multi-block prior: when other
-    # blocks vary across joint rows but tgmrf does not, the duplicated Q
-    # matrices land at the right joint index.
-    #
-    # The Q / log_prior(theta) evaluation either goes through the user's R
-    # closure (`backend == "r"`, the default) or through the registered C++
-    # spec (`backend == "cpp"`). Wire format downstream is identical in both
-    # cases.
-    if (is.null(block_joint_grid)) {
-      stop("Internal error: tgmrf block_spec called without block_joint_grid.",
-           call. = FALSE)
-    }
-    tg <- as.matrix(block_joint_grid)
-    n_cells   <- nrow(tg)
-    n_latent  <- p$n_latent
-    Q_csc_p   <- vector("list", n_cells)
-    Q_csc_i   <- vector("list", n_cells)
-    Q_csc_x   <- vector("list", n_cells)
-    logdet_Q  <- numeric(n_cells)
-    log_pi_th <- numeric(n_cells)
-    use_cpp <- isTRUE(identical(p$backend, "cpp"))
+  }
+  for (k in seq_len(n_cells)) {
+    th <- as.numeric(tg[k, ])
+    names(th) <- p$theta_names
     if (use_cpp) {
-      if (is.null(p$cpp_id) || !nzchar(p$cpp_id)) {
-        stop("Internal error: tgmrf block has backend = 'cpp' ",
-             "but no cpp_id.", call. = FALSE)
+      evk <- cpp_tgmrf_eval(p$cpp_id, th)
+      if (as.integer(evk$n) != n_latent) {
+        stop("Registered tgmrf_cpp spec '", p$cpp_id,
+             "' returned Q of size ", evk$n, " at grid row ", k,
+             " but the block was registered with n_latent = ", n_latent,
+             ".", call. = FALSE)
       }
-      if (!cpp_tgmrf_registry_has(p$cpp_id)) {
-        stop("tgmrf C++ spec '", p$cpp_id, "' is not registered in the ",
-             "current R session. Was the user .cpp file sourceCpp'd? ",
-             "(Re-load via tgmrf_cpp(cpp_file = ..., id = '", p$cpp_id,
-             "').)", call. = FALSE)
+      Q_csc_p[[k]] <- as.integer(evk$p)
+      Q_csc_i[[k]] <- as.integer(evk$i)
+      Q_csc_x[[k]] <- as.numeric(evk$x)
+      Qk <- Matrix::sparseMatrix(
+        i = Q_csc_i[[k]], p = Q_csc_p[[k]], x = Q_csc_x[[k]],
+        dims = c(n_latent, n_latent), index1 = FALSE
+      )
+      lp <- as.numeric(evk$log_prior)
+    } else {
+      Qk <- p$Q(th)
+      Qk <- methods::as(methods::as(Qk, "generalMatrix"), "CsparseMatrix")
+      if (nrow(Qk) != n_latent || ncol(Qk) != n_latent) {
+        stop("`Q(theta)` returned ", nrow(Qk), " x ", ncol(Qk),
+             " at grid row ", k,
+             " but the block was registered with n_latent = ", n_latent, ".",
+             call. = FALSE)
       }
+      Q_csc_p[[k]] <- as.integer(Qk@p)
+      Q_csc_i[[k]] <- as.integer(Qk@i)
+      Q_csc_x[[k]] <- as.numeric(Qk@x)
+      lp <- as.numeric(p$prior(th))
     }
-    for (k in seq_len(n_cells)) {
-      th <- as.numeric(tg[k, ])
-      names(th) <- p$theta_names
-      if (use_cpp) {
-        evk <- cpp_tgmrf_eval(p$cpp_id, th)
-        if (as.integer(evk$n) != n_latent) {
-          stop("Registered tgmrf_cpp spec '", p$cpp_id,
-               "' returned Q of size ", evk$n, " at grid row ", k,
-               " but the block was registered with n_latent = ", n_latent,
-               ".", call. = FALSE)
-        }
-        Q_csc_p[[k]] <- as.integer(evk$p)
-        Q_csc_i[[k]] <- as.integer(evk$i)
-        Q_csc_x[[k]] <- as.numeric(evk$x)
-        Qk <- Matrix::sparseMatrix(
-          i = Q_csc_i[[k]], p = Q_csc_p[[k]], x = Q_csc_x[[k]],
-          dims = c(n_latent, n_latent), index1 = FALSE
-        )
-        lp <- as.numeric(evk$log_prior)
-      } else {
-        Qk <- p$Q(th)
-        Qk <- methods::as(methods::as(Qk, "generalMatrix"), "CsparseMatrix")
-        if (nrow(Qk) != n_latent || ncol(Qk) != n_latent) {
-          stop("`Q(theta)` returned ", nrow(Qk), " x ", ncol(Qk),
-               " at grid row ", k,
-               " but the block was registered with n_latent = ", n_latent, ".",
-               call. = FALSE)
-        }
-        Q_csc_p[[k]] <- as.integer(Qk@p)
-        Q_csc_i[[k]] <- as.integer(Qk@i)
-        Q_csc_x[[k]] <- as.numeric(Qk@x)
-        lp <- as.numeric(p$prior(th))
-      }
-      # sparse Cholesky log-determinant; falls back to dense det for tiny
-      # blocks where Matrix::Cholesky balks.
-      ld <- tryCatch({
-        ch <- Matrix::Cholesky(methods::as(Qk, "symmetricMatrix"), LDL = FALSE)
-        # log|Q| = 2 * sum(log(diag(L))) for the LL' factor.
-        2 * Matrix::determinant(ch, sqrt = TRUE, logarithm = TRUE)$modulus
-      }, error = function(e) {
-        as.numeric(determinant(Qk, logarithm = TRUE)$modulus)
-      })
-      logdet_Q[k] <- as.numeric(ld)
-      if (!is.finite(lp)) {
-        stop("`prior(theta)` returned a non-finite value at grid row ", k,
-             " (theta = ", paste(format(th, digits = 4), collapse = ", "),
-             ").", call. = FALSE)
-      }
-      log_pi_th[k] <- lp
+    # sparse Cholesky log-determinant; falls back to dense det for tiny
+    # blocks where Matrix::Cholesky balks.
+    ld <- tryCatch({
+      ch <- Matrix::Cholesky(methods::as(Qk, "symmetricMatrix"), LDL = FALSE)
+      # log|Q| = 2 * sum(log(diag(L))) for the LL' factor.
+      2 * Matrix::determinant(ch, sqrt = TRUE, logarithm = TRUE)$modulus
+    }, error = function(e) {
+      as.numeric(determinant(Qk, logarithm = TRUE)$modulus)
+    })
+    logdet_Q[k] <- as.numeric(ld)
+    if (!is.finite(lp)) {
+      stop("`prior(theta)` returned a non-finite value at grid row ", k,
+           " (theta = ", paste(format(th, digits = 4), collapse = ", "),
+           ").", call. = FALSE)
     }
-    list(
-      type                     = "tgmrf",
-      n_latent                 = as.integer(n_latent),
-      obs_idx                  = as.integer(p$obs_idx),
-      Q_csc_p_per_grid         = Q_csc_p,
-      Q_csc_i_per_grid         = Q_csc_i,
-      Q_csc_x_per_grid         = Q_csc_x,
-      logdet_Q_per_grid        = as.numeric(logdet_Q),
-      log_prior_theta_per_grid = as.numeric(log_pi_th)
-    )
-  } else {
-    stop("Block type '", type, "' is not supported in multi-block priors.",
-         call. = FALSE)
+    log_pi_th[k] <- lp
   }
+  list(
+    Q_csc_p_per_grid         = Q_csc_p,
+    Q_csc_i_per_grid         = Q_csc_i,
+    Q_csc_x_per_grid         = Q_csc_x,
+    logdet_Q_per_grid        = as.numeric(logdet_Q),
+    log_prior_theta_per_grid = as.numeric(log_pi_th)
+  )
+}
+
+# The registry's response, design and fixed-effect prior (`cargs`) as the one
+# arm a joint fit reads: every multi-block registry fit is a one-arm fit on the
+# joint driver, its latent blocks owning their observation maps.
+.nl_registry_arm <- function(cargs, likelihood = NULL) {
+  .normalise_joint_arm_multi(list(
+    y           = cargs$y,
+    n_trials    = cargs$n,
+    X           = cargs$X,
+    family      = cargs$family,
+    phi         = cargs$phi,
+    re_idx      = if (isTRUE(cargs$n_re_groups > 0L)) cargs$re_idx,
+    n_re_groups = cargs$n_re_groups,
+    sigma_re    = cargs$sigma_re,
+    offset      = cargs$offset_nullable,
+    likelihood  = likelihood,
+    beta_prior  = cargs$beta_prior), 1L)
 }
 
 # Per-block axis grid as a matrix `[n_block_cells x n_axes_for_block]`.
@@ -3219,12 +3147,12 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     colnames(joint_grid) <- axis_names
   }
 
-  blocks_spec <- lapply(seq_along(prepared), function(b) {
-    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
-    block_joint <- joint_grid[, cols, drop = FALSE]
-    .nl_block_spec_for_cpp(prepared[[b]], block_joint,
-                           n_obs = length(cargs$y), block_index = b)
-  })
+  arm <- .nl_registry_arm(cargs, likelihood)
+  blocks_spec <- .joint_blocks_spec_for_cpp(
+    lapply(seq_along(prepared), function(b) {
+      cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+      .nl_block_as_arm(prepared[[b]], joint_grid[, cols, drop = FALSE], b)
+    }), 1L, arms = list(arm))
 
   # Every block's hyperprior over its own columns, folded on the override path
   # too: a placement stencil re-evaluates the marginal through it and has to
@@ -3244,18 +3172,13 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   })
   prune_tol <- as.numeric(cargs$prune_tol %||% 0)
 
-  out <- cpp_nested_laplace_multi(
-    y           = cargs$y,
-    n           = cargs$n,
-    X           = cargs$X,
-    re_idx      = cargs$re_idx,
-    n_re_groups = cargs$n_re_groups,
-    sigma_re    = cargs$sigma_re,
+  out <- cpp_nested_laplace_joint_multi(
+    arms_list   = list(arm),
+    copy_arms   = integer(0),
+    copy_blocks = integer(0),
     blocks_spec = blocks_spec,
     theta_grid  = joint_grid,
     axis_offsets = axis_offsets,
-    family      = cargs$family,
-    phi         = cargs$phi,
     max_iter    = cargs$max_iter,
     tol         = cargs$tol,
     n_threads   = cargs$n_threads,
@@ -3265,7 +3188,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     # single-cell re-dispatch inherits it harmlessly -- the driver screens only
     # a grid with more than one cell.
     prune_tol   = prune_tol,
-    likelihood  = likelihood,
     progress          = isTRUE(progress$progress),
     progress_every    = as.integer(progress$progress_every),
     progress_throttle = as.numeric(progress$progress_throttle),
@@ -3275,11 +3197,9 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     skew_idx          = skew_idx,
     debias            = debias,
     cila              = cila,
-    offset_nullable   = cargs$offset_nullable,
     screen_log_offset = if (prune_tol > 0)
                           .nl_screen_log_offset(joint_grid, hp_parts,
                                                 screen = cargs$screen_refine),
-    beta_prior        = cargs$beta_prior,
     compute_fitted_var = isTRUE(cargs$compute_fitted_var %||% TRUE),
     n_threads_outer = as.integer(cargs$n_threads_outer %||% 1L)
   )

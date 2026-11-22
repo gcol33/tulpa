@@ -18,9 +18,7 @@ inline std::vector<int> hsgp_sum_indices(const Rcpp::List& specs) {
         if (Rcpp::as<std::string>(p["type"]) != "hsgp" ||
             (p.containsElementNamed("observation_space") &&
              !Rcpp::as<bool>(p["observation_space"]))) continue;
-        Rcpp::List phi = p.containsElementNamed("phi")
-            ? Rcpp::as<Rcpp::List>(p["phi"])
-            : Rcpp::List::create(p["phi_basis"]);
+        Rcpp::List phi = p["phi"];
         Rcpp::List train = p.containsElementNamed("training_phi")
             ? Rcpp::as<Rcpp::List>(p["training_phi"]) : phi;
         int n = 0;

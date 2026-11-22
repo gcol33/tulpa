@@ -739,7 +739,7 @@
 # Convert a validated temporal spec (rw1 / rw2 / ar1) into the nested-Laplace
 # temporal prior block. The block format is the one the single-block registry
 # (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
-# converter (.nl_block_spec_for_cpp) both consume: `type` selects the temporal
+# converter (.joint_block_spec_for_cpp) both consume: `type` selects the temporal
 # Q-builder, the per-observation time index becomes `temporal_idx`, and the
 # registry fills the tau (and AR1 rho) grids. The same block drives both the
 # lone-field temporal kernel (cpp_nested_laplace_temporal) and the temporal half

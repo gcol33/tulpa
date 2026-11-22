@@ -53,10 +53,11 @@
 
 namespace tulpa {
 
-template <class TauAt>
+// `idx(i, k_arm)` is the 1-based cell observation i of arm k_arm reads.
+template <class IdxFn, class TauAt>
 inline LatentBlock make_constrained_structure_block(
     int start, int size,
-    Rcpp::IntegerVector obs_idx,
+    IdxFn idx,
     const Rcpp::IntegerVector& S_p, const Rcpp::IntegerVector& S_i,
     const Rcpp::NumericVector& S_x,
     double log_pdet,
@@ -82,7 +83,7 @@ inline LatentBlock make_constrained_structure_block(
     block.size  = size;
     block.contrib_kind = BlockContribKind::INDEXED_SINGLE;
     block.prior_kind   = PriorFillKind::USER_CSC;
-    block.idx   = [obs_idx](int i, int /*k_arm*/) { return obs_idx[i]; };
+    block.idx   = idx;
     block.d_fac = [](int) { return 1.0; };
 
     block.add_prior_sparse = [start, size, p_v, i_v, x_v, tau_at](

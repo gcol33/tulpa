@@ -1,7 +1,7 @@
 // tgmrf_block_factory.h
 // Build a LatentBlock for a templated user-supplied GMRF (tgmrf) plugged
-// into the joint multi-arm nested-Laplace driver. Joint analogue of the
-// single-arm "tgmrf" block in nested_laplace_multi.cpp.
+// into the joint multi-arm nested-Laplace driver, which a multi-block
+// registry fit reaches as a one-arm fit.
 //
 // The R side precomputes Q(theta_k) at every outer-grid row plus log|Q_k|
 // and log p(theta_k). The factory just reads those arrays and assembles the

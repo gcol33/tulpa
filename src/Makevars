@@ -691,7 +691,6 @@ unity_nl.o: \
   nested_laplace_checkpoint.cpp \
   nested_laplace_grid.cpp \
   nested_laplace_joint_core.cpp \
-  nested_laplace_multi.cpp \
   nl_entry_inputs.cpp \
   nl_lq_density.cpp \
   nngp_block_factory.cpp \
@@ -734,12 +733,11 @@ unity_nl.o: \
   sparse_hessian.h \
   nested_laplace_checkpoint.h \
   linear_constraint_rows.h \
-  constrained_structure_block.h \
-  spde_block_factory.h \
-  tgmrf_block_factory.h \
   re_structure.h \
   inv_block_extract.h \
+  spde_block_factory.h \
   spde_qbuilder.h \
+  tgmrf_block_factory.h \
   device.h \
   linalg_fast.h \
   nngp_cond.h \
@@ -834,6 +832,7 @@ unity_nl_joint.o: \
   nl_entry_inputs.h \
   unit_precision_block.h \
   car_proper_block.h \
+  constrained_structure_block.h \
   field_block_priors.h \
   hsgp_block_factory.h \
   hsgp_sum.h \

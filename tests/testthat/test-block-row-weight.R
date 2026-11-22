@@ -41,27 +41,27 @@
     out <- list(
         type    = "spde",
         n_mesh  = as.integer(m),
-        n_obs   = as.integer(N),
-        A_x     = as.numeric(A@x),
-        A_i     = as.integer(A@i),
-        A_p     = as.integer(A@p),
+        n_obs_per_arm = as.integer(N),
+        A_x     = list(as.numeric(A@x)),
+        A_i     = list(as.integer(A@i)),
+        A_p     = list(as.integer(A@p)),
         C0_diag = as.numeric(fem$c0_diag),
         G1_x    = as.numeric(G@x),
         G1_i    = as.integer(G@i),
         G1_p    = as.integer(G@p),
         nu      = 1.0
     )
-    if (!is.null(svc_weight)) out$svc_weight <- as.numeric(svc_weight)
+    if (!is.null(svc_weight)) out$svc_weight <- list(as.numeric(svc_weight))
     out
 }
 
 .rw_fit <- function(block, y, X, theta_grid) {
-    tulpa:::cpp_nested_laplace_multi(
-        y = y, n = rep(1L, length(y)), X = X,
-        re_idx = rep(0, length(y)), n_re_groups = 0L, sigma_re = 1.0,
+    arm <- tulpa:::.normalise_joint_arm_multi(
+        list(y = y, X = X, family = "gaussian", phi = 1.0), 1L)
+    tulpa:::cpp_nested_laplace_joint_multi(
+        arms_list = list(arm), copy_arms = integer(0), copy_blocks = integer(0),
         blocks_spec = list(block),
         theta_grid = theta_grid, axis_offsets = c(0L, 2L),
-        family = "gaussian", phi = 1.0,
         max_iter = 60L, tol = 1e-9, n_threads = 1L
     )
 }
@@ -107,7 +107,7 @@ test_that("svc_weight of the wrong length is refused", {
     expect_error(
         .rw_fit(.rw_spde_block(f$A, f$fem, f$m, f$N, rep(1, f$N - 1L)),
                 f$y, f$X, f$theta_grid),
-        "svc_weight has length"
+        "svc_weight"
     )
 })
 

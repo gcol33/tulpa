@@ -18,7 +18,6 @@
 #include "nested_laplace_checkpoint.cpp"
 #include "nested_laplace_grid.cpp"
 #include "nested_laplace_joint_core.cpp"
-#include "nested_laplace_multi.cpp"
 #include "nl_entry_inputs.cpp"
 #include "nl_lq_density.cpp"
 #include "nngp_block_factory.cpp"

@@ -1,7 +1,7 @@
 // nested_laplace_joint_multi.cpp
 // cpp_nested_laplace_joint_multi: Rcpp entry for joint multi-likelihood
-// nested Laplace with a list-of-blocks prior. The joint analogue of
-// cpp_nested_laplace_multi (single-arm).
+// nested Laplace with a list-of-blocks prior. A multi-block registry fit
+// (tulpa_nested_laplace()) is its one-arm case.
 //
 // Any block in the list can be designated a "copy block" -- one of icar /
 // bym2 / car_proper / rw1 / rw2 / ar1 / iid (the alpha-scaled
@@ -71,6 +71,7 @@
 #include "nl_entry_inputs.h"        // nl_attach_fitted_eta_single_arm
 #include "unit_precision_block.h"
 #include "car_proper_block.h"
+#include "constrained_structure_block.h"  // st_interaction
 #include "field_block_priors.h"
 #include "nested_laplace_joint_batch.h"   // fused batched scatter
 #include "sparse_hessian.h"
@@ -364,13 +365,11 @@ inline std::shared_ptr<std::vector<tulpa::ARows>> read_joint_block_projector(
 }
 
 // Centerer of a projected intrinsic field, placed where tulpa::projected_level()
-// reads the field's level. `centre_uniform` is false where the gathered field
-// installs no centerer (a replicated L > 1 ICAR); the fold is then withheld the
-// same way.
+// reads the field's level.
 inline void install_projected_field_center(
     tulpa::LatentBlock& block, int start, int size,
     const std::vector<tulpa::ParsedArm>& parsed,
-    const std::vector<tulpa::ARows>& rows_per_arm, bool centre_uniform
+    const std::vector<tulpa::ARows>& rows_per_arm
 ) {
     const tulpa::ProjectedLevel level = tulpa::projected_level(
         rows_per_arm, [&parsed](int k, int i, double& x0) {
@@ -381,7 +380,7 @@ inline void install_projected_field_center(
         });
     if (level == tulpa::ProjectedLevel::ABSENT) {
         block.center = make_field_center_fn(start, size, /*no fold=*/-1);
-    } else if (level == tulpa::ProjectedLevel::INTERCEPT && centre_uniform) {
+    } else if (level == tulpa::ProjectedLevel::INTERCEPT) {
         block.center = make_field_center_fn(start, size, /*intercept=*/0);
         tulpa::declare_level_constraint(block);
     }
@@ -389,8 +388,7 @@ inline void install_projected_field_center(
 
 // Install the identification centerer for a single-field intrinsic block,
 // honoring an optional areal (SVC) / temporal (TVC) design weight.
-// `uniform_center` is the block's no-weight behavior (an empty function means
-// "no centerer", as replicated ICAR uses for L > 1). When the block carries a
+// `uniform_center` is the block's no-weight centerer. When the block carries a
 // weight its constant aliases with the covariate coefficient rather than the
 // intercept: fold there when the caller declared the column (svc_beta_offset >=
 // 0, verified against the design), otherwise install no centerer and let the
@@ -410,8 +408,7 @@ inline void install_field_center(
     const std::vector<tulpa::ARows>* projector = nullptr
 ) {
     if (projector) {
-        install_projected_field_center(block, start, size, parsed, *projector,
-                                       static_cast<bool>(uniform_center));
+        install_projected_field_center(block, start, size, parsed, *projector);
         return;
     }
     const std::string what = bs.containsElementNamed("type")
@@ -420,16 +417,11 @@ inline void install_field_center(
     const bool has_weight = bs.containsElementNamed("svc_weight") &&
                             !Rf_isNull(bs["svc_weight"]);
     if (!has_weight) {
-        // An empty uniform_center installs no centerer at all (the replicated
-        // L > 1 ICAR), so there is no fold to verify.
-        // A folding centerer carries the level it removes as the block's
+        // The folding centerer carries the level it removes as the block's
         // level row (declare_level_constraint), weighted where the block
         // records level weights.
-        if (uniform_center) {
-            check_alias_column(/*beta_offset=*/0, parsed, block_index, what,
-                               nullptr);
-            tulpa::declare_level_constraint(block, block.level_weights);
-        }
+        check_alias_column(/*beta_offset=*/0, parsed, block_index, what, nullptr);
+        tulpa::declare_level_constraint(block, block.level_weights);
         block.center = std::move(uniform_center);
         return;
     }
@@ -497,7 +489,7 @@ inline std::function<double(int, int)> make_field_coef_arm_scale_fn(
 // cell scatter's tasks can be stolen by other team threads, so state is
 // keyed by CELL id, not thread id.
 
-int build_joint_blocks_from_spec(
+int build_joint_blocks_of_type(
     const Rcpp::List& bs,
     const Rcpp::NumericMatrix& theta_grid,
     int axis0,
@@ -559,7 +551,6 @@ int build_joint_blocks_from_spec(
         if (!projector)
             block.idx = make_per_arm_idx_fn(bs["spatial_idx"], n_arms,
                                             "spatial_idx", block_index, arms_ptr);
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
 
         if (is_copy_block) {
             require_axes(2);  // (sigma_donor, sigma_copy)
@@ -587,19 +578,15 @@ int build_joint_blocks_from_spec(
             },
             adj_rp, adj_ci, n_nbr, sp_part);
         if (projector) tulpa::apply_block_projector(block, projector);
-        // Uniform ICAR: the global constant aliases with the arm intercept -- a
-        // single connected component folds it into offset 0; a replicated L > 1
-        // field leaves the L per-component means to the precision augmentation (a
-        // single intercept fold cannot preserve eta across L components). A
-        // weighted (areal SVC) ICAR aliases with its covariate coefficient
-        // instead; install_field_center routes both, folding the global constant
-        // into the declared column for any L.
+        // Uniform ICAR: the global constant aliases with the arm intercept for
+        // any number of components L, so it is folded into offset 0 and carried
+        // as the block's level row; with L > 1 the L - 1 component contrasts stay
+        // in the field, identified by the data and held proper by the precision
+        // augmentation. A weighted (areal SVC) ICAR aliases with its covariate
+        // coefficient instead; install_field_center routes both.
         install_field_center(
             block, bs, start, size, parsed, block_index,
-            sp_part.n_components() > 1
-                ? std::function<std::vector<tulpa::CenterFold>(
-                      Rcpp::NumericVector&)>()
-                : make_field_center_fn(start, size, /*intercept=*/0),
+            make_field_center_fn(start, size, /*intercept=*/0),
             projector.get());
         blocks.push_back(block);
         return start + size;
@@ -697,8 +684,6 @@ int build_joint_blocks_from_spec(
         if (!projector)
             idx_fn = make_per_arm_idx_fn(bs["spatial_idx"], n_arms,
                                          "spatial_idx", block_index, arms_ptr);
-        auto row_weight_fn = make_per_arm_row_weight_fn(bs, n_arms,
-                                                        block_index, arms_ptr);
 
         std::function<double(int, int)> arm_scale_fn;
         std::function<double(int)>      d_fac_phi_fn;
@@ -721,7 +706,7 @@ int build_joint_blocks_from_spec(
         } else {
             require_axes(2);  // (sigma, rho) - single-arm BYM2 conventions
             // Shared block: sigma rolls into d_fac directly (no per-arm
-            // scaling). Matches single-arm BYM2 (build_blocks_from_spec).
+            // scaling). Matches the single-block BYM2 kernel.
             int axis_sigma = axis0;
             int axis_rho   = axis0 + 1;
             d_fac_phi_fn = [axis_sigma, axis_rho, theta_grid, scale_factor](
@@ -749,7 +734,6 @@ int build_joint_blocks_from_spec(
         phi_block.idx   = idx_fn;
         phi_block.d_fac = d_fac_phi_fn;
         if (arm_scale_fn)  phi_block.arm_scale  = arm_scale_fn;
-        if (row_weight_fn) phi_block.row_weight = row_weight_fn;
         phi_block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         tulpa::set_icar_block_priors(
             phi_block, phi_start, size, [](int) { return 1.0; },
@@ -784,7 +768,6 @@ int build_joint_blocks_from_spec(
         theta_block.idx   = idx_fn;
         theta_block.d_fac = d_fac_theta_fn;
         if (arm_scale_fn)  theta_block.arm_scale  = arm_scale_fn;
-        if (row_weight_fn) theta_block.row_weight = row_weight_fn;
         tulpa::set_unit_precision_block_priors(theta_block, theta_start, size);
         theta_block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         theta_block.prior_kind   = tulpa::PriorFillKind::NONE;
@@ -812,7 +795,6 @@ int build_joint_blocks_from_spec(
         if (!projector)
             block.idx = make_per_arm_idx_fn(bs["spatial_idx"], n_arms,
                                             "spatial_idx", block_index, arms_ptr);
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
         block.d_fac = [](int) -> double { return 1.0; };
 
         // The two branches differ only in which theta_grid columns carry the
@@ -876,7 +858,6 @@ int build_joint_blocks_from_spec(
         // Optional per-arm per-row design weight (temporal varying coefficient):
         // eta_i += svc_weight[[k]][i] * amplitude * f[time_i]. The areal
         // analogue of the icar/bym2/car_proper svc_weight; unset => uniform 1.
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
         block.d_fac = [](int) -> double { return 1.0; };
 
         // Copy block: unit-precision prior (tau = 1) with the per-arm
@@ -932,7 +913,6 @@ int build_joint_blocks_from_spec(
                                             "temporal_idx", block_index, arms_ptr);
         // Optional per-arm per-row design weight (temporal varying coefficient),
         // as for rw1/rw2 above; unset => uniform 1.
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
         block.d_fac = [](int) -> double { return 1.0; };
 
         // Copy block: unit-precision prior (tau = 1), per-arm amplitude on
@@ -970,6 +950,33 @@ int build_joint_blocks_from_spec(
         return start + size;
     }
 
+    if (type == "st_interaction") {
+        // Knorr-Held space-time interaction: tau R over the S x T cells,
+        // conditioned on the null-space rows A (constrained_structure_block.h).
+        // One axis, tau.
+        if (is_copy_block) {
+            tulpa::stop("Block %d: copy semantics are not supported for "
+                       "st_interaction blocks.", {block_index + 1});
+        }
+        require_axes(1);
+        tulpa::nl_grid_axis_positive("st_interaction tau axis", theta_grid, axis0);
+        const int size = Rcpp::as<int>(bs["n_latent"]);
+        const std::vector<tulpa::LinearConstraintRow> rows =
+            tulpa::read_constraint_rows(Rcpp::as<Rcpp::List>(bs["constr"]),
+                                        size, "blocks_spec$constr");
+        tulpa::LatentBlock block = tulpa::make_constrained_structure_block(
+            latent_offset, size,
+            make_per_arm_idx_fn(bs["obs_idx"], n_arms, "obs_idx", block_index,
+                                arms_ptr),
+            Rcpp::as<Rcpp::IntegerVector>(bs["S_p"]),
+            Rcpp::as<Rcpp::IntegerVector>(bs["S_i"]),
+            Rcpp::as<Rcpp::NumericVector>(bs["S_x"]),
+            Rcpp::as<double>(bs["log_pdet"]), rows,
+            [theta_grid, axis0](int k) { return theta_grid(k, axis0); });
+        blocks.push_back(block);
+        return latent_offset + size;
+    }
+
     if (type == "iid") {
         int size = Rcpp::as<int>(bs["n_units"]);
         Rcpp::List obs_idx_list = bs["obs_idx"];
@@ -984,7 +991,6 @@ int build_joint_blocks_from_spec(
         // column): eta_i += svc_weight[k][i] * d_fac * arm_scale * u[obs_idx_i].
         // Mirrors the icar / rw1 SVC path; unset => weight 1, byte-identical to
         // the plain random-intercept iid block.
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
 
         // Copy block: the unit-precision prior is unchanged (an IID field is
         // already N(0, I)); the per-arm amplitude (donor: sigma, copy:
@@ -1129,8 +1135,6 @@ int build_joint_blocks_from_spec(
             Rcpp::as<Rcpp::NumericMatrix>(bs["nn_dist"]),
             Rcpp::as<Rcpp::IntegerVector>(bs["nn_order"]),
             /*axis_sigma2=*/axis0, /*axis_phi_gp=*/axis0 + 1, theta_grid);
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index,
-                                                      arms_ptr);
         // The NNGP prior is proper and carries its own level, so nothing is
         // centred, projected or not.
         if (projector) tulpa::apply_block_projector(block, projector);
@@ -1291,6 +1295,45 @@ int build_joint_blocks_from_spec(
     return latent_offset;
 }
 
+// Build one block-spec entry and install its optional per-row design weight.
+//
+// `svc_weight` (a list of per-arm weights, one per observation) turns the
+// block into a varying coefficient: row i of arm k contributes
+// svc_weight[[k]][i] * <the block's field at i> instead of the field itself.
+// It is installed here rather than inside a type branch because the walkers
+// apply it to every contribution kind -- an SPDE block reaching its mesh nodes
+// through A is as weightable as an areal block reaching one cell -- and on
+// every LatentBlock the entry appended (BYM2's two sub-fields alike).
+int build_joint_blocks_from_spec(
+    const Rcpp::List& bs,
+    const Rcpp::NumericMatrix& theta_grid,
+    int axis0,
+    int axis_count,
+    int latent_offset,
+    int n_arms,
+    int block_index,
+    bool is_copy_block,
+    int copy_arm,
+    std::vector<tulpa::LatentBlock>& blocks,
+    const std::vector<tulpa::JointArm>* arms_ptr,
+    bool any_nontrivial_field_coef,
+    const std::vector<tulpa::ParsedArm>& parsed
+) {
+    const std::size_t first = blocks.size();
+    const int next_offset = build_joint_blocks_of_type(
+        bs, theta_grid, axis0, axis_count, latent_offset, n_arms, block_index,
+        is_copy_block, copy_arm, blocks, arms_ptr, any_nontrivial_field_coef,
+        parsed);
+    const auto row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index,
+                                                       arms_ptr);
+    if (row_weight) {
+        for (std::size_t b = first; b < blocks.size(); b++) {
+            blocks[b].row_weight = row_weight;
+        }
+    }
+    return next_offset;
+}
+
 // Load each arm's per-cell dispersion for outer-grid cell `k_grid` onto the
 // arm itself, the single-species driver's one column of `phi_table`.
 inline void apply_phi_overrides_multi(
@@ -1337,14 +1380,17 @@ inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
 // the reported modes were centred on, and the hard rows every cell's inner
 // Gaussian is conditioned on (`constraint_cols`, read_constraint_rows' form),
 // which a read of a stored precision takes with the cell's soft pins
-// (`Q_soft_cols`, `Q_soft_D_per_grid`).
+// (`Q_soft_cols`, `Q_soft_D_per_grid`), and where each spec block's
+// coefficients start in the latent vector (`block_latent_offsets`).
 inline void attach_joint_grid_layout(
     Rcpp::List& out, const Rcpp::NumericMatrix& theta_grid,
     const Rcpp::IntegerVector& axis_offsets,
-    const std::vector<tulpa::LatentBlock>& blocks
+    const std::vector<tulpa::LatentBlock>& blocks,
+    const Rcpp::IntegerVector& block_latent_offsets
 ) {
     out["theta_grid"]      = theta_grid;
     out["axis_offsets"]    = axis_offsets;
+    out["block_latent_offsets"] = block_latent_offsets;
     out["block_centered"]  = tulpa::block_center_flags(blocks);
     out["constraint_cols"] =
         tulpa::write_constraint_rows(tulpa::collect_hard_constraints(blocks));
@@ -1408,7 +1454,8 @@ static int build_joint_layout(
     std::vector<tulpa::ParsedArm>&   parsed,
     std::vector<tulpa::JointArm>&    arms,
     std::vector<tulpa::LatentBlock>& blocks,
-    int& n_x_after_re
+    int& n_x_after_re,
+    Rcpp::IntegerVector* block_latent_offsets = nullptr
 ) {
     std::vector<int> copy_arm_of_block =
         resolve_copy_arm_of_block(copy_arms, copy_blocks, B, n_arms);
@@ -1428,26 +1475,45 @@ static int build_joint_layout(
     const auto hsgp_sum = tulpa::hsgp_sum_indices(blocks_spec);
     Rcpp::IntegerVector hsgp_n_obs(n_arms);
     for (int k = 0; k < n_arms; ++k) hsgp_n_obs[k] = arms[k].N;
+    // Where each spec block's coefficients start (0-based, B + 1 entries, the
+    // last one n_x) and how wide each is. The builders decide a block's width
+    // -- bym2 lays out two sub-fields, a tgmrf its own n_latent, the blocks of
+    // an HSGP sum share one coefficient vector -- so the layout is reported from
+    // here rather than re-derived in R.
+    std::vector<int> starts(B + 1, 0), sizes(B, 0);
+    int shared_start = -1, shared_size = 0;
     for (int b = 0; b < B; b++) {
         if (std::find(hsgp_sum.begin(), hsgp_sum.end(), b) != hsgp_sum.end()) {
             if (copy_arm_of_block[b] >= 0)
                 tulpa::stop("Copy semantics are not supported for HSGP blocks.");
             if (b == hsgp_sum.front()) {
+                shared_start = latent_offset;
                 blocks.push_back(tulpa::make_hsgp_sum_block(latent_offset,
                     blocks_spec, hsgp_sum, axis_offsets, theta_grid, hsgp_n_obs));
-                latent_offset += blocks.back().size;
+                shared_size = blocks.back().size;
+                latent_offset += shared_size;
             }
+            starts[b] = shared_start;
+            sizes[b]  = shared_size;
             continue;
         }
         Rcpp::List bs = blocks_spec[b];
         int axis0 = axis_offsets[b];
         int axis_count = axis_offsets[b + 1] - axis0;
         bool is_copy_b = (copy_arm_of_block[b] >= 0);
+        starts[b] = latent_offset;
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
             is_copy_b, copy_arm_of_block[b], blocks,
             &arms, any_nontrivial_field_coef, parsed
         );
+        sizes[b] = latent_offset - starts[b];
+    }
+    starts[B] = latent_offset;
+    if (block_latent_offsets) {
+        *block_latent_offsets = Rcpp::IntegerVector(starts.begin(), starts.end());
+        block_latent_offsets->attr("sizes") =
+            Rcpp::IntegerVector(sizes.begin(), sizes.end());
     }
     return latent_offset;
 }
@@ -1522,9 +1588,11 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     std::vector<tulpa::JointArm> arms;
     std::vector<tulpa::LatentBlock> blocks;
     int n_x_after_re;
+    Rcpp::IntegerVector block_latent_offsets;
     build_joint_layout(arms_list, blocks_spec, theta_grid, copy_arms,
                        copy_blocks, axis_offsets, B, n_arms,
-                       parsed, arms, blocks, n_x_after_re);
+                       parsed, arms, blocks, n_x_after_re,
+                       &block_latent_offsets);
     const tulpa::ArmGridTable phi_overrides = tulpa::parse_arm_grid_table(
         phi_grid_per_arm, n_arms, n_grid, 1, "phi_grid_per_arm");
 
@@ -1731,7 +1799,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     // per-block `prep` the helper runs is the whole contract it needs and the
     // driver populates those on this path exactly as on the sparse entry.
     tulpa::nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
-    attach_joint_grid_layout(out, theta_grid, axis_offsets, blocks);
+    attach_joint_grid_layout(out, theta_grid, axis_offsets, blocks,
+                             block_latent_offsets);
     return out;
 }
 
@@ -1789,9 +1858,11 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     std::vector<tulpa::JointArm> arms;
     std::vector<tulpa::LatentBlock> blocks;
     int n_x_after_re;
+    Rcpp::IntegerVector block_latent_offsets;
     build_joint_layout(arms_list, blocks_spec, theta_grid, copy_arms,
                        copy_blocks, axis_offsets, Bspec, n_arms,
-                       parsed, arms, blocks, n_x_after_re);
+                       parsed, arms, blocks, n_x_after_re,
+                       &block_latent_offsets);
 
     tulpa::BatchArmBuffers buf;
     buf.allocate(arms, n_batch);
@@ -1845,7 +1916,8 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
         // species is the whole difference. Without it this entry returned 15 of
         // the 17 fields it promises to reproduce (gcol33/tulpa#852).
         tulpa::nl_attach_fitted_eta_single_arm(sp, arms, parsed, blocks);
-        attach_joint_grid_layout(sp, theta_grid, axis_offsets, blocks);
+        attach_joint_grid_layout(sp, theta_grid, axis_offsets, blocks,
+                                 block_latent_offsets);
         res[s] = sp;
     }
     return res;

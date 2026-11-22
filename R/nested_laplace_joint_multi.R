@@ -225,6 +225,39 @@
 # to read covariate columns at fit-time (HSGP with `svc_column`). Pass
 # NULL only from contexts where no such block can appear.
 .joint_block_spec_for_cpp <- function(p, n_arms, block_index, arms = NULL) {
+    out <- .joint_block_spec_of_type(p, n_arms, block_index, arms)
+    # Optional per-arm per-row design weight, attached after the type branch:
+    # it turns any block into a varying coefficient whose contribution to arm
+    # k row i is svc_weight[[k]][i] * <the block's field at i>, and the C++
+    # side honours it on every contribution kind. A list of length n_arms, or
+    # one vector shared by every arm. Composes multiplicatively with a copy's
+    # `arm_scale`.
+    if (!is.null(p$svc_weight)) {
+        out$svc_weight <- .multi_block_svc_weight(
+            p$svc_weight, .joint_spec_arm_rows(out, arms, n_arms), n_arms,
+            block_index)
+        # Aliased fixed-effect column of a weighted intrinsic field: its
+        # constant folds into this coefficient (0 = intercept, or the
+        # covariate's column) rather than the intercept; -1 = no counterpart
+        # (the level is left in the field). Absent => no fold.
+        if (!is.null(p$svc_beta_offset)) {
+            out$svc_beta_offset <- as.integer(p$svc_beta_offset)
+        }
+    }
+    out
+}
+
+# Each arm's row count as a block spec sees it: the arm's own observation
+# count when the arms are known, else the length of the spec's per-arm index
+# or its per-arm row count.
+.joint_spec_arm_rows <- function(spec, arms, n_arms) {
+    if (!is.null(arms)) return(vapply(arms, function(a) length(a$y), integer(1)))
+    idx <- spec$spatial_idx %||% spec$temporal_idx %||% spec$obs_idx
+    if (!is.null(idx)) return(lengths(idx))
+    rep_len(as.integer(spec$n_obs_per_arm), n_arms)
+}
+
+.joint_block_spec_of_type <- function(p, n_arms, block_index, arms = NULL) {
     type <- tolower(p$type)
     projected <- .nl_block_is_projected(p)
     .nl_check_block_fields(
@@ -252,23 +285,6 @@
             out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
             if (!is.null(p$node_prec)) out$node_prec <- as.numeric(p$node_prec)
         }
-        # Optional per-arm per-row design weight (areal SVC). When set, the
-        # field's contribution to arm k row i is row-scaled by svc_weight[[k]][i]:
-        #   eta_i += svc_weight[[k]][i] * amplitude * z[cell_i].
-        # Parallel to `spatial_idx`: a list of length n_arms, each a numeric
-        # vector matching that arm's obs count and the per-arm spatial_idx
-        # length. Composes multiplicatively with copy `arm_scale`.
-        if (!is.null(p$svc_weight)) {
-            out$svc_weight <- .multi_block_svc_weight(
-                p$svc_weight, spatial_idx, n_arms, block_index)
-            # Aliased fixed-effect column of a weighted (areal SVC) field: its
-            # constant folds into this coefficient (0 = intercept, or the
-            # covariate's column) rather than the intercept; -1 = no counterpart
-            # (the level is left in the field). Absent => no fold.
-            if (!is.null(p$svc_beta_offset)) {
-                out$svc_beta_offset <- as.integer(p$svc_beta_offset)
-            }
-        }
         # Replicated CAR (`by =`): number of disjoint equal-size components in the
         # block-diagonal graph (the intrinsic ICAR kernel pins each per component
         # and uses (n - L) in its rank-deficiency normalizer). Absent = connected.
@@ -291,8 +307,8 @@
                  "a list of length n_fields (", n_fields, ").", call. = FALSE)
         }
         field_weight <- lapply(seq_len(n_fields), function(a) {
-            .multi_block_svc_weight(p$field_weight[[a]], spatial_idx, n_arms,
-                                    block_index)
+            .multi_block_svc_weight(p$field_weight[[a]], lengths(spatial_idx),
+                                    n_arms, block_index)
         })
         out <- list(
             type            = "mcar",
@@ -334,43 +350,31 @@
                                                  arm_n_obs)
         }
         if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
-        # Optional per-arm per-row design weight (temporal SVC). Parallel to the
-        # areal branch: the field's contribution to arm k row i is row-scaled by
-        # svc_weight[[k]][i] (eta_i += svc_weight[[k]][i] * amplitude *
-        # f[time_i]), used for a temporally varying slope on a covariate column.
-        if (!is.null(p$svc_weight)) {
-            out$svc_weight <- .multi_block_svc_weight(
-                p$svc_weight, temporal_idx, n_arms, block_index)
-            # Aliased fixed-effect column of a weighted (temporal SVC / TVC)
-            # field, as in the areal branch above; absent => no fold.
-            if (!is.null(p$svc_beta_offset)) {
-                out$svc_beta_offset <- as.integer(p$svc_beta_offset)
-            }
-        }
         out
+    } else if (type == "st_interaction") {
+        # A Knorr-Held interaction (.st_interaction_structure()): the structure R
+        # as a full symmetric CSC, its generalized log-determinant, and the hard
+        # null-space rows A the driver solves under.
+        list(
+            type     = "st_interaction",
+            obs_idx  = .multi_block_per_arm_idx(p$obs_idx, n_arms, block_index,
+                                                "obs_idx", arm_n_obs, p$n_latent),
+            n_latent = as.integer(p$n_latent),
+            S_p      = as.integer(p$S_p),
+            S_i      = as.integer(p$S_i),
+            S_x      = as.numeric(p$S_x),
+            log_pdet = as.numeric(p$log_pdet),
+            constr   = .constraint_rows_for_cpp(p$constr)
+        )
     } else if (type == "iid") {
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
                                               arm_n_obs, p$n_units)
-        out <- list(
+        list(
             type    = "iid",
             obs_idx = obs_idx,
             n_units = as.integer(p$n_units)
         )
-        # Optional per-arm per-row design weight (random slope on a covariate
-        # column). When set, the field's contribution to arm k row i is
-        # row-scaled by svc_weight[[k]][i]:
-        #   eta_i += svc_weight[[k]][i] * sigma * u[obs_idx_i].
-        # Parallel to the areal / temporal SVC branches: a list of length n_arms,
-        # each a numeric vector matching that arm's obs count (the per-arm obs_idx
-        # length). Composes multiplicatively with copy `arm_scale`. An
-        # uncorrelated slope (x || g) / (0 + x | g) is one weighted iid block per
-        # coefficient, each with its own sigma axis.
-        if (!is.null(p$svc_weight)) {
-            out$svc_weight <- .multi_block_svc_weight(
-                p$svc_weight, obs_idx, n_arms, block_index)
-        }
-        out
     } else if (type == "miid") {
         # Multivariate IID: p coupled per-group coefficient
         # fields sharing a free Sigma (the Q = I sibling of mcar). One block over
@@ -388,8 +392,8 @@
                  "a list of length n_fields (", n_fields, ").", call. = FALSE)
         }
         field_weight <- lapply(seq_len(n_fields), function(a) {
-            .multi_block_svc_weight(p$field_weight[[a]], obs_idx, n_arms,
-                                    block_index)
+            .multi_block_svc_weight(p$field_weight[[a]], lengths(obs_idx),
+                                    n_arms, block_index)
         })
         list(
             type         = "miid",
@@ -422,10 +426,6 @@
         if (projected) {
             out$projector <- .nl_block_projector(p, n_arms, block_index,
                                                  arm_n_obs)
-        }
-        if (!is.null(p$svc_weight)) {
-            out$svc_weight <- .multi_block_svc_weight(
-                p$svc_weight, spatial_idx, n_arms, block_index)
         }
         out
     } else if (type == "hsgp") {
@@ -641,12 +641,12 @@
     })
 }
 
-# Coerce + validate the optional `svc_weight` for an areal block into a
-# length-n_arms list of numeric vectors. Each entry must match that arm's
-# obs count, which is the length of that arm's resolved `spatial_idx`.
-# Accepts either a list (already per-arm) or a single numeric vector
-# (replicated across arms when every arm shares the same per-row weight).
-.multi_block_svc_weight <- function(svc_weight, spatial_idx, n_arms,
+# Coerce + validate a per-arm per-row weight (`svc_weight`, an mcar / miid
+# `field_weight`) into a length-n_arms list of numeric vectors. Entry k must
+# hold `n_rows[k]` values, arm k's observation count. Accepts either a list
+# (already per-arm) or a single numeric vector (replicated across arms when
+# every arm shares the same per-row weight).
+.multi_block_svc_weight <- function(svc_weight, n_rows, n_arms,
                                     block_index) {
     if (is.list(svc_weight)) {
         if (length(svc_weight) != n_arms) {
@@ -659,11 +659,11 @@
         w_list <- rep(list(as.numeric(svc_weight)), n_arms)
     }
     for (k in seq_len(n_arms)) {
-        n_k <- length(spatial_idx[[k]])
+        n_k <- n_rows[k]
         if (length(w_list[[k]]) != n_k) {
             stop("Block ", block_index, ": `svc_weight[[", k, "]]` has length ",
                  length(w_list[[k]]), " but arm ", k, " has ", n_k,
-                 " observations (matching its `spatial_idx`).", call. = FALSE)
+                 " observations.", call. = FALSE)
         }
         if (any(!is.finite(w_list[[k]]))) {
             stop("Block ", block_index, ": `svc_weight[[", k, "]]` contains ",

@@ -223,10 +223,12 @@ test_that("a summed HSGP checkpoint retains the fitted predictor", {
 test_that("summed HSGP loadings validate their observation rows", {
   skip_on_cran()
   blocks <- lapply(c(9L, 16L), function(m) list(type = "hsgp",
-    phi_basis = matrix(1, 6, m), lambda_eig = seq_len(m), kernel = 1L))
-  expect_error(tulpa:::cpp_nested_laplace_multi(
-    y = rep(0, 7), n = rep(1L, 7), X = matrix(1, 7, 1), re_idx = numeric(0),
-    n_re_groups = 0L, sigma_re = 1, blocks_spec = blocks,
-    theta_grid = matrix(c(.3, .2, .7, .5), 1, 4), axis_offsets = c(0L, 2L, 4L),
-    family = "gaussian"), "basis rows")
+    phi = list(matrix(1, 6, m)), m_total = m, n_obs_per_arm = 6L,
+    eigenvalues = seq_len(m), kernel = 1L))
+  arm <- tulpa:::.normalise_joint_arm_multi(
+    list(y = rep(0, 7), X = matrix(1, 7, 1), family = "gaussian"), 1L)
+  expect_error(tulpa:::cpp_nested_laplace_joint_multi(
+    arms_list = list(arm), copy_arms = integer(0), copy_blocks = integer(0),
+    blocks_spec = blocks, theta_grid = matrix(c(.3, .2, .7, .5), 1, 4),
+    axis_offsets = c(0L, 2L, 4L)), "basis rows")
 })

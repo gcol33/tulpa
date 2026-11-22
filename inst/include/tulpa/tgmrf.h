@@ -10,7 +10,7 @@
 // The R-closure path (`tgmrf()`) ships a user closure `Q(theta)` and
 // `prior(theta)`; the nested-Laplace driver calls them once per outer-grid
 // point on the R side, precomputes a CSC triple, then ships the triples
-// through to `cpp_nested_laplace_multi`. The C++-backend path
+// through to `cpp_nested_laplace_joint_multi`. The C++-backend path
 // (`tgmrf_cpp()`) does the same thing, except `Q(theta_k)` is evaluated in
 // compiled C++ via a function pointer stored in a process-global registry
 // rather than via Rcpp::Function. The downstream wire format (CSC triples +

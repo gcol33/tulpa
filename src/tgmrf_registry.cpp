@@ -96,7 +96,7 @@ int cpp_tgmrf_registry_size() {
 
 // Evaluate the registered spec's Q(theta) at the given numeric theta and
 // return the CSC triple + logdet + log_prior_theta -- the same wire format
-// the R-closure path produces in R/nested_laplace.R::.nl_block_spec_for_cpp.
+// the R-closure path produces in R/nested_laplace.R::.nl_tgmrf_per_grid.
 //
 // Used by R-side dispatch to precompute Q at every joint-grid row when the
 // block was registered via tgmrf_cpp().

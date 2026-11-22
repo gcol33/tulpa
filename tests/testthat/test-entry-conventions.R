@@ -88,11 +88,10 @@ test_that("every nested-Laplace grid entry takes the shared control knobs", {
   # entry outside it silently ignores whatever the others gained.
   ns <- asNamespace("tulpa")
   entries <- grep("^cpp_nested_laplace_", ls(ns, all.names = TRUE), value = TRUE)
-  # Not per-field grid entries: the two multi-block drivers and the batch one
-  # take their control through their own list arguments.
+  # Not per-field grid entries: the multi-block driver and the batch one take
+  # their control through their own list arguments.
   entries <- setdiff(entries, c(
-    "cpp_nested_laplace_multi", "cpp_nested_laplace_joint_multi",
-    "cpp_nested_laplace_joint_multi_batch"))
+    "cpp_nested_laplace_joint_multi", "cpp_nested_laplace_joint_multi_batch"))
   # icar / bym2 / car_proper / temporal / nngp / hsgp / the five st_* / spde.
   expect_identical(length(entries), 12L)
 

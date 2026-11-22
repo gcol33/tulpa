@@ -2227,48 +2227,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_nested_laplace_multi
-Rcpp::List cpp_nested_laplace_multi(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, double prune_tol, SEXP likelihood, bool progress, int progress_every, double progress_throttle, std::string progress_file, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset, Rcpp::Nullable<Rcpp::List> beta_prior, bool compute_fitted_var, int n_threads_outer);
-RcppExport SEXP _tulpa_cpp_nested_laplace_multi(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP prune_tolSEXP, SEXP likelihoodSEXP, SEXP progressSEXP, SEXP progress_everySEXP, SEXP progress_throttleSEXP, SEXP progress_fileSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP, SEXP offset_nullableSEXP, SEXP screen_log_offsetSEXP, SEXP beta_priorSEXP, SEXP compute_fitted_varSEXP, SEXP n_threads_outerSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
-    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
-    Rcpp::traits::input_parameter< Rcpp::List >::type blocks_spec(blocks_specSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type theta_grid(theta_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type axis_offsets(axis_offsetsSEXP);
-    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
-    Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
-    Rcpp::traits::input_parameter< double >::type prune_tol(prune_tolSEXP);
-    Rcpp::traits::input_parameter< SEXP >::type likelihood(likelihoodSEXP);
-    Rcpp::traits::input_parameter< bool >::type progress(progressSEXP);
-    Rcpp::traits::input_parameter< int >::type progress_every(progress_everySEXP);
-    Rcpp::traits::input_parameter< double >::type progress_throttle(progress_throttleSEXP);
-    Rcpp::traits::input_parameter< std::string >::type progress_file(progress_fileSEXP);
-    Rcpp::traits::input_parameter< std::string >::type checkpoint_path(checkpoint_pathSEXP);
-    Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type screen_log_offset(screen_log_offsetSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type beta_prior(beta_priorSEXP);
-    Rcpp::traits::input_parameter< bool >::type compute_fitted_var(compute_fitted_varSEXP);
-    Rcpp::traits::input_parameter< int >::type n_threads_outer(n_threads_outerSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_multi(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx, debias, cila, offset_nullable, screen_log_offset, beta_prior, compute_fitted_var, n_threads_outer));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_nl_lq_group_cdf
 Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x);
 RcppExport SEXP _tulpa_cpp_nl_lq_group_cdf(SEXP pieceSEXP, SEXP xSEXP) {
@@ -3781,7 +3739,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_joint_arm_loadings", (DL_FUNC) &_tulpa_cpp_joint_arm_loadings, 8},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 9},
-    {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 32},
     {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 2},
     {"_tulpa_cpp_nl_lq_mixture_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_mixture_cdf, 3},
     {"_tulpa_cpp_nl_axis_row_id", (DL_FUNC) &_tulpa_cpp_nl_axis_row_id, 2},

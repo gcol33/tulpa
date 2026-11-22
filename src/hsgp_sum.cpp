@@ -20,9 +20,7 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
     int width = 0, n_training = 0, n_arms = 0;
     for (int b : indices) {
         Rcpp::List p = specs[b];
-        Rcpp::List phi = p.containsElementNamed("phi")
-            ? Rcpp::as<Rcpp::List>(p["phi"])
-            : Rcpp::List::create(p["phi_basis"]);
+        Rcpp::List phi = p["phi"];
         if (phi.size() != n_obs.size())
             tulpa::stop("HSGP phi must contain one basis matrix per response arm.");
         const bool separate = p.containsElementNamed("training_phi");
@@ -37,9 +35,7 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
         nl_grid_axis_positive("hsgp sigma2 axis", theta_grid, part.axis);
         nl_grid_axis_positive("hsgp lengthscale axis", theta_grid, part.axis + 1);
         part.kernel = priors::hsgp_kernel_from_spec(p, "hsgp block");
-        Rcpp::NumericVector eig = p.containsElementNamed("eigenvalues")
-            ? Rcpp::as<Rcpp::NumericVector>(p["eigenvalues"])
-            : Rcpp::as<Rcpp::NumericVector>(p["lambda_eig"]);
+        Rcpp::NumericVector eig = p["eigenvalues"];
         part.eigenvalues = Eigen::Map<const Eigen::VectorXd>(eig.begin(), eig.size());
         if (p.containsElementNamed("m_total") && Rcpp::as<int>(p["m_total"]) != eig.size())
             tulpa::stop("HSGP m_total differs from its eigenvalue count.");

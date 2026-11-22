@@ -24,7 +24,8 @@ test_that("the multi-block converter names the missing field too", {
   blk <- list(type = "icar", n_spatial_units = 4L,
               adj_row_ptr = c(0L, 1L, 2L, 3L, 4L), adj_col_idx = 0:3,
               n_neighbors = rep(1L, 4))   # spatial_idx absent
-  expect_error(tulpa:::.nl_block_spec_for_cpp(blk), "spatial_idx", fixed = TRUE)
+  expect_error(tulpa:::.nl_block_as_arm(blk, NULL, 1L), "spatial_idx",
+               fixed = TRUE)
 })
 
 test_that("the joint converter names the missing field too", {
@@ -164,8 +165,8 @@ test_that("each converter branch reads only declared or defensively-read fields"
     st_interaction = "constr"    # empty for a type I interaction (no null space)
   )
   targets <- list(
-    multi = tulpa:::.nl_block_spec_for_cpp,
-    joint = tulpa:::.joint_block_spec_for_cpp
+    multi = tulpa:::.nl_block_arm_fields,
+    joint = tulpa:::.joint_block_spec_of_type
   )
   for (path in names(targets)) {
     branches <- .nlreq_branch_sources(targets[[path]], types)
