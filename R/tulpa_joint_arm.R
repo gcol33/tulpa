@@ -388,10 +388,12 @@
 # The variance is the cell's precision read along the effect's loading and
 # conditioned on the fit's sum-to-zero groups, as its latent draws are
 # (`.field_cell_solve()`); a fit that kept no precision carries the means
-# alone (`var` NULL). NULL for a fit without such effects.
+# alone (`var` NULL). The mean is read at the cell's centre, its mode plus its
+# leading-order mean shift (`.nested_grid_latent_means()`). NULL for a fit
+# without such effects.
 #' @keywords internal
 .joint_re_cells <- function(fit, map) {
-  M <- fit$modes
+  M <- .nested_grid_latent_means(fit)
   if (is.null(map) || !length(map$cols) || !is.matrix(M)) return(NULL)
   tg <- fit$theta_grid
   load <- list(type = "iid", n_units = length(map$cols), cols = list(map$cols),

@@ -7,7 +7,8 @@
 #   x ~ sum_k w_k * N(m_k, V_k)
 #
 # where k ranges over the outer hyperparameter grid, w_k are the normalized
-# grid weights, m_k is the per-cell inner mode, and V_k is the covariance of
+# grid weights, m_k is the per-cell centre (the inner mode plus its leading-
+# order mean shift, `.nested_grid_latent_means()`), and V_k is the covariance of
 # the cell's inner Gaussian: the stored precision plus the sum-to-zero pins it
 # leaves off, conditioned on the hard rows the inner solve carried
 # (`.inner_constraint()`). Sampling the mixture -- rather
@@ -23,8 +24,10 @@
 #' ([tulpa_nested_laplace_joint()]). Each draw picks an outer-grid cell
 #' `k ~ Categorical(weights)` and then samples the inner latent vector from the
 #' inner Gaussian `N(m_k, V_k)` at that cell, where `m_k` is the cell's inner
-#' mode and `V_k` the covariance the cell's log-marginal was read off. The
-#' draws are i.i.d. samples from `sum_k weights_k * N(m_k, V_k)`.
+#' mode plus its leading-order mean shift under `control$skew_correct` (the
+#' mode itself when the fit carries no shift) and `V_k` the covariance the
+#' cell's log-marginal was read off. The draws are i.i.d. samples from
+#' `sum_k weights_k * N(m_k, V_k)`.
 #'
 #' @param fit A `tulpa_nested_laplace_joint` fit (single-block or multi-block).
 #'   The fit must have been produced with `control$store_Q = TRUE` so the
@@ -83,8 +86,10 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     }
     n_x <- as.integer(n_x)
 
-    modes <- fit$modes
-    if (is.null(modes) || !is.matrix(modes) || ncol(modes) != n_x) {
+    # Each cell's Gaussian is centred at its leading-order posterior mean, the
+    # mode plus its shift where the fit carries one (`.nested_grid_latent_means()`).
+    centres <- .nested_grid_latent_means(fit)
+    if (is.null(centres) || !is.matrix(centres) || ncol(centres) != n_x) {
         stop("tulpa_posterior_draws(): `fit$modes` is missing or its column ",
              "count does not match `Q_csc_n` (", n_x, ").", call. = FALSE)
     }
@@ -137,8 +142,8 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
             Z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x,
                                   .inner_constraint_cell(cons, k), n_k)
             # Z is n_x x n_k draws of the zero-mean constrained Gaussian; add
-            # the cell mode and subset to idx.
-            m_k <- modes[k, ]
+            # the cell centre and subset to idx.
+            m_k <- centres[k, ]
             t(Z[idx, , drop = FALSE] + m_k[idx])   # p_out x n_k, recycled
         })
 

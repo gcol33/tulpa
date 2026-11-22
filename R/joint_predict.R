@@ -2,7 +2,9 @@
 # new rows of one response arm.
 #
 # Within a cell k of the outer grid the latent posterior is the Gaussian at the
-# cell's mode m_k with covariance C_k, and a new row's linear predictor is a
+# cell's centre m_k (its mode plus its leading-order mean shift,
+# `.nested_grid_latent_means()`) with covariance C_k, and a new row's linear
+# predictor is a
 # linear map of the latent vector, eta = o + a_k' x: its offset, its design row
 # on the arm's fixed effects, its random intercept, and every block's
 # coordinates at the row's unit (or basis row) times the block's amplitude on
@@ -31,7 +33,7 @@
   args <- .joint_eta_kernel_args(inp)
 
   w <- as.numeric(object$weights)
-  modes <- object$modes
+  modes <- .nested_grid_latent_means(object)
   on <- which(is.finite(w) & w > 0 & is.finite(rowSums(modes)))
   ld <- cpp_joint_arm_loadings(
     arms_list = args$arms_list, copy_arms = args$copy_arms,

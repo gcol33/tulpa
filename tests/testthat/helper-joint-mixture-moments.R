@@ -4,7 +4,9 @@
 # off the stored per-cell precisions. Shared by test-posterior-draws-joint.R,
 # test-inner-constraint-read.R and test-nested-laplace-joint-fixed-moments.R.
 
-# Law-of-total-covariance moments of the joint mixture restricted to `idx`:
+# Law-of-total-covariance moments of the joint mixture restricted to `idx`,
+# about each cell's centre (its mode plus its leading-order mean shift,
+# `.nested_grid_latent_means()`), the centre the draws take:
 #   mean  = sum_k w_k m_k[idx]
 #   Sigma = sum_k w_k ( V_k[idx, idx] + (m_k[idx] - mean)(m_k[idx] - mean)' )
 # with V_k the covariance of cell k's inner Gaussian, read by the engine's
@@ -19,7 +21,7 @@ joint_mixture_moments <- function(fit, idx = NULL) {
     n_x <- fit$Q_csc_n
     if (is.null(Qp) || is.null(Qi) || is.null(Qx) || is.null(n_x)) return(NULL)
     n_x <- as.integer(n_x)
-    modes <- fit$modes
+    centres <- tulpa:::.nested_grid_latent_means(fit)
     if (is.null(idx)) idx <- seq_len(n_x) else idx <- as.integer(idx)
 
     w <- fit$weights
@@ -39,12 +41,12 @@ joint_mixture_moments <- function(fit, idx = NULL) {
         soft_cols_list = ccpp$soft_cols_list,
         soft_D_per_grid = ccpp$soft_D_per_grid)
 
-    mbar <- as.numeric(crossprod(w_valid, modes[cells, idx, drop = FALSE]))
+    mbar <- as.numeric(crossprod(w_valid, centres[cells, idx, drop = FALSE]))
     Sigma <- matrix(0.0, length(idx), length(idx))
     for (kk in seq_along(cells)) {
         V_block <- blocks[[kk]]
         if (is.null(V_block)) next
-        dk <- modes[cells[kk], idx] - mbar
+        dk <- centres[cells[kk], idx] - mbar
         Sigma <- Sigma + w_valid[kk] * (V_block + tcrossprod(dk))
     }
     Sigma <- (Sigma + t(Sigma)) / 2

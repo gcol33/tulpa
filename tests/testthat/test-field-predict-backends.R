@@ -444,7 +444,8 @@ test_that("an inline field replicated by a factor reaches newdata in its level's
   nd <- data.frame(region = c(3, 3), g = factor(c(1, 2), levels = 1:4), x = 0)
   p <- predict(fit, newdata = nd)
   on <- fit$weights > 0
-  w <- colSums(fit$weights[on] * fit$modes[on, , drop = FALSE]) /
+  w <- colSums(fit$weights[on] *
+                 tulpa:::.nested_grid_latent_means(fit)[on, , drop = FALSE]) /
     sum(fit$weights[on])
   st <- fit$arm_layout$block_start[1L]
   expect_equal(p[2] - p[1], unname(w[st + 16L + 3L] - w[st + 3L]),

@@ -392,8 +392,9 @@
 #
 # `"grid_mixture"`: a nested-Laplace fit carrying the per-cell `fitted_eta`
 # (and `fitted_eta_var`) its inner solves assembled. What the grid defines for
-# eta_i is the mixture `sum_k w_k N(fitted_eta[k, i], fitted_eta_var[k, i])`,
-# which already holds the fields, the random effects and the offset.
+# eta_i is the mixture `sum_k w_k N(m_k[i], fitted_eta_var[k, i])`, which
+# already holds the fields, the random effects and the offset; m_k is the
+# cell's predictor at its centre (`.nested_grid_eta_means()`).
 #
 # The design mapping an intrinsic/proper-CAR or BYM2 areal field's own raw
 # latent (`n_field` coordinates) to its contribution: `unit_map` (n_units x
@@ -997,7 +998,7 @@
 # carries no diagonal either, and its draws hold the across-cell spread only.
 #' @keywords internal
 .tulpa_eta_draws_grid <- function(object, ndraws = NULL) {
-  M <- object$fitted_eta
+  M <- .nested_grid_eta_means(object)
   w <- as.numeric(object$weights)
   w[!is.finite(w)] <- 0
   if (sum(w) <= 0) {
@@ -1066,7 +1067,7 @@
     if (!any(on)) {
       .accessor_unavailable(accessor, object, "an outer-grid cell carrying weight")
     }
-    M <- object$fitted_eta[on, , drop = FALSE]
+    M <- .nested_grid_eta_means(object)[on, , drop = FALSE]
     return(list(eta = as.numeric(colSums(w[on] * M) / sum(w[on])),
                 logit_zi = NULL))
   }
@@ -1285,7 +1286,7 @@ posterior_linpred.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
   .seed_scoped(seed)
   if (isTRUE(summary) && is.null(newdata) && is.null(re_form) &&
       identical(.tulpa_linpred_source(object), "grid_mixture")) {
-    M <- object$fitted_eta
+    M <- .nested_grid_eta_means(object)
     V <- object$fitted_eta_var
     if (!is.matrix(V) || !identical(dim(V), dim(M))) V <- NULL
     w <- as.numeric(object$weights)

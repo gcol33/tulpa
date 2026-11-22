@@ -45,6 +45,8 @@ skip_on_cran()
   on <- which(w > 0)
   w <- w[on] / sum(w[on])
   n_x <- ncol(fit$modes)
+  # Each cell's Gaussian sits at its mode plus its leading-order mean shift.
+  centres <- tulpa:::.nested_grid_latent_means(fit)
   mus <- vars <- NULL
   for (c in seq_along(on)) {
     j <- on[c]
@@ -67,7 +69,7 @@ skip_on_cran()
       SA <- S %*% At
       S <- S - SA %*% solve(t(At) %*% SA, t(SA))
     }
-    mus <- rbind(mus, as.numeric(A %*% fit$modes[j, ]))
+    mus <- rbind(mus, as.numeric(A %*% centres[j, ]))
     vars <- rbind(vars, rowSums((A %*% S) * A))
   }
   m <- colSums(w * mus)

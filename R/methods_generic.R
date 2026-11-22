@@ -396,18 +396,75 @@
 #' @keywords internal
 .nested_grid_means <- function(object) {
   M <- object$grid_modes
-  S <- object$grid_mean_shift
-  if (is.null(M) || !is.matrix(S) || nrow(S) != length(M)) return(M)
+  S <- .nested_grid_shift(object)
+  if (is.null(M) || is.null(S) || nrow(S) != length(M)) return(M)
   p <- max(lengths(M))
-  if (ncol(S) < p) return(M)
-  sc <- .nl_skew_correction(object, p)
-  el <- sc$eligible
-  if (!isTRUE(sc$enabled) || length(el) != p || !any(el)) return(M)
   lapply(seq_along(M), function(k) {
     m <- M[[k]]
     if (is.null(m)) return(NULL)
-    m + ifelse(el, S[k, seq_len(p)], 0)
+    m + S[k, seq_len(p)]
   })
+}
+
+# Each outer cell's centre for the WHOLE latent vector (cells x latent): its
+# mode plus the shift `.nested_grid_shift()` admits, the mode where the fit
+# carries none. The latent consumers -- the joint draws and their moments
+# (`tulpa_posterior_draws()`, `.joint_mixture_moments()`), the per-group random
+# effects (`.joint_re_cells()`) and the predictions read off the cells
+# (`.field_cells()`, `.joint_predict()`) -- read their centres here, so their
+# fixed-effect columns agree with `.nested_grid_means()` and every coordinate
+# is centred at its leading-order posterior mean.
+#' @keywords internal
+.nested_grid_latent_means <- function(object) {
+  M <- object$modes
+  S <- .nested_grid_shift(object)
+  if (!is.matrix(M) || is.null(S) || !identical(dim(S), dim(M))) return(M)
+  M + S
+}
+
+# Each outer cell's linear predictor at its centre (cells x rows): the kernel's
+# `fitted_eta` at the mode plus its shift under the cell's mean shift
+# (`fitted_eta_shift`, a_r' delta per row, formed beside it in the cell's
+# solve), less what the fixed-effect columns `.nested_grid_shift()` declines
+# contributed, so the grid-mixture predictive reads the same centre as the
+# latent draws. The predictor at the mode where the fit carries no shift.
+#' @keywords internal
+.nested_grid_eta_means <- function(object) {
+  M <- object$fitted_eta
+  E <- object$fitted_eta_shift
+  S <- .nested_grid_shift(object)
+  if (!is.matrix(M) || !is.matrix(E) || !identical(dim(E), dim(M)) ||
+      is.null(S)) return(M)
+  D <- object$grid_mean_shift - S
+  if (any(D != 0)) {
+    X <- as.matrix(object$model_matrix %||% object$responses[[1L]]$X)
+    cols <- (object$arm_layout$beta_start[1L] %||% 0L) + seq_len(ncol(X))
+    E <- E - D[, cols, drop = FALSE] %*% t(X)
+  }
+  M + E
+}
+
+# The per-cell shift each latent coordinate's centre carries (cells x latent):
+# `grid_mean_shift` under `control$skew_correct`, with the leading fixed-effect
+# columns the skew correction declines (`skew_correction$eligible`) set to
+# zero, since a coefficient whose expansion is out of its regime gets neither
+# the centre nor the reshaping. Every other coordinate has no reshaping to pair
+# with and carries its shift. NULL when the fit carries none.
+#' @keywords internal
+.nested_grid_shift <- function(object) {
+  S <- object$grid_mean_shift
+  if (!is.matrix(S)) return(NULL)
+  M <- object$grid_modes
+  p <- if (length(M)) max(lengths(M)) else 0L
+  if (ncol(S) < p) return(NULL)
+  sc <- .nl_skew_correction(object, p)
+  if (!isTRUE(sc$enabled)) return(NULL)
+  if (p > 0L) {
+    el <- sc$eligible
+    if (length(el) != p) el <- rep(FALSE, p)
+    S[, which(!el)] <- 0
+  }
+  S
 }
 
 # Which outer-grid cells is a per-cell mode readable from? Those whose inner

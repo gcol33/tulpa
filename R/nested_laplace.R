@@ -1945,7 +1945,9 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # loading itself and needs no dense solve against the units' columns.
 .nl_attach_unit_loads <- function(res, units, Q_p, Q_i, Q_x, n_x, cons) {
   ccpp <- .inner_constraint_cpp(cons)
-  M <- res$modes
+  # Each unit is read at its cell's centre, the mode plus its leading-order
+  # mean shift (`.nested_grid_latent_means()`), as the draws and predictions are.
+  M <- .nested_grid_latent_means(res)
   n_grid <- length(Q_p)
   for (role in names(units)) {
     ld <- units[[role]]

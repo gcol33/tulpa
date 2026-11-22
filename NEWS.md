@@ -60,10 +60,21 @@
   `(1 + x | g)` fit the reported slope was 0.518 inside an interval of
   0.32-0.85. Against an exact Gibbs sampler on three seeds the slope now
   reads 0.582 / 0.916 / 0.629 against 0.579 / 0.917 / 0.628 (it read
-  0.518 / 0.806 / 0.582). Each weighted cell is re-solved once with the skew
-  probe on to form its shift (`$grid_mean_shift`), which made those fits
-  1.9-3.6 times slower. A Gaussian response has no shift and is unchanged;
-  `control$skew_correct = FALSE` reports the mode mixture as before (#1286).
+  0.518 / 0.806 / 0.582). Each cell forms its shift (`$grid_mean_shift`) in
+  its own solve, as one more solve against the factor its per-row predictor
+  variances are read off (#1291): on the two-block `(1 + x | g) + (1 | h)`
+  fixture 35.1 s with a separate re-solve pass, 12.7 s now, with the same
+  shift to 6e-13 relative. A Gaussian response has no shift and is
+  unchanged; `control$skew_correct = FALSE` reports the mode mixture as
+  before (#1286).
+
+* The latent consumers of a joint nested-Laplace fit centre each cell where
+  the fixed effects do, at its mode plus its leading-order mean shift:
+  `tulpa_posterior_draws()` and its moments, `ranef()` and the predictions
+  read off the cells. On a binary `(1 | g)` fit with six rows per group the
+  group effects move toward an exact Gibbs sampler's, mean absolute
+  difference 0.087 -> 0.040 posterior SDs (largest 0.199 -> 0.097), and the
+  latent draws' fixed-effect means now agree with `coef()` (#1292).
 
 * The one-arm joint nested-Laplace door carries observation `weights` and a
   second dispersion `phi2` (the Student-t degrees of freedom, the Tweedie

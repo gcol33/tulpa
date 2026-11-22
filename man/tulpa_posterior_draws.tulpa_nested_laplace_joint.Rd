@@ -34,8 +34,10 @@ The \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} method for a j
 (\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}). Each draw picks an outer-grid cell
 \code{k ~ Categorical(weights)} and then samples the inner latent vector from the
 inner Gaussian \code{N(m_k, V_k)} at that cell, where \code{m_k} is the cell's inner
-mode and \code{V_k} the covariance the cell's log-marginal was read off. The
-draws are i.i.d. samples from \verb{sum_k weights_k * N(m_k, V_k)}.
+mode plus its leading-order mean shift under \code{control$skew_correct} (the
+mode itself when the fit carries no shift) and \code{V_k} the covariance the
+cell's log-marginal was read off. The draws are i.i.d. samples from
+\verb{sum_k weights_k * N(m_k, V_k)}.
 }
 \details{
 The inner Gaussian at cell \code{k} has precision

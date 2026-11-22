@@ -260,6 +260,7 @@
   fit$model_matrix <- X_block
   fit$fitted_eta <- fitted_eta
   fit$fitted_eta_var <- NULL
+  fit$fitted_eta_shift <- NULL
   fit$inference_mode <- "laplace"
   fit$inference_tier <- 2L
   fit$backend <- "latent_factor_nested_laplace"

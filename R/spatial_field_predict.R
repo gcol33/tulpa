@@ -224,7 +224,8 @@
   re <- if (!is.null(object$re_effect_map)) {
     .field_re_from_map(object$re_effect_map, theta)
   }
-  list(modes = modes, weights = as.numeric(w), theta = theta,
+  list(modes = modes, centres = .nested_grid_latent_means(object),
+       weights = as.numeric(w), theta = theta,
        solve = list(door = "stored"), point = FALSE,
        layout = list(beta = as.integer(al$beta_start[1L] + seq_len(p)),
                      beta_names = object$fixed_names, fields = fields, re = re))
@@ -332,7 +333,8 @@
 .field_cells <- function(object) {
   modes <- object$modes
   if (is.matrix(modes) && length(object$weights) == nrow(modes)) {
-    return(list(modes = modes, weights = as.numeric(object$weights),
+    return(list(modes = modes, centres = .nested_grid_latent_means(object),
+                weights = as.numeric(object$weights),
                 theta = .nl_theta_matrix(object), solve = object$field_solve,
                 prior = object$prior))
   }
@@ -1175,20 +1177,28 @@
   eta
 }
 
+# The centre each cell of a field source is read about: the cell's
+# leading-order posterior mean where the source carries it (`centres`, a grid
+# fit's `.nested_grid_latent_means()`), its mode otherwise. A sampler source's
+# rows are draws, which are their own centres.
+#' @keywords internal
+.field_src_centres <- function(src) src$centres %||% src$modes
+
 # The posterior mean of the linear predictor at the prediction rows: the
-# weighted mean of `.field_eta_rows()` at every cell's mode, a group the fit
-# did not see at its prior mean, zero.
+# weighted mean of `.field_eta_rows()` at every cell's centre
+# (`.field_src_centres()`), a group the fit did not see at its prior mean, zero.
 #' @keywords internal
 .field_point_eta <- function(object, src, newdata, sel = NULL,
                              accessor = "predict") {
+  C <- .field_src_centres(src)
   if (isTRUE(object$subspace_debias$outer$applied) &&
       identical(object$subspace_debias$method, "exact")) {
     active <- which(src$weights > 0)
-    for (k in active) src$modes[k, ] <- object$subspace_debias$cell_modes[k, ] +
+    for (k in active) C[k, ] <- object$subspace_debias$cell_modes[k, ] +
       colMeans(object$subspace_debias$cell_draws[[k]])
   }
   w <- src$weights
-  on <- is.finite(w) & w > 0 & is.finite(rowSums(src$modes))
+  on <- is.finite(w) & w > 0 & is.finite(rowSums(C))
   if (!any(on)) {
     .accessor_unavailable(accessor, object, "an outer-grid cell carrying weight")
   }
@@ -1197,7 +1207,7 @@
   des <- if (is.null(newdata)) object$re_design
          else .tulpa_re_design_at(object, newdata)
   E <- .field_eta_rows(object, src, D, newdata,
-                       src$modes[cells, , drop = FALSE], cells, draw = FALSE,
+                       C[cells, , drop = FALSE], cells, draw = FALSE,
                        des = des, sel = sel)
   as.numeric(colSums(w[cells] * E) / sum(w[cells]))
 }
@@ -1205,8 +1215,8 @@
 # `S` draws of the latent vector from the cell mixture. On a grid the rows are
 # allocated over the cells by their weights (`.nl_mixture_cells()`), the cells
 # drawn in are solved again for their precision, and each row is drawn from
-# its cell's Gaussian N(m_k, Q_k^-1), conditioned on the cell's sum-to-zero
-# groups. On a sampler fit the rows are stored draws: every stored draw once
+# its cell's Gaussian N(m_k, Q_k^-1) about the cell's centre m_k
+# (`.field_src_centres()`), conditioned on the cell's sum-to-zero groups. On a sampler fit the rows are stored draws: every stored draw once
 # when `S` reaches their number, the rest resampled, so a field's conditional
 # at new rows is drawn afresh for each. Returns the S x n_x rows with the cell
 # of each row as `"cells"`.
@@ -1227,6 +1237,7 @@
   al <- .nl_mixture_cells(w[on] / sum(w[on]), which(on), S)
   need <- which(on)[al$counts > 0L]
   sol <- .field_cell_solve(object, src, need)
+  C <- .field_src_centres(src)
   n_x <- ncol(src$modes)
   L <- matrix(0, S, n_x)
   row_cells <- integer(S)
@@ -1236,7 +1247,7 @@
     rows <- pos + seq_len(n_j)
     Z <- .joint_draw_cell(sol$Q_p[[j]], sol$Q_i[[j]], sol$Q_x[[j]], n_x,
                           .inner_constraint_cell(sol$constraint, j), n_j)
-    L[rows, ] <- t(Z + src$modes[need[j], ])
+    L[rows, ] <- t(Z + C[need[j], ])
     row_cells[rows] <- need[j]
     pos <- pos + n_j
   }
