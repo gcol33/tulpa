@@ -474,12 +474,6 @@
                      "sigma_1", "sigma_2")
 .JOINT_REFINABLE_BLOCK_AXES <- c(.JOINT_POS_AXES, "alpha", "rho")
 
-# Is `axis` a per-arm dispersion (`phi_<arm>`)? Only an unprefixed name is:
-# `b1.phi_gp` is a block's own NNGP lengthscale.
-.joint_axis_is_dispersion <- function(axis) {
-    !grepl("^b[0-9]+[.]", axis) & startsWith(axis, "phi_")
-}
-
 #
 # The registry door refines its field SD axes only
 # (`.nl_refinable_registry_axes()`, `.JOINT_FIELD_SD_AXES`).
@@ -489,15 +483,15 @@
 # the refinement runs on the grid in those coordinates (`.hp_design_view()`),
 # so a level is a level of the declared tensor, in its own measure.
 .joint_axis_refine_eligible <- function(axis, logchol = NULL) {
-    if (grepl("^b[0-9]+[.]", axis)) {
-        bare <- .hyper_axis_bare(axis)
+    if (.axis_has_block(axis)) {
+        bare <- .axis_bare(axis)
         if (.hp_is_logchol_col(bare)) {
-            d <- logchol[[.hp_logchol_key(.hp_col_prefix(axis))]]
+            d <- logchol[[.hp_logchol_key(.axis_label_prefix(axis))]]
             return(!is.null(d$design))
         }
         return(bare %in% .JOINT_REFINABLE_BLOCK_AXES)
     }
-    axis %in% .JOINT_REFINABLE_BLOCK_AXES || .joint_axis_is_dispersion(axis)
+    axis %in% .JOINT_REFINABLE_BLOCK_AXES || .axis_is_dispersion(axis)
 }
 
 # One entry of the user-facing `phi_grid` argument, by arm name. The argument is
@@ -613,11 +607,11 @@
                                         copy_blocks = integer(0),
                                         phi_grid = NULL, arm_names = NULL,
                                         phi_auto = NULL) {
-    if (!grepl("^b[0-9]+[.]", axis)) {
+    if (!.axis_has_block(axis)) {
         return(.joint_phi_axis_is_stated(axis, phi_grid, arm_names, phi_auto))
     }
-    b <- as.integer(sub("^b([0-9]+)[.].*$", "\\1", axis))
-    bare <- .hyper_axis_bare(axis)
+    b <- .axis_block(axis)
+    bare <- .axis_bare(axis)
     if (identical(bare, "alpha")) {
         i <- .joint_copy_spec_for_block(copy, b)
         declared <- if (is.na(i)) NULL
@@ -729,21 +723,25 @@
     copy_slab <- .hyper_check_copy_slab(copy_slab)
     axes <- .joint_spec_axis_names(grids, cp)
     lapply(axes, function(a) {
-        # A multi-block grid prefixes its axes (`b1.sigma`), so the scale, the
-        # domain and the point-mass metadata are resolved on the bare axis name:
-        # an axis's support does not change because the block it is laid on is
+        # The scale, the domain and the point-mass metadata of an engine-named
+        # axis are resolved on its hyperparameter name (`.axis_bare()`): an
+        # axis's support does not change because the block it is laid on is
         # the second one. Which axes refine, and in what order, stays keyed on
-        # the full name. `linear_axes` are axes whose block declares them on
+        # the full label. `linear_axes` are axes whose block declares them on
         # their own natural coordinate whatever they are called (a tgmrf()
-        # block's theta, `.nl_linear_axes()`).
-        bare <- sub("^b[0-9]+[.]", "", a)
-        scale_known <- if (a %in% linear_axes) FALSE else .hyper_axis_scale(bare)
+        # block's theta, `.nl_linear_axes()`): nothing keyed on a name applies
+        # to them, and an `alpha` among them is that block's coordinate, never
+        # the copy scale.
+        bare <- .axis_bare(a)
+        block_declared <- a %in% linear_axes
+        copy <- .axis_is_copy(a, linear_axes)
+        scale_known <- if (block_declared) FALSE else .hyper_axis_scale(bare)
         log_scale <- isTRUE(scale_known)
         # `axis_support` is the interval the block that owns the axis defines it
         # on (the hyperprior record's `support`, keyed by the full axis name),
         # which the name alone cannot give: `rho` is a BYM2 mixing weight on
         # (0, 1) in one family and a correlation reaching below zero in others.
-        bounds <- .hyper_bounds_meet(.hyper_spec_bounds(bare),
+        bounds <- .hyper_bounds_meet(if (!block_declared) .hyper_spec_bounds(bare),
                                      axis_support[[a]], grids[[a]])
         # How far refinement may move this axis: whether it participates at all,
         # and whether it may place a node past the nodes it was given. Both come
@@ -751,7 +749,7 @@
         # -- deciding by axis NAME would opt a caller's stated nodes into being
         # extended (gcol33/tulpa#658).
         mode <- .joint_axis_refine_mode(axis_refine, a)
-        refine_priority <- if (identical(bare, "alpha")) 1L
+        refine_priority <- if (copy) 1L
                            else if (startsWith(a, "phi_")) 2L
                            else 100L
         # The copy scale carries an explicit zero level ("no coupling"), which
@@ -765,9 +763,10 @@
             bounds    = bounds,
             refinable = !identical(mode, "none"),
             extend    = identical(mode, "extend"),
-            atom_mass = if (identical(bare, "alpha")) copy_atom_mass
+            atom_mass = if (copy) copy_atom_mass
         )
         spec$refine_priority <- refine_priority
+        spec$block_declared <- block_declared
         # An axis this table does not classify keeps equal node weights, which
         # is what the engine integrated before any coordinate was declared.
         if (is.na(scale_known)) spec$unweighted <- TRUE
@@ -790,7 +789,7 @@
             spec$log_prior_coord <- "natural"
         }
         if (log_scale && length(pos) >= 2L) {
-            copy_exp_slab <- identical(bare, "alpha") && !user_prior &&
+            copy_exp_slab <- copy && !user_prior &&
                              identical(copy_slab, "exponential")
             if (copy_exp_slab) {
                 # The copy scale is the axis a user cannot be expected to bracket
@@ -905,8 +904,8 @@ tulpa_joint_axis_specs_from_grid <- function(
                                linear_axes = linear_axes,
                                axis_support = axis_support)
     lapply(specs, function(sp) {
-        if (.hp_is_logchol_col(.hyper_axis_bare(sp$name))) {
-            sp$logchol_design <- logchol[[.hp_logchol_key(.hp_col_prefix(sp$name))]]
+        if (.hp_is_logchol_col(.axis_bare(sp$name))) {
+            sp$logchol_design <- logchol[[.hp_logchol_key(.axis_label_prefix(sp$name))]]
         }
         sp
     })

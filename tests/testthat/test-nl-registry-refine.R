@@ -1,7 +1,6 @@
 # Outer-grid refinement on the registry door (gcol33/tulpa#927): the passes the
-# joint drivers run, over the field SD axes `tulpa_nested_laplace()` can write a
-# cell onto, with the per-cell side data of every added cell bound onto the base
-# result.
+# joint door runs, with the per-cell side data of every added cell bound onto
+# the base result.
 
 .nrr_sim <- function(seed = 2L, nr = 12L) {
     set.seed(seed)
@@ -30,27 +29,6 @@
 
 skip_on_cran_budget()
 
-test_that("an axis the dispatcher can write and the registry tags is refinable", {
-    skip_on_cran_budget()
-    ref <- tulpa:::.nl_refinable_registry_axes
-    expect_identical(ref(list(type = "icar"), FALSE), "tau")
-    expect_identical(ref(list(type = "bym2"), FALSE), "sigma")
-    expect_identical(ref(list(list(type = "icar"), list(type = "iid")), TRUE),
-                     c("b1.tau", "b2.sigma"))
-    # Untagged, a GP variance and lengthscale are not field SDs; tagged with
-    # the coordinate the placement pass moves them on, they are refinable as
-    # well, and so is an AR(1) correlation.
-    expect_length(ref(list(type = "nngp"), FALSE), 0L)
-    expect_length(ref(list(type = "hsgp"), FALSE), 0L)
-    expect_identical(ref(list(type = "hsgp"), FALSE,
-                         c(sigma2 = "log", lengthscale = "log")),
-                     c("sigma2", "lengthscale"))
-    expect_identical(ref(list(type = "ar1"), FALSE,
-                         c(tau = "log", rho = "atanh")), c("tau", "rho"))
-    expect_identical(ref(list(type = "ar1"), FALSE, c(tau = "log", rho = NA)),
-                     "tau")
-})
-
 test_that("per-cell fields are bound by shape, constants left alone", {
     skip_on_cran_budget()
     base <- list(a = c(1, 2, 3), m = matrix(1:6, 3), l = list(1, 2, 3),
@@ -69,33 +47,23 @@ test_that("per-cell fields are bound by shape, constants left alone", {
     expect_identical(out$k, 5)
 })
 
-test_that("a call as large as the base grid is split so shapes stay unambiguous", {
-    skip_on_cran_budget()
-    seen <- integer(0)
-    ck <- tulpa:::.nl_chunked_kernel(function(theta, screen = NULL) {
-        seen <<- c(seen, nrow(theta))
-        list(log_marginal = seq_len(nrow(theta)))
-    }, 4L)
-    out <- ck$kernel_fn(matrix(1:8, 4, dimnames = list(NULL, c("a", "b"))))
-    expect_identical(seen, c(3L, 1L))
-    expect_length(out$log_marginal, 4L)
-    expect_length(ck$chunks(), 2L)
-})
-
 skip_on_cran()
 
 test_that("a field SD collapsed onto few nodes is refined on the registry door", {
     skip_on_cran()
     sim <- .nrr_sim()
-    held <- .nrr_fit(sim, sim$prior, list(axis_refine = "none"))
-    fit  <- .nrr_fit(sim, sim$prior)
+    # Held as laid, so the consistency pass reads the default axis itself
+    # rather than one the placement pass laid at 1.25 posterior SDs.
+    held <- .nrr_fit(sim, sim$prior, list(axis_refine = "none",
+                                          auto_recenter = FALSE))
+    fit  <- .nrr_fit(sim, sim$prior, list(auto_recenter = FALSE))
     min_ess <- tulpa:::.nl_diag("axis_sd_ess")
 
     expect_lt(held$theta_sd_ess[[1L]], min_ess)
     expect_false(any(nzchar(held$refining_axis %||% "")))
     expect_gte(fit$theta_sd_ess[[1L]], min_ess)
     expect_gt(length(fit$log_marginal), length(held$log_marginal))
-    expect_true(any(fit$refining_axis == "tau"))
+    expect_true(any(fit$refining_axis == "b1.tau"))
     expect_false(is.null(fit$var_of_means_consistency_info))
 
     # Every per-cell field has one entry per cell, and the base cells keep the
@@ -118,9 +86,7 @@ test_that("a field SD collapsed onto few nodes is refined on the registry door",
 test_that("a multi-block registry fit refines the same cells as the single block", {
     skip_on_cran()
     sim <- .nrr_sim()
-    # The single block is placed by the registry rescue and the block list by
-    # the joint placement pass, so both hold a stated grid too coarse for the
-    # posterior and the refinement passes are compared on the same cells.
+    # One block and the block list holding it are one fit.
     prior <- c(sim$prior, list(tau_grid = c(0.1, 0.25, 0.6)))
     held <- list(auto_recenter = FALSE)
     one <- .nrr_fit(sim, prior, held)
@@ -128,7 +94,7 @@ test_that("a multi-block registry fit refines the same cells as the single block
     expect_equal(as.numeric(multi$log_marginal), as.numeric(one$log_marginal),
                  tolerance = 1e-8)
     expect_equal(as.numeric(multi$theta_grid[, "b1.tau"]),
-                 as.numeric(one$theta_grid))
+                 as.numeric(one$theta_grid[, "b1.tau"]))
     expect_equal(as.numeric(multi$weights), as.numeric(one$weights),
                  tolerance = 1e-8)
     expect_equal(nrow(multi$modes), length(multi$log_marginal))

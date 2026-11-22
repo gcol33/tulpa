@@ -117,9 +117,12 @@ test_that("a nested fit's eta draws carry its temporal field", {
   # The draws' moments are the grid mixture's, to Monte Carlo error, and what
   # the mean adds to X beta is the trend: it varies over time and tracks the
   # simulated walk.
-  em <- as.numeric(crossprod(fit$weights, fit$fitted_eta))
-  ev <- as.numeric(crossprod(fit$weights, fit$fitted_eta_var + fit$fitted_eta^2)) -
-    em^2
+  # A cell the screen dropped carries no solve (its rows are NA) and no weight.
+  k  <- fit$weights > 0
+  w  <- fit$weights[k]
+  em <- as.numeric(crossprod(w, fit$fitted_eta[k, , drop = FALSE]))
+  ev <- as.numeric(crossprod(w, fit$fitted_eta_var[k, , drop = FALSE] +
+                                fit$fitted_eta[k, , drop = FALSE]^2)) - em^2
   expect_lt(max(abs(colMeans(eta) - em) / sqrt(ev / nrow(eta))), 5)
   by_t <- tapply(em - as.numeric(fit$model_matrix %*% coef(fit)), d$time, mean)
   expect_gt(stats::sd(by_t), 0.2)
@@ -237,7 +240,7 @@ test_that("a two-axis grid's evidence converges in its node count", {
       family = "poisson",
       control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
                      auto_recenter = FALSE, axis_refine = "none"))
-    expect_setequal(f$log_hyperprior_axes, c("sigma", "rho"))
+    expect_setequal(f$log_hyperprior_axes, c("b1.sigma", "b1.rho"))
     as.numeric(logLik(f))
   }, numeric(1))
   expect_lt(abs(ev[3L] - ev[2L]), abs(ev[2L] - ev[1L]))

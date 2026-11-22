@@ -157,7 +157,7 @@
   sp <- object$spatial
   specs <- object$outer_axis_specs %||% object$hyper_specs
   for (s in specs %||% list()) {
-    if (!sub("^b[0-9]+[.]", "", s$name) %in% .SPATIAL_LENGTH_AXES) next
+    if (!.axis_bare(s$name) %in% .SPATIAL_LENGTH_AXES) next
     bounded <- (length(s$bounds) == 2L && all(is.finite(s$bounds))) ||
       (length(s$slab_bounds) == 2L && is.null(out[[s$name]]))
     if (is.null(out[[s$name]]) && (bounded || length(s$grid) == 1L)) {
@@ -191,7 +191,7 @@
     if (is.null(model$likelihood_power)) model$likelihood_power <- if (model$field %in% c("spde", "rsr_spde")) {
       blocks <- object$prior %||% object$blocks
       if (!is.null(blocks$type)) blocks <- list(blocks)
-      bi <- if (grepl("^b[0-9]+[.]", a)) as.integer(sub("^b([0-9]+)[.].*", "\\1", a)) else 1L
+      bi <- if (.axis_has_block(a)) .axis_block(a) else 1L
       block <- if (length(blocks) >= bi) blocks[[bi]] else sp
       b <- .hyper_spde_boundary(object, block)
       if (isTRUE(model$scale_fixed)) b else min(b, 1)
@@ -211,7 +211,7 @@
     rec$y <- object$y
     rec$n_trials <- object$n_trials
     rec <- .hyper_attach_moments(rec)
-    at <- match("range", .hyper_axis_bare(names(rec$theta_mean)))
+    at <- match("range", .axis_bare(names(rec$theta_mean)))
     rec$range_mean <- unname(rec$theta_mean[at])
     rec$range_sd <- unname(rec$theta_sd[at])
     object$nested <- rec

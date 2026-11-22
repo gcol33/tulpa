@@ -185,7 +185,7 @@ test_that("tulpa_nested_laplace() routes a nngp prior through the dispatch", {
   res <- tulpa_nested_laplace(d$y, d$n_trials, d$X, prior = prior,
                          family = "binomial")
   expect_s3_class(res, "tulpa_nested_laplace")
-  expect_named(res$theta_mean, c("sigma2", "phi_gp"))
+  expect_named(res$theta_mean, c("b1.sigma2", "b1.phi_gp"))
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
 })
 
@@ -237,6 +237,6 @@ test_that("tulpa_nested_laplace() routes a hsgp prior through the dispatch", {
                          matrix(1, N, 1), prior = prior,
                          family = "binomial")
   expect_s3_class(res, "tulpa_nested_laplace")
-  expect_named(res$theta_mean, c("sigma2", "lengthscale"))
+  expect_named(res$theta_mean, c("b1.sigma2", "b1.lengthscale"))
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
 })

@@ -21,7 +21,7 @@
     args <- cargs
     args$store_Q <- keep_fixed
     n_solves <<- n_solves + nrow(theta_mat)
-    .nl_dispatch_multi(args, list(blk), theta_grid_override = theta_mat)
+    .nl_solve_cells(args, list(blk), theta_mat)
   }
 
   raw <- function(theta_vec) {

@@ -202,8 +202,8 @@
             path <- if (b %in% copy_blocks) "copy" else "registry"
             r <- .nl_pilot_block(prior[[b]], path, n)
             prior[[b]] <- r$block
-            if (length(r$moved)) moved <- c(moved, paste0("b", b, ".", r$moved))
-            if (length(r$kept))  kept  <- c(kept,  paste0("b", b, ".", r$kept))
+            if (length(r$moved)) moved <- c(moved, .axis_label(b, r$moved))
+            if (length(r$kept))  kept  <- c(kept,  .axis_label(b, r$kept))
         }
     } else if (is.list(prior) && !is.null(prior$type)) {
         r <- .nl_pilot_block(prior, "joint_single", n)

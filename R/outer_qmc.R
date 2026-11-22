@@ -346,7 +346,7 @@
         stop("Importance quadrature requires a transform for every outer axis.", call. = FALSE)
     }
     for (j in seq_len(ncol(tg))) {
-        if (isTRUE(.hyper_axis_scale(.hyper_axis_bare(colnames(tg)[j]))) &&
+        if (isTRUE(.hyper_axis_scale(.axis_bare(colnames(tg)[j]))) &&
             any(tg[, j] == 0)) {
             stop("Importance quadrature requires continuous axes; `",
                  colnames(tg)[j], "` declares a point mass at zero.", call. = FALSE)

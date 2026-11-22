@@ -300,7 +300,7 @@ test_that("mode = nested_laplace integrates an areal field through tulpa()", {
   # The spatial precision tau was integrated, not conditioned on. Under the
   # PC prior it has no posterior mean; its log does.
   expect_true(all(is.finite(fit$theta_log_mean)))
-  expect_gt(length(unique(tulpa_theta_matrix(fit)[, "tau"])), 1L)
+  expect_gt(length(unique(tulpa_theta_matrix(fit)[, "b1.tau"])), 1L)
   expect_true(all(is.finite(fit$weights)) && abs(sum(fit$weights) - 1) < 1e-8)
 
   # Recovery: marginalize beta over the tau grid (grid modes weighted by the

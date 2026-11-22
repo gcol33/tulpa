@@ -36,7 +36,7 @@ test_that("AR1 keeps a lone supplied axis and refuses a bad or unpaired rho_grid
                               prior = c(base, list(tau_grid = c(1, 2, 4, 8))),
                               family = "binomial",
                               control = list(axis_refine = "none"))
-  expect_equal(sort(unique(res$theta_grid[, "tau"])), c(1, 2, 4, 8))
+  expect_equal(sort(unique(res$theta_grid[, "b1.tau"])), c(1, 2, 4, 8))
   expect_equal(nrow(res$theta_grid),
                4L * length(tulpa:::.nl_grid_axis("ar1_rho")))
 })
@@ -101,8 +101,8 @@ test_that("nested_laplace RW1 returns interior-peaked log-marginal", {
   # Posterior location within the grid. The precision has no posterior mean
   # under the PC prior, so the location is the geometric mean.
   expect_identical(as.numeric(res$theta_mean), Inf)
-  expect_true(exp(res$theta_log_mean[["tau"]]) > min(prior$tau_grid))
-  expect_true(exp(res$theta_log_mean[["tau"]]) < max(prior$tau_grid))
+  expect_true(exp(res$theta_log_mean[["b1.tau"]]) > min(prior$tau_grid))
+  expect_true(exp(res$theta_log_mean[["b1.tau"]]) < max(prior$tau_grid))
 })
 
 test_that("nested_laplace RW1 stores per-grid-point modes", {
@@ -180,8 +180,8 @@ test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", 
   expect_cells_solved(res)
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
   # Posterior rho should pull above 0.5 given the simulation
-  expect_named(res$theta_mean, c("tau", "rho"))
-  expect_gt(res$theta_mean[["rho"]], 0.5)
+  expect_named(res$theta_mean, c("b1.tau", "b1.rho"))
+  expect_gt(res$theta_mean[["b1.rho"]], 0.5)
 })
 
 test_that("nested_laplace accepts tulpa_temporal spec via spec= + data=", {

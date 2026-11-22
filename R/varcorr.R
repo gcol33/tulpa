@@ -119,7 +119,7 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
     p <- as.integer(layout[[m]]$n_coefs %||% 1L)
     if (length(b) == 1L && p > 1L) return(.varcorr_logchol_block(object, b, p))
     sds <- vapply(b, function(k) {
-      j <- which(nm == sprintf("b%d.sigma", k))
+      j <- which(nm == .axis_label(k, "sigma"))
       if (length(j) != 1L) NA_real_ else as.numeric(med[j])
     }, numeric(1))
     if (anyNA(sds) || any(!is.finite(sds))) return(NULL)
@@ -138,7 +138,7 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
   tg <- object$theta_grid
   w  <- as.numeric(object$weights)
   ax <- character(0)
-  for (j in seq_len(p)) for (i in j:p) ax <- c(ax, sprintf("b%d.L%d%d", b, i, j))
+  for (j in seq_len(p)) for (i in j:p) ax <- c(ax, .axis_label(b, sprintf("L%d%d", i, j)))
   if (!is.matrix(tg) || !all(ax %in% colnames(tg)) || length(w) != nrow(tg)) {
     return(NULL)
   }

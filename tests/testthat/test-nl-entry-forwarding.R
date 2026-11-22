@@ -371,9 +371,10 @@ test_that("registry probes omit fitted variances and preserve the density and mo
     n_threads = 1L, store_Q = FALSE, hyperprior = "proper")
   block <- list(type = "iid", n_units = 3L, obs_idx = 1:3,
                 sigma_grid = c(.3, .8))
-  on <- tulpa:::.nl_dispatch_multi(args, list(block, block))
-  off <- tulpa:::.nl_dispatch_multi(modifyList(args,
-    list(compute_fitted_var = FALSE)), list(block, block))
+  cells <- as.matrix(expand.grid(c(.3, .8), c(.3, .8)))
+  on <- tulpa:::.nl_solve_cells(args, list(block, block), cells)
+  off <- tulpa:::.nl_solve_cells(modifyList(args,
+    list(compute_fitted_var = FALSE)), list(block, block), cells)
   expect_true("fitted_eta_var" %in% names(on))
   expect_false("fitted_eta_var" %in% names(off))
   expect_identical(off$log_marginal, on$log_marginal)

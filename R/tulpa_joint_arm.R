@@ -263,7 +263,7 @@
   vapply(seq_along(map$scale_block), function(i) {
     b <- map$scale_block[i]
     if (b == 0L) return(1)
-    nm <- sprintf("b%d.sigma", b)
+    nm <- .axis_label(b, "sigma")
     if (is.matrix(tg) && nm %in% colnames(tg)) return(tg[k, nm])
     map$sigma_fixed[i]
   }, numeric(1))

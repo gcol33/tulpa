@@ -353,14 +353,14 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
               axes = character(0), declined = character(0))
   # The axes whose prior has a power-law tail: a spatial length, and a
   # precision under the PC prior on its SD.
-  bare_cols <- sub("^b[0-9]+[.]", "", colnames(tg))
+  bare_cols <- .axis_bare(colnames(tg))
   tailed <- colnames(tg)[bare_cols %in% .SPATIAL_LENGTH_AXES |
                          startsWith(bare_cols, "tau")]
   for (a in tailed) {
     r <- resolve(a)
     if (is.null(r$tail) && !a %in% axes) r$tail <- list(prior_power = NA_real_, field = "")
     if (!is.null(r$tail)) {
-      scale_axes <- paste0(.hp_col_prefix(a), c("sigma", "sigma2"))
+      scale_axes <- paste0(.axis_label_prefix(a), c("sigma", "sigma2"))
       out$range_tail[[name(a)]] <- c(r$tail, list(fixed = !a %in% axes,
         scale_fixed = !any(scale_axes %in% axes)))
     }
@@ -370,7 +370,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     r <- resolve(a)
     if (!is.null(r$support)) out$support[[name(a)]] <- r$support
     if (identical(r$group, "logchol")) {
-      key <- .hp_logchol_key(.hp_col_prefix(a))
+      key <- .hp_logchol_key(.axis_label_prefix(a))
       groups[[key]] <- c(groups[[key]], a)
     } else if (!is.null(r$fn)) {
       v <- as.numeric(r$fn(as.numeric(tg[, a])))
@@ -413,20 +413,14 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # their cell measure are properties of the block, not of any one column.
 .hp_is_logchol_col <- function(bare) grepl("^L[0-9][0-9]$", bare)
 
-# The block prefix of a column (`b2.` of `b2.L21`, empty when unprefixed).
-.hp_col_prefix <- function(col) {
-  m <- regmatches(col, regexpr("^b[0-9]+[.]", col))
-  if (length(m)) m else ""
-}
-
 # A block's log-Cholesky columns among `cols`, in the column-major order
 # `.re_logchol_to_L()` reads, or NULL when the set is not a complete p x p
 # triangle.
 .hp_logchol_block_cols <- function(cols, prefix) {
-  bare <- sub("^b[0-9]+[.]", "", cols)
-  mine <- cols[.hp_col_prefix_vec(cols) == prefix & .hp_is_logchol_col(bare)]
+  bare <- .axis_bare(cols)
+  mine <- cols[.axis_label_prefix(cols) == prefix & .hp_is_logchol_col(bare)]
   if (!length(mine)) return(NULL)
-  ij <- do.call(rbind, lapply(sub("^b[0-9]+[.]L", "", sub("^L", "", mine)),
+  ij <- do.call(rbind, lapply(sub("^L", "", .axis_bare(mine)),
                               function(s) as.integer(strsplit(s, "")[[1L]])))
   p <- max(ij)
   want <- character(0)
@@ -434,8 +428,6 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   if (!setequal(want, mine)) return(NULL)
   want
 }
-.hp_col_prefix_vec <- function(cols) vapply(cols, .hp_col_prefix, character(1),
-                                            USE.NAMES = FALSE)
 
 # Is a node matrix a full tensor over its columns' distinct values? Values are
 # compared at 12 significant digits, the resolution a coordinate recovered
@@ -583,8 +575,8 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # CPC coordinates.
 .hp_cpc_blocks <- function(cn) {
   out <- list()
-  lc <- cn[.hp_is_logchol_col(sub("^b[0-9]+[.]", "", cn))]
-  for (pre in unique(.hp_col_prefix_vec(lc))) {
+  lc <- cn[.hp_is_logchol_col(.axis_bare(cn))]
+  for (pre in unique(.axis_label_prefix(lc))) {
     cols <- .hp_logchol_block_cols(cn, pre)
     if (is.null(cols) || length(cols) < 3L) next
     p <- as.integer(round((sqrt(8 * length(cols) + 1) - 1) / 2))
@@ -621,8 +613,8 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 # own grid or a joint tensor over it -- never a batch evaluated from it.
 .hp_logchol_designs <- function(grid, axes = colnames(grid)) {
   out <- list()
-  lc <- axes[.hp_is_logchol_col(sub("^b[0-9]+[.]", "", axes))]
-  for (pre in unique(.hp_col_prefix_vec(lc))) {
+  lc <- axes[.hp_is_logchol_col(.axis_bare(axes))]
+  for (pre in unique(.axis_label_prefix(lc))) {
     cols <- .hp_logchol_block_cols(colnames(grid), pre)
     out[[.hp_logchol_key(pre)]] <-
       if (is.null(cols)) list(reason = .hp_decline("logchol_partial_block"))
@@ -715,8 +707,8 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
                 axes = character(0), declined = character(0)))
   }
   block_of <- function(col) {
-    k <- suppressWarnings(as.integer(sub("^b([0-9]+)[.].*$", "\\1", col)))
-    if (grepl("^b[0-9]+[.]", col) && !is.na(k)) {
+    k <- .axis_block(col)
+    if (.axis_has_block(col) && !is.na(k)) {
       return(list(block = if (k <= length(blocks)) blocks[[k]] else list(),
                   index = k))
     }
@@ -729,7 +721,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     .joint_hp_fn_for_block(fn, index)
   }
   .hp_collect(tg, function(col) {
-    bare <- sub("^b[0-9]+[.]", "", col)
+    bare <- .axis_bare(col)
     bo   <- block_of(col)
     # A tgmrf block's own `prior(theta)` is its hyperprior, folded inside the
     # kernel at every cell (`log_prior_theta_per_grid`), so nothing is added
@@ -737,7 +729,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     if (identical(tolower(bo$block$type %||% ""), "tgmrf")) {
       return(list(fn = function(x) numeric(length(x))))
     }
-    role <- if (.joint_axis_is_dispersion(col)) "phi"
+    role <- if (.axis_is_dispersion(col)) "phi"
             else if (identical(bare, "alpha")) "alpha"
             else if (identical(bare, "sigma")) "sigma"
             else NA_character_

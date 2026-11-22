@@ -172,7 +172,7 @@ test_that("tgmrf inner nested-Laplace solves run with progress off (#890)", {
     record(progress)
   }
   testthat::local_mocked_bindings(tulpa_nested_laplace = fake_nl,
-    .nl_dispatch_multi = fake_cell, .package = "tulpa")
+    .nl_solve_cells = fake_cell, .package = "tulpa")
   blk <- make_periodic_ar1(4)
   y <- c(0L, 1L, 2L, 1L)
   X <- matrix(1, 4, 1)

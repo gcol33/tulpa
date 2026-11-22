@@ -271,32 +271,6 @@ test_that("axis index resolves by name, then by being the only log axis", {
     expect_true(is.na(tulpa:::.nl_axis_index(NULL, "sigma")))
 })
 
-test_that("recentering from a fit resolves a prefixed axis and its curvature", {
-    skip_on_cran_budget()
-    mode_u <- c(log(3), 0.4)
-    cov_u  <- diag(c(0.25, 0.09))
-    ax <- tulpa:::.nl_axis_recenter_from_fit(
-        mode_u, cov_u, c("log", "identity"), c("b1.sigma", "b1.alpha"),
-        "sigma", block_index = 1L, n_blocks = 1L)
-    expect_length(ax, 5L)
-    expect_true(all(diff(ax) > 0))
-    # Centred on the mode, spanning +/- 2.5 SD on the log axis.
-    expect_equal(ax[3L], 3, tolerance = 1e-8)
-    expect_equal(log(ax[5L]) - log(ax[1L]), 2 * 2.5 * 0.5, tolerance = 1e-8)
-    # An axis on another transform is laid on that transform's coordinate.
-    al <- tulpa:::.nl_axis_recenter_from_fit(
-        mode_u, cov_u, c("log", "identity"), c("b1.sigma", "b1.alpha"),
-        "alpha", block_index = 1L, n_blocks = 1L)
-    expect_equal(al[3L], 0.4, tolerance = 1e-8)
-    expect_equal(al[5L] - al[1L], 2 * 2.5 * 0.3, tolerance = 1e-8)
-    # An absent axis declines.
-    expect_null(tulpa:::.nl_axis_recenter_from_fit(
-        mode_u, cov_u, c("log", "identity"), c("b1.sigma", "b1.alpha"),
-        "sigma", block_index = 2L, n_blocks = 3L))
-    expect_null(tulpa:::.nl_axis_recenter_from_fit(NULL, cov_u, "log", "sigma",
-                                                   "sigma"))
-})
-
 test_that("the single-block rescue guard honours a pin and passes a default", {
     skip_on_cran_budget()
     # No fit: a stub `res` carrying only the diagnostic fields the rescue reads,

@@ -110,7 +110,7 @@
 # fits report.
 .spde_fit_from_nested <- function(nested, sp, spatial, n_fixed, refit = NULL) {
   tg <- nested$theta_grid
-  bare <- .hyper_axis_bare(colnames(tg))
+  bare <- .axis_bare(colnames(tg))
   rg <- as.numeric(tg[, match("range", bare)])
   sg <- as.numeric(tg[, match("sigma", bare)])
   w <- nested$weights
@@ -145,7 +145,7 @@
     solved_converged <- solved_converged[!dropped]
   }
   declined <- nested$log_hyperprior_declined
-  if (length(declined)) names(declined) <- .hyper_axis_bare(names(declined))
+  if (length(declined)) names(declined) <- .axis_bare(names(declined))
   out <- list(
     mode            = at$mode,
     beta            = at$beta,

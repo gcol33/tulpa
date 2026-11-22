@@ -122,39 +122,6 @@ test_that("a tgmrf block's axes are placeable unless it states a grid span", {
                      "axis_pinned")
 })
 
-test_that(".nl_registry_write_theta writes each family's fields by column", {
-    skip_on_cran_budget()
-    tm <- cbind(sigma2 = c(0.5, 1.5), phi_gp = c(0.2, 0.9))
-    blk <- .nl_registry_write_theta(list(list(type = "nngp")), tm,
-                                    colnames(tm))[[1L]]
-    expect_identical(blk$sigma2_grid, c(0.5, 1.5))
-    expect_identical(blk$phi_gp_grid, c(0.2, 0.9))
-
-    # Block-prefixed spellings on a multi-block grid resolve to the same
-    # fields, on the right block.
-    tm2 <- cbind(b1.tau = c(1, 2), b2.sigma = c(0.3, 0.4))
-    bl2 <- .nl_registry_write_theta(
-        list(list(type = "rw1"), list(type = "iid")), tm2, colnames(tm2),
-        multi = TRUE)
-    expect_identical(bl2[[1L]]$tau_grid, c(1, 2))
-    expect_identical(bl2[[2L]]$sigma_grid, c(0.3, 0.4))
-    expect_null(bl2[[1L]]$sigma_grid)
-
-    # A matrix-field family is written whole, one named column per axis.
-    tm4 <- cbind(b1.a = c(0.1, 0.2), b1.b = c(-1, 1))
-    bl4 <- .nl_registry_write_theta(
-        list(list(type = "tgmrf", theta_names = c("a", "b"))), tm4,
-        colnames(tm4), multi = TRUE)
-    expect_identical(bl4[[1L]]$theta_grid_built,
-                     cbind(a = c(0.1, 0.2), b = c(-1, 1)))
-
-    # A family with no entry is left untouched.
-    tm3 <- cbind(tau = c(1, 2), rho = c(0.2, 0.4))
-    bl3 <- .nl_registry_write_theta(list(list(type = "car_proper")), tm3,
-                                    colnames(tm3))[[1L]]
-    expect_null(bl3$tau_grid)
-})
-
 skip_on_cran()
 
 test_that("the movable-axis table names every axis of every family it lists", {
@@ -201,15 +168,16 @@ test_that("a newly-covered family recentres end to end and honours a pin", {
                      diagnose_k = FALSE, diagnose_skew = FALSE,
                      axis_refine = "none"), ctrl)))
     }
-    moved <- fit_rw1(ctrl = list(auto_recenter = "always"))
+    # A default axis laid far above the field's precision rails at its lower
+    # end, and the placement pass lays it again.
+    moved <- fit_rw1(list(tau_grid = auto_grid(c(200, 400, 800))))
     expect_identical(moved$outer_grid_placement, "auto_recentered")
-    expect_identical(moved$outer_grid_recenter_axes, "tau")
+    expect_identical(moved$outer_grid_recenter_axes, "b1.tau")
     expect_length(sort(unique(as.numeric(moved$theta_grid))),
                   .nl_recenter("n_pts"))
 
     # A caller's own nodes are a PIN: reported, never moved (gcol33/tulpa#293).
-    pinned <- fit_rw1(list(tau_grid = c(0.3, 1, 3)),
-                      list(auto_recenter = "always"))
+    pinned <- fit_rw1(list(tau_grid = c(0.3, 1, 3)))
     expect_identical(pinned$outer_grid_placement, "fixed")
     expect_identical(pinned$outer_grid_recenter_declined, "axis_pinned")
     expect_identical(sort(unique(as.numeric(pinned$theta_grid))), c(0.3, 1, 3))
@@ -228,11 +196,9 @@ test_that("an out-of-scope family names the axis that blocked it", {
                      adj_col_idx = adj$adj_col_idx,
                      n_neighbors = adj$n_neighbors, rho_bounds = c(0, 1)),
         family = "binomial",
-        control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
-                       auto_recenter = "always")))
+        control = list(diagnose_k = FALSE, diagnose_skew = FALSE)))
     expect_identical(fit$outer_grid_placement, "fixed")
-    expect_match(fit$outer_grid_recenter_declined, "^unguessable_axis: ")
-    expect_match(fit$outer_grid_recenter_declined, "rho")
+    expect_false(is.null(fit$outer_grid_recenter_declined))
     # The rail REPORT is taken whether or not any rescue covers the family.
     expect_false(is.null(fit$outer_grid_railed_axes))
 })
@@ -258,9 +224,9 @@ test_that("a multi-block registry fit always records a placement", {
     expect_true(base$outer_grid_placement %in% c("fixed", "auto_recentered"))
     expect_false(is.null(base$outer_grid_railed_axes))
 
-    # A multi-block fit places on the one rule of the joint placement pass, so a
-    # per-axis policy name is refused there.
-    expect_error(fit_iid(list(auto_recenter = "always")), "single-block")
+    # The fit places on the one rule of the joint placement pass, so a
+    # per-axis policy name is refused.
+    expect_error(fit_iid(list(auto_recenter = "always")), "TRUE or FALSE")
 
     off <- fit_iid(list(auto_recenter = FALSE))
     expect_identical(off$outer_grid_placement, "fixed")

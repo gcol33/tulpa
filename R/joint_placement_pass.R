@@ -166,10 +166,10 @@
     out <- list()
     for (b in seq_along(st$prior)) {
         if (!tolower(st$prior[[b]]$type %||% "") %in% c("mcar", "miid")) next
-        cols <- .hp_logchol_block_cols(cn, paste0("b", b, "."))
+        cols <- .hp_logchol_block_cols(cn, .axis_prefix(b))
         for (lbl in cols) {
             out[[length(out) + 1L]] <- list(
-                label = lbl, axis = .hyper_axis_bare(lbl), block = b,
+                label = lbl, axis = .axis_bare(lbl), block = b,
                 ref = .joint_cpc_axis_ref(lbl))
         }
     }
@@ -252,7 +252,7 @@
     }
     out <- list()
     for (b in seq_along(st$prior)) {
-        lbl <- paste0("b", b, ".rho")
+        lbl <- .axis_label(b, "rho")
         if (!identical(tolower(st$prior[[b]]$type %||% ""), "bym2") ||
             !lbl %in% cn) next
         out[[length(out) + 1L]] <- list(label = lbl, axis = "rho", block = b,
@@ -279,7 +279,7 @@
     out <- list()
     for (b in setdiff(seq_along(st$prior), copied)) {
         for (a in names(.JOINT_BLOCK_SCALE_AXES)) {
-            lbl <- paste0("b", b, ".", a)
+            lbl <- .axis_label(b, a)
             if (!lbl %in% cn) next
             out[[length(out) + 1L]] <- list(
                 label = lbl, axis = a, block = b,
@@ -330,7 +330,7 @@
                         error = function(e) NA_character_)
         if (length(tag) != 1L || is.na(tag)) next
         sl$tag <- tag
-        sl$label <- paste0("b", sl$block, ".", sl$axis)
+        sl$label <- .axis_label(sl$block, sl$axis)
         out[[length(out) + 1L]] <- sl
     }
     out
@@ -341,7 +341,7 @@
 .joint_block_declared_nodes <- function(res, st, b) {
     out <- list()
     for (sl in .nl_registry_axis_slots(st$prior[b])) {
-        out[[sl$axis]] <- .joint_declared_axis_ref(paste0("b", b, ".", sl$axis))(res)
+        out[[sl$axis]] <- .joint_declared_axis_ref(.axis_label(b, sl$axis))(res)
     }
     out
 }
@@ -508,13 +508,13 @@
                     blk, fields[[a]], .nl_auto_fields_at(auto, b),
                     type = if (b %in% copied) ".copy"
                            else tolower(blk$type %||% ""))
-                if (is.null(hold)) scale <- c(scale, paste0("b", b, ".", a))
+                if (is.null(hold)) scale <- c(scale, .axis_label(b, a))
             }
             type <- tolower(blk$type %||% "")
             if (type %in% c("mcar", "miid") &&
                 is.null(.nl_axis_hold(blk, "logchol_grid",
                                       .nl_auto_fields_at(auto, b), type = type))) {
-                scale <- c(scale, paste0("b", b, ".",
+                scale <- c(scale, .axis_label(b,
                                          .mcar_logchol_names(as.integer(blk$n_fields))))
             }
         }
@@ -554,7 +554,7 @@
     }
     b <- which(vapply(seq_along(st$prior), function(b)
         movable(st$prior[[b]], b), logical(1)))
-    paste0("b", b, ".rho")
+    .axis_label(b, "rho")
 }
 
 # --- the pass ----------------------------------------------------------------

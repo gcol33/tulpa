@@ -457,7 +457,7 @@
     d  <- ncol(tg)
     out <- rep(NA_character_, d)
 
-    bare <- function(idx) sub("^b[0-9]+\\.", "", cn[idx])
+    bare <- function(idx) .axis_bare(cn[idx])
 
     if (!is.null(res$axis_offsets) && !is.null(res$blocks)) {
         ao <- as.integer(res$axis_offsets)
@@ -550,7 +550,7 @@
     # agrees with the tag on every axis that has both -- `log` already maps to
     # `positive` -- so the only axis it moves is the one whose tag speaks for
     # the proposal instead.
-    scl <- vapply(.hyper_axis_bare(cn),
+    scl <- vapply(.axis_bare(cn),
                   function(b) isTRUE(.hyper_axis_scale(b)), logical(1),
                   USE.NAMES = FALSE)
     doms[scl] <- "positive"
@@ -843,7 +843,7 @@
 .joint_pareto_copy_tags <- function(tags, theta_grid) {
     cn <- colnames(theta_grid)
     if (is.null(cn)) return(tags)
-    for (j in which(.hyper_axis_bare(cn) == "alpha" & tags == "identity")) {
+    for (j in which(.axis_bare(cn) == "alpha" & tags == "identity")) {
         if (all(as.numeric(theta_grid[, j]) > 0)) tags[j] <- "log"
     }
     tags
@@ -1241,7 +1241,7 @@
 
     arm_cols <- replicate(n_arms, integer(0), simplify = FALSE)
     names(arm_cols) <- arm_names
-    bare <- function(idx) sub("^b[0-9]+\\.", "", cn[idx])
+    bare <- function(idx) .axis_bare(cn[idx])
 
     for (b in seq_len(B)) {
         if (ao[b + 1L] <= ao[b]) next                     # block carries no axis

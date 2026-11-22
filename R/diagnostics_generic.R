@@ -260,10 +260,10 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
   blocks <- if (is.null(pr)) list() else if (!is.null(pr$type)) list(pr) else pr
   roles <- .nl_block_roles(pr)
   types <- vapply(blocks, function(b) tolower(b$type %||% ""), character(1))
-  bi <- suppressWarnings(as.integer(sub("^b([0-9]+)\\..*$", "\\1", axes)))
+  bi <- .axis_block(axes)
   bi[is.na(bi) & length(blocks) >= 1L] <- 1L
   ok <- !is.na(bi) & bi >= 1L & bi <= length(blocks)
-  out <- data.frame(bare  = sub("^b[0-9]+\\.", "", axes),
+  out <- data.frame(bare  = .axis_bare(axes),
                     role  = ifelse(ok, roles[pmax(bi, 1L)], "other"),
                     type  = ifelse(ok, types[pmax(bi, 1L)], NA_character_),
                     block = ifelse(ok, bi, NA_integer_),
@@ -900,9 +900,9 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
                  dimnames = list(NULL, object$theta_names %||% "theta"))
   }
   axes <- colnames(tg) %||% paste0("theta", seq_len(ncol(tg)))
-  sel  <- grepl(sprintf("^b%d\\.", k), axes)
+  sel  <- .axis_block(axes) %in% k
   if (!any(sel)) return(NULL)
-  bare <- sub(sprintf("^b%d\\.", k), "", axes[sel])
+  bare <- .axis_bare(axes[sel])
   cols <- which(sel)
   w    <- w / sum(w)
   rows <- lapply(seq_along(bare), function(j) {

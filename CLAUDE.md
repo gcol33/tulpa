@@ -312,15 +312,9 @@ CCD design, the adaptive lattice and a locally CCD-refined grid keep their
 nodes. The specs behind a refined grid's measure are built from its BASE cells
 and carry the `refining` tags (`.joint_multi_attach_integration()`), since an
 axis's declared nodes fix a prior read off them. The registry door,
-`tulpa_nested_laplace()`, runs the same runner through `.nl_refine_registry()`
-(`R/nested_laplace_refine.R`) over the field SD axes its dispatcher can write a
-cell onto (`.nl_refinable_registry_axes()`): the passes need only a cell's log
-marginal, so each call's whole dispatcher result is kept and bound onto the base
-result by shape (`.nl_bind_cell_results()`), and anything that re-dispatches a
-settled fit (the debias, the corrected integrated Laplace) solves the fit's own
-cells (`.nl_refined_theta()`), not the declared grid. A test that reads a plain
-tensor or the declared cell count holds the grid with
-`control$axis_refine = "none"` on either door.
+`tulpa_nested_laplace()`, is a one-arm joint fit and refines there. A test that
+reads a plain tensor or the declared cell count holds the grid with
+`control$axis_refine = "none"`.
 
 ## Restricted spatial regression is a MODIFIER, and it changes the estimand
 
@@ -343,12 +337,26 @@ is an NNGP block's lengthscale.
 
 **Every single-response block fit is a one-arm fit on the joint driver**
 (gcol33/tulpa#944, gcol33/tulpa#1195). A multi-block `tulpa_nested_laplace()`
-fit is `tulpa_nested_laplace_joint()` on one arm (`.nl_registry_multi_fit()`):
-its blocks go through the joint block parser (`.nl_block_as_arm()`), the joint
+fit, one block or several, is `tulpa_nested_laplace_joint()` on one arm
+(`.nl_registry_multi_fit()`; a single block is the length-1 block list): its
+blocks go through the joint block parser (`.nl_block_as_arm()`), the joint
 placement pass (`.joint_place_axes()`, one rule: an axis fires when it rails or
-does not resolve its posterior, so the single-block registry policies
-`auto_recenter = "rail"/"always"` are refused there) lays every axis, and the
-registry's field reads, `field_solve` and response are added to the result. A
+does not resolve its posterior; `auto_recenter` is TRUE or FALSE) lays every
+axis, and the registry's field reads, `field_solve` and response are added to
+the result. A cell solved outside a grid fit (a conditional fit's one cell, a
+cell solved again for its precision, a tgmrf log marginal) goes through
+`.nl_solve_cells()`, the same driver.
+
+**One outer-axis label rule** (`R/axis_label.R`, gcol33/tulpa#1195): a block
+axis is `b<k>.<hyper>` whatever the block count, a per-arm dispersion
+`phi_<arm>`, a block-free axis of the single-block joint path bare (`sigma`,
+`alpha`). `.axis_label()` / `.axis_prefix()` write it and `.axis_bare()`,
+`.axis_block()`, `.axis_has_block()`, `.axis_is_dispersion()` read it; no
+other code builds or parses the prefix. The copy scale is a role, not a name
+(`.axis_is_copy()`): an `alpha` axis no block declares itself, so a tgmrf
+block's own `alpha` (in `.nl_linear_axes()`) keeps its natural coordinate and
+carries no name-keyed scale, bound or atom (`spec$block_declared`,
+gcol33/tulpa#1262). A
 tgmrf block's per-cell precision is evaluated from its closures at the cells of
 every joint solve (`.joint_tgmrf_at_cells()`). `run_multi_block_nested_laplace`, which every
 single-block `cpp_nested_laplace_*` entry reaches, is

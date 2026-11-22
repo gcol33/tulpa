@@ -785,7 +785,7 @@
     new_names <- colnames(cpp_grid)
     for (b_copy in (cp$copy_blocks_zero + 1L)) {
         cols_b  <- (axis_offsets[b_copy] + 1L):axis_offsets[b_copy + 1L]
-        bare_b  <- sub("^b[0-9]+\\.", "", colnames(cpp_grid)[cols_b])
+        bare_b  <- .axis_bare(colnames(cpp_grid)[cols_b])
         i_sigma <- match("sigma", bare_b)
         i_alpha <- match("alpha", bare_b)
         # A copied correlated field (mcar) has no scalar
@@ -802,8 +802,8 @@
         alpha_col <- as.numeric(cpp_grid[, cols_b[i_alpha]])
         cpp_grid[, cols_b[i_sigma]] <- sigma_col             # -> sigma_occ
         cpp_grid[, cols_b[i_alpha]] <- alpha_col * sigma_col  # -> sigma_pos
-        new_names[cols_b[i_sigma]] <- paste0("b", b_copy, ".sigma_occ")
-        new_names[cols_b[i_alpha]] <- paste0("b", b_copy, ".sigma_pos")
+        new_names[cols_b[i_sigma]] <- .axis_label(b_copy, "sigma_occ")
+        new_names[cols_b[i_alpha]] <- .axis_label(b_copy, "sigma_pos")
     }
     colnames(cpp_grid) <- new_names
     cpp_grid
@@ -952,7 +952,7 @@
         n_b <- axis_offsets[b_idx + 1L] - axis_offsets[b_idx]
         if (n_b <= 0L) next
         cols_b <- seq.int(axis_offsets[b_idx] + 1L, length.out = n_b)
-        i <- match(role, sub("^b[0-9]+\\.", "", axis_names[cols_b]))
+        i <- match(role, .axis_bare(axis_names[cols_b]))
         if (is.na(i)) next
         out[as.character(b_idx)] <- cols_b[i]
     }
@@ -1497,7 +1497,7 @@
         axis_names   = unlist(lapply(seq_along(grids), function(b) {
             cn <- colnames(grids[[b]])
             if (is.null(cn) || length(cn) == 0L) return(character(0))
-            paste0("b", b, ".", cn)
+            .axis_label(b, cn)
         }))
     )
 }
@@ -1992,7 +1992,7 @@
         as.integer(n_threads_outer) > 1L) {
         b_copy_R <- cp$copy_blocks_zero[[1L]] + 1L
         cols_bc  <- (axis_offsets[b_copy_R] + 1L):axis_offsets[b_copy_R + 1L]
-        bare_bc  <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_bc])
+        bare_bc  <- .axis_bare(colnames(joint_grid)[cols_bc])
         i_alpha  <- match("alpha", bare_bc)
         if (!is.na(i_alpha)) {
             alpha_col_idx <- cols_bc[i_alpha]
@@ -2583,7 +2583,7 @@
                                      .hsgp_coord_fields(pooled)))$anchor
         spec <- list(m = .hsgp_check_m(p[["m"]]), c = .hsgp_check_c(p[["c"]]),
                      kernel = .hsgp_kernel(p$cov, p$nu %||% 1.5, lab),
-                     basis_rule = list(axes = paste0("b", b, ".lengthscale"),
+                     basis_rule = list(axes = .axis_label(b, "lengthscale"),
                                        block = b))
         out[[length(out) + 1L]] <- .hsgp_basis_init(
             spec, pooled, .hsgp_prior_median(anchor), "c", lab)
@@ -2814,6 +2814,10 @@
                                             within = NULL) {
     support <- match.arg(support)
     within  <- .nl_within_cell_mode(within)
+    # The block layout the per-axis reads find each axis's block through
+    # (`.nl_linear_axes()`).
+    res$blocks       <- res$blocks %||% prepared
+    res$axis_offsets <- res$axis_offsets %||% axis_offsets
     # An outer quadrature that carries its own posterior (`outer_posterior`, the
     # adaptive sparse rule) reports the hyperparameters off that posterior's
     # points and weights rather than off the solved cells.
@@ -2859,7 +2863,7 @@
         block_sd   <- sqrt(pmax(0, as.numeric(crossprod(w, sub^2)) - block_mean^2))
         # Strip the "b<N>." prefix on per-block moment names -- block index
         # is implicit in the list position.
-        bare_names <- sub("^b[0-9]+\\.", "", colnames(sub))
+        bare_names <- .axis_bare(colnames(sub))
         names(block_mean) <- bare_names
         names(block_sd)   <- bare_names
         per_block_moments[[b]] <- list(

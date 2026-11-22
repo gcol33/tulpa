@@ -717,7 +717,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   dom_of <- function(nm) if (is.null(doms)) NA_character_ else unname(doms[nm])
   probs <- c(0.025, 0.5, 0.975)
   hypers <- lapply(seq_along(blocks), function(b) {
-    prefix  <- paste0("b", b, ".")
+    prefix  <- .axis_prefix(b)
     has_col <- function(nm) !is.null(tg) && nm %in% colnames(tg)
     tau_nm <- paste0(prefix, "tau")
     rho_nm <- paste0(prefix, "rho")

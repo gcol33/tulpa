@@ -212,7 +212,7 @@
         comp <- .field_bar_comp(
           rec, j, start + seq_len(n_u), idx,
           if (!is.null(blk$svc_weight)) blk$svc_weight[[1L]])
-        comp$path <- .field_bar_path(rec, blk, paste0("b", b, "."),
+        comp$path <- .field_bar_path(rec, blk, .axis_prefix(b),
                                      .nl_theta_matrix(object))
         fields[[length(fields) + 1L]] <- comp
       }
@@ -404,7 +404,7 @@
     fields <- lapply(ks, function(k) {
       cols <- .nl_block_cols(object$block_latent_offsets, n_x, k, length(roles))
       comp <- if (!is.null(cols)) {
-        .field_comp(object, prior[[k]], cols, paste0("b", k, "."), roles[k],
+        .field_comp(object, prior[[k]], cols, .axis_prefix(k), roles[k],
                     cells$theta, spec = .field_block_spec(object, prior, k))
       }
       if (is.null(comp)) {
@@ -1126,7 +1126,7 @@
              else if (is.list(object$prior) && is.null(object$prior$type))
                .hsgp_sum_indices(object$prior) else integer(0)
   shared <- which(vapply(lay$fields, function(comp)
-    comp$prefix %in% paste0("b", grouped, "."), logical(1)))
+    comp$prefix %in% .axis_prefix(grouped), logical(1)))
   if (length(shared)) eta <- eta + .field_hsgp_sum_at(
     object, src, newdata, L, cells, draw, lay$fields[shared])
   for (comp in lay$fields[setdiff(seq_along(lay$fields), shared)]) {
@@ -1278,8 +1278,8 @@
 }
 
 # The cells `cells` of a grid fit solved by the kernel that solved them -- the
-# SPDE grid kernel, the registry kernel of a single block, or the multi-block
-# driver -- at the cells' own hyperparameters, keeping each precision.
+# SPDE grid kernel or the registry arm's driver -- at the cells' own
+# hyperparameters, keeping each precision.
 #' @keywords internal
 .field_cell_resolve <- function(object, src, rec, cells) {
   theta <- src$theta[cells, , drop = FALSE]
@@ -1292,27 +1292,15 @@
       solve = rec$args, range_vec = as.numeric(theta[, "range"]),
       sigma_vec = as.numeric(theta[, "sigma"]), store_Q = TRUE,
       extra = list(compute_fitted_var = FALSE)),
-    registry = ,
     multi = {
       a <- rec$args
       a$y <- as.numeric(object$y)
       a$X <- object$model_matrix
       a$store_Q <- TRUE
-      a$prune_tol <- 0
       a$compute_fitted_var <- FALSE
-      if (identical(rec$door, "multi")) {
-        blocks <- if (is.list(prior) && !is.null(prior$type)) list(prior)
-                  else prior
-        .nl_dispatch_multi(a, blocks, theta_grid_override = theta)
-      } else {
-        # A field block's axis `<name>` is its `<name>_grid` entry; the cells
-        # are written as one paired grid.
-        blk <- prior
-        for (nm in colnames(theta)) {
-          blk[[paste0(nm, "_grid")]] <- as.numeric(theta[, nm])
-        }
-        .nl_dispatch(rec$type, a, blk, prior)
-      }
+      blocks <- if (is.list(prior) && !is.null(prior$type)) list(prior)
+                else prior
+      .nl_solve_cells(a, blocks, theta)
     })
   if (!is.list(res$Q_csc_x_per_grid) ||
       length(res$Q_csc_x_per_grid) != length(cells)) {

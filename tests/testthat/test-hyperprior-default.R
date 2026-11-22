@@ -460,38 +460,29 @@ test_that("a stencil or a probe row on a registry block reads the prior of its g
   bym2 <- function(sigma, rho)
     c(list(type = "bym2", n_spatial_units = S, spatial_idx = idx,
            scale_factor = 1, sigma_grid = sigma, rho_grid = rho), graph)
-  rows_at <- function(blk, i) bym2(blk$sigma_grid[i], blk$rho_grid[i])
+
+  cells <- function(blk) cbind(blk$sigma_grid, blk$rho_grid)
 
   # sigma held at one value, rho integrated: the stencil moves sigma too.
   rg <- c(0.2, 0.4, 0.6, 0.8, 0.95)
   held_sigma <- bym2(rep(0.8, 5L), rg)
-  grid <- tulpa:::.nl_dispatch("bym2", a, held_sigma, held_sigma)
-  expect_identical(grid$log_hyperprior_axes, "rho")
+  grid <- tulpa:::.nl_solve_cells(a, list(held_sigma), cells(held_sigma))
+  expect_identical(grid$log_hyperprior_axes, "b1.rho")
   m <- which.max(grid$log_marginal)
-  stencil <- bym2(0.8 * exp(c(0, 0.1, -0.1)), rep(rg[m], 3L))
-  st <- tulpa:::.nl_dispatch("bym2", a, stencil, held_sigma)
+  ov <- cbind(0.8 * exp(c(0, 0.1, -0.1)), rep(rg[m], 3L))
+  st <- tulpa:::.nl_solve_cells(a, list(held_sigma), ov)
   expect_equal(st$log_marginal[1L], grid$log_marginal[m], tolerance = 1e-8)
-  expect_identical(st$log_hyperprior_axes, "rho")
+  expect_identical(st$log_hyperprior_axes, "b1.rho")
 
   # rho held at one value, sigma integrated: the probe row holds sigma constant.
   sg <- c(0.3, 0.6, 1, 1.6, 2.5)
   held_rho <- bym2(sg, rep(0.5, 5L))
-  grid <- tulpa:::.nl_dispatch("bym2", a, held_rho, held_rho)
+  grid <- tulpa:::.nl_solve_cells(a, list(held_rho), cells(held_rho))
   m <- which.max(grid$log_marginal)
-  probe <- tulpa:::.nl_dispatch("bym2", a, rows_at(held_rho, m), held_rho)
+  probe <- tulpa:::.nl_solve_cells(a, list(held_rho),
+                                   grid$theta_grid[m, , drop = FALSE])
   expect_equal(probe$log_marginal, grid$log_marginal[m], tolerance = 1e-8)
-  expect_identical(probe$log_hyperprior_axes, "sigma")
-
-  # The multi-block dispatch evaluates an override against the prior it is handed.
-  multi <- tulpa:::.nl_dispatch_multi(a, list(held_rho))
-  tm <- multi$theta_grid[m, , drop = FALSE]
-  one <- tulpa:::.nl_dispatch_multi(a, list(held_rho), theta_grid_override = tm)
-  expect_equal(one$log_marginal, multi$log_marginal[m], tolerance = 1e-8)
-  multi <- tulpa:::.nl_dispatch_multi(a, list(held_sigma))
-  m <- which.max(multi$log_marginal)
-  ov <- cbind(0.8 * exp(c(0, 0.1, -0.1)), rep(rg[m], 3L))
-  st <- tulpa:::.nl_dispatch_multi(a, list(held_sigma), theta_grid_override = ov)
-  expect_equal(st$log_marginal[1L], multi$log_marginal[m], tolerance = 1e-8)
+  expect_identical(probe$log_hyperprior_axes, "b1.sigma")
 })
 
 test_that("a flat joint fit is the proper fit with the default density taken out", {

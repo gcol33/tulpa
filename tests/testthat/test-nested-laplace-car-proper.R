@@ -97,11 +97,11 @@ test_that("tulpa_nested_laplace() routes a car_proper prior to the new backend",
                         prior = prior, family = "binomial")
 
   expect_s3_class(res, "tulpa_nested_laplace")
-  expect_named(res$theta_mean, c("tau", "rho"))
+  expect_named(res$theta_mean, c("b1.tau", "b1.rho"))
   expect_equal(sum(res$weights), 1.0, tolerance = 1e-6)
   # Posterior rho lives strictly inside the eigenvalue interval
-  expect_gt(res$theta_mean[["rho"]], 0)
-  expect_lt(res$theta_mean[["rho"]], 1)
+  expect_gt(res$theta_mean[["b1.rho"]], 0)
+  expect_lt(res$theta_mean[["b1.rho"]], 1)
 })
 
 test_that("tulpa_nested_laplace() accepts spatial_car_proper spec", {
@@ -129,6 +129,6 @@ test_that("tulpa_nested_laplace() accepts spatial_car_proper spec", {
                         spec = spec, data = df, family = "binomial")
 
   expect_s3_class(res, "tulpa_nested_laplace")
-  expect_named(res$theta_mean, c("tau", "rho"))
+  expect_named(res$theta_mean, c("b1.tau", "b1.rho"))
   expect_cells_solved(res)
 })

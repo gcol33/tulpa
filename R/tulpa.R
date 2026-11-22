@@ -1107,15 +1107,7 @@
                           recursive = FALSE)
     }
     all_blocks <- c(all_blocks, re_blocks)
-    # A length-1 list routes the single-block path; length > 1 the multi-block
-    # joint path (both are handled by tulpa_nested_laplace()). An `iid` block is
-    # multi-block-only, which holds here: the length-0 check above already
-    # required a field / smoother / latent block, so RE blocks are never alone.
-    # A type the registry fits only inside a block list (no single-arm
-    # kernel, `cpp_fn = NULL`) stays a list of one.
-    lone <- length(all_blocks) == 1L &&
-      !is.null(.NL_REGISTRY[[tolower(all_blocks[[1L]]$type %||% "")]]$cpp_fn)
-    prior <- if (lone) all_blocks[[1L]] else all_blocks
+    prior <- all_blocks
     out <- list(
       y           = bundle$y,
       n_trials    = n_trials %||% rep(1L, bundle$n_obs),

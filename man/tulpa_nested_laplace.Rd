@@ -132,7 +132,7 @@ that spec instead of \code{family}, so \code{family}/\code{phi} are ignored. Use
 packages to fit a custom response without adding a family to tulpa -- for
 example tulpaObs threads its marginalized single-season occupancy
 likelihood (a scaled Bernoulli, with the latent occupancy state integrated
-out) through this. Multi-block \code{prior} only. Default \code{NULL} (use \code{family}).}
+out) through this. Default \code{NULL} (use \code{family}).}
 
 \item{hyperprior}{The prior an outer hyperparameter axis carries when the
 call states no density for it, \code{"proper"} (default) or \code{"flat"}.
@@ -183,9 +183,9 @@ fraction the default budget implies, so a larger budget sharpens the
 same k-hat instead of moving it to a deeper quantile of the weight
 distribution (gcol33/tulpa#631). \code{k_tail_points} overrides that tail
 size directly (capped at 20\% of the draws).
-Computed for a single-block, single positive-scale-axis grid; left \code{NA}
-(with the grid's quadrature ESS as the fallback diagnostic) for
-multi-block, multi-axis, or bounded-parameter grids. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
+Scored as \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} scores it; an axis without a
+guessable coordinate is declined with the grid's quadrature ESS as the
+fallback diagnostic. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
 \item \code{diagnose_skew} (\code{TRUE}), \code{skew_idx} (\code{NULL}) -- compute the inner-Laplace
 skewness diagnostic (\verb{$inner_skew}, gamma_3, Rue Martino & Chopin 2009
 Sec 3.2.3) at the fitted MAP grid cell: one extra Newton solve, scoring
@@ -311,44 +311,25 @@ pre-correction pair is kept as \verb{$cila$laplace}. A cell whose inner solve
 factorized sparsely draws through the CHOLMOD factor's own triangular and
 permutation solves; an LDL' factor has no square root to draw with and is
 declined with \code{"sparse_factor_not_ll"}.
-\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement policy. \code{TRUE}
-re-centres the movable default
-axes on the posterior mode and refits when the grid either RAILS (an
-axis's own marginal is maximal at one of its own endpoints) or does not
-RESOLVE its posterior (an axis's node spacing exceeds 2 posterior SDs in
-its own coordinate). Both tests read the weights the fit already stored,
-so a grid that brackets and resolves its mode costs nothing beyond them;
-when the pass does fire it is a second full grid solve plus a
-finite-difference mode/Hessian stencil. A recentred axis is
-\verb{mode +/- 2.5 sd} over 5 nodes, a cell width of 1.25 posterior SDs by
-construction, against a census median of 3.9 on the fixed spans.
+\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement. \code{TRUE} runs the
+placement pass of \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}: it re-centres the
+movable default axes on the posterior mode and refits when the grid either
+RAILS (an axis's own marginal is maximal at one of its own endpoints) or
+does not RESOLVE its posterior (an axis's node spacing exceeds 2 posterior
+SDs in its own coordinate). Both tests read the weights the fit already
+stored, so a grid that brackets and resolves its mode costs nothing beyond
+them; when the pass does fire it is a second full grid solve plus a
+finite-difference mode/Hessian stencil. \code{FALSE} integrates over the grid
+exactly as given and records
+\code{outer_grid_recenter_declined = "auto_recenter_disabled"}. Any other value
+is an error.
 
 Measured over 200 fixed-truth seeds on each of six configurations (icar
-chain / icar lattice / rw1 / bym2 / iid / nngp), the default moves mean
-|coverage - nominal| from 0.043 to 0.030 at the 95\% level, 0.171 to
-0.084 at 80\% and 0.243 to 0.129 at 50\% against the rail-only policy, at
-0.63 times the 95\% interval width and 0.76 times the median bias, for
-1.71 times the wall clock.
-
-Three other values. \code{"rail"} is the rail test alone, which is what
-\code{TRUE} meant before the sizing measurement settled the default. \code{FALSE}
-integrates over the grid exactly as given, whatever it is, and records
-\code{outer_grid_recenter_declined = "auto_recenter_disabled"}. \code{"always"}
-re-centres every movable default axis whatever the fit did, at 2.04
-times the wall clock; it agrees with the default seed for seed on five
-of the six measured configurations and differs on the one whose default
-axes already resolve their posterior, where it takes 50\% coverage to
-0.135 against a nominal 0.5.
-
-Which families carry movable axes is \code{.NL_REGISTRY_AXIS_FIELD}: icar,
-rw1, rw2, ar1, iid, st_interaction, bym2, nngp, hsgp and spde.
-car_proper and hsgp_mo each carry a correlation axis with no guessable
-coordinate, and mcar / miid / tgmrf hold their axes in one matrix field;
-a fit of any of them records which through \code{outer_grid_recenter_declined} rather than passing
-in silence. The per-axis policy names are the single-block path only: a
-multi-block \code{prior} is fitted by \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, whose
-placement pass applies the \code{TRUE} rule (rail or not resolved) to every
-axis and refuses them.
+chain / icar lattice / rw1 / bym2 / iid / nngp), the rail-or-resolve rule
+moves mean |coverage - nominal| from 0.043 to 0.030 at the 95\% level,
+0.171 to 0.084 at 80\% and 0.243 to 0.129 at 50\% against re-centring on a
+rail alone, at 0.63 times the 95\% interval width and 0.76 times the
+median bias, for 1.71 times the wall clock.
 \item \code{max_grid_cells} (\code{NULL}, no ceiling) -- a ceiling on a multi-block
 outer grid's cell count, one inner Newton solve per cell; a grid past it
 is refused before any solve, naming the axes that produced the count.
@@ -391,10 +372,7 @@ dropped cell is screened no worse than the worst kept one. On by default
 (gcol33/tulpa#925); \code{FALSE} solves every cell.
 \code{prune_tol} must be a finite numeric in \verb{[0, 1)} and \code{screen_iters} a
 single integer \verb{>= 1}; both are validated whatever \code{prune} says.
-\code{prune} / \code{prune_tol} reach both the single-block and the multi-block
-dispatch; the screening DEPTH is declared by the single-block kernels
-only, so a multi-block prior refuses a pinned \code{screen_iters} rather than
-accepting it and ignoring it.
+The screen is the one \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} runs.
 \item \code{prune_log_gap} (unset) -- the screening cut stated in nats instead of as
 a normalised weight: keep every cell within this many nats of the best
 screened cell. \code{prune_tol} is a weight, so what it cuts at is the gap
@@ -412,10 +390,9 @@ per-row linear predictor with. It costs one back-solve per distinct
 loading vector per cell, which on a design with few repeated rows is the
 dominant cost of a cell, so a caller reading only \code{fitted_eta} or the
 coefficient summaries sets \code{FALSE} and the fit then carries no
-\code{fitted_eta_var}. Every single-block field reports it, the NNGP, HSGP,
-SPDE and spatiotemporal fields included, each read off its cell's own
-precision at the mode; a multi-block prior refuses \code{FALSE} rather than
-accepting it and ignoring it.
+\code{fitted_eta_var}. Every block reports it, the NNGP, HSGP, SPDE and
+spatiotemporal fields included, each read off its cell's own precision
+at the mode.
 \item \code{var_of_means_consistency} (\code{TRUE}) -- the consistency pass of
 \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}: a field SD (\code{tau} of an \code{icar}, \code{rw1} or
 \code{rw2} block, \code{sigma} of an \code{iid}, \code{bym2} or \code{spde} block) whose marginal
@@ -520,8 +497,7 @@ that check unnecessary; \code{hyper_error} retains the hyperparameter result.
 The importance points receive full inner solves. The placement grid
 uses the pruning controls.
 \item \code{axis_refine} (\code{NULL}) -- per-axis override of how far those axes may be
-moved, named by the grid's axes (\code{"tau"}; \code{"b1.tau"} on a multi-block
-prior): \code{"none"}, \code{"densify"} (inside the declared span) or \code{"extend"}.
+moved, named by the grid's axes (\code{"b1.tau"}): \code{"none"}, \code{"densify"} (inside the declared span) or \code{"extend"}.
 Nodes the caller wrote down densify by default and an engine-placed axis
 extends, as in \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}.
 }}
@@ -587,9 +563,12 @@ the reason string records which check fired.
 }
 \description{
 Generic outer-grid nested Laplace driver. Builds a grid over the
-hyperparameters of a single latent prior block (spatial or temporal),
-runs an inner Laplace at each grid point with warm-starting, and
-integrates over the grid to give proper hyperparameter marginals.
+hyperparameters of one latent prior block or a list of them (spatial,
+temporal, iid, custom), runs an inner Laplace at each grid point with
+warm-starting, and integrates over the grid to give proper hyperparameter
+marginals. The fit is the one-arm fit of \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}:
+its outer axes are labelled by block, \verb{b<k>.<hyperparameter>} (\code{b1.tau} for
+the precision of the first block), a single block included.
 
 Supported priors:
 \itemize{

@@ -171,9 +171,9 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   expect_s3_class(fit, "tulpa_fit")
   expect_s3_class(fit, "tulpa_nested_laplace")
   # The GP hyperparameters were integrated, not conditioned on.
-  expect_named(fit$theta_mean, c("sigma2", "phi_gp"))
-  expect_true(is.finite(fit$theta_mean[["sigma2"]]))
-  expect_identical(fit$theta_mean[["phi_gp"]], Inf)
+  expect_named(fit$theta_mean, c("b1.sigma2", "b1.phi_gp"))
+  expect_true(is.finite(fit$theta_mean[["b1.sigma2"]]))
+  expect_identical(fit$theta_mean[["b1.phi_gp"]], Inf)
   expect_true(all(is.finite(fit$theta_median)))
   expect_true(abs(sum(fit$weights) - 1) < 1e-6)
 
@@ -287,9 +287,9 @@ test_that("mode = nested_laplace integrates an HSGP field through tulpa()", {
   expect_s3_class(fit, "tulpa_fit")
   expect_s3_class(fit, "tulpa_nested_laplace")
   # The HSGP hyperparameters were integrated, not conditioned on.
-  expect_named(fit$theta_mean, c("sigma2", "lengthscale"))
-  expect_true(is.finite(fit$theta_mean[["sigma2"]]))
-  expect_identical(fit$theta_mean[["lengthscale"]], Inf)
+  expect_named(fit$theta_mean, c("b1.sigma2", "b1.lengthscale"))
+  expect_true(is.finite(fit$theta_mean[["b1.sigma2"]]))
+  expect_identical(fit$theta_mean[["b1.lengthscale"]], Inf)
   expect_true(all(is.finite(fit$theta_median)))
   expect_true(abs(sum(fit$weights) - 1) < 1e-6)
 

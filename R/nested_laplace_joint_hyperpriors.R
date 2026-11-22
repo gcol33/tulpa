@@ -112,7 +112,7 @@
         # declares for it, resolved on the bare name a multi-block grid
         # prefixes. `NA` (an axis no table classifies) carries no quadrature
         # weight either, so its nodes stay on their own scale.
-        bare <- sub("^b[0-9]+[.]", "", col)
+        bare <- .axis_bare(col)
         log_scale <- isTRUE(.hyper_axis_scale(bare))
         v <- as.numeric(theta_grid[, col])
         cj <- .hyper_prior_carry(v, fn, log_scale, "natural")

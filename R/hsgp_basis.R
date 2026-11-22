@@ -321,7 +321,7 @@
   if (!is.null(fit$theta_grid)) {
     tg <- fit$theta_grid
     cn <- colnames(tg) %||% fit$theta_names
-    j <- if (is.null(axes)) which(sub("^b[0-9]+\\.", "", cn) == "lengthscale")
+    j <- if (is.null(axes)) which(.axis_bare(cn) == "lengthscale")
          else match(axes, cn)
     if (!length(j) || anyNA(j)) return(NULL)
     s <- tryCatch(.nested_hyper_summary(fit, probs), error = function(e) NULL)

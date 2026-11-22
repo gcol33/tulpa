@@ -132,13 +132,6 @@
   c(u[1L] - (u[2L] - u[1L]) / 2, u[K] + (u[K] - u[K - 1L]) / 2)
 }
 
-# The bare axis name. A multi-block grid prefixes each column with the block
-# that owns it (`b1.rho_car`), and every declaration keyed by axis name is keyed
-# on the name without that prefix.
-.hyper_axis_bare <- function(name) {
-  sub("^b[0-9]+[.]", "", as.character(name %||% ""))
-}
-
 # Natural-scale domain of one axis as `list(bounds, open)`, or NULL where
 # nothing is declared and the axis is treated as unbounded.
 #
@@ -149,14 +142,15 @@
 # in addition, which is how the BYM2 mixing weight gets its (0, 1) where the
 # name `rho` alone can only say the upper end. Intersecting keeps both true
 # statements and can only tighten, which is the safe direction for an interval
-# a support is refused outside of.
+# a support is refused outside of. A spec its block declares on its own
+# coordinate (`block_declared`) carries no name-keyed claim at all.
 #
 # A finite endpoint of a spec's `bounds` is treated as OPEN, for the same reason
 # every entry of the registry is: a declared natural support ends where the
 # parameterisation degenerates -- a zero scale, a singular `Q` -- so the
 # endpoint itself is not a value the fit can be evaluated at.
 .hyper_axis_domain <- function(spec) {
-  bare <- .hyper_axis_bare(spec[["name"]])
+  bare <- if (isTRUE(spec[["block_declared"]])) "" else .axis_bare(spec[["name"]])
   d <- if (nzchar(bare)) .NL_AXIS_DOMAIN[[bare]] else NULL
   if (is.null(d) && isTRUE(.hyper_axis_scale(bare))) {
     d <- .NL_AXIS_DOMAIN[[".positive"]]
@@ -877,9 +871,9 @@ tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
   unw <- Filter(function(s) isTRUE(s$unweighted) && s$name %in% axis_names,
                 specs)
   names_unw <- vapply(unw, function(s) s$name, character(1))
-  cand <- names_unw[.hp_is_logchol_col(.hyper_axis_bare(names_unw))]
+  cand <- names_unw[.hp_is_logchol_col(.axis_bare(names_unw))]
   out <- list()
-  for (pre in unique(.hp_col_prefix_vec(cand))) {
+  for (pre in unique(.axis_label_prefix(cand))) {
     cols <- .hp_logchol_block_cols(axis_names, pre)
     if (is.null(cols)) next
     design <- unw[[match(cols[1L], names_unw)]]$logchol_design
@@ -1077,7 +1071,8 @@ tulpa_grid_log_quad <- function(theta_grid, specs = NULL,
 .nl_grid_log_quad <- function(theta_grid, specs = NULL,
                               copy_slab = "exponential",
                               close_domain = TRUE, folded_axes = NULL,
-                              refining = NULL, axis_support = NULL) {
+                              refining = NULL, axis_support = NULL,
+                              linear_axes = NULL) {
   if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
   theta_grid <- as.matrix(theta_grid)
   if (is.null(specs)) {
@@ -1085,6 +1080,7 @@ tulpa_grid_log_quad <- function(theta_grid, specs = NULL,
     specs <- .joint_axis_specs_from_grid(theta_grid[base, , drop = FALSE],
                                          copy_slab = copy_slab,
                                          folded_axes = folded_axes,
+                                         linear_axes = linear_axes,
                                          axis_support = axis_support)
   }
   .hyper_log_quad_weights(theta_grid, specs, close_domain = close_domain,

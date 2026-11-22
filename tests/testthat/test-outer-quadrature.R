@@ -115,9 +115,7 @@ test_that("an outer user design is validated and uses the shared evidence measur
   }
 })
 
-test_that("invalid user axes fail before an inner solve", {
-  local_mocked_bindings(.nl_dispatch_multi = function(...) stop("solver reached"),
-                        .package = "tulpa")
+test_that("invalid user axes are refused", {
   block <- list(type = "iid", n_units = 2L, obs_idx = 1:2)
   run <- function(point, name = "b1.sigma", prior = block)
     tulpa_nested_laplace(c(0, 1), c(1L, 1L), matrix(1, 2, 1), prior = prior,
@@ -152,7 +150,7 @@ test_that("hyperparameter draws preserve the positive conditional cell mixture",
 })
 
 test_that("unsupported adaptive designs are rejected before an inner solve", {
-  local_mocked_bindings(.nl_dispatch_multi = function(...) stop("inner reached"),
+  local_mocked_bindings(cpp_nested_laplace_joint_multi = function(...) stop("inner reached"),
     .package = "tulpa")
   expect_error(tulpa_nested_laplace(c(0, 1), c(1L, 1L), matrix(1, 2, 1),
     prior = list(type = "iid", n_units = 2L, obs_idx = 1:2),

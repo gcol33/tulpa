@@ -706,7 +706,7 @@ validate_gp <- function(gp, data) {
           .MSGP_RANGE_ALPHA, .HSGP_LENGTHSCALE_PRIOR_DIM) / .SPATIAL_RANGE_FACTOR
         .hsgp_basis_init(
           list(m = gp$m, c = gp$c_boundary, kernel = gp$kernel,
-               basis_rule = list(axes = paste0("b", b, ".lengthscale"))),
+               basis_rule = list(axes = .axis_label(b, "lengthscale"))),
           coords, ell0, "c",
           sprintf("spatial_multiscale(approx = \"hsgp\"), %s scale", scs[b]))
       }), scs)

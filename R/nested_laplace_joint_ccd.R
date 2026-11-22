@@ -669,13 +669,13 @@
 # log alpha; an affine design on the identity coordinate puts nodes at negative
 # alpha, which is outside the model's support.
 .joint_ccd_coord_tags <- function(axis_names, tags) {
-    tags[sub("^b[0-9]+\\.", "", axis_names) == "alpha"] <- "log"
+    tags[.axis_bare(axis_names) == "alpha"] <- "log"
     tags
 }
 
 # The copy-scale axes whose supplied levels carry the "no coupling" atom.
 .joint_ccd_atom_axes <- function(axis_names, axis_values) {
-    bare <- sub("^b[0-9]+\\.", "", axis_names)
+    bare <- .axis_bare(axis_names)
     has_zero <- vapply(axis_values,
                        function(v) any(as.numeric(v) == 0), logical(1))
     unname(which(bare == "alpha" & has_zero))

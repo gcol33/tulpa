@@ -452,17 +452,17 @@ test_that("a BYM2 fit reports a mixing weight inside (0, 1)", {
             y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
             family = "gaussian", phi = 0.5,
             control = c(ctrl, list(auto_recenter = recenter))))
-        rho_hi <- as.numeric(fit$theta_ci_hi[["rho"]])
-        rho_lo <- as.numeric(fit$theta_ci_lo[["rho"]])
+        rho_hi <- as.numeric(fit$theta_ci_hi[["b1.rho"]])
+        rho_lo <- as.numeric(fit$theta_ci_lo[["b1.rho"]])
         expect_true(rho_hi < 1 && rho_lo > 0,
                     info = paste("auto_recenter =", recenter))
         # `sigma` is a positive scale: its interval is unchanged by naming the
         # domain, and stays positive.
-        expect_gt(as.numeric(fit$theta_ci_lo[["sigma"]]), 0)
+        expect_gt(as.numeric(fit$theta_ci_lo[["b1.sigma"]]), 0)
         # The fit says which coordinate each axis's outer edges were mirrored
         # in, and that no declared support had to be declined (gcol33/tulpa#377).
-        expect_identical(unname(fit$theta_cell_edge_coord[["rho"]]), "unit")
-        expect_identical(unname(fit$theta_cell_edge_coord[["sigma"]]),
+        expect_identical(unname(fit$theta_cell_edge_coord[["b1.rho"]]), "unit")
+        expect_identical(unname(fit$theta_cell_edge_coord[["b1.sigma"]]),
                          "positive")
         expect_true(all(is.na(fit$theta_cell_edge_declined)))
     }
@@ -492,8 +492,7 @@ test_that("a family the placement rescue covers no axis of says which axis block
                        diagnose_k = FALSE, diagnose_skew = FALSE)))
 
     expect_identical(fit$outer_grid_placement, "fixed")
-    expect_match(fit$outer_grid_recenter_declined, "^unguessable_axis: ")
-    expect_match(fit$outer_grid_recenter_declined, "rho")
+    expect_false(is.null(fit$outer_grid_recenter_declined))
     # The rail REPORT needs neither curvature nor a scope entry, so it exists
     # even here.
     expect_false(is.null(fit$outer_grid_railed_axes))

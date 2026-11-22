@@ -60,17 +60,6 @@
                         screen = screen)
 }
 
-# The dispatcher arguments a registry refinement call runs under: unscreened
-# (`cargs` as given, which carries `prune_tol = 0`) unless the round brought a
-# screen record and the fit screens, in which case the fit's tolerance and the
-# record the dispatcher builds the offset from (`screen_refine`).
-.nl_refine_cargs <- function(cargs, screen, tol) {
-  if (is.null(screen) || !(tol > 0)) return(cargs)
-  cargs$prune_tol <- tol
-  cargs$screen_refine <- screen
-  cargs
-}
-
 # The cheap-pass record of a grid whose cells were screened in more than one
 # call -- the declared grid, then each refinement round against the grid it
 # joined -- read over the merged grid: the count dropped, the offset every cell

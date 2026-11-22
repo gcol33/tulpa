@@ -51,14 +51,6 @@
       ctrl))
 }
 
-test_that("a multi-block prior refuses the knobs its entry does not declare", {
-  f <- .nlp_fixture()
-  multi <- f
-  multi$prior <- list(f$prior)
-  expect_error(.nlp_fit(multi, list(screen_iters = 3L)), "single-block")
-  expect_error(.nlp_fit(multi, list(fitted_var = FALSE)), "single-block")
-})
-
 skip_on_cran_budget()
 
 test_that("the screening knobs are validated where the caller set them", {
@@ -82,55 +74,6 @@ test_that("the screening knobs are validated where the caller set them", {
 # The gate reads the mass the dropped cells may carry, lifting each by the worst
 # screening error measured on a kept cell. Here the kept cells' screens are off
 # by 0.1, and the dropped cell screened at -3.5 against a best kept cell at -3.
-test_that(".nl_prune_gate replaces a screen it distrusts with the full grid", {
-  skip_on_cran_budget()
-  screened <- list(log_marginal = c(-Inf, -3, -4),
-                   prune_cheap_log_marginal = c(-3.5, -3.1, -4.1),
-                   prune_mask = c(TRUE, FALSE, FALSE),
-                   prune_n_pruned = 1L)
-  full <- list(log_marginal = c(-3.4, -3, -4))
-  calls <- 0L
-  resolve_full <- function() {
-    calls <<- calls + 1L
-    full
-  }
-
-  # Nothing was screened at a zero tolerance, so the result is handed back
-  # untouched and the full grid is never solved a second time.
-  expect_identical(tulpa:::.nl_prune_gate(screened, 0, resolve_full), screened)
-  expect_identical(calls, 0L)
-
-  out <- NULL
-  expect_warning(
-    out <- tulpa:::.nl_prune_gate(screened, 1e-3, resolve_full),
-    "cheap-pass prune is unreliable")
-  expect_identical(calls, 1L)
-  expect_true(out$prune_fallback_triggered)
-  expect_match(out$prune_fallback_reason, "posterior mass")
-  expect_equal(out$prune_dropped_mass_bound,
-               exp(-3.4 + 3) / (1 + exp(-1)), tolerance = 1e-12)
-  expect_false("prune_mask" %in% names(out))
-  expect_equal(out$log_marginal, full$log_marginal)
-
-  # A screen with nothing to bound it by is distrusted too, and says why.
-  bare <- screened[setdiff(names(screened), "prune_cheap_log_marginal")]
-  expect_warning(out <- tulpa:::.nl_prune_gate(bare, 1e-3, resolve_full),
-                 "no per-cell screen")
-  expect_true(out$prune_fallback_triggered)
-})
-
-test_that(".nl_prune_gate keeps a screen it trusts", {
-  skip_on_cran_budget()
-  screened <- list(log_marginal = c(-Inf, -3, -4),
-                   prune_cheap_log_marginal = c(-20, -3.1, -4.1),
-                   prune_mask = c(TRUE, FALSE, FALSE),
-                   prune_n_pruned = 1L)
-  out <- tulpa:::.nl_prune_gate(screened, 1e-3,
-                                function() stop("the full grid must not be solved"))
-  expect_identical(out[names(screened)], screened)
-  expect_lte(out$prune_dropped_mass_bound, tulpa:::.nl_screen("gate_mass"))
-})
-
 skip_on_cran()
 
 test_that("a screened single-block fit reports either the screen or the fallback", {

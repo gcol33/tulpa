@@ -28,6 +28,21 @@
   tgmrf block's axes and evaluates its precision from its closures at the
   cells of every solve (#1195).
 
+* A single-block `tulpa_nested_laplace()` fit is the one-block list it is:
+  every fit is fitted by `tulpa_nested_laplace_joint()` on one arm, and every
+  outer axis is labelled by its block, `b<k>.<hyperparameter>` (`b1.tau`,
+  `b1.rho`), a single block included. `theta_grid`, `theta_mean` and every
+  per-axis field carry those names, and `prior` is the block list.
+  `control$auto_recenter` is `TRUE` or `FALSE`; `"rail"`, `"resolve"` and
+  `"always"` are refused. `screen_iters` and `fitted_var` reach every fit. Over
+  136 single-block fits the registry test files make, 112 lay the same grid
+  and agree to 1e-12; the 24 the placement pass or refinement lays differently
+  move a hyperparameter mean by at most 7% of its value and a coefficient by
+  at most 0.4% (#1195).
+* The copy scale is identified by its role, not its name: a `tgmrf()` block
+  whose hyperparameter is called `alpha` keeps it on its own coordinate
+  (#1262).
+
 * `tulpa_nested_laplace_joint()` scores the outer Pareto-k-hat once on a placed
   fit: the fit the placement is read off leaves it to the refit it is replaced
   by. A placed Poisson SPDE fit (n = 250) went from about 4.3 s to 2.0 s with

@@ -313,7 +313,7 @@ temporal <- function(object, component = "all", summary = FALSE,
             else .nl_block_cols(object$block_latent_offsets, n_x, k, length(bl))
     if (!length(cols)) return(NULL)
     sc <- if (identical(tolower(bl[[k]]$type %||% ""), "iid")) {
-      paste0(if (single) "" else paste0("b", k, "."), "sigma")
+      paste0(if (single) "" else .axis_prefix(k), "sigma")
     }
     if (!is.null(sc) && !sc %in% colnames(tg)) return(NULL)
     list(cols = cols, scale_axis = sc)

@@ -1,48 +1,21 @@
-# Outer-grid refinement on the registry door (`tulpa_nested_laplace()`).
+# Per-cell results of outer cells solved in chunks, bound onto a base result.
 #
-# The joint drivers refine their outer grid through `.joint_refine_outer_grid()`
-# (`R/nested_laplace_joint_helpers.R`): the opt-in boundary / interior pass and
-# the var-of-means consistency pass, driven by the axis specs and a
-# `kernel_fn(new_cells)` closure. The registry door runs the same two passes
-# through the same runner. What it supplies is its own: the specs of the grid
-# it solved, a `kernel_fn` over its dispatcher (`.nl_dispatch()` writes the
-# cells onto the block's grid fields, `.nl_dispatch_multi()` takes them as a
-# `theta_grid_override`), and the per-cell side data of every cell the passes
-# add, bound onto the base result.
-#
-# The passes need only each new cell's log marginal, with the block
-# hyperprior already folded in by the dispatcher. The rest of what a cell
-# carries (its mode, the precision, the Newton diagnostics, ...) is whatever the
-# kernel returns for it, so the chunks the passes solved are kept whole and
-# bound onto the base result field by field (`.nl_bind_cell_results()`), rather
-# than described by a table that would drift from the kernel's own output.
+# A pass that adds cells to a solved grid (an outer design's importance
+# points, a quadrature's refinement) needs only each new cell's log marginal;
+# the rest of what a cell carries (its mode, the precision, the Newton
+# diagnostics, ...) is whatever the kernel returns for it, so the chunks are
+# kept whole and bound onto the base result field by field
+# (`.nl_bind_cell_results()`), rather than described by a table that would
+# drift from the kernel's own output.
 
 # The registry slots of a prior, each named as the grid names its axis.
 .nl_registry_named_slots <- function(prior, multi) {
     blocks <- if (isTRUE(multi)) prior else list(prior)
     slots <- .nl_registry_axis_slots(blocks)
     names(slots) <- vapply(slots, function(s)
-        if (isTRUE(multi)) paste0("b", s$block, ".", s$axis) else s$axis,
+        if (isTRUE(multi)) .axis_label(s$block, s$axis) else s$axis,
         character(1))
     slots
-}
-
-# The axes of a registry grid the passes may refine, among those the dispatcher
-# can write a cell onto (`.nl_registry_axis_slots()`, the families
-# `.NL_REGISTRY_AXIS_FIELD` binds): every axis the transform registry names a
-# coordinate for (`tags`, `.nl_registry_axis_tags()`) -- the same membership
-# the placement pass moves an axis by, so an axis the engine lays at its mode
-# is also one refinement follows out past an end node holding mass -- and an
-# axis a block declares on its own natural coordinate (`.NL_LINEAR_AXIS_BLOCKS`,
-# a tgmrf() block's theta), which the passes lay their points on linearly.
-# Named as the grid names them.
-.nl_refinable_registry_axes <- function(prior, multi, tags = NULL) {
-    slots <- .nl_registry_named_slots(prior, multi)
-    nm <- names(slots) %||% character(0)
-    linear <- vapply(slots, function(s) s$type %in% .NL_LINEAR_AXIS_BLOCKS,
-                     logical(1))
-    tagged <- !is.na(tags[nm] %||% rep(NA_character_, length(nm)))
-    nm[.hyper_axis_bare(nm) %in% .JOINT_FIELD_SD_AXES | linear | tagged]
 }
 
 # The refinement mode of each refinable axis of one registry grid, from who wrote
@@ -61,34 +34,6 @@
     .joint_axis_refine_modes_by(
         axes, stated, user,
         eligible = function(a) a %in% refinable)
-}
-
-# One `kernel_fn(new_cells, warm_start, store_extras, screen)` for the passes,
-# over `solve(theta_mat, screen)`: the dispatcher's result for those rows,
-# screened against the grid they join when `screen` is given. Each call's whole
-# result is kept in `chunks`, in the order the passes append their cells. A call
-# is split where its size equals the base grid's, so that a field's length can
-# tell a per-cell field from one that only happens to have as many entries as
-# the grid has cells; each part takes its own cells' share of the screen.
-.nl_chunked_kernel <- function(solve, n_base) {
-    chunks <- list()
-    kernel_fn <- function(new_cells, warm_start = NULL, store_extras = FALSE,
-                          screen = NULL) {
-        n <- nrow(new_cells)
-        parts <- if (n == n_base && n > 1L) list(seq_len(n - 1L), n)
-                 else list(seq_len(n))
-        lm <- numeric(0)
-        for (ix in parts) {
-            scr <- if (!is.null(screen) && length(ix) > 1L)
-                list(log_measure = screen$log_measure[ix],
-                     log_ref = screen$log_ref)
-            r <- solve(new_cells[ix, , drop = FALSE], scr)
-            chunks[[length(chunks) + 1L]] <<- list(res = r, n = length(ix))
-            lm <- c(lm, as.numeric(r$log_marginal))
-        }
-        list(log_marginal = lm, extras = NULL)
-    }
-    list(kernel_fn = kernel_fn, chunks = function() chunks)
 }
 
 # One field of a result as a per-cell array of `n` cells, or NULL when it is not
@@ -136,91 +81,4 @@
             vector = do.call(c, c(list(v), lapply(parts, as.vector))))
     }
     res
-}
-
-# Refine a registry result's outer grid. `solve(theta_mat)` is the dispatcher's
-# result for those rows; `prior` is the declared block (single) or block list
-# (multi), `auto` the provenance record of the markers `.nl_grid_provenance()`
-# stripped, and `declared` the prior as the front door received it: whether an
-# axis is stated is read off the nodes the caller declared, so a placement
-# refit, which solves `prior` at the nodes it laid, refines them as the
-# engine's. Returns `res` unchanged when no axis is refinable, no pass is asked
-# for or none added a node, and flagged `outer_refine_deferred` when the fit is
-# one its placement pass will lay again (`.nl_refine_deferred()`); otherwise
-# the grid with the nodes appended, the per-cell side data bound, the
-# `refining_axis` tags and the passes' records.
-.nl_refine_registry <- function(res, solve, prior, multi, auto,
-                                consistency = TRUE, adaptive_grid = FALSE,
-                                edge_thresh = 0.02, max_passes = 1L,
-                                user = NULL, declared = prior) {
-    tg <- .nl_theta_matrix(res)
-    if (is.null(tg) || is.null(colnames(tg))) return(res)
-    blocks <- if (isTRUE(multi)) prior else list(prior)
-    tags <- .nl_registry_axis_tags(res, blocks, multi)
-    tags <- if (length(tags) == ncol(tg)) stats::setNames(unname(tags), colnames(tg))
-    refinable <- intersect(.nl_refinable_registry_axes(prior, multi, tags),
-                           colnames(tg))
-    # A mis-named axis is refused whatever the grid turns out to need, so the
-    # knob never reads as applied where it was not.
-    user <- .joint_check_axis_refine(
-        user, colnames(tg), eligible_fn = function(a) a %in% refinable)
-    if (isTRUE(adaptive_grid) && !length(refinable)) {
-        stop(sprintf(paste0(
-            "`control$adaptive_grid = TRUE` refines a field-SD axis or an axis ",
-            "the transform registry tags, and this grid has none (axes: %s). ",
-            "Lay the axes' nodes on the block ",
-            "(its `*_grid` entries) instead."),
-            paste0("`", colnames(tg), "`", collapse = ", ")), call. = FALSE)
-    }
-    if ((!isTRUE(consistency) && !isTRUE(adaptive_grid)) || nrow(tg) < 2L ||
-        !length(refinable)) return(res)
-    if (.nl_refine_deferred(res, tg, res$log_marginal)) {
-        res$outer_refine_deferred <- TRUE
-        return(res)
-    }
-    modes <- .nl_registry_refine_modes(colnames(tg), refinable, declared, multi,
-                                       auto, user)
-    specs <- .joint_axis_specs_from_grid(
-        tg, folded_axes = res$log_hyperprior_axes, axis_refine = modes,
-        linear_axes = .nl_linear_axes(res),
-        axis_support = res$log_hyperprior_support)
-    if (is.null(specs)) return(res)
-    specs <- .hyper_specs_with_tags(specs, tags)
-    n_base <- nrow(tg)
-    ck <- .nl_chunked_kernel(solve, n_base)
-    ref <- .joint_refine_outer_grid(
-        tg, as.numeric(res$log_marginal), NULL, specs, ck$kernel_fn, NULL,
-        adaptive_grid = adaptive_grid, edge_thresh = edge_thresh,
-        max_passes = max_passes, consistency = consistency)
-    if (ref$n_added == 0L) {
-        res$var_of_means_consistency_info <- ref$consistency_info
-        return(res)
-    }
-    chunks <- ck$chunks()
-    res <- .nl_bind_cell_results(res, chunks, n_base)
-    res$theta_grid <- if (is.matrix(res$theta_grid)) ref$theta_grid
-                      else as.numeric(ref$theta_grid[, 1L])
-    res$log_marginal <- ref$log_marginal
-    res$refining_axis <- ref$refining_axis
-    if (!is.null(res$n_grid)) res$n_grid <- nrow(ref$theta_grid)
-    res$adaptive_grid_info <- ref$adaptive_info
-    res$var_of_means_consistency_info <- ref$consistency_info
-    res
-}
-
-# The grid a re-dispatch over a settled registry fit solves (the subspace debias,
-# the corrected integrated Laplace): the fit's own cells, refinement nodes
-# included, as a block carrying them (single) or a `theta_grid_override`
-# (multi). NULL where the fit refined nothing, which keeps the declared grid.
-.nl_refined_theta <- function(res) {
-    if (is.null(res$refining_axis) || !any(nzchar(res$refining_axis))) return(NULL)
-    tg <- .nl_theta_matrix(res)
-    if (is.null(colnames(tg))) NULL else tg
-}
-
-# `prior` (single block) written onto the fit's cells.
-.nl_refined_block <- function(res, prior) {
-    tg <- .nl_refined_theta(res)
-    if (is.null(tg)) return(prior)
-    .nl_registry_write_theta(list(prior), tg, colnames(tg))[[1L]]
 }

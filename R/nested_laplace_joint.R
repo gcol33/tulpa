@@ -1492,16 +1492,11 @@ tulpa_nested_laplace_joint <- function(responses,
     # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
     # opt-out for a caller who wants the default axis integrated as-is. The
     # placement pass has one rule, an axis fires when it rails or its grid does
-    # not resolve its own posterior, so the per-axis policy names (`"rail"`,
-    # `"resolve"`, `"always"`) of the single-block registry path are refused
-    # rather than accepted and ignored.
-    if (is.character(control$auto_recenter)) {
-        stop("control$auto_recenter = \"",
-             paste(control$auto_recenter, collapse = "\", \""),
-             "\" names a per-axis placement policy of the single-block ",
-             "tulpa_nested_laplace() path; this fit places every axis that ",
-             "rails or does not resolve its own posterior. Use TRUE or FALSE ",
-             "here.", call. = FALSE)
+    # not resolve its own posterior, so the knob is TRUE or FALSE.
+    if (!isTRUE(control$auto_recenter %||% TRUE) && !isFALSE(control$auto_recenter)) {
+        stop("control$auto_recenter must be TRUE or FALSE: the placement pass ",
+             "places every axis that rails or does not resolve its own ",
+             "posterior, or (FALSE) holds every grid as given.", call. = FALSE)
     }
     auto_recenter <- !isFALSE(control$auto_recenter)
 
@@ -1927,7 +1922,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # `prune_log_gap` states the same screening cut in nats and replaces the
     # tolerance when set; the two together are refused rather than ranked.
     prune_tol                 <- .nl_prune_tol_from_control(
-        control, control$prune_tol %||% .nl_screen("prune_tol"))
+        control, .nl_check_prune_tol(control$prune_tol %||% .nl_screen("prune_tol")))
     screen_iters              <- control$screen_iters %||% .nl_screen("iters")
     x_init                    <- control$x_init
     verbose                   <- control$verbose %||% FALSE
@@ -2195,29 +2190,11 @@ tulpa_nested_laplace_joint <- function(responses,
     # Pruning toggle: the kernel takes prune_tol > 0 to mean "screen and
     # prune"; gate it here with the user-facing `prune` boolean so the toggle
     # composes cleanly (prune=FALSE always disables, prune=TRUE uses
-    # prune_tol). prune_tol must be in [0, 1) -- clamp out-of-range to 0
-    # rather than erroring, because a zero tolerance is the safe no-op.
-    if (!isTRUE(prune)) {
-        prune_tol_eff <- 0.0
-    } else {
-        prune_tol_eff <- as.numeric(prune_tol)
-        if (!is.finite(prune_tol_eff) || prune_tol_eff < 0 ||
-            prune_tol_eff >= 1) {
-            stop("`prune_tol` must be a finite numeric in [0, 1).",
-                 call. = FALSE)
-        }
-    }
-
-    # Cheap-screen depth. Validated whatever `prune` says, so a misspecified
-    # value is reported where the user set it rather than at the next fit that
-    # happens to switch pruning on.
-    if (length(screen_iters) != 1L || !is.numeric(screen_iters) ||
-        !is.finite(screen_iters) || screen_iters < 1 ||
-        screen_iters > .Machine$integer.max ||
-        screen_iters != round(screen_iters)) {
-        stop("`screen_iters` must be a single integer >= 1.", call. = FALSE)
-    }
-    screen_iters <- as.integer(screen_iters)
+    # prune_tol). The tolerance and the screening depth are validated whatever
+    # `prune` says, so a misspecified value is reported where the user set it
+    # rather than at the next fit that happens to switch pruning on.
+    prune_tol_eff <- if (isTRUE(prune)) prune_tol else 0.0
+    screen_iters <- .nl_check_screen_iters(screen_iters)
 
     # Cheap-screen depth reaches the cpp entry on the same scoped-option
     # transport as progress and the checkpoint: the entry is called through the

@@ -521,9 +521,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     support <- "sample"
   }
   cn <- colnames(tg) %||% character(0)
-  lc <- cn[.hp_is_logchol_col(.hyper_axis_bare(cn))]
+  lc <- cn[.hp_is_logchol_col(.axis_bare(cn))]
   parts <- list()
-  for (pre in unique(.hp_col_prefix_vec(lc))) {
+  for (pre in unique(.axis_label_prefix(lc))) {
     cols <- .hp_logchol_block_cols(cn, pre)
     if (is.null(cols)) next
     p <- as.integer(round((sqrt(8 * length(cols) + 1) - 1) / 2))

@@ -244,15 +244,14 @@ tulpa_laplace <- function(y, n_trials, X,
       weights = weights, beta_prior = bp
     )
     # The record this one cell is solved again from when its latent posterior
-    # is drawn (`.field_cell_solve()`): the registry kernel of the block the
-    # conditional kernel builds, on a one-row grid at the hyperparameters it
-    # fixed. The registry kernels take no observation weights.
-    # A projected block is read by the multi-block driver alone.
+    # is drawn (`.field_cell_solve()`): the registry arm's solve of the block
+    # the conditional kernel builds, on a one-row grid at the hyperparameters
+    # it fixed. The registry arm takes no observation weights.
     if (is.null(weights) && !identical(spatial$type, "spde") &&
         spatial$type %in% c(.NL_FRONTDOOR_AREAL, "gp", "hsgp")) {
       blk <- .spatial_spec_to_nl_prior(spatial)
       result$field_solve <- .nl_field_solve_record(
-        if (.nl_block_is_projected(blk)) "multi" else "registry",
+        "multi",
         .nl_kernel_args(y = y, n_trials = n_trials, X = X, offset = offset,
                         re_idx = re_idx, n_re_groups = n_re_groups,
                         sigma_re = sigma_re, family = family, phi = phi,
@@ -1033,8 +1032,7 @@ laplace_rsr_at <- function(y, n_trials, X, spatial, family = "binomial",
     re_idx = re_idx %||% rep(0L, length(y)), n_re_groups = n_re_groups,
     sigma_re = sigma_re, family = family, phi = phi, max_iter = max_iter,
     tol = tol, n_threads = n_threads, store_Q = TRUE, fitted_var = FALSE)
-  res <- .nl_dispatch_multi(cargs, list(blk),
-                            theta_grid_override = matrix(theta, nrow = 1L))
+  res <- .nl_solve_cells(cargs, list(blk), matrix(theta, nrow = 1L))
   res <- .nl_attach_grid_hessians(res, ncol(X))
   out <- list(mode = as.numeric(res$modes[1L, ]),
               log_marginal = as.numeric(res$log_marginal[1L]),

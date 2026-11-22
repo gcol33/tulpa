@@ -416,7 +416,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # entry here at all and a family whose paths differ is one line.
 #
 # Paths:
-#   registry     `.nl_dispatch()` / `.nl_block_axis_grid()` -- every
+#   registry     `.nl_block_axis_grid()` -- every
 #                `tulpa_nested_laplace()` fit and every non-copy block of a
 #                multi-block joint fit.
 #   joint_single the single-block joint areal backends

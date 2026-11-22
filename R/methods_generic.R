@@ -933,7 +933,7 @@ coef.summary.tulpa_fit <- function(object, ...) object$coefficients
 # temporal_corr() give the same axis.
 #' @keywords internal
 .hyper_axis_labels <- function(object, axes) {
-  pref <- grepl("^b[0-9]+\\.", axes)
+  pref <- .axis_has_block(axes)
   if (!any(pref)) return(axes)
   pr <- object$prior
   blocks <- if (is.null(pr)) list() else if (!is.null(pr$type)) list(pr) else pr
