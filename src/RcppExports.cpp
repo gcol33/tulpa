@@ -1103,37 +1103,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_spde_laplace_gradient
-Rcpp::List cpp_spde_laplace_gradient(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double log_range, double log_sigma, double nu, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable);
-RcppExport SEXP _tulpa_cpp_spde_laplace_gradient(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP log_rangeSEXP, SEXP log_sigmaSEXP, SEXP nuSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type A_x(A_xSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type A_i(A_iSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type A_p(A_pSEXP);
-    Rcpp::traits::input_parameter< int >::type n_obs(n_obsSEXP);
-    Rcpp::traits::input_parameter< int >::type n_mesh(n_meshSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type C0_diag(C0_diagSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type G1_x(G1_xSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_i(G1_iSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_p(G1_pSEXP);
-    Rcpp::traits::input_parameter< double >::type log_range(log_rangeSEXP);
-    Rcpp::traits::input_parameter< double >::type log_sigma(log_sigmaSEXP);
-    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
-    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_spde_laplace_gradient(y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu, family, phi, max_iter, tol, n_threads, x_init_nullable));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_joint_inner_vcov_blocks
 Rcpp::List cpp_joint_inner_vcov_blocks(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector idx, int n_dense, Rcpp::List A_cols_list, bool field_marginal, int n_threads, Rcpp::Nullable<Rcpp::List> soft_cols_list, Rcpp::Nullable<Rcpp::List> soft_D_per_grid, bool compact);
 RcppExport SEXP _tulpa_cpp_joint_inner_vcov_blocks(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP idxSEXP, SEXP n_denseSEXP, SEXP A_cols_listSEXP, SEXP field_marginalSEXP, SEXP n_threadsSEXP, SEXP soft_cols_listSEXP, SEXP soft_D_per_gridSEXP, SEXP compactSEXP) {
@@ -3774,7 +3743,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_hsgp_observation_projection", (DL_FUNC) &_tulpa_cpp_hsgp_observation_projection, 3},
     {"_tulpa_cpp_hsgp_sum_projection", (DL_FUNC) &_tulpa_cpp_hsgp_sum_projection, 3},
     {"_tulpa_cpp_hyperprior_log_density", (DL_FUNC) &_tulpa_cpp_hyperprior_log_density, 7},
-    {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 12},
     {"_tulpa_cpp_loading_marginal_var", (DL_FUNC) &_tulpa_cpp_loading_marginal_var, 11},
     {"_tulpa_cpp_joint_inner_vcov_mixture", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_mixture, 13},

@@ -202,8 +202,7 @@ SpdeNcTransform::SpMat SpdeNcTransform::build_Q(double k2_eff, double tau) const
     // It also makes the hyper derivatives exact rather than approximately so:
     // d(k2^2)/dlog_kappa = 4 k2^2 and d(2 k2)/dlog_kappa = 4 k2 give
     // dQ/dlog_kappa = 4 kappa^2 tau^2 K with no appeal to C D = I, which is
-    // the closed form backward() applies and
-    // the one implicit_diff.h uses on the Laplace side.
+    // the closed form backward() applies.
     //
     // G diag(1/C0) G carries no kappa, so init() builds it once.
     SpMat Q = (2.0 * k2_eff) * G1 + GDG;

@@ -7,7 +7,6 @@
 // before Rcpp.h is, and the first member to include either would decide.
 #include <RcppEigen.h>
 
-#include "implicit_diff.cpp"
 #include "laplace_core.cpp"
 #include "laplace_core_gp.cpp"
 #include "laplace_core_spatial.cpp"

@@ -559,7 +559,6 @@ unity_hmc.o: \
   dense_basis_apply.h
 unity_laplace.o: \
   unity_laplace.cpp \
-  implicit_diff.cpp \
   laplace_core.cpp \
   laplace_core_gp.cpp \
   laplace_core_spatial.cpp \
@@ -571,11 +570,6 @@ unity_laplace.o: \
   log_post_generic_impl.cpp \
   sparse_cholesky.cpp \
   stochastic_logdet.cpp \
-  implicit_diff.h \
-  tulpa_stop.h \
-  spde_logdet.h \
-  spde_qbuilder.h \
-  sparse_hessian.h \
   laplace_core.h \
   laplace_newton.h \
   laplace_re_priors.h \
@@ -586,8 +580,10 @@ unity_laplace.o: \
   laplace_temporal_priors.h \
   linalg_fast.h \
   gpu_nngp_laplace.h \
+  sparse_hessian.h \
   hessian_pattern_guard.h \
   nested_laplace_grid.h \
+  tulpa_stop.h \
   nested_laplace_joint_core.h \
   nested_laplace_joint_multi.h \
   nngp_block_factory.h \
@@ -620,17 +616,16 @@ unity_laplace.o: \
   stochastic_logdet.h \
   laplace_family_curvature.h \
   laplace_family_link.h \
-  spde_zero_mass.h \
-  small_dense_sym.h \
-  inv_block_extract.h \
   inner_cila.h \
   inner_laplace_is.h \
   subspace_debias.h \
   inner_laplace_skew.h \
+  inv_block_extract.h \
   laplace_types.h \
   hmc_temporal.h \
   device.h \
   nngp_cond.h \
+  small_dense_sym.h \
   nested_laplace_checkpoint.h \
   laplace_newton_joint.h \
   coupled_scatter_plan.h \

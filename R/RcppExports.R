@@ -305,10 +305,6 @@ cpp_hyperprior_log_density <- function(x, kind, coordinate, U, alpha, d = 2.0, l
     .Call(`_tulpa_cpp_hyperprior_log_density`, x, kind, coordinate, U, alpha, d, lambda)
 }
 
-cpp_spde_laplace_gradient <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu = 1.0, family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
-    .Call(`_tulpa_cpp_spde_laplace_gradient`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu, family, phi, max_iter, tol, n_threads, x_init_nullable)
-}
-
 cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal = TRUE, n_threads = 1L, soft_cols_list = NULL, soft_D_per_grid = NULL, compact = FALSE) {
     .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads, soft_cols_list, soft_D_per_grid, compact)
 }

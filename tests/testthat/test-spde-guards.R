@@ -252,41 +252,42 @@ test_that("a mesh with no orphan is unchanged by the ridge machinery", {
 # 2. The structural validators                                                 #
 # --------------------------------------------------------------------------- #
 
-# Both R-callable SPDE entries run spde_validate_operators before touching the
-# arrays, so one malformed field is driven through each. The entry is the
+# The R-callable SPDE entries run spde_validate_operators before touching the
+# arrays, so each malformed field is driven through the Laplace entry. The entry is the
 # boundary the guard exists for: every loop downstream sizes itself from the
 # caller's n_mesh / n_obs rather than from the vectors, so a short C0_diag is an
 # out-of-range read and a bad column pointer is an out-of-range WRITE.
 
-.spde_grad_call <- function(fem, ...) {
+.spde_entry_call <- function(fem, ...) {
   args <- list(
     y = as.numeric(rep(0, fem$n_obs)),
     n_trials = as.integer(rep(1L, fem$n_obs)),
     X = matrix(1, fem$n_obs, 1L),
+    re_idx = rep(0, fem$n_obs), n_re_groups = 0L, sigma_re = 1,
     A_x = fem$A_x, A_i = fem$A_i, A_p = fem$A_p,
     n_obs = fem$n_obs, n_mesh = fem$n_mesh, C0_diag = fem$C0_diag,
     G1_x = fem$G1_x, G1_i = fem$G1_i, G1_p = fem$G1_p,
-    log_range = log(0.4), log_sigma = log(1), nu = 1, family = "binomial")
-  do.call(cpp_spde_laplace_gradient, utils::modifyList(args, list(...)))
+    kappa = 1, tau_spde = 1, family = "binomial")
+  do.call(cpp_laplace_fit_spde, utils::modifyList(args, list(...)))
 }
 
 test_that("a short C0_diag is refused, naming both lengths", {
   fem <- .spde_guard_fem()
-  expect_error(.spde_grad_call(fem, C0_diag = fem$C0_diag[-1L]),
+  expect_error(.spde_entry_call(fem, C0_diag = fem$C0_diag[-1L]),
                "length\\(C0_diag\\)")
-  expect_error(.spde_grad_call(fem, C0_diag = fem$C0_diag[-1L]),
+  expect_error(.spde_entry_call(fem, C0_diag = fem$C0_diag[-1L]),
                as.character(fem$n_mesh), fixed = TRUE)
 })
 
 test_that("a wrong-length G1_p is refused", {
   fem <- .spde_guard_fem()
-  expect_error(.spde_grad_call(fem, G1_p = fem$G1_p[-1L]),
+  expect_error(.spde_entry_call(fem, G1_p = fem$G1_p[-1L]),
                "length\\(G1_p\\)")
 })
 
 test_that("mismatched G1 value and row-index lengths are refused", {
   fem <- .spde_guard_fem()
-  expect_error(.spde_grad_call(fem, G1_x = fem$G1_x[-1L]),
+  expect_error(.spde_entry_call(fem, G1_x = fem$G1_x[-1L]),
                "same length")
 })
 
@@ -294,64 +295,35 @@ test_that("a malformed G1 column pointer is refused", {
   fem <- .spde_guard_fem()
   # Not starting at 0.
   bad0 <- fem$G1_p; bad0[1L] <- 1L
-  expect_error(.spde_grad_call(fem, G1_p = bad0), "must start at 0")
+  expect_error(.spde_entry_call(fem, G1_p = bad0), "must start at 0")
   # Decreasing.
   dec <- fem$G1_p; dec[3L] <- dec[2L] - 1L
-  expect_error(.spde_grad_call(fem, G1_p = dec), "non-decreasing")
+  expect_error(.spde_entry_call(fem, G1_p = dec), "non-decreasing")
   # Last pointer disagreeing with the value count.
   last <- fem$G1_p; last[length(last)] <- last[length(last)] - 1L
-  expect_error(.spde_grad_call(fem, G1_p = last), "last column pointer")
+  expect_error(.spde_entry_call(fem, G1_p = last), "last column pointer")
 })
 
 test_that("an out-of-range G1 row index is refused", {
   fem <- .spde_guard_fem()
   bad <- fem$G1_i; bad[1L] <- fem$n_mesh          # 0-based, so n_mesh is past
-  expect_error(.spde_grad_call(fem, G1_i = bad), "is outside")
+  expect_error(.spde_entry_call(fem, G1_i = bad), "is outside")
   neg <- fem$G1_i; neg[1L] <- -1L
-  expect_error(.spde_grad_call(fem, G1_i = neg), "is outside")
+  expect_error(.spde_entry_call(fem, G1_i = neg), "is outside")
 })
 
 test_that("a malformed projector is refused by the same checks", {
   fem <- .spde_guard_fem()
-  expect_error(.spde_grad_call(fem, A_p = fem$A_p[-1L]), "length\\(A_p\\)")
-  expect_error(.spde_grad_call(fem, A_x = fem$A_x[-1L]), "same length")
+  expect_error(.spde_entry_call(fem, A_p = fem$A_p[-1L]), "length\\(A_p\\)")
+  expect_error(.spde_entry_call(fem, A_x = fem$A_x[-1L]), "same length")
   bad <- fem$A_i; bad[1L] <- fem$n_obs            # A's row space is n_obs
-  expect_error(.spde_grad_call(fem, A_i = bad), "is outside")
+  expect_error(.spde_entry_call(fem, A_i = bad), "is outside")
 })
 
 test_that("a non-positive n_mesh or n_obs is refused before any array is read", {
   fem <- .spde_guard_fem()
-  expect_error(.spde_grad_call(fem, n_mesh = 0L), "n_mesh must be positive")
-  expect_error(.spde_grad_call(fem, n_obs = 0L),
+  expect_error(.spde_entry_call(fem, n_mesh = 0L),
+               "n_mesh must be positive|must equal n_mesh \\+ 1")
+  expect_error(.spde_entry_call(fem, n_obs = 0L),
                "n_obs must be positive|must equal n_obs")
 })
-
-test_that("the Laplace entry validates the same way as the gradient entry", {
-  # spde_validate_operators is one definition reached from both entries, so the
-  # second is checked once rather than field by field.
-  fem <- .spde_guard_fem()
-  expect_error(cpp_laplace_fit_spde(
-    y = as.numeric(rep(0, fem$n_obs)),
-    n_trials = as.integer(rep(1L, fem$n_obs)),
-    X = matrix(1, fem$n_obs, 1L),
-    re_idx = rep(0, fem$n_obs), n_re_groups = 0L, sigma_re = 1,
-    A_x = fem$A_x, A_i = fem$A_i, A_p = fem$A_p,
-    n_obs = fem$n_obs, n_mesh = fem$n_mesh,
-    C0_diag = fem$C0_diag[-1L],
-    G1_x = fem$G1_x, G1_i = fem$G1_i, G1_p = fem$G1_p,
-    kappa = 1, tau_spde = 1, family = "binomial"),
-    "length\\(C0_diag\\)")
-})
-
-# --------------------------------------------------------------------------- #
-# 3. Deliberately untested: the indefinite-H guard in the implicit-diff        #
-#    gradient (from gcol33/tulpa#534).                                          #
-#                                                                              #
-# `factorize()`'s return is read and both gradients stay NaN on failure, but no #
-# valid input reaches it: the entry refuses a non-PD Q earlier, and A'WA is PSD #
-# for every family the entry gates to, so H = Q + A'WA is PD by construction.   #
-# It is defensive against numerical failure at extreme conditioning, which no   #
-# fixture pins deterministically -- a fixture that reached it would be pinning  #
-# the conditioning of a particular BLAS rather than the guard. Recorded here so #
-# the absence reads as a decision rather than an oversight.                     #
-# --------------------------------------------------------------------------- #
