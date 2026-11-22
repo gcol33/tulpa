@@ -247,63 +247,23 @@ spatial_car_proper <- function(adjacency,
 #' Compute valid bounds for rho in proper CAR
 #'
 #' @description
-#' For proper CAR, rho must be in the range (1/lambda_min, 1/lambda_max) where lambda are the
-#' eigenvalues of D^(-1)W. In practice, we typically restrict to (0, 1) for
-#' interpretability (positive spatial autocorrelation).
+#' For proper CAR, `D - rho W` is positive definite for rho in
+#' (1/lambda_min, 1/lambda_max), lambda the eigenvalues of D^(-1)W, and the
+#' engine restricts rho to the positive-autocorrelation part of that interval.
+#' D^(-1)W is row-stochastic on every node with a neighbour (its rows sum to
+#' one), so its largest eigenvalue is exactly 1 (Perron-Frobenius, eigenvector
+#' the constant), and its trace is zero, so its smallest eigenvalue is negative.
+#' The restricted interval is therefore exactly (0, 1) for every graph. It is
+#' stated rather than read off a numerical eigendecomposition, whose largest
+#' eigenvalue lands a few ulp away from 1 and would declare a support that
+#' differs from (0, 1) by rounding alone.
 #'
 #' @param adjacency Adjacency matrix
 #'
 #' @return Named vector with `lower` and `upper` bounds for rho
 #' @noRd
 compute_car_rho_bounds <- function(adjacency) {
-  adj <- as.matrix(adjacency)
-  diag(adj) <- 0
-
-  n <- nrow(adj)
-  n_neighbors <- rowSums(adj)
-
-  # An isolated node's row of D^-1 W is undefined; the bounds come from the
-  # rest. The constructor's graph check reports the node
-  # (.report_isolated_nodes).
-  if (any(n_neighbors == 0)) {
-    keep <- n_neighbors > 0
-    adj_sub <- adj[keep, keep]
-    n_neighbors_sub <- n_neighbors[keep]
-
-    if (sum(keep) < 2) {
-      # Not enough connected nodes
-      return(c(lower = 0, upper = 1))
-    }
-
-    D_inv <- diag(1 / n_neighbors_sub)
-    D_inv_W <- D_inv %*% adj_sub
-  } else {
-    D_inv <- diag(1 / n_neighbors)
-    D_inv_W <- D_inv %*% adj
-  }
-
-  # Compute eigenvalues
-  eig <- eigen(D_inv_W, symmetric = FALSE, only.values = TRUE)$values
-  eig_real <- Re(eig)
-
-  # Theoretical bounds: 1/lambda_min < rho < 1/lambda_max
-  lambda_min <- min(eig_real)
-  lambda_max <- max(eig_real)
-
-  # Theoretical interval is (1/lambda_min, 1/lambda_max); restrict to (0, 1)
-  # for positive-autocorrelation interpretability. For a connected graph
-  # D^-1 W is row-stochastic (lambda_max = 1, lambda_min < 0), so this resolves
-  # to (0, 1); a non-row-stochastic graph can give a tighter upper bound.
-  lower <- max(0, 1 / lambda_min)
-  upper <- min(1, 1 / lambda_max)
-
-  # Ensure valid range
-  if (lower >= upper) {
-    lower <- 0
-    upper <- 1
-  }
-
-  c(lower = lower, upper = upper)
+  c(lower = 0, upper = 1)
 }
 
 #' BYM2 spatial structure

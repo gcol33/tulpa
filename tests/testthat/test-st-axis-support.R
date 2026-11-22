@@ -26,11 +26,29 @@ test_that("an ar1 autocorrelation axis is declared on the correlation support", 
     blocks = list(list(type = "ar1"))))
   expect_identical(geo$domain, c("positive", "correlation"))
 
-  # A proper-CAR `rho` has no support the registry names, and stays NA.
+  # A proper-CAR `rho` carries no proposal tag, and is partitioned on the
+  # support its block declares: (0, 1), the positive part of the adjacency's
+  # eigenvalue interval, exactly.
   car <- tulpa:::.joint_axis_geometry(list(
     theta_grid = matrix(1, 1L, 2L, dimnames = list(NULL, c("b1.tau", "b1.rho"))),
     axis_offsets = c(0L, 2L), blocks = list(list(type = "car_proper"))))
-  expect_true(is.na(car$domain[2L]))
+  expect_identical(car$domain[2L], "unit")
+  set.seed(1)
+  a <- matrix(stats::rbinom(400L, 1L, 0.2), 20L)
+  a <- 1 * ((a + t(a)) > 0)
+  diag(a) <- 0
+  expect_identical(unname(tulpa:::compute_car_rho_bounds(a)), c(0, 1))
+})
+
+test_that("a proper-CAR rho interval stays inside (0, 1) on a grid railed at its top node", {
+  # Mass piled on the top node 0.95: the mirrored edge on the natural scale
+  # was 1.0625 and the reported 97.5% bound 1.08.
+  v <- c(0.05, 0.275, 0.5, 0.725, 0.95)
+  e <- tulpa:::.nl_cell_edges(v, "unit")
+  expect_true(all(e > 0 & e < 1))
+  q <- tulpa:::.nl_box_quantile(v, c(0, 7e-5, 0.006, 0.066, 0.928),
+                                c(0.025, 0.975), "unit")$q
+  expect_true(all(q > 0 & q < 1))
 })
 
 test_that("mirrored correlation edges stay inside (-1, 1)", {

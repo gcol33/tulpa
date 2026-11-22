@@ -112,9 +112,14 @@ test_that("fit_st_nested reaches bym2 x every temporal type (gcol33/tulpa#776)",
   skip_on_cran()
   for (tty in c("ar1", "rw1", "rw2")) {
     d <- sim_st_bym2(seed = switch(tty, ar1 = 11L, rw1 = 12L, rw2 = 13L))
-    fit <- fit_st_nested(d$y, d$X, d$s, d$adj, d$tt, d$n_t,
-                         spatial_type = "bym2", temporal_type = tty,
-                         family = "binomial")
+    # The placement trigger reads each `rho` in its own block's coordinate:
+    # the AR(1) autocorrelation's nodes below zero on atanh, not on the BYM2
+    # mixing weight's logit, where they were NaN.
+    expect_no_warning(
+      fit <- fit_st_nested(d$y, d$X, d$s, d$adj, d$tt, d$n_t,
+                           spatial_type = "bym2", temporal_type = tty,
+                           family = "binomial"),
+      message = "NaNs produced")
     expect_s3_class(fit, "tulpa_nested_laplace")
     expect_identical(fit$spatial_type, "bym2")
     expect_lt(abs(coef(fit)[2] - 0.6), 0.25)

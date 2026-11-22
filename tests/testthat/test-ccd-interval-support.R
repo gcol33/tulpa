@@ -122,11 +122,11 @@ test_that(".joint_axis_domains names each joint axis's coordinate", {
   expect_identical(
     .joint_axis_domains(mk("mcar", list(c("L11", "L21", "L22")))),
     rep("unbounded", 3L))
-  # car_proper's rho_car lives on the adjacency's eigenvalue interval, which the
-  # registry will not guess; that axis reports no domain.
+  # car_proper's rho_car carries no proposal tag; it is partitioned on the
+  # support its block declares, the (0, 1) its uniform hyperprior covers.
   expect_identical(
     .joint_axis_domains(mk("car_proper", list(c("tau", "rho_car")))),
-    c("positive", NA_character_))
+    c("positive", "unit"))
 })
 
 test_that(".joint_pareto_axis_tags still declines a fit carrying an unguessable axis", {

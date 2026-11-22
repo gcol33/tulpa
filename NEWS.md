@@ -1,5 +1,13 @@
 # tulpa 0.8.0
 
+* A proper-CAR correlation's reported interval stays inside (0, 1): its cells
+  are partitioned on the support its block declares, where the outer edge was
+  mirrored on the natural scale. On a `fit_st_nested()` car_proper x AR(1) fit
+  whose mass sits on the top node 0.95, the 95% interval read 0.668 to 1.081
+  and now reads 0.693 to 0.978. The joint door's placement trigger reads an
+  AR(1) autocorrelation on its own atanh rather than on a mixing weight's
+  logit, so a node below zero no longer gives a NaN (#1272).
+
 * `fit_st_nested()` fits its spatial and temporal fields as the two blocks of
   one multi-block `tulpa_nested_laplace()` fit, so the joint door places,
   refines and scores its outer grid; the fitter's own tensor grid and its

@@ -440,7 +440,8 @@
 # `.joint_pareto_axis_tags()` below is the whole-fit view that declines on any
 # of them.
 .joint_axis_tags_raw <- function(res) {
-    .joint_axis_walk(res, .joint_pareto_block_tags, phi = "log")
+    .joint_axis_walk(res, function(type, axes, block)
+        .joint_pareto_block_tags(type, axes), phi = "log")
 }
 
 # The walk over a joint result's block layout that assigns each `theta_grid`
@@ -466,7 +467,7 @@
             if (ao[b + 1L] <= ao[b]) next                  # block carries no axis
             cols <- (ao[b] + 1L):ao[b + 1L]
             out[cols] <- per_block(tolower(res$blocks[[b]]$type %||% ""),
-                                   bare(cols))
+                                   bare(cols), res$blocks[[b]])
         }
         # Columns past the last block axis are per-arm phi dispersion axes.
         if (ao[B + 1L] < d) {
@@ -485,7 +486,7 @@
         type <- tolower(res$prior$type %||% "")
         is_phi <- startsWith(cn, "phi_")
         if (any(!is_phi)) {
-            out[!is_phi] <- per_block(type, bare(which(!is_phi)))
+            out[!is_phi] <- per_block(type, bare(which(!is_phi)), res$prior)
         }
         out[is_phi] <- phi
     }
@@ -545,6 +546,18 @@
         return(list(domain = rep(NA_character_, d), atom = rep(NA_real_, d)))
     }
     doms <- unname(.JOINT_AXIS_DOMAIN[tags])
+    # An axis the proposal registry does not tag -- a proper-CAR or multi-output
+    # `rho` -- still lives on the interval its block declares
+    # (`.hp_axis_support()`): the interval its uniform hyperprior is normalised
+    # over and its cell measure is closed in. Its partition is laid on that
+    # support, so a mirrored edge cannot pass the end of it.
+    decl <- .joint_axis_walk(res, function(type, axes, block) {
+        blk <- block %||% list()
+        blk$type <- type
+        vapply(axes, function(a) .nl_domain_of_bounds(.hp_axis_support(a, blk)),
+               character(1), USE.NAMES = FALSE)
+    }, phi = NA_character_)
+    if (!.k_is_decline(decl)) doms[is.na(doms)] <- decl[is.na(doms)]
     cn <- colnames(res$theta_grid) %||% rep("", d)
     # A log-scale axis is a positive one and may carry a zero level. The claim
     # agrees with the tag on every axis that has both -- `log` already maps to

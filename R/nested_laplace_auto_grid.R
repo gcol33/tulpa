@@ -1326,14 +1326,20 @@ auto_grid_place <- function(x)
 .nl_placement_axis_wanted <- function(res, axes) {
     if (!length(axes)) return(FALSE)
     cn <- colnames(res$theta_grid) %||% character(0)
+    tags <- .joint_axis_tags_raw(res)
     for (a in intersect(axes, cn)) {
-        # A mixing weight is read on its logit, a free-covariance block's
-        # column in its block's CPC coordinates (`.joint_logchol_fires()`),
-        # every other movable axis on log.
+        # A free-covariance block's column is read in its block's CPC
+        # coordinates (`.joint_logchol_fires()`), a `rho` in the coordinate the
+        # registry tags it with for the block owning it (a BYM2 mixing weight on
+        # its logit, an AR(1) autocorrelation on its atanh), every other movable
+        # axis on log.
         bare <- .axis_bare(a)
+        tag <- if (!identical(bare, "rho")) "log"
+               else if (.k_is_decline(tags)) NA_character_
+               else tags[match(a, cn)]
+        if (is.na(tag)) next
         fires <- if (.hp_is_logchol_col(bare)) .joint_logchol_fires(res, a)
-                 else .nl_axis_placement_fires(
-                     res, a, if (identical(bare, "rho")) "logit01" else "log")
+                 else .nl_axis_placement_fires(res, a, tag)
         if (fires) return(TRUE)
     }
     FALSE
