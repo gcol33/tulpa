@@ -15,6 +15,7 @@
 #include "latent_block.h"
 #include "laplace_spec_fit.h"          // unwrap_skew_idx, DebiasRequest, CilaRequest
 #include "nested_laplace_checkpoint.h" // GridCheckpoint, make_nl_grid_checkpoint
+#include "nested_laplace_grid.h"       // nl_check_positive
 #include "nested_laplace_joint_core.h" // ParsedArm, JointArm
 #include "nested_laplace_joint_multi.h"
 #include "nested_laplace_multi.h"
@@ -125,6 +126,7 @@ struct NlEntryRun {
           debias_req(in.debias),
           cila_req(in.cila)
     {
+        if (in.n_re_groups > 0) nl_check_positive("sigma_re", in.sigma_re);
         if (in.progress || !in.progress_file.empty()) {
             progress.reset(new tulpa_progress::GridProgress(
                 "nested-laplace", n_grid, in.progress_every,
