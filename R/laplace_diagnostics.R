@@ -824,6 +824,9 @@
 .nl_skew_correction <- function(object, p) {
   jf <- if (!is.null(object$joint_fit)) object$joint_fit else object
   sc <- jf[["skew_correction"]]
+  # Whether the centre sits in the per-cell components already: each cell at
+  # its leading-order mean (`.nested_grid_means()`).
+  if (!is.null(sc)) sc$centre_in_components <- is.matrix(jf[["grid_mean_shift"]])
   if (is.null(sc)) {
     return(list(enabled = FALSE, gamma3 = rep(NA_real_, p),
                 gamma1 = rep(NA_real_, p),
@@ -847,8 +850,18 @@
 
 # The same mask on the location term. Both are read by `.nl_fixed_interval()`,
 # and a coefficient masked in either declines: the correction is the centre AND
-# the reshaping, and half of it is not a correction.
-.nl_skew_gamma1_eligible <- function(sc) .nl_skew_term_eligible(sc, "gamma1")
+# the reshaping, and half of it is not a correction. Where the centre already
+# sits in the per-cell components (`centre_in_components`, each cell at its
+# leading-order mean, `.nested_grid_means()`), the estimate the reshaping
+# is laid about is that mean, so the location term handed on is the one that
+# leaves the Cornish-Fisher centre gamma_1 + gamma_3 / 2 at zero.
+.nl_skew_gamma1_eligible <- function(sc) {
+  if (isTRUE(sc$centre_in_components)) {
+    g3 <- .nl_skew_term_eligible(sc, "gamma3")
+    return(if (is.null(g3)) NULL else -g3 / 2)
+  }
+  .nl_skew_term_eligible(sc, "gamma1")
+}
 
 .nl_skew_term_eligible <- function(sc, field) {
   g <- sc[[field]]

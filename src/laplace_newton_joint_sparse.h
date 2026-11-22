@@ -644,13 +644,8 @@ inline void joint_newton_finalize_sparse(
                     compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
                     *curvature3_fns, probe, probe_solve
                 );
-                result.inner_skew = std::move(sk.gamma3);
-                result.inner_skew_gamma1 = std::move(sk.gamma1);
-                result.inner_skew_gamma1_declined = sk.gamma1_declined;
-                result.inner_skew_idx = probe;
-                result.inner_skew_dropped = sk.n_nonfinite_dropped;
-                result.inner_skew_declined = sk.declined;
-                result.inner_skew_arms_declined = sk.arms_declined;
+                inner_skew_store(result, sk, probe, pre_center_x,
+                                     [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
             } else {
                 result.inner_skew.assign(probe.size(),
                                          std::numeric_limits<double>::quiet_NaN());

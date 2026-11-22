@@ -14,6 +14,19 @@
   weights with a zero-inflation formula are refused there. The default mode
   keeps its backend (#1287).
 
+* The nested-Laplace doors report each fixed effect at its posterior mean:
+  the mixture over outer cells of each cell's leading-order mean,
+  mode + (1/2) Sigma A' (l''' * s), the shift `tulpa_re_cov_nested()`
+  centres its nodes with. `coef()` read the mixture of the cells' modes while
+  `confint()` was centred on the skew-corrected value, so on a binary
+  `(1 + x | g)` fit the reported slope was 0.518 inside an interval of
+  0.32-0.85. Against an exact Gibbs sampler on three seeds the slope now
+  reads 0.582 / 0.916 / 0.629 against 0.579 / 0.917 / 0.628 (it read
+  0.518 / 0.806 / 0.582). Each weighted cell is re-solved once with the skew
+  probe on to form its shift (`$grid_mean_shift`), which made those fits
+  1.9-3.6 times slower. A Gaussian response has no shift and is unchanged;
+  `control$skew_correct = FALSE` reports the mode mixture as before (#1286).
+
 * The one-arm joint nested-Laplace door carries observation `weights` and a
   second dispersion `phi2` (the Student-t degrees of freedom, the Tweedie
   power), read by the arm's built-in family response, so a weighted call or

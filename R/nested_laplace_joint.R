@@ -861,13 +861,18 @@
 #'     untouched.
 #'   * `skew_correct` (`TRUE`) -- consume the inner-Laplace expansion instead of
 #'     only grading it: report
-#'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
-#'     about the centre `gamma_1 + gamma_3 / 2`, from `summary()` / `confint()`
-#'     wherever the combined inner band (`gamma_3` and the inner importance
-#'     k-hat) says the leading-order expansion is in its regime, and the Gaussian
-#'     quantiles everywhere else. It is post-processing on the reported
-#'     quantiles: draws, modes and weights are untouched, so a fit run with it
-#'     off is bit for bit the fit it was before. The band that bounded the
+#'     each admitted coefficient at its posterior mean and its Cornish-Fisher
+#'     marginal quantiles at its own `gamma_3`, from `coef()` / `summary()` /
+#'     `confint()` and the fixed-effect draws, wherever the combined inner band
+#'     (`gamma_3` and the inner importance k-hat) says the leading-order
+#'     expansion is in its regime, and the mode mixture with its quantiles
+#'     everywhere else. The mean is the mixture over outer cells of each cell's
+#'     leading-order posterior mean, mode + (1/2) Sigma A' (l''' * s) (the centre
+#'     `gamma_1 + gamma_3 / 2` in posterior SDs, the shift
+#'     [tulpa_re_cov_nested()] centres its nodes with); `$grid_mean_shift` holds
+#'     each weighted cell's shift and `$grid_mean_shift_declined` why none was
+#'     formed. Modes and weights are untouched, so a fit run with it off reports
+#'     the mode mixture it reported before. The band that bounded the
 #'     relocation itself (`centre_unreliable`) is off (`Inf`):
 #'     every finite cutoff was measured to decline the coefficients the
 #'     correction helps most.
@@ -2447,18 +2452,7 @@ tulpa_nested_laplace_joint <- function(responses,
     modal_theta <- .joint_modal_theta(res)
     if (is.null(modal_theta)) return(.inner_skew_decline(res, "backend_unsupported"))
 
-    probe_idx <- skew_idx
-    if (is.null(probe_idx)) {
-        al <- res$arm_layout
-        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) {
-            return(.inner_skew_decline(res, "no_probe_indices"))
-        }
-        probe_idx <- unlist(lapply(seq_len(al$n_arms), function(k) {
-            if (al$p[k] <= 0L) return(integer(0))
-            (al$beta_start[k] + 1L):(al$beta_start[k] + al$p[k])
-        }))
-    }
-    probe_idx <- as.integer(probe_idx)
+    probe_idx <- .nlj_probe_idx(res, skew_idx)
     if (length(probe_idx) == 0L) return(.inner_skew_decline(res, "no_probe_indices"))
     res <- .inner_skew_decline(res, "solve_failed")
 
@@ -2473,6 +2467,72 @@ tulpa_nested_laplace_joint <- function(responses,
         error = function(e) NULL)
 
     .inner_skew_attach_probe(res, out)
+}
+
+# The latent indices the skew probe reads: the caller's `skew_idx`, else every
+# arm's fixed-effect coefficients, the union of
+# `(beta_start[k]+1):(beta_start[k]+p[k])` over arms k. Empty when the layout
+# names none.
+.nlj_probe_idx <- function(res, skew_idx = NULL) {
+    if (!is.null(skew_idx)) return(as.integer(skew_idx))
+    al <- res$arm_layout
+    if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) return(integer(0))
+    as.integer(unlist(lapply(seq_len(al$n_arms), function(k) {
+        if (al$p[k] <= 0L) return(integer(0))
+        (al$beta_start[k] + 1L):(al$beta_start[k] + al$p[k])
+    })))
+}
+
+# Each weighted cell's leading-order posterior mean offset from its mode,
+# delta_k = (1/2) Sigma_k A' (l3 * s_k) (Rue, Martino & Chopin 2009, Sec 3.2.3;
+# `inner_mean_shift` in src/inner_laplace_skew.h, the shift
+# `tulpa_re_cov_nested()` centres its nodes with). The posterior mean of the
+# latent field is sum_k w_k (mode_k + delta_k): the mode mixture is not the mean
+# under a skewed conditional (a logit with few observations per group, a
+# log-link count), and the fixed effects, their intervals and the draws all read
+# the per-cell centres. `probe(theta_mat, warm, probe_idx, x_init_per_cell)` is
+# the driver's skew re-dispatch; each cell is re-solved from its own mode with
+# the skew probe on, which forms its shift. Stored as `grid_mean_shift` (cells x
+# latent, zero rows on cells without weight), read through
+# `.nested_grid_means()`. `enabled` is `control$skew_correct`. When any
+# weighted cell forms no shift the fit keeps its modes and says why in
+# `grid_mean_shift_declined`: a mixture of shifted and unshifted cells is
+# neither the mean nor the mode.
+.nlj_mean_shift_cells <- function(res, probe, skew_idx = NULL, enabled = TRUE) {
+    if (!isTRUE(enabled)) return(res)
+    decline <- function(reason) {
+        res$grid_mean_shift <- NULL
+        res$grid_mean_shift_declined <- reason
+        res
+    }
+    M <- res$modes
+    w <- res$weights
+    tg <- res$theta_grid
+    if (!is.matrix(M) || is.null(w) || length(w) != nrow(M)) {
+        return(decline("grid_misaligned"))
+    }
+    cells <- which(is.finite(w) & w > 0)
+    if (!length(cells)) return(decline("no_weighted_cell"))
+    probe_idx <- .nlj_probe_idx(res, skew_idx)
+    if (!length(probe_idx)) return(decline("no_probe_indices"))
+    th <- if (is.matrix(tg)) tg[cells, , drop = FALSE]
+          else matrix(tg[cells], ncol = 1L,
+                      dimnames = list(NULL, res$theta_names %||% "theta"))
+    out <- tryCatch(.joint_with_quiet_opts(
+        probe(th, NULL, probe_idx, x_init_per_cell = M[cells, , drop = FALSE])),
+        error = function(e) NULL)
+    S <- out$inner_mean_shift
+    if (!is.matrix(S) || nrow(S) != length(cells) || ncol(S) != ncol(M) ||
+        !all(is.finite(S))) {
+        why <- out$inner_mean_shift_declined
+        why <- if (length(why)) why[!is.na(why)] else character(0)
+        return(decline(if (length(why)) why[1L] else "solve_failed"))
+    }
+    G <- matrix(0, nrow(M), ncol(M))
+    G[cells, ] <- S
+    res$grid_mean_shift <- G
+    res$grid_mean_shift_declined <- NA_character_
+    res
 }
 
 # Does a one-arm joint fit fill `fitted_eta_var`? The switch

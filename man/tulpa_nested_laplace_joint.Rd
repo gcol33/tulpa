@@ -878,13 +878,18 @@ Nothing else moves: point estimates, moments, draws and weights are
 untouched.
 \item \code{skew_correct} (\code{TRUE}) -- consume the inner-Laplace expansion instead of
 only grading it: report
-Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
-about the centre \code{gamma_1 + gamma_3 / 2}, from \code{summary()} / \code{confint()}
-wherever the combined inner band (\code{gamma_3} and the inner importance
-k-hat) says the leading-order expansion is in its regime, and the Gaussian
-quantiles everywhere else. It is post-processing on the reported
-quantiles: draws, modes and weights are untouched, so a fit run with it
-off is bit for bit the fit it was before. The band that bounded the
+each admitted coefficient at its posterior mean and its Cornish-Fisher
+marginal quantiles at its own \code{gamma_3}, from \code{coef()} / \code{summary()} /
+\code{confint()} and the fixed-effect draws, wherever the combined inner band
+(\code{gamma_3} and the inner importance k-hat) says the leading-order
+expansion is in its regime, and the mode mixture with its quantiles
+everywhere else. The mean is the mixture over outer cells of each cell's
+leading-order posterior mean, mode + (1/2) Sigma A' (l''' * s) (the centre
+\code{gamma_1 + gamma_3 / 2} in posterior SDs, the shift
+\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} centres its nodes with); \verb{$grid_mean_shift} holds
+each weighted cell's shift and \verb{$grid_mean_shift_declined} why none was
+formed. Modes and weights are untouched, so a fit run with it off reports
+the mode mixture it reported before. The band that bounded the
 relocation itself (\code{centre_unreliable}) is off (\code{Inf}):
 every finite cutoff was measured to decline the coefficients the
 correction helps most.

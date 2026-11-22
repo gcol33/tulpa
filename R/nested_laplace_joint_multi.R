@@ -2429,14 +2429,17 @@
                                         copy_atom_mass = copy_atom_mass,
                                         hyperprior = hyperprior,
                                         hp_declared = hp_declared)
-    res <- .nlj_inner_skew_at_theta(
-        res, function(theta_mat, warm, probe_idx) {
-            call_kernel(theta_mat, x_init = warm,
-                        phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
-                        compute_skew = TRUE, skew_idx = probe_idx)
-        }, skew_idx, compute = diagnose_skew)
+    skew_probe <- function(theta_mat, warm, probe_idx, x_init_per_cell = NULL) {
+        call_kernel(theta_mat, x_init = warm,
+                    phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
+                    x_init_per_cell = x_init_per_cell,
+                    compute_skew = TRUE, skew_idx = probe_idx)
+    }
+    res <- .nlj_inner_skew_at_theta(res, skew_probe, skew_idx,
+                                    compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)
     res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
+    res <- .nlj_mean_shift_cells(res, skew_probe, skew_idx, skew_correct)
     tm$mark("diagnostics")
     # Per-cell fixed-effect mode + precision for the grid marginalization.
     # Local-CCD refinement invalidates the stored cells, so a fit it engaged on

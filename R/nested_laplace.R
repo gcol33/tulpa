@@ -141,13 +141,17 @@
 #'     untouched.
 #'   * `skew_correct` (`TRUE`) -- consume the inner-Laplace expansion instead of
 #'     only grading it: report
-#'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
-#'     about the centre `gamma_1 + gamma_3 / 2` that Rue, Martino & Chopin
-#'     (2009) eq. (22) implies, from `summary()` / `confint()` wherever the
-#'     combined inner band says the leading-order expansion is in its regime, and
-#'     the Gaussian quantiles everywhere else. It is post-processing on the
-#'     reported quantiles: draws, modes and weights are untouched, so a fit run
-#'     with it off is bit for bit the fit it was before. A coefficient whose
+#'     each admitted coefficient at its posterior mean and its Cornish-Fisher
+#'     marginal quantiles at its own `gamma_3`, from `coef()` / `summary()` /
+#'     `confint()` and the fixed-effect draws, wherever the combined inner band
+#'     says the leading-order expansion is in its regime, and the mode mixture
+#'     with its quantiles everywhere else. The mean is the mixture over outer
+#'     cells of each cell's leading-order posterior mean, mode + (1/2) Sigma A'
+#'     (l''' * s) (Rue, Martino & Chopin 2009, eq. (22): the centre
+#'     `gamma_1 + gamma_3 / 2` in posterior SDs), which the mode is not under a
+#'     skewed conditional; `$grid_mean_shift` holds each cell's shift. Modes and
+#'     weights are untouched, so a fit run with it off reports the mode mixture
+#'     it reported before. A coefficient whose
 #'     location term could not be formed declines rather than reading it as zero.
 #'     The band that bounded the relocation itself (`centre_unreliable`) is
 #'     off (`Inf`): scored over seven fixtures with an exact

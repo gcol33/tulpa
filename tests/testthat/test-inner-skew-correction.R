@@ -517,7 +517,12 @@ test_that("tulpa_nested_laplace() records the correction and confint() applies i
   z <- stats::qnorm(c(0.025, 0.975))
   expect_identical(attr(ci, "interval_source"), "skew_map_cell/mixture_cdf")
   expect_equal(as.numeric(ci[1, ]), as.numeric(ci_off[1, ]))
-  w <- sc$gamma1[2] + sc$gamma3[2] / 2 + z + (sc$gamma3[2] / 6) * (z^2 - 1)
+  # The estimate is already each cell's leading-order mean mixed over the grid
+  # (`.nested_grid_means()`), so the reshaping is laid about it with no further
+  # relocation: the location term handed on cancels the cubic term's centre.
+  g1e <- .nl_skew_gamma1_eligible(.nl_skew_correction(f, 2L))
+  expect_equal(g1e[2], -sc$gamma3[2] / 2)
+  w <- g1e[2] + sc$gamma3[2] / 2 + z + (sc$gamma3[2] / 6) * (z^2 - 1)
   expect_equal(as.numeric(ci[2, ]), tab$estimate[2] + tab$std.error[2] * w)
   expect_false(isTRUE(all.equal(as.numeric(ci[2, ]),
                                 as.numeric(ci_off[2, ]))))
@@ -526,7 +531,7 @@ test_that("tulpa_nested_laplace() records the correction and confint() applies i
   expect_identical(unname(attr(ci1, "skew_applied")), TRUE)
 })
 
-test_that("switching the correction off leaves the fit bit for bit what it was", {
+test_that("switching the correction off leaves the posterior and moves only the centres", {
   skip_on_cran()
   d  <- .skew_corr_fixture()
   on  <- .skew_corr_fit(d, TRUE)
@@ -559,10 +564,19 @@ test_that("switching the correction off leaves the fit bit for bit what it was",
   expect_identical(unname(attr(confint(off), "skew_applied")), c(FALSE, FALSE))
   expect_false(off$skew_correction$enabled)
 
-  # The two fits differ ONLY in the reported bounds.
+  # The two fits differ in the reported bounds and in the centre of each
+  # coefficient the correction admits: there each cell's component sits at its
+  # leading-order mean, mode + delta, and the estimate is their mixture. A
+  # declined coefficient keeps its modes, so its estimate is the one the off
+  # fit reports.
   expect_false(isTRUE(all.equal(unname(confint(on)), unname(confint(off)))))
-  expect_identical(coef(on), coef(off))
-  expect_identical(vcov(on), vcov(off))
+  el <- on$skew_correction$eligible
+  w <- on$weights / sum(on$weights)
+  shift <- colSums(w * on$grid_mean_shift[, seq_len(p), drop = FALSE])
+  expect_equal(unname(coef(on)), unname(coef(off) + ifelse(el, shift, 0)),
+               tolerance = 1e-10)
+  expect_identical(unname(coef(on)[!el]), unname(coef(off)[!el]))
+  expect_equal(vcov(on), .nested_fixed_moments(on)$cov, ignore_attr = TRUE)
 })
 
 test_that("the correction declines a coefficient the importance k-hat flags", {
@@ -682,8 +696,9 @@ test_that("a fit reaching the retired cutoff on its own data is corrected there"
     tab <- .fit_fixed_table(f)
     z <- stats::qnorm(c(0.025, 0.975))
     expect_identical(unname(attr(ci, "skew_applied")), c(TRUE, TRUE))
+    g1e <- .nl_skew_gamma1_eligible(.nl_skew_correction(f, 2L))
     for (j in 1:2) {
-      w <- sc$gamma1[j] + sc$gamma3[j] / 2 + z + (sc$gamma3[j] / 6) * (z^2 - 1)
+      w <- g1e[j] + sc$gamma3[j] / 2 + z + (sc$gamma3[j] / 6) * (z^2 - 1)
       expect_equal(as.numeric(ci[j, ]),
                    tab$estimate[j] + tab$std.error[j] * w)
     }

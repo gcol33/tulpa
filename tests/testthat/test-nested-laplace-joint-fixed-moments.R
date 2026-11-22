@@ -162,8 +162,10 @@ test_that("a coupled multi-block joint fit reports the exact fixed-effect covari
 
 test_that("the single-block joint mixture matches the independent law-of-total-covariance", {
   skip_on_cran()
+  # The mode mixture: `.joint_mixture_moments()` centres each cell at its mode,
+  # so the fit it is compared with leaves the per-cell mean shift off.
   d <- .j305_icar_data()
-  fit <- .j305_icar_fit(d)
+  fit <- .j305_icar_fit(d, skew_correct = FALSE)
   expect_s3_class(fit, "tulpa_nested_laplace_joint")
   expect_true(is.na(fit$grid_fixed_declined))
   # A grid that actually spreads its weight, so the between-cell term is real.
@@ -173,7 +175,7 @@ test_that("the single-block joint mixture matches the independent law-of-total-c
   # `.joint_mixture_moments()` reads the same mixture off the stored
   # precisions after the fit, through the R-level extraction entry and an R
   # marginalization, where vcov() reads the blocks the loop retained.
-  fq <- .j305_icar_fit(d, store_Q = TRUE)
+  fq <- .j305_icar_fit(d, store_Q = TRUE, skew_correct = FALSE)
   p <- fit$n_fixed
   mm <- tulpa:::.joint_mixture_moments(fq, idx = seq_len(p))
   expect_equal(unname(vcov(fit)), unname(mm$Sigma), tolerance = 1e-8)
@@ -189,7 +191,7 @@ test_that("the single-block joint mixture matches the independent law-of-total-c
 test_that("the joint fixed-effect covariance is the one its own posterior draws carry", {
   skip_if_not_slow()
   d <- .j305_icar_data()
-  fit <- .j305_icar_fit(d, store_Q = TRUE)
+  fit <- .j305_icar_fit(d, store_Q = TRUE, skew_correct = FALSE)
   p <- fit$n_fixed
   set.seed(99L)
   dr <- tulpa_posterior_draws(fit, idx = seq_len(p), n = 200000L)

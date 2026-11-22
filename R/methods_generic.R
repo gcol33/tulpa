@@ -345,7 +345,7 @@
 #' @keywords internal
 .nested_fixed_moments <- function(object, include_zero = FALSE) {
   H <- object$grid_hessians
-  M <- object$grid_modes
+  M <- .nested_grid_means(object)
   if (is.null(H) || is.null(M) || is.null(object$weights)) return(NULL)
   denom <- sum(object$weights)
   w <- object$weights / denom
@@ -379,6 +379,36 @@
        mu = mu_k, var = var_k, w = wk, mass = mass, keep = keep)
 }
 
+
+# Each outer cell's fixed-effect centre: its mode, plus the leading-order
+# offset of its posterior mean from the mode (`grid_mean_shift`,
+# `.nlj_mean_shift_cells()`) on every coefficient the skew correction admits.
+# A coefficient it declines (`skew_correction$eligible`) keeps its mode: the
+# correction is the centre and the reshaping together, and a coefficient whose
+# leading-order expansion is out of its regime gets neither. Every reader of
+# the per-cell fixed-effect mixture -- the moments and components
+# (`.nested_fixed_moments()`) and the draws taken from them -- reads
+# the centres here, so the estimate, the interval and the draws describe one
+# posterior. A fit carrying no shift returns `grid_modes` itself. The subspace
+# recombination reads the modes: a sampled coordinate is drawn from the exact
+# conditional about the mode, as on `tulpa_re_cov_nested()`, which leaves its
+# centring off when the debias runs.
+#' @keywords internal
+.nested_grid_means <- function(object) {
+  M <- object$grid_modes
+  S <- object$grid_mean_shift
+  if (is.null(M) || !is.matrix(S) || nrow(S) != length(M)) return(M)
+  p <- max(lengths(M))
+  if (ncol(S) < p) return(M)
+  sc <- .nl_skew_correction(object, p)
+  el <- sc$eligible
+  if (!isTRUE(sc$enabled) || length(el) != p || !any(el)) return(M)
+  lapply(seq_along(M), function(k) {
+    m <- M[[k]]
+    if (is.null(m)) return(NULL)
+    m + ifelse(el, S[k, seq_len(p)], 0)
+  })
+}
 
 # Which outer-grid cells is a per-cell mode readable from? Those whose inner
 # solve reached a mode. A cell that stalled reports its START vector as `$mode`

@@ -239,6 +239,20 @@ Rcpp::List nl_pack_grid_results(
     };
     if (store_modes) attach_eta("fitted_eta", &LaplaceResult::eta_mean);
     attach_eta("fitted_eta_var", &LaplaceResult::eta_var);
+    // The leading-order mean shift of each cell's latent posterior from its
+    // mode, one row per cell (NA where a cell formed none), with the reason
+    // per cell. Formed by every cell a skew-probing call solves, so a call
+    // over several cells carries each cell's own shift.
+    attach_eta("inner_mean_shift", &LaplaceResult::inner_mean_shift);
+    {
+        bool any_reason = false;
+        Rcpp::CharacterVector why(n_grid, NA_STRING);
+        for (int k = 0; k < n_grid; ++k) {
+            const std::string& r = cell_results[k].inner_mean_shift_declined;
+            if (!r.empty()) { why[k] = r; any_reason = true; }
+        }
+        if (any_reason) out["inner_mean_shift_declined"] = why;
+    }
     // Inner-Laplace skewness diagnostic (opt-in, computed on the full solve
     // of a single cell -- see the compute_skew doc on
     // run_multi_block_nested_laplace). Emits the FIRST cell that populated

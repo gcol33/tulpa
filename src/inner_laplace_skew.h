@@ -339,55 +339,89 @@ inline std::string inner_eta_var_scan(
   return std::string();
 }
 
-// delta = (1/2) Sigma A' (l''' * s) for a separable likelihood, given l''' and
-// the eta marginal variance s at the mode. g_k = (A e_k)' (l''' * s) is read off
-// the affine eta difference eta(mode + e_k) - eta(mode), then one solve against
-// the live factor gives delta. A coordinate j with s_j > 0 and a non-finite
-// l_j''' declines the whole vector: dropping its term would move every
-// coordinate's centre by an unstated amount.
+// The per-eta weights of the mean shift, c_j = l3_j s_j (the third
+// log-likelihood derivative times the eta marginal variance), for one block of
+// rows. A row with s_j > 0 and a non-finite l3_j declines the whole vector:
+// dropping its term would move every coordinate's centre by an unstated amount.
+inline bool inner_shift_weights(const std::vector<double>& l3,
+                                const std::vector<double>& eta_var,
+                                std::vector<double>& c) {
+  c.assign(eta_var.size(), 0.0);
+  for (std::size_t j = 0; j < eta_var.size(); j++) {
+    if (eta_var[j] == 0.0) continue;
+    if (!std::isfinite(l3[j])) return false;
+    c[j] = l3[j] * eta_var[j];
+  }
+  return true;
+}
+
+// delta = (1/2) Sigma A' c for a separable likelihood, given the weights
+// c = l3 * s at the mode (inner_shift_weights). g_k = (A e_k)' c is read off the
+// affine eta difference eta(mode + e_k) - eta(mode) through `contract()`, which
+// returns sum_j (eta1_j - eta0_j) c_j over every row of every arm for the eta
+// `fill_eta1()` just wrote; then one solve against the live factor (or the
+// pinned solve of a constrained fit) gives delta.
 //
-// `fill_eta1()` writes eta at the current x_buf into `eta_buf1`; `eta_buf0`
-// holds eta at the mode. x_buf must hold `mode` on entry and is restored to it.
+// x_buf must hold `mode` on entry and is restored to it.
 // Returns an empty string on success, or the decline reason.
-template <typename FillEta1Fn>
+template <typename FillEta1Fn, typename ContractFn>
 inline std::string inner_mean_shift(
-    int n_x, int n_eta,
+    int n_x,
     const std::vector<double>& mode,
     DenseCholeskyScratch& chol,
     SparseCholeskySolver& sparse_solver,
     bool use_sparse,
     Rcpp::NumericVector& x_buf,
     FillEta1Fn fill_eta1,
-    const Rcpp::NumericVector& eta_buf0,
-    const Rcpp::NumericVector& eta_buf1,
-    const std::vector<double>& l3,
-    const std::vector<double>& eta_var,
-    std::vector<double>& delta
+    ContractFn contract,
+    std::vector<double>& delta,
+    const InnerPinnedSolve* pinned = nullptr
 ) {
-  std::vector<double> c(n_eta, 0.0);
-  for (int j = 0; j < n_eta; j++) {
-    if (eta_var[j] == 0.0) continue;
-    if (!std::isfinite(l3[j])) return "nonfinite_curvature3";
-    c[j] = l3[j] * eta_var[j];
-  }
   std::vector<double> g(n_x, 0.0);
   for (int k = 0; k < n_x; k++) {
     x_buf[k] = mode[k] + 1.0;
     fill_eta1();
     x_buf[k] = mode[k];
-    double acc = 0.0;
-    for (int j = 0; j < n_eta; j++) {
-      if (c[j] != 0.0) acc += (eta_buf1[j] - eta_buf0[j]) * c[j];
-    }
-    g[k] = 0.5 * acc;
+    g[k] = 0.5 * contract();
   }
   std::vector<double> v(n_x, 0.0), z_work;
   if (!use_sparse) z_work.assign(n_x, 0.0);
-  if (!inner_solve(n_x, chol, sparse_solver, use_sparse, g, v, z_work)) {
+  if (!inner_solve(n_x, chol, sparse_solver, use_sparse, g, v, z_work, pinned)) {
     return "mean_shift_solve_failed";
   }
   delta = std::move(v);
   return std::string();
+}
+
+// Store a skew probe's outcome on the inner result, with the mean shift carried
+// into the presented coordinates through the loop's own (affine) centering
+// fold, so `mode + inner_mean_shift` is the leading-order posterior mean in the
+// coordinates `mode` is reported in. One store for the single-arm and both
+// joint Newton loops.
+template <typename Result, typename CenterFn>
+inline void inner_skew_store(Result& result, InnerSkewOutcome& sk,
+                             const std::vector<int>& probe,
+                             const std::vector<double>& pre_center_x,
+                             CenterFn center_fn) {
+  result.inner_skew = std::move(sk.gamma3);
+  result.inner_skew_gamma1 = std::move(sk.gamma1);
+  result.inner_skew_gamma1_declined = sk.gamma1_declined;
+  result.inner_skew_idx = probe;
+  result.inner_skew_dropped = sk.n_nonfinite_dropped;
+  result.inner_skew_declined = sk.declined;
+  result.inner_skew_arms_declined = sk.arms_declined;
+  result.inner_mean_shift_declined = sk.mean_shift_declined;
+  if (sk.mean_shift.empty()) return;
+  const int n_x = static_cast<int>(pre_center_x.size());
+  Rcpp::NumericVector x0(n_x), x1(n_x);
+  for (int j = 0; j < n_x; j++) {
+    x0[j] = pre_center_x[j];
+    x1[j] = pre_center_x[j] + sk.mean_shift[j];
+  }
+  center_fn(x0);
+  center_fn(x1);
+  result.inner_mean_shift.assign(n_x, 0.0);
+  for (int j = 0; j < n_x; j++) result.inner_mean_shift[j] = x1[j] - x0[j];
 }
 
 // Did any probed index come back with a finite gamma_3?
@@ -585,9 +619,19 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
   std::vector<double> mean_shift;
   std::string mean_shift_declined = var_declined;
   if (have_var) {
-    mean_shift_declined = inner_mean_shift(
-        n_x, n_eta, mode, chol, sparse_solver, use_sparse, x_buf, fill_eta1,
-        eta_buf0, eta_buf1, l3, eta_var, mean_shift);
+    std::vector<double> c;
+    mean_shift_declined = !inner_shift_weights(l3, eta_var, c)
+        ? std::string("nonfinite_curvature3")
+        : inner_mean_shift(
+              n_x, mode, chol, sparse_solver, use_sparse, x_buf, fill_eta1,
+              [&]() {
+                double acc = 0.0;
+                for (int j = 0; j < n_eta; j++) {
+                  if (c[j] != 0.0) acc += (eta_buf1[j] - eta_buf0[j]) * c[j];
+                }
+                return acc;
+              },
+              mean_shift);
   }
 
   auto accumulate = [&](int& dropped, bool& any_finite,
@@ -685,6 +729,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
                                               : oracles.declined;
     }
     out.gamma1_declined = out.declined;
+    out.mean_shift_declined = out.declined;
     return out;
   }
 
@@ -747,6 +792,38 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
   }
   const bool have_var = all_separable && var_declined.empty();
 
+  // The leading-order mean shift over the union of (arm, observation) rows:
+  // the single-arm contraction summed across arms.
+  std::vector<double> mean_shift;
+  std::string mean_shift_declined = var_declined;
+  if (have_var) {
+    std::vector<std::vector<double>> c(n_arms);
+    bool ok = true;
+    for (int k = 0; k < n_arms && ok; k++) {
+      if (k >= static_cast<int>(oracles.arms.size()) || !oracles.arms[k].scalar) {
+        c[k].assign(eta_buf0[k].size(), 0.0);
+        continue;
+      }
+      ok = inner_shift_weights(l3[k], eta_var[k], c[k]);
+    }
+    mean_shift_declined = !ok
+        ? std::string("nonfinite_curvature3")
+        : inner_mean_shift(
+              n_x, mode, chol, sparse_solver, use_sparse, x_buf, fill_eta1,
+              [&]() {
+                double acc = 0.0;
+                for (int k = 0; k < n_arms; k++) {
+                  const int Nk = eta_buf0[k].size();
+                  for (int j = 0; j < Nk; j++) {
+                    if (c[k][j] != 0.0)
+                      acc += (eta_buf1[k][j] - eta_buf0[k][j]) * c[k][j];
+                  }
+                }
+                return acc;
+              },
+              mean_shift, pinned);
+  }
+
   auto accumulate = [&](int& dropped, bool& any_finite,
                         double& cross, bool& cross_ok) -> double {
     double acc = 0.0;
@@ -802,6 +879,8 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
                             have_var, pinned);
   out.arms_declined = oracles.arms_declined;
   out.gamma1_declined = var_declined;
+  out.mean_shift = std::move(mean_shift);
+  out.mean_shift_declined = mean_shift_declined;
   return out;
 }
 
