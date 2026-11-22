@@ -27,6 +27,11 @@
   and write assertion counts, complete-fit timings, operation coverage and
   device gates to one summary. Fit benchmarks record factorization, solves
   and selected inversion separately in the shared calibration table.
+* `tulpa_re_cov_nested()` finds the mode it lays a correlated block's nodes
+  at, in the marginal-SD / partial-correlation coordinates, with the damped
+  Newton mode-find the outer-grid placement uses (#1199). On nine fixtures
+  the centre moved by at most 0.026 posterior SD and the per-axis SDs by at
+  most 2.4%.
 
 * An outer axis is closed inside the interval its block defines it on: a BYM2
   mixing weight `rho` on (0, 1), a proper-CAR `rho` on its adjacency

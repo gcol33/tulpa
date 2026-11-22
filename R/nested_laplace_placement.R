@@ -149,12 +149,43 @@
         if (!is.null(md)) attr(lp, "modes") <- md
         lp
     }
+    mc <- .nl_mode_curvature(u0, eval1, box, set_warm = set_warm, meter = meter)
+    if (!is.null(mc$declined)) return(mc)
+
+    out_tag <- tags
+    out_tag[vary] <- ptag[vary]
+    out_tag[cpc_cols] <- "cpc"
+    mode_u <- vapply(seq_len(d), function(j)
+        .joint_pareto_fwd(out_tag[j], x0[j]), numeric(1))
+    mode_u[vary] <- mc$par
+    cov_u <- matrix(0, d, d)
+    cov_u[vary, vary] <- mc$cov
+    list(mode_u = mode_u, cov_u = cov_u, tags = out_tag, names = cn,
+         status = mc$status, rounds = mc$rounds, evals = mc$evals,
+         value = mc$value)
+}
+
+# The mode of a batched log density and the Gaussian covariance its curvature
+# there gives, searched from `u0` inside `box` (`lower`, `upper`, `span` and the
+# per-round `trust` radius, `.nl_placement_box()`'s shape). The search is the
+# damped-Newton mode-find the CCD integrator places its design with
+# (`.joint_ccd_modefind()`), first at a fixed finite-difference step and, where
+# that does not reach a usable mode, at a step calibrated to the local
+# curvature. `eval1(U)` maps an `[S x d]` matrix of coordinates to the log
+# density, with each row's inner mode as a `"modes"` attribute where it has
+# one; `set_warm(mode)` receives an accepted point's inner mode.
+#
+# Returns `list(par, cov, value, status, rounds, evals)`, `status` `"ok"`,
+# `"not_converged"` (the round cap came first) or `"boundary"` (the mode ran to
+# the box), or `list(declined = "no_usable_curvature")`.
+.nl_mode_curvature <- function(u0, eval1, box, set_warm = NULL,
+                               meter = .ccd_meter_new(Inf, label = "outer placement")) {
     find <- function(h) .joint_ccd_modefind(
         u0, eval1, box$lower, box$upper, h, trust = box$trust,
         on_accept = set_warm, meter = meter, ridge_check = FALSE,
         max_rounds = .ccd_placement("max_rounds"),
         max_halve = .ccd_placement("max_halve"))
-    mf <- find(rep(0.1, length(vary)))
+    mf <- find(rep(0.1, length(u0)))
     if (!identical(mf$status, "ok")) {
         h_cal <- .joint_ccd_calibrate_step(u0, eval1, box$span, meter = meter)
         mf <- find(h_cal)
@@ -163,28 +194,17 @@
         any(!is.finite(mf$hess))) {
         return(list(declined = "no_usable_curvature"))
     }
-    cov_v <- tryCatch(.spd_inverse(-.joint_ccd_neg_def(mf$hess)),
-                      error = function(e) NULL)
-    if (is.null(cov_v) || any(!is.finite(cov_v))) {
+    cov <- tryCatch(.spd_inverse(-.joint_ccd_neg_def(mf$hess)),
+                    error = function(e) NULL)
+    if (is.null(cov) || any(!is.finite(cov))) {
         return(list(declined = "no_usable_curvature"))
     }
-
-    out_tag <- tags
-    out_tag[vary] <- ptag[vary]
-    out_tag[cpc_cols] <- "cpc"
-    mode_u <- vapply(seq_len(d), function(j)
-        .joint_pareto_fwd(out_tag[j], x0[j]), numeric(1))
-    mode_u[vary] <- mf$par
-    cov_u <- matrix(0, d, d)
-    cov_u[vary, vary] <- cov_v
-
     eps <- 1e-3 * pmax(box$upper - box$lower, 1)
     at_box <- abs(mf$par - box$lower) < eps | abs(mf$par - box$upper) < eps
     status <- if (any(at_box)) "boundary" else
         if (isTRUE(mf$converged)) "ok" else "not_converged"
-    list(mode_u = mode_u, cov_u = cov_u, tags = out_tag, names = cn,
-         status = status, rounds = as.integer(meter$rounds),
-         evals = as.numeric(meter$evals), value = mf$value)
+    list(par = mf$par, cov = cov, value = mf$value, status = status,
+         rounds = as.integer(meter$rounds), evals = as.numeric(meter$evals))
 }
 
 # The joint fit's placement mode: its grid, weights and per-axis tags

@@ -241,7 +241,10 @@ stayed at the mode. \code{NULL} when the centring was not requested.
 \code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
 \item \code{placement}: the coordinates the nodes were laid in (\code{coordinate},
 \code{"log_cholesky"} or \code{"sd_partial_correlation"}) and the Gaussian there
-(\code{center}, \code{cov}).
+(\code{center}, \code{cov}). In the marginal-SD / partial-correlation coordinates
+it also carries the mode-find's \code{status} (\code{"ok"}, \code{"not_converged"},
+\code{"boundary"}, or \code{"no_usable_curvature"} when the nodes fell back to a
+diagonal scale at the start) and its inner solves (\code{evals}).
 \item \code{tensor_extended}: the rounds in which the tensor grew past its ends.
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
 \code{idx} are the corrected latent coordinates, \code{bands} the per-probed-index

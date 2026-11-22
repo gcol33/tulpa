@@ -1349,8 +1349,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   # bracketed rather than iteration-limited, so `outer_maxit` applies to the
   # simplex only. With the analytic gradient available, BFGS replaces both: it
   # converges in far fewer inner solves and does not degrade with k.
-  brent_lo <- log(1e-4)
-  brent_hi <- log(1e3)
+  brent_lo <- log(.re_cov_search("sd_range")[1L])
+  brent_hi <- log(.re_cov_search("sd_range")[2L])
   # Brent is a ONE-dimensional method, so it applies only when the whole stacked
   # theta is scalar -- which the appended dispersion coordinate makes false even
   # for a single scalar covariance block.
@@ -1705,7 +1705,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 # unusable, said in a warning.
 .re_cov_proposal_scale <- function(H, k, caller) {
   post_cov <- tryCatch({
-    if (is.null(H) || any(!is.finite(H))) stop("non-finite Hessian")
+    if (is.null(H)) stop("no usable curvature at the mode")
+    if (any(!is.finite(H))) stop("non-finite Hessian")
     Hs <- (H + t(H)) / 2
     ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
     if (min(ev) <= 1e-8) stop("non-PD Hessian")
@@ -1720,16 +1721,31 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   list(post_cov = post_cov, L_scale = t(chol(post_cov)))
 }
 
+# The box the placement mode-find searches in the placement coordinates: every
+# log sigma inside the bracket of a random-effect SD, every atanh partial
+# correlation inside `pcor_max` (`.RE_COV_SEARCH`), with that search's
+# per-round trust radius.
+.re_cov_place_box <- function(layout) {
+  ls <- log(.re_cov_search("sd_range"))
+  zb <- atanh(.re_cov_search("pcor_max"))
+  lower <- unlist(lapply(layout, function(bl)
+    c(rep(ls[1L], bl$nc), rep(-zb, bl$k - bl$nc))))
+  upper <- unlist(lapply(layout, function(bl)
+    c(rep(ls[2L], bl$nc), rep(zb, bl$k - bl$nc))))
+  list(lower = lower, upper = upper, span = upper - lower,
+       trust = rep(.re_cov_search("trust"), length(lower)))
+}
+
 # Where the nested door lays its nodes: a Gaussian `center + L_scale z` in the
 # placement coordinates, mapped to theta by `to_theta(V)` (theta rows and the
 # per-row log-Jacobian the node weights carry). Without a full block the
 # placement coordinates ARE theta and the Gaussian is the shared mode-find's
 # own. With one, the mode is found again in the marginal-SD / partial-
 # correlation coordinates, from the shared mode mapped there, on the same
-# objective plus the map's log-Jacobian; the gradient is a central difference
-# whose 2k points go to the compiled batch in one call, and the curvature at
-# the mode is optim's differenced gradient.
-.re_cov_placement <- function(core, layout, n_threads, outer_maxit, caller) {
+# objective plus the map's log-Jacobian, by the outer-grid placement's
+# mode-find (`.nl_mode_curvature()`), whose stencils go to the compiled batch
+# one call per round; the covariance is its curvature at the mode.
+.re_cov_placement <- function(core, layout, n_threads, caller) {
   k <- core$k
   if (!.re_cov_has_full_block(layout)) {
     sc <- .re_cov_proposal_scale(core$opt$hessian, k, caller)
@@ -1748,37 +1764,24 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     lp[!is.finite(lp)] <- -Inf
     lp
   }
-  h <- 1e-4
-  fn <- function(v) {
-    f <- log_post(matrix(v, 1L))
-    if (is.finite(f)) -f else .Machine$double.xmax
-  }
-  gr <- function(v) {
-    E <- diag(h, k)
-    lp <- log_post(rbind(sweep(E, 2L, v, "+"), sweep(-E, 2L, v, "+")))
-    g <- (lp[seq_len(k)] - lp[k + seq_len(k)]) / (2 * h)
-    if (any(!is.finite(g))) stop("non-finite placement gradient")
-    -g
-  }
   v0 <- .re_cov_theta_to_place(core$theta_hat, layout)
-  opt <- tryCatch(
-    stats::optim(v0, fn, gr, method = "BFGS", hessian = TRUE,
-                 control = list(maxit = as.integer(outer_maxit), reltol = 1e-10)),
-    error = function(e) NULL)
-  if (is.null(opt) || !all(is.finite(opt$par))) {
-    opt <- stats::optim(v0, fn, method = "Nelder-Mead", hessian = TRUE,
-                        control = list(maxit = as.integer(outer_maxit),
-                                       reltol = 1e-8))
+  mc <- .nl_mode_curvature(v0, log_post, .re_cov_place_box(layout))
+  if (!is.null(mc$declined)) {
+    sc <- .re_cov_proposal_scale(NULL, k, caller)
+    return(list(coordinate = "sd_partial_correlation", center = v0,
+                post_cov = sc$post_cov, L_scale = sc$L_scale,
+                to_theta = to_theta, status = mc$declined))
   }
-  if (!identical(as.integer(opt$convergence), 0L)) {
+  if (!identical(mc$status, "ok")) {
     warning(caller, "(): the mode-find that places the integration nodes in ",
-            "the marginal-SD / partial-correlation coordinates did not converge ",
-            "(optim code ", opt$convergence, "); the nodes are centred where it ",
+            "the marginal-SD / partial-correlation coordinates ",
+            if (identical(mc$status, "boundary")) "ran to its search box"
+            else "did not converge", "; the nodes are centred where it ",
             "stopped.", call. = FALSE)
   }
-  sc <- .re_cov_proposal_scale(opt$hessian, k, caller)
-  list(coordinate = "sd_partial_correlation", center = opt$par,
-       post_cov = sc$post_cov, L_scale = sc$L_scale, to_theta = to_theta)
+  list(coordinate = "sd_partial_correlation", center = mc$par,
+       post_cov = mc$cov, L_scale = t(chol(mc$cov)), to_theta = to_theta,
+       status = mc$status, evals = mc$evals)
 }
 
 
@@ -2070,7 +2073,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'     `n_blocks`, `n_coefs` (vector of per-block `c`).
 #'   - `placement`: the coordinates the nodes were laid in (`coordinate`,
 #'     `"log_cholesky"` or `"sd_partial_correlation"`) and the Gaussian there
-#'     (`center`, `cov`).
+#'     (`center`, `cov`). In the marginal-SD / partial-correlation coordinates
+#'     it also carries the mode-find's `status` (`"ok"`, `"not_converged"`,
+#'     `"boundary"`, or `"no_usable_curvature"` when the nodes fell back to a
+#'     diagonal scale at the start) and its inner solves (`evals`).
 #'   - `tensor_extended`: the rounds in which the tensor grew past its ends.
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
 #'     `idx` are the corrected latent coordinates, `bands` the per-probed-index
@@ -2169,9 +2175,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # The Gaussian the nodes are laid from: the shared mode and its curvature, or,
   # with a full block, the mode-find in the marginal-SD / partial-correlation
   # coordinates (`.re_cov_placement()`).
-  place      <- .re_cov_placement(core, layout, n_threads,
-                                  as.integer(control$outer_maxit %||% 500L),
-                                  "tulpa_re_cov_nested")
+  place      <- .re_cov_placement(core, layout, n_threads, "tulpa_re_cov_nested")
   L_scale    <- place$L_scale
   theta_place <- as.numeric(place$to_theta(place$center)$theta)
   # The node layout follows the number of covariance coordinates
@@ -2775,7 +2779,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # "sd_partial_correlation" when a full block is present) and the Gaussian
     # there: its centre and covariance.
     placement   = list(coordinate = place$coordinate, center = place$center,
-                       cov = place$post_cov),
+                       cov = place$post_cov, status = place$status,
+                       evals = place$evals),
     # Rounds in which the tensor grew past its ends (`.nl_tensor_edge_cells()`);
     # 0 for a CCD and for a tensor whose ends hold no mass.
     tensor_extended = extend_rounds,
