@@ -275,7 +275,7 @@ test_that("a continuous field shares the nested stack with a temporal field, a s
   blk <- tgmrf(
     Q = function(theta) Matrix::Diagonal(n, exp(-2 * theta[1])),
     prior = function(theta) 0, init = c(log_sigma = 0),
-    bounds = list(lower = log(0.2), upper = log(2)), name = "iid")
+    grid_span = list(lower = log(0.2), upper = log(2)), name = "iid")
   fit_l <- suppressWarnings(tulpa(
     count ~ x + latent(blk), data = d, family = "poisson",
     mode = "nested_laplace", spatial = spatial_gp(~ lon + lat, nn = 6),

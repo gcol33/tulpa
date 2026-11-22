@@ -1805,9 +1805,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # User-defined GMRF block (see ?tgmrf). Only available inside a multi-
     # block prior. The outer theta-grid is the Cartesian product of
     # per-axis grids: `block$n_grid[j]` (default `.NL_GRID$tgmrf_axis$n`)
-    # equispaced points between block$bounds$lower[j] and
-    # block$bounds$upper[j], or block$init[j] +/- `half_width` if no bounds
-    # are supplied. Precomputed Q_k / logdet / log p(theta_k)
+    # equispaced points between block$grid_span$lower[j] and
+    # block$grid_span$upper[j], or block$init[j] +/- `half_width` if the block
+    # states no span. Precomputed Q_k / logdet / log p(theta_k)
     # at every grid row are packed into the C++ block spec by
     # `.nl_block_spec_for_cpp`.
     cpp_fn = NULL,
@@ -1826,9 +1826,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         n_ax <- rep_len(as.integer(p$n_grid %||%
                                      .nl_grid_par("tgmrf_axis", "n")), d)
         for (j in seq_len(d)) {
-          if (!is.null(p$bounds)) {
-            lo <- p$bounds$lower[j]
-            hi <- p$bounds$upper[j]
+          if (!is.null(p$grid_span)) {
+            lo <- p$grid_span$lower[j]
+            hi <- p$grid_span$upper[j]
           } else {
             hw <- .nl_grid_par("tgmrf_axis", "half_width")
             lo <- p$init[j] - hw

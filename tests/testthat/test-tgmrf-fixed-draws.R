@@ -12,7 +12,7 @@
     prior = function(theta) stats::dnorm(theta[1], 0, 1, log = TRUE) +
       stats::dnorm(theta[2], 0, 1, log = TRUE),
     init   = c(log_sigma = 0, atanh_rho = atanh(0.3)),
-    bounds = list(lower = c(log(0.3), 0), upper = c(log(3), atanh(0.9))),
+    grid_span = list(lower = c(log(0.3), 0), upper = c(log(3), atanh(0.9))),
     name   = "periodic_ar1")
 }
 
@@ -77,8 +77,8 @@ test_that("VI and explicit Laplace-target IMH match the Gaussian beta mixture", 
     expect_equal(unname(f$draws_theta), unname(f$draws[, 2:3]))
   }
   # VI's theta is a Gaussian fit, not the posterior, so its beta mixture is
-  # held loosely. IMH samples theta without the bounds wall the quadrature is
-  # laid inside; restricted to the same box, its beta draws are the bounded
+  # held loosely. IMH samples theta past the grid span the quadrature is laid
+  # inside; restricted to the same box, its beta draws are the bounded
   # mixture, held to Monte Carlo error. (Outside the box, rho -> 1 leaves the
   # level weakly identified and the beta tail heavy, so the unrestricted SD
   # is no stable target.)

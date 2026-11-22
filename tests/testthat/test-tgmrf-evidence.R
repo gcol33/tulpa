@@ -7,7 +7,7 @@ test_that("tgmrf n_grid sets the per-axis node count and is validated", {
   Qf <- function(theta) Matrix::Diagonal(4, exp(theta[1]))
   lp <- function(theta) sum(stats::dnorm(theta, 0, 1, log = TRUE))
   blk <- tgmrf(Q = Qf, prior = lp, init = c(a = 0, b = 0),
-               bounds = list(lower = c(-1, -2), upper = c(1, 2)),
+               grid_span = list(lower = c(-1, -2), upper = c(1, 2)),
                n_grid = c(3, 7))
   g <- tulpa:::.nl_block_axis_grid(blk)$grid
   expect_identical(length(unique(g[, "a"])), 3L)
@@ -53,7 +53,7 @@ test_that("a tulpa() fit with a latent(tgmrf()) block reports its evidence", {
   mk <- function(n_grid) tgmrf(
     Q = function(theta) Matrix::Diagonal(nrow(d), exp(theta[1])),
     prior = function(theta) stats::dnorm(theta[1], 2, 1.5, log = TRUE),
-    init = c(log_tau = 2), bounds = list(lower = -1, upper = 7),
+    init = c(log_tau = 2), grid_span = list(lower = -1, upper = 7),
     obs_idx = d$cell, n_grid = n_grid)
   ev <- vapply(c(5L, 17L), function(ng) {
     f <- suppressWarnings(tulpa(

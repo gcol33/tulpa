@@ -30,8 +30,8 @@ make_recovery_ar1_block <- function(n) {
     },
     prior  = function(theta) 0,                # flat hyperprior
     init   = c(log_sigma = 0, atanh_rho = atanh(0.5)),
-    bounds = list(lower = c(log(0.3), atanh(0.0)),
-                  upper = c(log(3.0), atanh(0.95))),
+    grid_span = list(lower = c(log(0.3), atanh(0.0)),
+                     upper = c(log(3.0), atanh(0.95))),
     name   = "ar1_recovery"
   )
 }
@@ -75,8 +75,8 @@ test_that("tgmrf periodic AR1 recovers theta across 30 seeds (median + coverage)
                         beta_true  = beta_true)
     blk <- make_recovery_ar1_block(n)
     axes <- list(
-      log_sigma = seq(blk$bounds$lower[1], blk$bounds$upper[1], length.out = axis_pts),
-      atanh_rho = seq(blk$bounds$lower[2], blk$bounds$upper[2], length.out = axis_pts)
+      log_sigma = seq(blk$grid_span$lower[1], blk$grid_span$upper[1], length.out = axis_pts),
+      atanh_rho = seq(blk$grid_span$lower[2], blk$grid_span$upper[2], length.out = axis_pts)
     )
     blk$theta_grid_built <- as.matrix(do.call(expand.grid, axes))
     fit <- tulpa_nested_laplace(

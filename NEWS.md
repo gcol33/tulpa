@@ -1,5 +1,13 @@
 # tulpa 0.8.0
 
+* `tgmrf()` and `tgmrf_cpp()` take `grid_span` where they took `bounds`: the
+  box the outer theta grid and the samplers' pilot are laid over. The support
+  of `theta` is that of `prior(theta)` alone, as the samplers already read it.
+  The nested-Laplace door read the box as the block's support instead, so a
+  tgmrf axis with a declared box was "unguessable", and one such axis stopped
+  the placement of every other axis in the fit. A stated span is now held as
+  declared (`axis_pinned`) like any stated grid, and the fit's other axes are
+  placed (#1263).
 * Sparse GPU fit equivalence covers SPDE, ICAR, proper CAR, AR1 and joint
   CAR/AR1 grids at 2,000 and 15,000 latent nodes. CPU, automatic and forced
   CUDA execution agree on log marginals, modes and latent marginal variances.

@@ -96,14 +96,14 @@ test_that("every family absent from the table is absent for a stated reason", {
     expect_length(ax$lf, 0L)
 })
 
-test_that("a tgmrf block's axes are placeable unless it declares a bounds box", {
+test_that("a tgmrf block's axes are placeable unless it states a grid span", {
     skip_on_cran_budget()
     ax <- .reg_axis_names()$tgmrf
+    # The support is the prior's whatever the span: every axis is identity.
     expect_identical(unname(.joint_pareto_block_tags("tgmrf", ax)),
                      rep("identity", 2L))
     boxed <- list(type = "tgmrf", theta_names = ax,
-                  bounds = list(lower = c(-1, -1), upper = c(1, 1)))
-    expect_true(all(is.na(.joint_pareto_block_tags("tgmrf", ax, boxed))))
+                  grid_span = list(lower = c(-1, -1), upper = c(1, 1)))
 
     # One slot per axis, all on the block's one matrix field, each carrying the
     # node count the block states for it.
@@ -114,7 +114,7 @@ test_that("a tgmrf block's axes are placeable unless it declares a bounds box", 
     expect_identical(vapply(sl, function(s) s$n_pts, 1L), c(7L, 4L))
     expect_null(.nl_registry_axis_slots(list(blk[-3L]))[[1L]]$n_pts)
 
-    # A declared box holds the axes as the caller's own; an undeclared one
+    # A stated span holds the axes as the caller's own; an unstated one
     # leaves them to the placement pass.
     expect_null(.nl_slot_hold(list(blk), sl[[1L]]))
     expect_identical(.nl_slot_hold(list(boxed),

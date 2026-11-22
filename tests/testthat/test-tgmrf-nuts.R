@@ -14,8 +14,8 @@ make_nuts_ar1_block <- function(n) {
     },
     prior = function(theta) sum(stats::dnorm(theta, 0, 1, log = TRUE)),
     init = c(log_tau = 0, atanh_rho = atanh(0.5)),
-    bounds = list(lower = c(log(0.3), atanh(0)),
-                  upper = c(log(3),   atanh(0.95))),
+    grid_span = list(lower = c(log(0.3), atanh(0)),
+                     upper = c(log(3),   atanh(0.95))),
     name = "ar1_nuts"
   )
 }

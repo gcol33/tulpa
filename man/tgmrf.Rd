@@ -12,7 +12,7 @@ tgmrf(
   init,
   mu = NULL,
   graph = NULL,
-  bounds = NULL,
+  grid_span = NULL,
   obs_idx = NULL,
   name = NULL,
   n_grid = NULL
@@ -28,8 +28,10 @@ of class \code{Matrix::sparseMatrix} (typically \code{dgCMatrix}). The matrix mu
 be square and symmetric. Called once at registration with \code{theta = init}
 to infer \code{n_latent} and capture the sparsity pattern.}
 
-\item{prior}{A function \verb{function(theta)} returning a finite numeric
-scalar -- the log-prior density at \code{theta}.}
+\item{prior}{A function \verb{function(theta)} returning a numeric scalar --
+the log-prior density at \code{theta}, \code{-Inf} outside its support. \code{theta} is
+the coordinate this density is written in, and its support is the
+support of every fit: no other argument restricts \code{theta}.}
 
 \item{init}{Numeric vector of starting values for \code{theta}. Names, if
 present, become the canonical theta names.}
@@ -41,10 +43,13 @@ of length \code{n_latent}. Default \code{NULL} is equivalent to a zero mean.}
 sparsity pattern. If supplied, the registration check verifies that
 the nonzero pattern of \code{Q(init)} is a subset.}
 
-\item{bounds}{Optional list with components \code{lower} and \code{upper}, each a
-numeric vector of length \code{length(init)}. Used by \code{nested_laplace + CCD}
-to build the outer grid and sampler pilot. VI also uses them as an
-optimisation wall. IMH and NUTS use the support of \code{prior(theta)}.}
+\item{grid_span}{Optional list with components \code{lower} and \code{upper}, each a
+numeric vector of length \code{length(init)}: the box the outer theta grid is
+laid over on the nested-Laplace path, and so the span of the pilot grid
+the IMH, VI and NUTS adapters start from. It places nodes; it does not
+restrict \code{theta}, whose support is that of \code{prior(theta)}. A stated span
+is kept as declared, where a default grid may be recentred on the
+posterior.}
 
 \item{obs_idx}{Optional integer vector mapping each observation to a
 latent slot in \verb{[1, n_latent]}. If \code{NULL} (default), the fit-time
@@ -57,7 +62,7 @@ observation per latent slot, in row order.}
 \item{n_grid}{Optional integer: the number of equispaced outer-grid nodes
 per theta axis on the nested-Laplace path (length 1, recycled, or
 \code{length(init)}), each at least 2. \code{NULL} (default) takes the engine's
-default node count. The axis spans \code{bounds} where supplied, else
+default node count. The axis spans \code{grid_span} where supplied, else
 \code{init} plus or minus a fixed half-width. Unused by NUTS / VI.}
 
 \item{x}{A \code{tgmrf} block.}
@@ -75,10 +80,10 @@ components:
 \item \code{n_latent} -- inferred from \code{Q(init)}.
 \item \code{pattern} -- captured sparsity pattern as a \code{dgCMatrix} of 1s.
 \item \code{graph} -- user-supplied pattern, validated against \code{pattern} if given.
-\item \code{bounds}, \code{name} -- passed through.
+\item \code{grid_span}, \code{name} -- passed through.
 }
 
-\code{summary()} prints the block, its log prior at \code{init} and its bounds,
+\code{summary()} prints the block, its log prior at \code{init} and its grid span,
 and returns \code{object} invisibly.
 }
 \description{

@@ -30,7 +30,7 @@ skip_if_not_slow()
 }
 
 # Shared R-closure analogue for the cross-check test.
-.joint_make_periodic_ar1_r <- function(n, init, bounds = NULL) {
+.joint_make_periodic_ar1_r <- function(n, init, grid_span = NULL) {
   tgmrf(
     Q = function(theta) {
       sigma <- exp(theta[1])
@@ -49,7 +49,7 @@ skip_if_not_slow()
         stats::dnorm(theta[2], 0, 1, log = TRUE)
     },
     init   = init,
-    bounds = bounds,
+    grid_span = grid_span,
     name   = "periodic_ar1_r"
   )
 }
@@ -64,11 +64,11 @@ test_that("tulpa_tgmrf_nuts_joint runs end-to-end on a periodic-AR1 sim", {
   # kN = 80 in the .cpp.
   n <- 80L
   init   <- c(log_sigma = 0, atanh_rho = atanh(0.5))
-  bounds <- list(lower = c(log(0.3), atanh(0.0)),
-                 upper = c(log(3.0), atanh(0.95)))
+  grid_span <- list(lower = c(log(0.3), atanh(0.0)),
+                    upper = c(log(3.0), atanh(0.95)))
 
   blk <- tgmrf_cpp(cpp_file = cpp_file, id = "tgmrf_periodic_ar1",
-                   init = init, bounds = bounds,
+                   init = init, grid_span = grid_span,
                    name = "periodic_ar1_cpp")
 
   set.seed(2026)
@@ -128,13 +128,13 @@ test_that("joint NUTS and outer-theta NUTS agree on theta means within MC error"
 
   n <- 80L
   init   <- c(log_sigma = 0, atanh_rho = atanh(0.5))
-  bounds <- list(lower = c(log(0.3), atanh(0.0)),
-                 upper = c(log(3.0), atanh(0.95)))
+  grid_span <- list(lower = c(log(0.3), atanh(0.0)),
+                    upper = c(log(3.0), atanh(0.95)))
 
   blk_cpp <- tgmrf_cpp(cpp_file = cpp_file, id = "tgmrf_periodic_ar1",
-                       init = init, bounds = bounds,
+                       init = init, grid_span = grid_span,
                        name = "periodic_ar1_cpp")
-  blk_r <- .joint_make_periodic_ar1_r(n, init, bounds)
+  blk_r <- .joint_make_periodic_ar1_r(n, init, grid_span)
 
   set.seed(311)
   z <- as.numeric(arima.sim(list(ar = 0.6), n = n, sd = 0.7))
@@ -183,10 +183,10 @@ test_that("the joint (beta, z, theta) gradient matches central differences", {
 
   n <- 80L
   init   <- c(log_sigma = 0, atanh_rho = atanh(0.5))
-  bounds <- list(lower = c(log(0.3), atanh(0.0)),
-                 upper = c(log(3.0), atanh(0.95)))
+  grid_span <- list(lower = c(log(0.3), atanh(0.0)),
+                    upper = c(log(3.0), atanh(0.95)))
   blk <- tgmrf_cpp(cpp_file = cpp_file, id = "tgmrf_periodic_ar1",
-                   init = init, bounds = bounds,
+                   init = init, grid_span = grid_span,
                    name = "periodic_ar1_cpp")
 
   set.seed(818)

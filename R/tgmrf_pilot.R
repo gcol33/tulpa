@@ -26,9 +26,9 @@
 #
 # `pilot_axis_points`, when supplied, is the per-axis node count of the pilot
 # grid: it stands in for the block's own `n_grid`, so the nested-Laplace door
-# lays that grid exactly as it lays the block's default one (over `bounds`, or
-# around `init`) and treats it the same way afterwards -- an unbounded block's
-# axes stay placeable at any node count. `NULL` keeps the block's own grid.
+# lays that grid exactly as it lays the block's default one (over `grid_span`,
+# or around `init`) and treats it the same way afterwards -- the axes of a
+# block with no stated span stay placeable at any node count. `NULL` keeps the block's own grid.
 #
 # Returns `list(fit, k_star, theta_init, block)`:
 #   * `fit`        the nested-Laplace result (callers reading `$modes` or
@@ -90,11 +90,9 @@
 # pilot's heaviest cell and searching a box padded past the pilot's span. The
 # block's `theta` is already the unconstrained coordinate its `prior()` is
 # written in, so every axis is searched on the identity and the density
-# maximised is `lm$eval`, the one the adapters sample. That holds with
-# `bounds` declared too: the adapters sample the support of `prior(theta)`,
-# and `bounds` only spans the pilot. The joint door's tagging
-# (`.joint_pareto_axis_tags()`) reads a bounded block's box as its support and
-# declines to place it, which is the nested grid's question, not this one.
+# maximised is `lm$eval`, the one the adapters sample. A declared `grid_span`
+# changes nothing here: it places the pilot's nodes, and the support is that
+# of `prior(theta)`.
 #
 # `pl` is `.tgmrf_pilot()`'s result, `lm` `.tgmrf_make_log_marginal()`'s.
 # Returns `list(mode, cov, status, evals)`: `mode` named by `block$theta_names`,
@@ -117,7 +115,7 @@
       any(diag(pm$cov_u) <= 0)) {
     stop("The outer mode-find over theta found no usable curvature (",
          pm$declined %||% "an axis held fixed", "); widen the block's ",
-         "`bounds` or raise `pilot_axis_points` so the pilot spans the ",
+         "`grid_span` or raise `pilot_axis_points` so the pilot spans the ",
          "posterior.", call. = FALSE)
   }
   list(mode = stats::setNames(pm$mode_u, block$theta_names),

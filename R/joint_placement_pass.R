@@ -325,8 +325,7 @@
     out <- list()
     for (sl in .nl_registry_axis_slots(st$prior)) {
         if (sl$block %in% copied || !is.null(sl$column)) next
-        tag <- tryCatch(.joint_pareto_block_tags(sl$type, sl$axis,
-                                                 st$prior[[sl$block]]),
+        tag <- tryCatch(.joint_pareto_block_tags(sl$type, sl$axis),
                         error = function(e) NA_character_)
         if (length(tag) != 1L || is.na(tag)) next
         sl$tag <- tag

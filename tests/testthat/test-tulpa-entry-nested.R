@@ -19,8 +19,8 @@ make_ar1_block <- function(n) {
     },
     prior  = function(theta) 0,
     init   = c(log_sigma = 0, atanh_rho = atanh(0.5)),
-    bounds = list(lower = c(log(0.3), atanh(0.0)),
-                  upper = c(log(3.0), atanh(0.95))),
+    grid_span = list(lower = c(log(0.3), atanh(0.0)),
+                     upper = c(log(3.0), atanh(0.95))),
     name   = "ar1"
   )
 }

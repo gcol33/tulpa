@@ -30,8 +30,8 @@ periodic_ar1 <- function(n) {
         stats::dnorm(theta[2], 0, 1, log = TRUE)
     },
     init   = c(log_sigma = 0, atanh_rho = atanh(0.5)),
-    bounds = list(lower = c(log(0.3), atanh(0.0)),
-                  upper = c(log(3.0), atanh(0.95))),
+    grid_span = list(lower = c(log(0.3), atanh(0.0)),
+                     upper = c(log(3.0), atanh(0.95))),
     name   = "periodic_ar1"
   )
 }

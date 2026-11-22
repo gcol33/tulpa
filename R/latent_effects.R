@@ -37,7 +37,7 @@
 #' d$y <- rpois(120, exp(0.5 + 0.4 * d$x + sin(2 * pi * d$region / K)))
 #' blk <- tgmrf(Q = function(theta) Matrix::Diagonal(120, exp(theta[1])),
 #'              prior = function(theta) dnorm(theta[1], 2, 1.5, log = TRUE),
-#'              init = c(log_tau = 2), bounds = list(lower = -1, upper = 7),
+#'              init = c(log_tau = 2), grid_span = list(lower = -1, upper = 7),
 #'              obs_idx = seq_len(120), name = "obs_iid")
 #' fit <- tulpa(y ~ x + spatial(region) + latent(blk), data = d,
 #'              family = "poisson", spatial = list(type = "icar", adjacency = W),

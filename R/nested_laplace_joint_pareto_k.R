@@ -403,20 +403,14 @@
 #     mode-centre the Sigma grid (and the outer Pareto-k score it) rather than
 #     decline to the fixed log-Cholesky tensor.
 #   * a `tgmrf` block's theta is the coordinate its own `prior(theta)` is a
-#     density on, unconstrained on all of R, so every axis is identity -- unless
-#     the block declares `bounds`. A bounded box is the block's own support, which
-#     no coordinate here names, so those axes are NA.
-# `block` is the prior block owning the axes, read where the answer depends on
-# more than the family (a tgmrf block's `bounds`).
-.joint_pareto_block_tags <- function(type, axes, block = NULL) {
+#     density on, and that prior is the block's only statement of support, so
+#     every axis is identity. Its `grid_span` places nodes and says nothing
+#     about the support.
+.joint_pareto_block_tags <- function(type, axes) {
     # mcar / miid axes are the log-Cholesky coordinates of Sigma = L L' (log L_ii
     # on the diagonal, raw strict-lower L_ij), unconstrained on all of R, so
     # every axis is identity (zero Jacobian).
-    if (type %in% c("mcar", "miid")) return(rep("identity", length(axes)))
-    if (identical(type, "tgmrf")) {
-        tag <- if (is.null(block$bounds)) "identity" else NA_character_
-        return(rep(tag, length(axes)))
-    }
+    if (type %in% c("mcar", "miid", "tgmrf")) return(rep("identity", length(axes)))
     tag_one <- function(a) {
         if (a == "alpha") return("identity")
         if (a == "rho") {
@@ -472,7 +466,7 @@
             if (ao[b + 1L] <= ao[b]) next                  # block carries no axis
             cols <- (ao[b] + 1L):ao[b + 1L]
             out[cols] <- per_block(tolower(res$blocks[[b]]$type %||% ""),
-                                   bare(cols), res$blocks[[b]])
+                                   bare(cols))
         }
         # Columns past the last block axis are per-arm phi dispersion axes.
         if (ao[B + 1L] < d) {
@@ -491,7 +485,7 @@
         type <- tolower(res$prior$type %||% "")
         is_phi <- startsWith(cn, "phi_")
         if (any(!is_phi)) {
-            out[!is_phi] <- per_block(type, bare(which(!is_phi)), res$prior)
+            out[!is_phi] <- per_block(type, bare(which(!is_phi)))
         }
         out[is_phi] <- phi
     }
@@ -511,7 +505,7 @@
             tau_spatial = "positive", tau_temporal = "positive")
 )
 
-.joint_block_axis_support <- function(type, axes, block = NULL) {
+.joint_block_axis_support <- function(type, axes) {
     sup <- .JOINT_AXIS_SUPPORT[[type]]
     if (is.null(sup)) return(rep(NA_character_, length(axes)))
     unname(sup[axes])

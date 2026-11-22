@@ -17,7 +17,7 @@
 #   Q_{i, i+1} = Q_{i+1, i} = -tau * rho
 skip_on_cran()
 
-make_ar1_tgmrf <- function(n, theta_grid_matrix, bounds = NULL) {
+make_ar1_tgmrf <- function(n, theta_grid_matrix, grid_span = NULL) {
   blk <- tgmrf(
     Q = function(theta) {
       tau <- exp(theta[1]); rho <- tanh(theta[2])
@@ -31,7 +31,7 @@ make_ar1_tgmrf <- function(n, theta_grid_matrix, bounds = NULL) {
                                    # each grid point matches built-in AR1
                                    # (which uses an implicit flat prior).
     init   = c(log_tau = 0, atanh_rho = atanh(0.5)),
-    bounds = bounds,
+    grid_span = grid_span,
     name   = "ar1_user"
   )
   if (!is.null(theta_grid_matrix)) {
@@ -129,9 +129,9 @@ test_that("tgmrf AR1 recovers theta on a Poisson sim", {
 
   blk <- make_ar1_tgmrf(
     n,
-    theta_grid_matrix = NULL,                  # use bounds-based default
-    bounds = list(lower = c(log(0.3),  atanh(0.0)),
-                  upper = c(log(8.0),  atanh(0.95)))
+    theta_grid_matrix = NULL,                  # use the grid_span default
+    grid_span = list(lower = c(log(0.3),  atanh(0.0)),
+                     upper = c(log(8.0),  atanh(0.95)))
   )
   fit <- tulpa_nested_laplace(
     y = y, n_trials = rep(1L, n), X = X,
@@ -157,8 +157,8 @@ test_that("tulpa_nested_laplace accepts a bare tgmrf object as prior", {
   y <- rpois(n, exp(0.2 + z))
   blk <- make_ar1_tgmrf(
     n, theta_grid_matrix = NULL,
-    bounds = list(lower = c(log(0.5), atanh(0)),
-                  upper = c(log(3),   atanh(0.9)))
+    grid_span = list(lower = c(log(0.5), atanh(0)),
+                     upper = c(log(3),   atanh(0.9)))
   )
   fit_bare <- tulpa_nested_laplace(
     y = y, n_trials = rep(1L, n), X = X,
@@ -195,8 +195,8 @@ test_that("tgmrf inside a multi-block prior composes with an iid block", {
 
   blk_tgmrf <- make_ar1_tgmrf(
     n, theta_grid_matrix = NULL,
-    bounds = list(lower = c(log(0.5), atanh(0)),
-                  upper = c(log(3),   atanh(0.9)))
+    grid_span = list(lower = c(log(0.5), atanh(0)),
+                     upper = c(log(3),   atanh(0.9)))
   )
 
   iid_blk <- list(

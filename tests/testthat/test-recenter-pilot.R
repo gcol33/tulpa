@@ -60,7 +60,7 @@ test_that("an axis already at or below the pilot resolution is left alone", {
     expect_null(.nl_pilot_axis(c(1, 2, 3), 3))
     expect_null(.nl_pilot_axis(c(1, 2), 3))
     expect_null(.nl_pilot_axis(1, 3))
-    # A matrix axis (mcar / miid's log-Cholesky field, tgmrf's bounds box) is a
+    # A matrix axis (mcar / miid's log-Cholesky field, tgmrf's theta grid) is a
     # coordinate block, not a set of nodes on one axis.
     expect_null(.nl_pilot_axis(matrix(1:6, 3, 2), 2))
 })

@@ -554,7 +554,7 @@ $\theta = \log \tau_\delta$ and enters the formula through `latent()`.
 `st_block()` takes the structure matrix `K` and the constraint matrix `B` and
 returns a block whose precision is $\tau_\delta K + 1000\, B^\top B$: the
 constraints enter as a stiff penalty on the null space of `K`, with a normal
-prior on $\theta$ and grid bounds.
+prior on $\theta$ and a grid span.
 
 ```{r kron}
 R_s <- Matrix(diag(rowSums(W)) - W, sparse = TRUE)
@@ -567,7 +567,7 @@ st_block <- function(K, B, name, mean = 3, sd = 1.5, lower = 0, upper = 7) {
     Q = function(theta) as(as(exp(theta[1]) * K + C, "generalMatrix"),
                            "CsparseMatrix"),
     prior = function(theta) dnorm(theta[1], mean, sd, log = TRUE),
-    init = c(log_tau = mean), bounds = list(lower = lower, upper = upper),
+    init = c(log_tau = mean), grid_span = list(lower = lower, upper = upper),
     obs_idx = d$cell, name = name)
 }
 ```

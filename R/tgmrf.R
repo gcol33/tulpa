@@ -29,8 +29,10 @@
 #'   of class `Matrix::sparseMatrix` (typically `dgCMatrix`). The matrix must
 #'   be square and symmetric. Called once at registration with `theta = init`
 #'   to infer `n_latent` and capture the sparsity pattern.
-#' @param prior A function `function(theta)` returning a finite numeric
-#'   scalar -- the log-prior density at `theta`.
+#' @param prior A function `function(theta)` returning a numeric scalar --
+#'   the log-prior density at `theta`, `-Inf` outside its support. `theta` is
+#'   the coordinate this density is written in, and its support is the
+#'   support of every fit: no other argument restricts `theta`.
 #' @param init Numeric vector of starting values for `theta`. Names, if
 #'   present, become the canonical theta names.
 #' @param mu Optional function `function(theta)` returning a numeric vector
@@ -38,14 +40,17 @@
 #' @param graph Optional sparse matrix specifying the upper bound on `Q`'s
 #'   sparsity pattern. If supplied, the registration check verifies that
 #'   the nonzero pattern of `Q(init)` is a subset.
-#' @param bounds Optional list with components `lower` and `upper`, each a
-#'   numeric vector of length `length(init)`. Used by `nested_laplace + CCD`
-#'   to build the outer grid and sampler pilot. VI also uses them as an
-#'   optimisation wall. IMH and NUTS use the support of `prior(theta)`.
+#' @param grid_span Optional list with components `lower` and `upper`, each a
+#'   numeric vector of length `length(init)`: the box the outer theta grid is
+#'   laid over on the nested-Laplace path, and so the span of the pilot grid
+#'   the IMH, VI and NUTS adapters start from. It places nodes; it does not
+#'   restrict `theta`, whose support is that of `prior(theta)`. A stated span
+#'   is kept as declared, where a default grid may be recentred on the
+#'   posterior.
 #' @param n_grid Optional integer: the number of equispaced outer-grid nodes
 #'   per theta axis on the nested-Laplace path (length 1, recycled, or
 #'   `length(init)`), each at least 2. `NULL` (default) takes the engine's
-#'   default node count. The axis spans `bounds` where supplied, else
+#'   default node count. The axis spans `grid_span` where supplied, else
 #'   `init` plus or minus a fixed half-width. Unused by NUTS / VI.
 #' @param obs_idx Optional integer vector mapping each observation to a
 #'   latent slot in `[1, n_latent]`. If `NULL` (default), the fit-time
@@ -61,7 +66,7 @@
 #'   * `n_latent` -- inferred from `Q(init)`.
 #'   * `pattern` -- captured sparsity pattern as a `dgCMatrix` of 1s.
 #'   * `graph` -- user-supplied pattern, validated against `pattern` if given.
-#'   * `bounds`, `name` -- passed through.
+#'   * `grid_span`, `name` -- passed through.
 #'
 #' @examples
 #' # Periodic AR(1) block, wrap-around tridiagonal precision.
@@ -94,7 +99,7 @@
 tgmrf <- function(Q, prior, init,
                   mu      = NULL,
                   graph   = NULL,
-                  bounds  = NULL,
+                  grid_span = NULL,
                   obs_idx = NULL,
                   name    = NULL,
                   n_grid  = NULL) {
@@ -151,7 +156,8 @@ tgmrf <- function(Q, prior, init,
   }
 
   .tgmrf_block(Q0, "`Q(init)`", Q = Q, prior = prior, mu = mu, init = init,
-               graph = graph, bounds = bounds, obs_idx = obs_idx, name = name,
+               graph = graph, grid_span = grid_span, obs_idx = obs_idx,
+               name = name,
                n_grid = n_grid, backend = "r")
 }
 
@@ -169,9 +175,9 @@ tgmrf <- function(Q, prior, init,
 # (`Q0`, a sparse matrix) and the callables. `label` names Q(init) in the
 # errors. Checks Q0 for symmetry, captures its sparsity pattern (1 where an
 # entry is stored, so structural zeros a user keeps for pattern reuse are not
-# penalised), and validates `graph`, `obs_idx`, `bounds` and `n_grid` against
+# penalised), and validates `graph`, `obs_idx`, `grid_span` and `n_grid` against
 # it.
-.tgmrf_block <- function(Q0, label, Q, prior, mu, init, graph, bounds, obs_idx,
+.tgmrf_block <- function(Q0, label, Q, prior, mu, init, graph, grid_span, obs_idx,
                          name, n_grid, backend, extra = list()) {
   n_latent <- nrow(Q0)
   if (n_latent < 1L) {
@@ -222,18 +228,19 @@ tgmrf <- function(Q, prior, init,
     }
   }
 
-  if (!is.null(bounds)) {
-    if (!is.list(bounds) || !all(c("lower", "upper") %in% names(bounds))) {
-      stop("`bounds` must be a list with components `lower` and `upper`.",
+  if (!is.null(grid_span)) {
+    if (!is.list(grid_span) || !all(c("lower", "upper") %in% names(grid_span))) {
+      stop("`grid_span` must be a list with components `lower` and `upper`.",
            call. = FALSE)
     }
-    if (length(bounds$lower) != theta_dim || length(bounds$upper) != theta_dim) {
-      stop("`bounds$lower` and `bounds$upper` must each have length ",
+    if (length(grid_span$lower) != theta_dim ||
+        length(grid_span$upper) != theta_dim) {
+      stop("`grid_span$lower` and `grid_span$upper` must each have length ",
            theta_dim, ".", call. = FALSE)
     }
-    if (any(bounds$lower >= bounds$upper)) {
-      stop("`bounds$lower` must be strictly below `bounds$upper` for every theta.",
-           call. = FALSE)
+    if (any(grid_span$lower >= grid_span$upper)) {
+      stop("`grid_span$lower` must be strictly below `grid_span$upper` for ",
+           "every theta.", call. = FALSE)
     }
   }
 
@@ -249,7 +256,7 @@ tgmrf <- function(Q, prior, init,
       n_latent    = as.integer(n_latent),
       pattern     = pattern,
       graph       = graph,
-      bounds      = bounds,
+      grid_span   = grid_span,
       n_grid      = .tgmrf_check_n_grid(n_grid, theta_dim),
       obs_idx     = obs_idx,
       name        = name,
@@ -314,8 +321,8 @@ print.tgmrf <- function(x, ...) {
   nnz <- length(x$pattern@x)
   cat("  Q nnz    : ", nnz, " (", format(100 * nnz / x$n_latent^2, digits = 3),
       "% of dense)\n", sep = "")
-  if (!is.null(x$bounds)) {
-    cat("  bounds   : supplied\n")
+  if (!is.null(x$grid_span)) {
+    cat("  grid span: supplied\n")
   }
   if (!is.null(x$graph)) {
     cat("  graph    : supplied\n")
@@ -330,16 +337,17 @@ print.tgmrf <- function(x, ...) {
 
 #' @rdname tgmrf
 #' @param object A `tgmrf` block.
-#' @return `summary()` prints the block, its log prior at `init` and its bounds,
+#' @return `summary()` prints the block, its log prior at `init` and its grid span,
 #'   and returns `object` invisibly.
 #' @export
 summary.tgmrf <- function(object, ...) {
   print(object, ...)
   cat("\nlog prior at init: ", format(object$prior(object$init), digits = 6),
       "\n", sep = "")
-  if (!is.null(object$bounds)) {
-    cat("theta bounds:\n")
-    tab <- rbind(lower = object$bounds$lower, upper = object$bounds$upper)
+  if (!is.null(object$grid_span)) {
+    cat("theta grid span:\n")
+    tab <- rbind(lower = object$grid_span$lower,
+                 upper = object$grid_span$upper)
     colnames(tab) <- object$theta_names
     print(tab)
   }

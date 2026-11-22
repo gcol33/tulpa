@@ -58,8 +58,8 @@
   if (is.null(epsilon)) epsilon <- 0.2 / sqrt(d)
 
   # --- Closures: log_post and FD gradient on log_marginal -----------------
-  # Block bounds place the pilot grid. The chain has the support of the
-  # user prior, so the proposal can cover the posterior for correction.
+  # The block's grid_span places the pilot grid. The chain has the support of
+  # the user prior, so the proposal can cover the posterior for correction.
   .lm <- .tgmrf_make_log_marginal(
     y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,

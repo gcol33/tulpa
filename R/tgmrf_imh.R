@@ -177,7 +177,7 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
 
   # --- 2. Outer mode and curvature ------------------------------------------
   # One inner Laplace solve per theta (shared builder, see
-  # .tgmrf_make_log_marginal); no bounds wall, the IMH target is the
+  # .tgmrf_make_log_marginal); no wall at the grid span, the IMH target is the
   # unbounded posterior over theta. The proposal is centred on the mode the
   # outer mode-find reaches from the pilot argmax and scaled by the inverse
   # curvature there.
@@ -191,7 +191,7 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
   # failure here is a bug, not numerical infeasibility, so it surfaces.
   if (!is.finite(.lm$raw(pl$theta_init))) {
     stop("Pilot log_marginal at the grid argmax is not finite -- ",
-         "tighten `bounds` or check the user `Q()`/`prior()`.", call. = FALSE)
+         "narrow `grid_span` or check the user `Q()`/`prior()`.", call. = FALSE)
   }
   om <- .tgmrf_outer_mode(pl, .lm, block)
   theta_mode <- om$mode

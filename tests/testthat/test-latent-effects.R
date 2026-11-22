@@ -15,7 +15,7 @@ test_that("latent_effects() returns the block's mixture and adds up to eta", {
                                      stats::rnorm(nrow(d), 0, 0.3)))
   blk <- tgmrf(Q = function(theta) Matrix::Diagonal(nrow(d), exp(theta[1])),
                prior = function(theta) stats::dnorm(theta[1], 2, 1.5, log = TRUE),
-               init = c(log_tau = 2), bounds = list(lower = -1, upper = 7),
+               init = c(log_tau = 2), grid_span = list(lower = -1, upper = 7),
                obs_idx = seq_len(nrow(d)), name = "obs_iid")
   fit <- suppressWarnings(tulpa(y ~ x + spatial(region) + latent(blk), data = d,
     family = "poisson", spatial = list(type = "icar", adjacency = W),

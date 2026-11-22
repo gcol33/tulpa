@@ -20,7 +20,7 @@
 skip_on_cran()
 
 make_periodic_ar1_r <- function(n, init,
-                                bounds = NULL,
+                                grid_span = NULL,
                                 theta_grid = NULL) {
   blk <- tgmrf(
     Q = function(theta) {
@@ -40,7 +40,7 @@ make_periodic_ar1_r <- function(n, init,
         stats::dnorm(theta[2], 0, 1, log = TRUE)
     },
     init   = init,
-    bounds = bounds,
+    grid_span = grid_span,
     name   = "periodic_ar1_r"
   )
   if (!is.null(theta_grid)) blk$theta_grid_built <- theta_grid
@@ -65,14 +65,14 @@ test_that("tgmrf_cpp() compiles, registers, and fits a periodic-AR1 sim", {
   # kN = 80 in the .cpp.
   n <- 80L
   init <- c(log_sigma = 0, atanh_rho = atanh(0.5))
-  bounds <- list(lower = c(log(0.3), atanh(0.0)),
-                 upper = c(log(3.0), atanh(0.95)))
+  grid_span <- list(lower = c(log(0.3), atanh(0.0)),
+                    upper = c(log(3.0), atanh(0.95)))
 
   blk <- tgmrf_cpp(
     cpp_file = cpp_file,
     id       = "tgmrf_periodic_ar1",
     init     = init,
-    bounds   = bounds,
+    grid_span = grid_span,
     name     = "periodic_ar1_cpp"
   )
 

@@ -105,8 +105,8 @@ test_that("directly-called VI fit does not fake a convergence pass", {
     },
     prior = function(theta) 0,
     init = c(log_tau = 0, atanh_rho = atanh(0.5)),
-    bounds = list(lower = c(log(0.3), atanh(0)),
-                  upper = c(log(3),   atanh(0.95))),
+    grid_span = list(lower = c(log(0.3), atanh(0)),
+                     upper = c(log(3),   atanh(0.95))),
     name = "ar1_vi"
   )
 

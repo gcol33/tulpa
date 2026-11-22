@@ -83,7 +83,7 @@ once, not per grid point.
 The block records `theta_dim` and `theta_names` from `init` (named
 elements become the canonical hyperparameter names; unnamed ones get
 `theta_1`, `theta_2`, ...), validates the optional `mu`, `graph`,
-`bounds`, and `obs_idx` arguments against the inferred shape, and stores
+`grid_span`, and `obs_idx` arguments against the inferred shape, and stores
 the two closures by reference. Nothing is differentiated, compiled, or
 parsed. The returned object has class `c("tgmrf", "tulpa_latent_block")`
 and a `type = "tgmrf"` registry key that the nested-Laplace dispatcher
@@ -94,7 +94,7 @@ describe what `tulpa_nested_laplace()` does with a `tgmrf` block; the
 IMH, VI, and NUTS adapters share the inner machinery and differ only in
 how they explore `theta`.
 
-1. **Build the outer grid over `theta`.** If you supplied `bounds`, the
+1. **Build the outer grid over `theta`.** If you supplied `grid_span`, the
    driver lays a per-axis grid between `lower` and `upper`. The default
    resolution is 5 points per axis; the block's `n_grid` sets it, and the
    IMH, VI, and NUTS adapters override it with `pilot_axis_points`. With $d$
@@ -168,15 +168,16 @@ periodic_ar1 <- function(n) {
       dnorm(theta[2], 0, 1, log = TRUE)       # weak on atanh_rho
     },
     init   = c(log_sigma = 0, atanh_rho = atanh(0.3)),
-    bounds = list(lower = c(log(0.3), atanh(0.0)),
-                  upper = c(log(3.0), atanh(0.9))),
+    grid_span = list(lower = c(log(0.3), atanh(0.0)),
+                     upper = c(log(3.0), atanh(0.9))),
     name   = "periodic_ar1"
   )
 }
 ```
 
-The optional `bounds` argument places the outer grid and sampler pilot.
-IMH and NUTS explore the support of `prior(theta)`. The `prior` closure is a
+The optional `grid_span` argument places the outer grid and sampler pilot;
+it does not restrict `theta`. Every fit explores the support of
+`prior(theta)`. The `prior` closure is a
 log-density on theta; a proper prior such as the one above makes the
 scale posterior well defined even with sparse observations per latent node.
 
@@ -187,7 +188,7 @@ closures expect. The reparameterisation to `log_sigma` and `atanh_rho`
 is deliberate: it maps the natural constraints $\sigma > 0$ and
 $|\rho| < 1$ to the whole real line, so the outer grid, the L-BFGS
 search, and the leapfrog steps all operate on unconstrained coordinates
-and never propose an invalid precision. The `bounds` you give are in
+and never propose an invalid precision. The `grid_span` you give is in
 those unconstrained units too. Use names on `init` and they propagate
 through every fit as the reported parameter names.
 
@@ -452,7 +453,7 @@ number of Newton iterations spent per grid point, and `$log_marginal`,
 the per-cell scores. The inner budget is `control$max_iter` (default
 `50L`) with tolerance `control$tol` (default `1e-6`). If a cell hits
 `max_iter` without converging, or if `log_marginal` is non-finite at any
-cell, the fit is unreliable at that $\theta$: tighten `bounds` so the
+cell, the fit is unreliable at that $\theta$: narrow `grid_span` so the
 grid stays where $Q(\theta)$ is well-conditioned, or raise `max_iter`.
 The IMH and NUTS adapters add an eager check: they evaluate the inner
 solve at the pilot grid argmax before sampling and stop with a specific
@@ -490,9 +491,9 @@ The joint proposal is a multivariate t with 7 degrees of freedom and the
 inner Laplace precision. This pilot cost is paid once. The budget is then
 fixed for the sampler or correction pass.
 
-The block's bounds place the grid and pilot. IMH and NUTS use the support
-specified by the theta prior. VI uses the bounds as an optimisation wall.
-An explicit prior support restriction belongs in `prior(theta)`.
+The block's `grid_span` places the grid and pilot. Every adapter uses the
+support specified by the theta prior; a support restriction belongs in
+`prior(theta)`, which returns `-Inf` outside it.
 
 ## Which tier when
 

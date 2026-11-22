@@ -83,7 +83,7 @@ test_that("uncorrected and gated NUTS fits report their Laplace target", {
   skip_on_cran()
   blk <- tgmrf(Q = function(theta) Matrix::Diagonal(3, exp(-2 * theta)),
     prior = function(theta) dnorm(theta, 0, .4, log = TRUE),
-    init = c(log_sigma = 0), bounds = list(lower = -.8, upper = .8))
+    init = c(log_sigma = 0), grid_span = list(lower = -.8, upper = .8))
   args <- list(y = c(-.2, 0, .5), n_trials = rep(1L, 3), X = matrix(1, 3, 1),
                block = blk, family = "gaussian", mode = "nuts")
   fit <- do.call(tulpa_tgmrf, c(args, list(control = list(

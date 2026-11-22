@@ -81,7 +81,7 @@
   theta_init <- pl$theta_init
 
   # --- 2. log_marginal(theta) closure -------------------------------------
-  # The prior defines support; block bounds place the pilot grid.
+  # The prior defines support; the block's grid_span places the pilot grid.
   .lm <- .tgmrf_make_log_marginal(
     y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
@@ -97,7 +97,7 @@
   init_lm <- .lm$raw(theta_init)
   if (!is.finite(init_lm)) {
     stop("Inner nested-Laplace returned a non-finite log-marginal at the ",
-         "pilot mode; cannot initialise VI. Tighten `bounds` or check the ",
+         "pilot mode; cannot initialise VI. Narrow `grid_span` or check the ",
          "user `Q()` / `prior()`.", call. = FALSE)
   }
 

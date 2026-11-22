@@ -10,7 +10,7 @@ tgmrf_cpp(
   init,
   mu = NULL,
   graph = NULL,
-  bounds = NULL,
+  grid_span = NULL,
   obs_idx = NULL,
   name = NULL,
   n_grid = NULL,
@@ -27,7 +27,7 @@ with an unchanged source skip the rebuild.}
 \item{id}{Character: the stable id used as the registry key. Must match
 the first argument of \code{TULPA_REGISTER_TGMRF} in the user's \code{.cpp}.}
 
-\item{init, mu, graph, bounds, obs_idx, name, n_grid}{Same arguments as
+\item{init, mu, graph, grid_span, obs_idx, name, n_grid}{Same arguments as
 \code{\link[=tgmrf]{tgmrf()}}.
 \code{init} is required and supplies the canonical theta names. \code{mu} is
 currently ignored on the C++ path -- the mu kernel registered by

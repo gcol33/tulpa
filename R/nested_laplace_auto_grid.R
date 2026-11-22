@@ -1145,8 +1145,7 @@ auto_grid_place <- function(x)
 #     the rest.
 #   * `"family_out_of_scope"` -- nothing about this fit's axis geometry is in
 #     the rescue's scope at all (mcar / miid's log-Cholesky coordinates, a
-#     `lf` block carrying no axis). A `tgmrf` block declaring a `bounds` box
-#     is the first case: its axes are tagged NA.
+#     `lf` block carrying no axis).
 #
 # `tags` is the per-column transform registry read for this fit
 # (`.nl_registry_axis_tags()`), so the two answers are decided from the same
@@ -1674,11 +1673,9 @@ auto_grid_place <- function(x)
 #     they carry, so the binding below cannot address one coordinate. Their
 #     tags are all `identity`, so the block is the field shape, not the
 #     coordinate.
-#   * a tgmrf block that declares `bounds` lays its axes over that box, which
-#     is the block's own support and one no registry coordinate names
-#     (`.joint_pareto_block_tags()` tags it NA), so the fit says
-#     `unguessable_axis`. An unbounded tgmrf block IS listed: its theta is the
-#     coordinate its own prior is a density on, the identity.
+#   * a tgmrf block IS listed: its theta is the coordinate its own prior is a
+#     density on, the identity. A `grid_span` the block states holds its axes
+#     as declared (`stated_by`), the provenance question, not the support.
 #   * lf carries no outer axis at all (a 1 x 0 grid), so there is nothing to
 #     place.
 #
@@ -1701,7 +1698,7 @@ auto_grid_place <- function(x)
     hsgp = c(sigma2_grid = "sigma2", lengthscale_grid = "lengthscale"),
     spde = c(range_grid = "range", sigma_grid = "sigma"),
     tgmrf = list(matrix = "theta_grid_built", names_from = "theta_names",
-                 n_from = "n_grid", stated_by = "bounds")
+                 n_from = "n_grid", stated_by = "grid_span")
 )
 
 # The per-axis movable slots a prior offers: one entry per (block, axis) the
@@ -1786,7 +1783,7 @@ auto_grid_place <- function(x)
     cn <- res$theta_names %||% colnames(res$theta_grid)
     if (is.null(cn) || !length(cn)) return(NULL)
     tag1 <- function(block, axes) tryCatch(
-        .joint_pareto_block_tags(tolower(block$type %||% ""), axes, block),
+        .joint_pareto_block_tags(tolower(block$type %||% ""), axes),
         error = function(e) rep(NA_character_, length(axes)))
     if (!isTRUE(multi)) {
         tags <- tag1(blocks[[1L]], cn)

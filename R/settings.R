@@ -76,7 +76,7 @@
 #   * `list(data_dependent = TRUE, ...)`  an axis the engine can only build once
 #                                  it has seen the data or the user's prior
 #                                  (a PC-prior mode, an adjacency eigenvalue
-#                                  interval, a `tgmrf` bounds box). The shape
+#                                  interval, a `tgmrf` grid span). The shape
 #                                  parameters live here; the materialisation
 #                                  needs arguments, so `.nl_grid_axis()` refuses
 #                                  these and the caller reads the fields it
@@ -195,8 +195,8 @@
     # (`mode * lo` .. `mode * hi`) the registry path avoids.
     spde_direct = list(data_dependent = TRUE, lo_mult = 0.3, hi_mult = 3),
 
-    # User-defined GMRF (`tgmrf`): per-axis nodes over the declared bounds
-    # box, or `init +/- half_width` when the block declares no bounds.
+    # User-defined GMRF (`tgmrf`): per-axis nodes over the block's stated
+    # `grid_span`, or `init +/- half_width` when it states none.
     tgmrf_axis = list(data_dependent = TRUE, n = 5L, half_width = 2)
 )
 

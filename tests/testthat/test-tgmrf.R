@@ -2,7 +2,7 @@
 # tgmrf() — user-defined GMRF latent block (P1: constructor + formula hook)
 #
 # Covers:
-#   * Constructor validation (Q, prior, init, mu, graph, bounds).
+#   * Constructor validation (Q, prior, init, mu, graph, grid_span).
 #   * Shape capture (n_latent, theta_dim, theta_names, sparsity pattern).
 #   * Periodic AR(1) worked example from dev_notes/plans/generic-todo.md §7.
 #   * Formula parser hook: latent(tgmrf(...)) detected, evaluated, stripped.
@@ -100,13 +100,13 @@ test_that("print.tgmrf() runs without error", {
   expect_output(print(blk), "log_sigma, atanh_rho")
 })
 
-test_that("summary.tgmrf() prints prior value and bounds", {
+test_that("summary.tgmrf() prints prior value and grid span", {
   Q1 <- function(theta) Matrix::Diagonal(3)
   pr <- function(theta) -0.5 * sum(theta^2)
   blk <- tgmrf(Q = Q1, prior = pr, init = c(a = 0.4, b = -0.2),
-               bounds = list(lower = c(-3, -3), upper = c(3, 3)))
+               grid_span = list(lower = c(-3, -3), upper = c(3, 3)))
   expect_output(summary(blk), "log prior at init")
-  expect_output(summary(blk), "theta bounds")
+  expect_output(summary(blk), "theta grid span")
 })
 
 # ---------------------------------------------------------------------------
@@ -334,27 +334,27 @@ test_that("tgmrf() validates an optional graph pattern", {
   )
 })
 
-test_that("tgmrf() validates bounds shape and ordering", {
+test_that("tgmrf() validates grid_span shape and ordering", {
   skip_on_cran_budget()
   Q1 <- function(theta) Matrix::Diagonal(2)
   pr <- function(theta) 0
   expect_silent(
     tgmrf(Q = Q1, prior = pr, init = c(0, 0),
-          bounds = list(lower = c(-3, -3), upper = c(3, 3)))
+          grid_span = list(lower = c(-3, -3), upper = c(3, 3)))
   )
   expect_error(
     tgmrf(Q = Q1, prior = pr, init = c(0, 0),
-          bounds = list(lower = c(-3), upper = c(3))),
+          grid_span = list(lower = c(-3), upper = c(3))),
     "length 2"
   )
   expect_error(
     tgmrf(Q = Q1, prior = pr, init = c(0, 0),
-          bounds = list(lower = c(2, 2), upper = c(1, 1))),
+          grid_span = list(lower = c(2, 2), upper = c(1, 1))),
     "strictly below"
   )
   expect_error(
     tgmrf(Q = Q1, prior = pr, init = c(0, 0),
-          bounds = list(lower = c(-3, -3))),
+          grid_span = list(lower = c(-3, -3))),
     "components `lower` and `upper`"
   )
 })

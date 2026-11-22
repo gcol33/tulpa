@@ -144,7 +144,7 @@ test_that("a skewed latent AR(1) axis is followed past the end node its placemen
     expect_true(all(abs(got[, "ci_hi"] - ref[, "ci_hi"]) < 0.1 * ref[, "sd"]))
 })
 
-test_that("a tgmrf block with a bounds box keeps its declared span", {
+test_that("a tgmrf block with a stated grid span keeps it as declared", {
     skip_on_cran()
     set.seed(7)
     G <- 30L
@@ -155,14 +155,38 @@ test_that("a tgmrf block with a bounds box keeps its declared span", {
         Q = function(theta) Matrix::Diagonal(G, exp(-2 * theta[1])),
         prior = function(theta) stats::dnorm(theta[1], 0, 1, log = TRUE),
         init = c(log_sigma = 0), obs_idx = g, n_grid = 4L,
-        bounds = list(lower = -2, upper = 1))
+        grid_span = list(lower = -2, upper = 1))
     fit <- suppressWarnings(tulpa(y ~ 1 + latent(blk), data = d,
                                   family = "gaussian", phi = 0.16,
                                   mode = "nested_laplace"))
     expect_identical(fit$outer_grid_placement, "fixed")
-    expect_match(fit$outer_grid_recenter_declined, "^unguessable_axis")
+    expect_identical(fit$outer_grid_recenter_declined, "axis_pinned")
     # Refinement may densify inside the box and never leaves it.
     nodes <- sort(unique(as.numeric(tulpa_outer_grid(fit)$nodes)))
     expect_true(all(seq(-2, 1, length.out = 4L) %in% nodes))
     expect_true(all(nodes >= -2 & nodes <= 1))
+})
+
+test_that("a stated tgmrf grid span leaves the fit's other axes placeable", {
+    # The span places the tgmrf block's nodes and says nothing about its
+    # support, so its axis is an identity coordinate and the ICAR precision
+    # beside it is recentred while the tgmrf axis stays as declared.
+    skip_on_cran()
+    set.seed(1)
+    K <- 12L
+    W <- matrix(0, K, K)
+    for (i in seq_len(K)) { j <- if (i < K) i + 1L else 1L; W[i, j] <- W[j, i] <- 1 }
+    d <- data.frame(region = rep(seq_len(K), each = 10L), x = stats::rnorm(120))
+    d$y <- stats::rpois(120, exp(0.5 + 0.4 * d$x + sin(2 * pi * d$region / K)))
+    blk <- tgmrf(Q = function(theta) Matrix::Diagonal(120, exp(theta[1])),
+                 prior = function(theta) stats::dnorm(theta[1], 2, 1.5, log = TRUE),
+                 init = c(log_tau = 2), grid_span = list(lower = -1, upper = 7),
+                 obs_idx = seq_len(120), name = "obs_iid")
+    fit <- tulpa(y ~ x + spatial(region) + latent(blk), data = d,
+                 family = "poisson", spatial = list(type = "icar", adjacency = W),
+                 mode = "auto", control = list(progress = FALSE))
+    expect_identical(fit$outer_grid_placement, "auto_recentered")
+    expect_identical(fit$outer_grid_recenter_axes, "b1.tau")
+    expect_true(all(fit$theta_grid[, "b2.log_tau"] >= -1 &
+                    fit$theta_grid[, "b2.log_tau"] <= 7))
 })
