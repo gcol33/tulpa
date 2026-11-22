@@ -95,7 +95,8 @@
   res <- tulpa_hyper_grid(
     specs, inner, combine = "none",
     design = if (identical(control$integration, "grid")) "grid" else "ccd",
-    ccd_start = anchors)
+    ccd_start = anchors,
+    control = control[intersect(names(control), .CONTROL_KEYS$hyper_grid)])
   res$prior <- list(block)
   res
 }

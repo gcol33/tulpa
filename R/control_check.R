@@ -226,11 +226,11 @@ tulpa_check_control <- function(control, allowed, where) {
       "subspace_debias", "cila", "max_grid_cells", "within_cell",
       "checkpoint", progress),
     # `tulpa_hyper_grid()`'s own surface: the refinement / consistency passes
-    # it drives and nothing else, since the inner solve is the caller's own
-    # callback and takes no knobs from here.
+    # it drives and the per-cell progress reporter, since the inner solve is
+    # the caller's own callback and takes no knobs from here.
     hyper_grid = c("adaptive_grid", "adaptive_grid_edge_thresh",
                    "adaptive_grid_max_passes", "var_of_means_consistency",
-                   "var_of_means_min_ess"),
+                   "var_of_means_min_ess", progress),
     st_nested = c("n_grid_spatial", "n_grid_temporal", "n_grid_rho",
                   "tau_lower", "tau_upper", "rho_lower", "rho_upper",
                   "rho_spatial", "sigma_lower", "sigma_upper",

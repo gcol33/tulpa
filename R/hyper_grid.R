@@ -18,20 +18,28 @@
 # refinement can call it on a batch of new cells the same way the initial
 # Cartesian pass does. `state` is a small env carrying beta_dim / beta_names
 # pinned by the FIRST successful cell -- subsequent cells must match.
-.hyper_grid_make_kernel_fn <- function(inner_fit, axis_names, combine, state) {
+.hyper_grid_make_kernel_fn <- function(inner_fit, axis_names, combine, state,
+                                       progress = NULL) {
   store_beta <- combine != "none"
   store_cov  <- combine == "law_of_total_cov"
 
   # A caller's `inner_fit` has no cheap pass, so every cell is solved and
-  # `screen` is not read.
+  # `screen` is not read. Each call over integration cells reports per cell
+  # through the grid entries' reporter (`progress`, `.nl_progress_args()`);
+  # `report = FALSE` keeps a mode-find's single-cell probes quiet.
   function(new_cells, warm_start = NULL, store_extras = store_beta,
-           screen = NULL) {
+           screen = NULL, report = TRUE) {
     n_new <- nrow(new_cells)
     log_marg <- rep(-Inf, n_new)
     extras   <- if (isTRUE(store_extras)) vector("list", n_new) else NULL
+    prog <- tulpa_iter_progress("nested-laplace", n_new, unit = "cells",
+                                config = if (isTRUE(report)) progress
+                                         else list(progress = FALSE))
+    on.exit(prog$finish(), add = TRUE)
     for (i in seq_len(n_new)) {
       hypers <- stats::setNames(as.numeric(new_cells[i, ]), axis_names)
       fit_i <- tryCatch(inner_fit(hypers), error = function(e) e)
+      prog$tick()
       if (inherits(fit_i, "error") || !is.list(fit_i)) {
         state$n_failed <- state$n_failed + 1L
         next
@@ -187,6 +195,11 @@
 #'   mode-find; an axis left out starts at the centre of its grid (in its
 #'   integration coordinate).
 #' @param control Optional list of refinement / tuning knobs:
+#'   * `progress`, `progress.every`, `progress.file`, `progress.throttle` --
+#'     the per-cell progress reporter, as on [tulpa_nested_laplace()]: whether
+#'     to print (default `TRUE`), every how many cells, a heartbeat file to
+#'     overwrite, and the minimum seconds between lines. Each pass over
+#'     integration cells reports; the CCD mode-find's probes do not.
 #'   * `adaptive_grid` (`FALSE`) -- run the boundary / interior refinement
 #'     pass on every axis whose spec has `refinable = TRUE`. New cells are
 #'     appended along the refining axis paired with the boundary modal cell's
@@ -318,7 +331,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   state$beta_dim   <- NA_integer_
   state$beta_names <- beta_names
   state$n_failed   <- 0L
-  kernel_fn <- .hyper_grid_make_kernel_fn(inner_fit, axis_names, combine, state)
+  kernel_fn <- .hyper_grid_make_kernel_fn(inner_fit, axis_names, combine, state,
+                                          progress = .nl_progress_args(control))
   hp_fn     <- .hyper_grid_make_hp_fn(specs)
 
   # Initial Cartesian outer grid.
@@ -609,7 +623,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   full <- function(theta_vary) { th <- fixed; th[vary] <- theta_vary; th }
   eval_logm <- function(theta_vary) {
     row <- matrix(full(theta_vary), 1L, dimnames = list(NULL, axis_names))
-    lm <- kernel_fn(row, store_extras = FALSE)$log_marginal
+    lm <- kernel_fn(row, store_extras = FALSE, report = FALSE)$log_marginal
     if (!is.null(hp_fn)) lm <- lm + hp_fn(row)
     lm
   }

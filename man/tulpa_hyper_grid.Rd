@@ -83,6 +83,11 @@ integration coordinate).}
 
 \item{control}{Optional list of refinement / tuning knobs:
 \itemize{
+\item \code{progress}, \code{progress.every}, \code{progress.file}, \code{progress.throttle} --
+the per-cell progress reporter, as on \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}: whether
+to print (default \code{TRUE}), every how many cells, a heartbeat file to
+overwrite, and the minimum seconds between lines. Each pass over
+integration cells reports; the CCD mode-find's probes do not.
 \item \code{adaptive_grid} (\code{FALSE}) -- run the boundary / interior refinement
 pass on every axis whose spec has \code{refinable = TRUE}. New cells are
 appended along the refining axis paired with the boundary modal cell's
