@@ -8,6 +8,7 @@
   the placement of every other axis in the fit. A stated span is now held as
   declared (`axis_pinned`) like any stated grid, and the fit's other axes are
   placed (#1263).
+
 * `fit_spde()` integrates `(range, sigma)` of an integer-nu field as an `spde`
   block of `tulpa_nested_laplace_joint()`: the outer grid is placed at the
   outer mode, refined, screened and scored by the joint door's outer
