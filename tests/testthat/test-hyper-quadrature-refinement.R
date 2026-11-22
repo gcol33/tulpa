@@ -224,6 +224,34 @@ test_that("a solved level grows into the rows next to the ones holding its mass"
   expect_null(.hyper_level_frontier(g, lm, FLAT_LEVEL_SPECS, ref, "sigma", 0.2))
 })
 
+test_that("each axis's laid levels reach the rows a later axis's levels opened", {
+  skip_on_cran_budget()
+  # sigma's new top level was laid before phi_pos took its new top level, so
+  # the cell crossing the two is in neither pass's rows. The posterior sits at
+  # that corner, so the closure lays it.
+  log_post <- function(m) {
+    -0.5 * ((log(m[, "sigma"]) - log(4)) / 0.6)^2 -
+      0.5 * ((log(m[, "phi_pos"]) - log(90)) / 0.6)^2
+  }
+  ad <- add_levels(LEVEL_TENSOR, rep("", 25L), "sigma", 5)
+  ad <- add_levels(ad$g, ad$ref, "phi_pos", 100)
+  keep <- !(ad$g[, "sigma"] == 5 & ad$g[, "phi_pos"] == 100)
+  ad$g <- ad$g[keep, , drop = FALSE]
+  ad$ref <- ad$ref[keep]
+  expect_false(any(ad$g[, "sigma"] == 5 & ad$g[, "phi_pos"] == 100))
+  kernel <- function(cells, ...) list(log_marginal = log_post(cells))
+  cl <- tulpa:::.hyper_level_closure(ad$g, log_post(ad$g), NULL, ad$ref,
+                                     FLAT_LEVEL_SPECS, kernel,
+                                     c("sigma", "phi_pos"))
+  expect_true(any(cl$theta_grid[, "sigma"] == 5 & cl$theta_grid[, "phi_pos"] == 100))
+  expect_identical(cl$n_new, 1L)
+  # A grid already closed lays nothing.
+  again <- tulpa:::.hyper_level_closure(cl$theta_grid, cl$log_marginal, NULL,
+                                        cl$refining_axis, FLAT_LEVEL_SPECS,
+                                        kernel, c("sigma", "phi_pos"))
+  expect_identical(again$n_new, 0L)
+})
+
 test_that("interior levels are measured by the product rule over all levels", {
   skip_on_cran_budget()
   lp <- log(LEVEL_AXES$phi_pos)

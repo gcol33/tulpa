@@ -1,5 +1,15 @@
 # tulpa 0.8.0
 
+* Once every axis is refined, the consistency pass lays each axis's new
+  levels again in the rows of the grid as it then stands. An axis is refined
+  in turn, so its levels never reached the rows a later axis's levels opened;
+  on the 12-observation `fit_st_nested()` HSGP x AR(1) fit the full-tensor
+  cells this left out carried 1.48% of the posterior and now carry 0.37%
+  (6351 -> 8734 cells). The temporal precision's 97.5% point reads 3799
+  (before 3131; the full tensor of the same levels 4677, a dense grid 4618).
+  On BYM2 x AR(1) and car_proper x AR(1) fits the cells grow 24% and the
+  interval ends move by at most 0.04 (#1276).
+
 * A precision the placement pass lays is followed out past its top node when
   the posterior runs on: its nodes are marked engine-placed (#1283), where
   they had read as the caller's pin and were only densified. On a binomial

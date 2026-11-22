@@ -1125,6 +1125,57 @@
 # left the field SD's 95% interval 7% (16x16) and 8% (24x24) narrow against a
 # dense reference; laid as levels, mean |F_ref(q) - p| fell from 0.013 / 0.032 to
 # 0.004 / 0.001.
+# The levels the pass laid on each axis of `axes`, laid again in the rows of
+# the grid as it stands once every axis is refined. An axis is refined in
+# turn, so its levels went into the rows that existed when its turn came: the
+# levels a later axis added are rows of the grid that never take them, and on
+# a four-axis grid the cells those combinations leave out of the tensor carry
+# the posterior of each axis's extended tail across the others' (1.5% of it on
+# the 12-observation HSGP x AR(1) fit of gcol33/tulpa#1276). Each axis's levels
+# are laid by the one row rule (`.hyper_tensor_level_cells()`, the rows holding
+# all but `level_row_tail` of the mass), so a row the posterior does not reach
+# stays out, and the round repeats while a round lays any cell, since a round's
+# cells are rows for the next axis's levels.
+.hyper_level_closure <- function(theta_grid, log_marginal, extras,
+                                 refining_axis, specs, kernel_fn, axes,
+                                 hp_fn = NULL,
+                                 max_rounds = length(axes) + 1L) {
+  n_new <- 0L
+  declared <- !nzchar(refining_axis)
+  added_levels <- function(axis) {
+    v <- theta_grid[, axis]
+    setdiff(unique(v[!declared]), unique(theta_grid[declared, axis]))
+  }
+  for (round in seq_len(max_rounds)) {
+    laid <- 0L
+    for (axis in axes) {
+      lev <- added_levels(axis)
+      if (!length(lev)) next
+      lq <- .hyper_log_quad_weights(theta_grid, specs, refining = refining_axis,
+                                    log_marginal = log_marginal)
+      lw <- if (length(lq) == length(log_marginal)) log_marginal + lq
+            else log_marginal
+      pack <- .hyper_tensor_level_cells(theta_grid, log_marginal, axis, lev,
+                                        log_weight = lw)
+      if (is.null(pack)) next
+      step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
+                                           refining_axis, pack, axis, specs,
+                                           kernel_fn, hp_fn = hp_fn)
+      if (step$n_new == 0L) next
+      theta_grid    <- step$theta_grid
+      log_marginal  <- step$log_marginal
+      extras        <- step$extras
+      refining_axis <- step$refining_axis
+      declared      <- !nzchar(refining_axis)
+      laid  <- laid + step$n_new
+    }
+    n_new <- n_new + laid
+    if (laid == 0L) break
+  }
+  list(theta_grid = theta_grid, log_marginal = log_marginal, extras = extras,
+       refining_axis = refining_axis, n_new = n_new)
+}
+
 .hyper_consistency_pass <- function(theta_grid, log_marginal, extras,
                                     refining_axis, specs, kernel_fn,
                                     min_ess = .nl_diag("axis_sd_ess"),
@@ -1242,6 +1293,15 @@
     info$ess_before <- c(info$ess_before, ess_before)
     info$ess_after  <- c(info$ess_after, rd$ess)
     n_added_total   <- n_added_total + added
+  }
+  if (length(info$axes) > 1L) {
+    cl <- .hyper_level_closure(theta_grid, log_marginal, extras, refining_axis,
+                               specs, kernel_fn, info$axes, hp_fn = hp_fn)
+    theta_grid    <- cl$theta_grid
+    log_marginal  <- cl$log_marginal
+    extras        <- cl$extras
+    refining_axis <- cl$refining_axis
+    info$n_closure <- cl$n_new
   }
   if (length(info$axes) == 0L) info <- NULL
   list(theta_grid = theta_grid, log_marginal = log_marginal,
