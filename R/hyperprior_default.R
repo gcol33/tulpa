@@ -245,8 +245,15 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
       .hp_log_scale_density(factor * x, "range", ra$anchor, ra$dim))
   }
 
+  # A free-covariance block's density is one over all its log-Cholesky
+  # columns: the block's stated `logchol_prior`, else the PC + LKJ default.
   if (type %in% c("mcar", "miid") && .hp_is_logchol_col(bare)) {
-    return(list(group = "logchol"))
+    fn <- block$logchol_prior
+    if (!is.null(fn) && !is.function(fn)) {
+      stop("A block's `logchol_prior` must be a function of its log-Cholesky ",
+           "coordinates.", call. = FALSE)
+    }
+    return(list(group = "logchol", fn = fn))
   }
   switch(paste(type, bare, sep = ":"),
     "bym2:rho"       = return(uniform()),
@@ -328,6 +335,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   } else {
     type <- tolower(block$type %||% "")
     stated <- identical(bare, "alpha") ||
+      (.hp_is_logchol_col(bare) && !is.null(block$logchol_prior)) ||
       (identical(type, "ar1") && identical(bare, "rho") && !is.null(block$rho_prior)) ||
       (!is.null(block$prior_sigma) && .hp_is_scale_axis(bare)) ||
       (bare %in% .SPATIAL_LENGTH_AXES && !is.null(block$prior_range))
@@ -367,12 +375,14 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     }
   }
   groups <- list()
+  group_fn <- list()
   for (a in axes) {
     r <- resolve(a)
     if (!is.null(r$support)) out$support[[name(a)]] <- r$support
     if (identical(r$group, "logchol")) {
       key <- .hp_logchol_key(.axis_label_prefix(a))
       groups[[key]] <- c(groups[[key]], a)
+      if (!is.null(r$fn)) group_fn[[key]] <- r$fn
     } else if (!is.null(r$fn)) {
       v <- as.numeric(r$fn(as.numeric(tg[, a])))
       v[is.na(v)] <- -Inf
@@ -394,7 +404,8 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     }
     cols <- .hp_logchol_block_cols(colnames(tg), pre)
     d <- if (is.null(cols)) list(reason = .hp_decline("logchol_partial_block"))
-         else .hp_logchol_log_density(tg[, cols, drop = FALSE], design)
+         else .hp_logchol_log_density(tg[, cols, drop = FALSE], design,
+                                      group_fn[[key]])
     if (!is.null(d$lp)) {
       v <- d$lp
       v[is.na(v)] <- -Inf
@@ -656,17 +667,18 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 }
 
 # Per-cell log prior density of a free-covariance block at the rows of `M`, in
-# the coordinates of `design` (a `.hp_logchol_design()` record): independent PC
-# priors on the marginal standard deviations and an LKJ prior on the
-# correlation matrix, the `re_cov_pc_lkj_prior()` default at the engine's anchor
-# (`.re_cov_block_logprior()`, a density in the log-Cholesky coordinates). On a
-# "cpc" design it is that density carried to the log SDs and atanh partial
-# correlations by the map's log-Jacobian.
-.hp_logchol_log_density <- function(M, design) {
+# the coordinates of `design` (a `.hp_logchol_design()` record). `fn` is the
+# block's stated density in the log-Cholesky coordinates (`logchol_prior`);
+# without one, independent PC priors on the marginal standard deviations and an
+# LKJ prior on the correlation matrix, the `re_cov_pc_lkj_prior()` default at
+# the engine's anchor (`.re_cov_block_logprior()`). On a "cpc" design it is
+# that density carried to the log SDs and atanh partial correlations by the
+# map's log-Jacobian.
+.hp_logchol_log_density <- function(M, design, fn = NULL) {
   if (is.null(design$design)) return(list(reason = design$reason))
   M <- as.matrix(M)
-  f <- .re_cov_block_logprior(design$p, TRUE, .nl_scale_anchor(),
-                              .nl_hyperprior("lkj_eta"))
+  f <- fn %||% .re_cov_block_logprior(design$p, TRUE, .nl_scale_anchor(),
+                                      .nl_hyperprior("lkj_eta"))
   lp <- apply(M, 1L, f)
   if (identical(design$design, "cpc")) {
     lp <- lp + attr(.hp_logchol_from_coords(.hp_logchol_coords(M, design),

@@ -228,6 +228,13 @@ in the log-Cholesky columns, and refits; a grid marked with
 \code{\link[=auto_grid]{auto_grid()}} is treated the same way. A grid the caller supplies
 unmarked is integrated as given, and is refined by added levels only
 when it is a tensor in the log-Cholesky columns.
+\item \code{logchol_prior} -- optional hyperprior of the block: a
+\verb{function(theta)} returning the joint log density of \eqn{\Sigma} at one
+vector of the block's log-Cholesky coordinates, in the \code{logchol_grid}
+column order and on those coordinates (so it includes the Jacobian from
+whatever scale it was stated on, as \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} does). It
+replaces the default PC + LKJ density, and is kept under
+\code{hyperprior = "flat"}.
 \item \code{field_beta_offset} (\code{mcar}, optional) -- integer \code{n_fields}: the
 0-based fixed-effect column field \code{a}'s level is aliased with (\code{0}, the
 intercept, for an all-ones field), \code{-1} for none.
