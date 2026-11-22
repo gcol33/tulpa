@@ -879,9 +879,12 @@
 #'     everywhere else. The mean is the mixture over outer cells of each cell's
 #'     leading-order posterior mean, mode + (1/2) Sigma A' (l''' * s) (the centre
 #'     `gamma_1 + gamma_3 / 2` in posterior SDs, the shift
-#'     [tulpa_re_cov_nested()] centres its nodes with); `$grid_mean_shift` holds
-#'     each weighted cell's shift and `$grid_mean_shift_declined` why none was
-#'     formed. Modes and weights are untouched, so a fit run with it off reports
+#'     [tulpa_re_cov_nested()] centres its nodes with), formed in each cell's
+#'     own solve; `$grid_mean_shift` holds each weighted cell's shift for the
+#'     whole latent vector and `$grid_mean_shift_declined` why none was
+#'     formed. The latent draws ([tulpa_posterior_draws()]), the random effects
+#'     ([ranef()]) and the predictions centre each cell at the same shifted
+#'     mode. Modes and weights are untouched, so a fit run with it off reports
 #'     the mode mixture it reported before. The band that bounded the
 #'     relocation itself (`centre_unreliable`) is off (`Inf`):
 #'     every finite cutoff was measured to decline the coefficients the
@@ -2533,15 +2536,21 @@ tulpa_nested_laplace_joint <- function(responses,
 # latent field is sum_k w_k (mode_k + delta_k): the mode mixture is not the mean
 # under a skewed conditional (a logit with few observations per group, a
 # log-link count), and the fixed effects, their intervals and the draws all read
-# the per-cell centres. `probe(theta_mat, warm, probe_idx, x_init_per_cell)` is
-# the driver's skew re-dispatch; each cell is re-solved from its own mode with
-# the skew probe on, which forms its shift. Stored as `grid_mean_shift` (cells x
-# latent, zero rows on cells without weight), read through
-# `.nested_grid_means()`. `enabled` is `control$skew_correct`. When any
-# weighted cell forms no shift the fit keeps its modes and says why in
-# `grid_mean_shift_declined`: a mixture of shifted and unshifted cells is
-# neither the mean nor the mode.
-.nlj_mean_shift_cells <- function(res, probe, skew_idx = NULL, enabled = TRUE) {
+# the per-cell centres. Every integrated cell forms its shift in its own solve
+# (`joint_cell_variance_pass`, src/inner_laplace_skew.h: one more solve against
+# the factor its per-row variances are read off), the grid solve and every
+# refinement round alike, so the kernel's per-cell `inner_mean_shift` covers
+# the final grid. Stored as `grid_mean_shift` (cells x latent, zero rows on
+# cells without weight: a pruned or screened cell is never solved and needs
+# none), read through `.nested_grid_means()`. `enabled` is
+# `control$skew_correct`. When any weighted cell carries no shift the fit
+# keeps its modes and says why in `grid_mean_shift_declined`: a mixture of
+# shifted and unshifted cells is neither the mean nor the mode.
+.nlj_mean_shift_cells <- function(res, enabled = TRUE) {
+    S <- res$inner_mean_shift
+    why_cell <- res$inner_mean_shift_declined
+    res$inner_mean_shift <- NULL
+    res$inner_mean_shift_declined <- NULL
     if (!isTRUE(enabled)) return(res)
     decline <- function(reason) {
         res$grid_mean_shift <- NULL
@@ -2550,29 +2559,22 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     M <- res$modes
     w <- res$weights
-    tg <- res$theta_grid
     if (!is.matrix(M) || is.null(w) || length(w) != nrow(M)) {
         return(decline("grid_misaligned"))
     }
     cells <- which(is.finite(w) & w > 0)
     if (!length(cells)) return(decline("no_weighted_cell"))
-    probe_idx <- .nlj_probe_idx(res, skew_idx)
-    if (!length(probe_idx)) return(decline("no_probe_indices"))
-    th <- if (is.matrix(tg)) tg[cells, , drop = FALSE]
-          else matrix(tg[cells], ncol = 1L,
-                      dimnames = list(NULL, res$theta_names %||% "theta"))
-    out <- tryCatch(.joint_with_quiet_opts(
-        probe(th, NULL, probe_idx, x_init_per_cell = M[cells, , drop = FALSE])),
-        error = function(e) NULL)
-    S <- out$inner_mean_shift
-    if (!is.matrix(S) || nrow(S) != length(cells) || ncol(S) != ncol(M) ||
-        !all(is.finite(S))) {
-        why <- out$inner_mean_shift_declined
-        why <- if (length(why)) why[!is.na(why)] else character(0)
+    if (!is.matrix(S) || nrow(S) != nrow(M) || ncol(S) != ncol(M)) {
+        return(decline("not_formed"))
+    }
+    bad <- cells[!apply(S[cells, , drop = FALSE], 1L, function(r) all(is.finite(r)))]
+    if (length(bad)) {
+        why <- if (length(why_cell) == nrow(M)) why_cell[bad] else character(0)
+        why <- why[!is.na(why)]
         return(decline(if (length(why)) why[1L] else "solve_failed"))
     }
     G <- matrix(0, nrow(M), ncol(M))
-    G[cells, ] <- S
+    G[cells, ] <- S[cells, , drop = FALSE]
     res$grid_mean_shift <- G
     res$grid_mean_shift_declined <- NA_character_
     res

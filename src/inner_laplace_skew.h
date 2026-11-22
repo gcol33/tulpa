@@ -188,7 +188,9 @@
 
 #include "curvature3_contract.h"
 #include "inner_laplace_probe.h"
+#include "joint_inner_vcov.h"
 #include "laplace_cholesky.h"
+#include "row_classes.h"
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -226,6 +228,9 @@ struct InnerSkewOutcome {
   // posterior mean from the mode, one entry per latent coordinate (see THE MEAN
   // SHIFT above). Empty when it was not formed, `mean_shift_declined` then
   // carrying the reason (gamma_1's vocabulary plus `nonfinite_curvature3`).
+  // Formed by the single-arm probe; a joint cell forms its shift in its
+  // variance pass (joint_cell_variance_pass), off the per-row variances that
+  // pass already reads.
   std::vector<double> mean_shift;
   std::string         mean_shift_declined;
   int n_nonfinite_dropped = 0;    // (i, j) contributions skipped for a non-finite l'''_j
@@ -393,16 +398,11 @@ inline std::string inner_mean_shift(
   return std::string();
 }
 
-// Store a skew probe's outcome on the inner result, with the mean shift carried
-// into the presented coordinates through the loop's own (affine) centering
-// fold, so `mode + inner_mean_shift` is the leading-order posterior mean in the
-// coordinates `mode` is reported in. One store for the single-arm and both
-// joint Newton loops.
-template <typename Result, typename CenterFn>
+// Store a skew probe's outcome on the inner result. One store for the
+// single-arm and both joint Newton loops.
+template <typename Result>
 inline void inner_skew_store(Result& result, InnerSkewOutcome& sk,
-                             const std::vector<int>& probe,
-                             const std::vector<double>& pre_center_x,
-                             CenterFn center_fn) {
+                             const std::vector<int>& probe) {
   result.inner_skew = std::move(sk.gamma3);
   result.inner_skew_gamma1 = std::move(sk.gamma1);
   result.inner_skew_gamma1_declined = sk.gamma1_declined;
@@ -410,18 +410,58 @@ inline void inner_skew_store(Result& result, InnerSkewOutcome& sk,
   result.inner_skew_dropped = sk.n_nonfinite_dropped;
   result.inner_skew_declined = sk.declined;
   result.inner_skew_arms_declined = sk.arms_declined;
-  result.inner_mean_shift_declined = sk.mean_shift_declined;
-  if (sk.mean_shift.empty()) return;
+}
+
+// Store a cell's mean shift `delta`, formed at the Newton-converged point
+// `pre_center_x`, carried into the presented coordinates through the loop's own
+// (affine) centering fold, so `mode + inner_mean_shift` is the leading-order
+// posterior mean in the coordinates `mode` is reported in. An empty `delta`
+// stores `declined` as the reason. One store for the single-arm loop's probe
+// and the joint loops' variance pass.
+template <typename Result, typename CenterFn>
+inline void inner_mean_shift_store(Result& result,
+                                   const std::vector<double>& delta,
+                                   const std::string& declined,
+                                   const std::vector<double>& pre_center_x,
+                                   CenterFn center_fn) {
+  result.inner_mean_shift.clear();
+  result.inner_mean_shift_declined = declined;
+  if (delta.empty()) return;
   const int n_x = static_cast<int>(pre_center_x.size());
   Rcpp::NumericVector x0(n_x), x1(n_x);
   for (int j = 0; j < n_x; j++) {
     x0[j] = pre_center_x[j];
-    x1[j] = pre_center_x[j] + sk.mean_shift[j];
+    x1[j] = pre_center_x[j] + delta[j];
   }
   center_fn(x0);
   center_fn(x1);
   result.inner_mean_shift.assign(n_x, 0.0);
   for (int j = 0; j < n_x; j++) result.inner_mean_shift[j] = x1[j] - x0[j];
+}
+
+// The right-hand side of the mean shift over a joint cell's rows,
+// g = (1/2) A' (l3 * s): `L` holds each row's loading a_r = d eta_r / d x (arm
+// 0's rows first, the layout joint_row_loadings writes), `l3` each row's third
+// log-likelihood derivative at the mode and `var` its marginal variance s_r.
+// Returns the decline reason, empty on success. A row whose variance did not
+// form declines the whole vector, as a non-finite l3 does (inner_shift_weights).
+inline std::string inner_shift_rhs_rows(const RowLoadings& L,
+                                        const std::vector<double>& l3,
+                                        const std::vector<double>& var,
+                                        int n_x, std::vector<double>& g) {
+  const int N = L.n_rows();
+  if (static_cast<int>(l3.size()) != N || static_cast<int>(var.size()) != N)
+    return "mean_shift_rows_misaligned";
+  for (double s : var) if (!std::isfinite(s)) return "eta_var_failed";
+  std::vector<double> c;
+  if (!inner_shift_weights(l3, var, c)) return "nonfinite_curvature3";
+  g.assign(n_x, 0.0);
+  for (int r = 0; r < N; r++) {
+    if (c[r] == 0.0) continue;
+    for (std::size_t e = L.off[r]; e < L.off[r + 1]; e++)
+      g[L.idx[e]] += 0.5 * c[r] * L.w[e];
+  }
+  return std::string();
 }
 
 // Did any probed index come back with a finite gamma_3?
@@ -729,7 +769,6 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
                                               : oracles.declined;
     }
     out.gamma1_declined = out.declined;
-    out.mean_shift_declined = out.declined;
     return out;
   }
 
@@ -792,38 +831,6 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
   }
   const bool have_var = all_separable && var_declined.empty();
 
-  // The leading-order mean shift over the union of (arm, observation) rows:
-  // the single-arm contraction summed across arms.
-  std::vector<double> mean_shift;
-  std::string mean_shift_declined = var_declined;
-  if (have_var) {
-    std::vector<std::vector<double>> c(n_arms);
-    bool ok = true;
-    for (int k = 0; k < n_arms && ok; k++) {
-      if (k >= static_cast<int>(oracles.arms.size()) || !oracles.arms[k].scalar) {
-        c[k].assign(eta_buf0[k].size(), 0.0);
-        continue;
-      }
-      ok = inner_shift_weights(l3[k], eta_var[k], c[k]);
-    }
-    mean_shift_declined = !ok
-        ? std::string("nonfinite_curvature3")
-        : inner_mean_shift(
-              n_x, mode, chol, sparse_solver, use_sparse, x_buf, fill_eta1,
-              [&]() {
-                double acc = 0.0;
-                for (int k = 0; k < n_arms; k++) {
-                  const int Nk = eta_buf0[k].size();
-                  for (int j = 0; j < Nk; j++) {
-                    if (c[k][j] != 0.0)
-                      acc += (eta_buf1[k][j] - eta_buf0[k][j]) * c[k][j];
-                  }
-                }
-                return acc;
-              },
-              mean_shift, pinned);
-  }
-
   auto accumulate = [&](int& dropped, bool& any_finite,
                         double& cross, bool& cross_ok) -> double {
     double acc = 0.0;
@@ -879,9 +886,131 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
                             have_var, pinned);
   out.arms_declined = oracles.arms_declined;
   out.gamma1_declined = var_declined;
-  out.mean_shift = std::move(mean_shift);
-  out.mean_shift_declined = mean_shift_declined;
   return out;
+}
+
+// The rows a joint cell's mean shift reads: each row's third log-likelihood
+// derivative at the mode, over every arm's rows in turn (the layout
+// joint_row_loadings writes), or the reason the shift is not formed. The shift
+// is the separable contraction (THE MEAN SHIFT above), so a unit reading
+// several linear predictors or a coupled cell declines it (`multi_eta_unit`),
+// as it declines gamma_1. An arm with no per-observation oracle contributes
+// zero rows, as it contributes nothing to the separable sum.
+struct JointShiftRows {
+  bool                wanted = false;
+  std::vector<double> l3;
+  std::string         declined;
+};
+
+// `etas` is the per-arm eta at the Newton-converged point the shift expands
+// about, filled by the caller.
+inline JointShiftRows joint_shift_rows(const JointCurvature3Oracles& oracles,
+                                       const std::vector<Rcpp::NumericVector>& etas) {
+  JointShiftRows out;
+  out.wanted = true;
+  if (!oracles.any()) {
+    out.declined = oracles.declined.empty() ? std::string("no_oracle")
+                                            : oracles.declined;
+    return out;
+  }
+  if (oracles.cell_cubic) { out.declined = "multi_eta_unit"; return out; }
+  for (const auto& o : oracles.arms) {
+    if (o.unit) { out.declined = "multi_eta_unit"; return out; }
+  }
+  const int n_arms = static_cast<int>(etas.size());
+  for (int k = 0; k < n_arms; k++) {
+    const int Nk = etas[k].size();
+    const Curvature3Oracle* o =
+        (k < static_cast<int>(oracles.arms.size()) && oracles.arms[k].scalar)
+            ? &oracles.arms[k] : nullptr;
+    for (int j = 0; j < Nk; j++)
+      out.l3.push_back(o ? o->scalar(j, etas[k][j]) : 0.0);
+  }
+  return out;
+}
+
+// The rows a joint Newton loop's variance pass reads for the cell's mean shift,
+// when the pass runs (`pass_runs`) and its request asks for one: l3 at the eta
+// of the Newton-converged point `pre_center_x`, which is written into `x_buf`
+// (the loop's own iterate, still at that point) and evaluated into `eta_buf`.
+// A cell the solve did not converge on has no mode to expand about.
+template <typename Result, typename ComputeEtaJoint>
+inline JointShiftRows joint_newton_shift_rows(
+    const Result& result, const JointEtaVarRequest* req, bool pass_runs,
+    const std::vector<double>& pre_center_x, ComputeEtaJoint& compute_eta_joint,
+    Rcpp::NumericVector& x_buf, std::vector<Rcpp::NumericVector>& eta_buf
+) {
+  JointShiftRows out;
+  if (!pass_runs || !req->shift_oracles) return out;
+  if (!result.converged) {
+    out.wanted = true;
+    out.declined = "not_converged";
+    return out;
+  }
+  for (std::size_t j = 0; j < pre_center_x.size(); j++) x_buf[j] = pre_center_x[j];
+  compute_eta_joint(x_buf, eta_buf);
+  return joint_shift_rows(*req->shift_oracles, eta_buf);
+}
+
+// The variance pass of a joint cell: the per-row predictive variances
+// (extract_joint_eta_var, kept on `result` when `req.keep_var`) and, when
+// `shift` asks for it, the cell's leading-order mean shift
+// delta = (1/2) Sigma A' (l3 * s) off the same factor of the stored precision
+// and the same constraint fold, so it is the shift of the cell's own Gaussian:
+// one more solve, against g = (1/2) A' (l3 * s). `readable` says whether the
+// precision at the mode can be read at all (positive definite, its constraint
+// built); the CSC and `cons` are read only then. The shift is formed at
+// `pre_center_x`, the point the loadings and l3 were read at, and stored
+// through the loop's own centering fold (inner_mean_shift_store).
+template <typename Result, typename CenterFn>
+inline void joint_cell_variance_pass(
+    Result& result, const JointEtaVarRequest& req, const JointShiftRows& shift,
+    const std::vector<double>& pre_center_x, bool readable,
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const CellConstraintRows& cons, SparseCholeskySolver& solver,
+    CenterFn center_fn
+) {
+  std::string why = shift.declined;
+  std::vector<double> delta;
+  const bool form = shift.wanted && why.empty();
+  if (!req.keep_var && !form) {
+    // The variances were asked for only to form a shift this cell declines.
+    if (shift.wanted)
+      inner_mean_shift_store(result, delta, why, pre_center_x, center_fn);
+    return;
+  }
+  RowLoadings loadings;
+  req.loadings(pre_center_x.data(), loadings);
+  result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
+                        std::numeric_limits<double>::quiet_NaN());
+  if (readable) {
+    JointShiftRhs rhs = [&](const std::vector<double>& var,
+                            std::vector<double>& g) {
+      why = inner_shift_rhs_rows(loadings, shift.l3, var, n_x, g);
+      return why.empty();
+    };
+    extract_joint_eta_var(Qp, Qi, Qx, n_x, nnz, loadings, cons, solver,
+                          result.eta_var, form ? &rhs : nullptr, &delta);
+    if (form && why.empty() && delta.empty()) why = "mean_shift_solve_failed";
+  } else if (form) {
+    why = "hessian_not_pd";
+  }
+  result.eta_shift.clear();
+  if (req.keep_eta_shift && !delta.empty()) {
+    // The centering fold leaves eta unchanged, so a_r' delta at the
+    // pre-centering point is the row's shift in the presented coordinates too.
+    const int N = loadings.n_rows();
+    result.eta_shift.assign(static_cast<std::size_t>(N), 0.0);
+    for (int r = 0; r < N; r++) {
+      double s = 0.0;
+      for (std::size_t e = loadings.off[r]; e < loadings.off[r + 1]; e++)
+        s += loadings.w[e] * delta[loadings.idx[e]];
+      result.eta_shift[r] = s;
+    }
+  }
+  if (shift.wanted)
+    inner_mean_shift_store(result, delta, why, pre_center_x, center_fn);
+  if (!req.keep_var) result.eta_var.clear();
 }
 
 } // namespace tulpa

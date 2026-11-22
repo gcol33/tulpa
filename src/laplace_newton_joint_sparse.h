@@ -644,8 +644,7 @@ inline void joint_newton_finalize_sparse(
                     compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
                     *curvature3_fns, probe, probe_solve
                 );
-                inner_skew_store(result, sk, probe, pre_center_x,
-                                     [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
+                inner_skew_store(result, sk, probe);
             } else {
                 result.inner_skew.assign(probe.size(),
                                          std::numeric_limits<double>::quiet_NaN());
@@ -695,6 +694,10 @@ inline void joint_newton_finalize_sparse(
                        x, cila, cila_cell_key, cila_cons, cila_declined);
     }
 
+    const JointShiftRows shift =
+        joint_newton_shift_rows(result, eta_var, want_eta_var, pre_center_x,
+                                compute_eta_joint, x, scratch.etas_tmp);
+
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
       center_effects_fn(x); }
     for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
@@ -720,17 +723,14 @@ inline void joint_newton_finalize_sparse(
 
     if (want_eta_var) {
         TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
-        RowLoadings loadings;
-        eta_var->loadings(pre_center_x.data(), loadings);
-        result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
-                              std::numeric_limits<double>::quiet_NaN());
-        if (result.hessian_pd_at_mode && cons_ok) {
-            extract_joint_eta_var(
-                H_builder.col_ptr.data(), H_builder.row_idx.data(),
-                H_values_at_mode.data(), n_x,
-                static_cast<int>(H_values_at_mode.size()), loadings,
-                cell_cons, *scratch.extract_solver, result.eta_var);
-        }
+        joint_cell_variance_pass(
+            result, *eta_var, shift, pre_center_x,
+            /*readable=*/result.hessian_pd_at_mode && cons_ok,
+            H_builder.col_ptr.data(), H_builder.row_idx.data(),
+            H_values_at_mode.data(), n_x,
+            static_cast<int>(H_values_at_mode.size()), cell_cons,
+            *scratch.extract_solver,
+            [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
     }
 
     if (store_Q) {

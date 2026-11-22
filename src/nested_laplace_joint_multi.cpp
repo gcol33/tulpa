@@ -1577,7 +1577,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     int                 screen_iters = 2,  // cheap-screen Newton steps per cell
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,  // per-cell screen offset
     bool                compute_fitted_var = true,  // per-cell predictive variance of eta; see want_eta_var below
-    bool                screen_only = false  // return the screened surface, no full pass (run_nested_laplace_grid)
+    bool                screen_only = false,  // return the screened surface, no full pass (run_nested_laplace_grid)
+    bool                mean_shift = false  // every solved cell forms its leading-order mean shift (`inner_mean_shift`)
 ) {
     const tulpa::JointFixedBlockRequest fixed_block_req =
         parse_joint_fixed_block_request(fixed_block_p, fixed_block_extra);
@@ -1709,6 +1710,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         fp.fold_pod(hessian_pd_mode);
         fp.fold_pod(step_curvature_mode);
         fp.fold_pod(inner_refresh);
+        fp.fold_pod(mean_shift);
         fp.fold_pod(total_axes);
         if (axis_offsets.size() > 0)
             fp.fold(&axis_offsets[0], axis_offsets.size() * sizeof(int));
@@ -1801,7 +1803,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         screen_iters,
         want_eta_var,
         tulpa::read_screen_offset(screen_log_offset),
-        screen_only
+        screen_only,
+        mean_shift
     );
     // Per-cell eta at each cell's own mode. The driver leaves `modes` behind
     // but no linear predictor, so a fit through this entry carried nothing for
@@ -2279,7 +2282,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     int                              screen_iters,
     bool                             compute_eta_var,
     const ScreenOffset&              screen_log_offset,
-    bool                             screen_only) {
+    bool                             screen_only,
+    bool                             mean_shift) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         tulpa::stop("parsed and arms vectors must have the same length.");
@@ -2347,7 +2351,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             step_curvature, hessian_refresh, n_threads_outer, progress,
             checkpoint, x_init_per_cell,
             compute_skew, skew_probe_idx, fixed_block, debias, cila,
-            screen_iters, compute_eta_var, screen_log_offset, screen_only
+            screen_iters, compute_eta_var, screen_log_offset, screen_only,
+            mean_shift
         );
     }
 
@@ -2368,9 +2373,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // CHOLMOD context per outer slot; build it here, single-threaded, and only
     // when the driver was asked for a block.
     const bool want_fixed_block = fixed_block && fixed_block->active();
+    const bool want_var_pass = compute_eta_var || mean_shift;
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
     for (auto& s : scratch_pool)
-        s.allocate(n_x, arms, want_fixed_block || compute_eta_var);
+        s.allocate(n_x, arms, want_fixed_block || want_var_pass);
     // Hard linear constraints the blocks carry (hard_constraints.h), one state
     // per outer slot.
     std::vector<HardConstraintState> hard_pool(n_outer);
@@ -2385,17 +2391,17 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // these views.
     JointArmSpecs specs = build_joint_arm_specs(arms);
 
-    // Inner-Laplace skewness diagnostic: per-arm oracle built once from the
-    // shared `specs`, valid only for the full solve (never the cheap-pass
-    // screen, which reads a per-worker `cheap_specs_pool` entry instead --
-    // see is_cheap below). Coupled arms carry no per-obs oracle (it would score
-    // the wrong, unused likelihood); they are scored by the cell tensor
-    // contraction assigned per solve below whenever this fit
+    // Inner-Laplace skewness diagnostic and mean shift: per-arm oracle built
+    // once from the shared `specs`, valid only for the full solve (never the
+    // cheap-pass screen, which reads a per-worker `cheap_specs_pool` entry
+    // instead -- see is_cheap below). Coupled arms carry no per-obs oracle (it
+    // would score the wrong, unused likelihood); they are scored by the cell
+    // tensor contraction assigned per solve below whenever this fit
     // can carry one.
     const bool coupled_scored = any_coupling &&
         cell_curvature3_available(cell_coupling_spec.get(), coupled_arms, n_cells);
     JointCurvature3Oracles skew_curvature3_fns;
-    if (compute_skew) {
+    if (compute_skew || mean_shift) {
         skew_curvature3_fns = build_joint_curvature3_fns(
             specs.views, any_coupling ? &arm_is_coupled : nullptr, coupled_scored);
     }
@@ -2582,13 +2588,16 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         // Cell tensor contraction for the coupled arms' gamma_3, rebuilt at the
         // dispersion this cell runs at. The dense outer grid is serial, so the
         // single shared oracle set is written by one thread at a time.
-        if (compute_skew && !is_cheap && coupled_scored) {
+        if ((compute_skew || mean_shift) && !is_cheap && coupled_scored) {
             skew_curvature3_fns.cell_cubic = make_cell_cubic3(
                 cell_coupling_spec.get(), coupled_arms, cell_rows, n_cells,
                 arms, nullptr);
         }
         JointEtaVarRequest eta_var_req;
-        if (compute_eta_var && !is_cheap) {
+        if (want_var_pass && !is_cheap) {
+            eta_var_req.keep_var = compute_eta_var;
+            eta_var_req.shift_oracles = mean_shift ? &skew_curvature3_fns : nullptr;
+            eta_var_req.keep_eta_shift = (n_arms == 1);
             eta_var_req.loadings = [&](const double* xm, RowLoadings& L) {
                 std::vector<std::vector<double>> d_eff(
                     B, std::vector<double>(n_arms, 0.0));
@@ -2713,7 +2722,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     int                              screen_iters,
     bool                             compute_eta_var,
     const ScreenOffset&              screen_log_offset,
-    bool                             screen_only
+    bool                             screen_only,
+    bool                             mean_shift
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2883,7 +2893,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const bool want_fixed_block = fixed_block && fixed_block->active();
     std::vector<NewtonScratchJointSparse> scratches(n_outer);
     for (auto& s : scratches)
-        s.allocate(n_x, arms, want_fixed_block || compute_eta_var);
+        s.allocate(n_x, arms, want_fixed_block || compute_eta_var || mean_shift);
 
     // Hard linear constraints the blocks carry (hard_constraints.h), one state
     // per outer slot: the pinned copy of the Hessian and its factor are
@@ -2908,7 +2918,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const bool coupled_scored = any_coupling &&
         cell_curvature3_available(cell_coupling_spec.get(), coupled_arms, n_cells);
     std::vector<JointCurvature3Oracles> skew_curvature3_fns_pool;
-    if (compute_skew) {
+    if (compute_skew || mean_shift) {
         skew_curvature3_fns_pool.resize(n_outer);
         for (int t = 0; t < n_outer; t++) {
             skew_curvature3_fns_pool[t] = build_joint_curvature3_fns(
@@ -3195,15 +3205,20 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // applies only to the full per-cell solve.
         const int refresh_use = use_cheap_scratch ? 1 : hessian_refresh;
         const bool want_skew = compute_skew && !use_cheap_scratch;
+        const bool want_shift = mean_shift && !use_cheap_scratch;
         // Cell tensor contraction for the coupled arms' gamma_3, rebuilt at the
         // dispersion snapshot this cell runs at, into the slot this thread owns.
-        if (want_skew && coupled_scored) {
+        if ((want_skew || want_shift) && coupled_scored) {
             skew_curvature3_fns_pool[slot].cell_cubic = make_cell_cubic3(
                 cell_coupling_spec.get(), coupled_arms, cell_rows, n_cells,
                 arms, coupled_phi_ptr);
         }
         JointEtaVarRequest eta_var_req;
-        if (compute_eta_var && !use_cheap_scratch) {
+        if ((compute_eta_var || want_shift) && !use_cheap_scratch) {
+            eta_var_req.keep_var = compute_eta_var;
+            eta_var_req.shift_oracles =
+                want_shift ? &skew_curvature3_fns_pool[slot] : nullptr;
+            eta_var_req.keep_eta_shift = (n_arms == 1);
             eta_var_req.loadings = [&](const double* xm, RowLoadings& L) {
                 joint_row_loadings(xm, arms, parsed, blocks, k_grid, d_eff, L);
             };

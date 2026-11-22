@@ -1698,7 +1698,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     const ScreenOffset&              screen_log_offset = ScreenOffset(),
     // Return the screened surface without the full pass (a placement pilot's
     // detecting grid; see run_nested_laplace_grid).
-    bool                             screen_only = false
+    bool                             screen_only = false,
+    // Whether every fully-solved cell forms its leading-order mean shift
+    // (LaplaceResult::inner_mean_shift) in its variance pass
+    // (joint_cell_variance_pass). Never the cheap screen.
+    bool                             mean_shift = false
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1764,7 +1768,11 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     const ScreenOffset&              screen_log_offset = ScreenOffset(),
     // Return the screened surface without the full pass (a placement pilot's
     // detecting grid; see run_nested_laplace_grid).
-    bool                             screen_only = false
+    bool                             screen_only = false,
+    // Whether every fully-solved cell forms its leading-order mean shift
+    // (LaplaceResult::inner_mean_shift) in its variance pass
+    // (joint_cell_variance_pass). Never the cheap screen.
+    bool                             mean_shift = false
 );
 
 // Per-cell linear predictor at each cell's mode, for a single-arm fit run

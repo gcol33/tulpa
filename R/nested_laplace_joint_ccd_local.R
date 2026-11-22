@@ -1219,9 +1219,11 @@
 #                `mode_gain`, and the cell's coarse-vs-refined mass comparison,
 #                are recorded for every cell either way and gate nothing.
 #   verbose      announce the refinement summary.
-#   cell_lists   named list of length-n per-cell lists (the fixed-effect
-#                covariance blocks, the stored precisions and their soft-pin
-#                precisions), or NULL. Each is carried cell-for-cell exactly
+#   cell_lists   named list of per-cell fields (the fixed-effect covariance
+#                blocks, the stored precisions and their soft-pin precisions as
+#                length-n lists; the mean shifts as an [n x n_x] matrix and
+#                their decline reasons as a length-n vector), or NULL. Each is
+#                carried cell-for-cell exactly
 #                like `modes`, the nodes' entries taken from `eval_nodes()`'s
 #                `cell_lists` of the same names, so a refined grid keeps every
 #                per-cell read aligned with the weights it is integrated
@@ -1230,6 +1232,33 @@
 # Returns list(joint_grid, log_marginal, modes, cell_lists, dnode, info) with the
 # refined cells replaced by their node clouds, or NULL when refinement declines
 # (NULL tags, no candidate peaked cells, or a degenerate layout).
+# How a per-cell field of an n-cell grid is laid out: a list of per-cell
+# entries, a matrix with one row per cell, an atomic vector with one entry per
+# cell, or "none" when it does not index the grid.
+.lccd_cell_shape <- function(v, n) {
+    if (is.matrix(v)) return(if (nrow(v) == n) "rows" else "none")
+    if (is.list(v)) return(if (length(v) == n) "list" else "none")
+    if (is.atomic(v) && length(v) == n) "atomic" else "none"
+}
+
+# A per-cell matrix or vector as a list of its per-cell entries.
+.lccd_cells_split <- function(v) {
+    if (is.matrix(v)) lapply(seq_len(nrow(v)), function(k) v[k, ])
+    else as.list(v)
+}
+
+# The per-cell entries back in the shape `.lccd_cell_shape()` named; a cell
+# without one (a node whose solve returned none) reads NA.
+.lccd_cells_restore <- function(cells, shape) {
+    if (identical(shape, "list")) return(cells)
+    have <- Filter(Negate(is.null), cells)
+    if (!length(have)) return(NULL)
+    blank <- have[[1L]]
+    blank[] <- NA
+    filled <- lapply(cells, function(v) if (is.null(v)) blank else v)
+    if (identical(shape, "rows")) do.call(rbind, filled) else unlist(filled)
+}
+
 .joint_local_ccd_refine <- function(joint_grid, log_marginal, modes = NULL,
                                      dnode = NULL, latent_axes, tags,
                                      eval_nodes, max_cells = 8L, f0 = 1.1,
@@ -1281,8 +1310,14 @@
     delta_centre <- delta[is_centre][1L]
 
     n_x <- if (is.matrix(modes)) ncol(modes) else 0L
-    cell_lists <- Filter(function(v) is.list(v) && length(v) == n,
-                         cell_lists %||% list())
+    # A per-cell matrix (one row per cell) or atomic vector is carried entry for
+    # entry like `modes`: split into a per-cell list here and put back in its
+    # own shape on the way out (`.lccd_cells_restore()`).
+    cell_lists <- cell_lists %||% list()
+    cell_shape <- vapply(cell_lists, .lccd_cell_shape, character(1), n = n)
+    split_it <- cell_shape %in% c("rows", "atomic")
+    cell_lists[split_it] <- lapply(cell_lists[split_it], .lccd_cells_split)
+    cell_lists <- Filter(function(v) is.list(v) && length(v) == n, cell_lists)
     new_cell_lists <- lapply(cell_lists, function(v) list())
     new_grid_blocks <- list()
     new_lm_blocks   <- list()
@@ -1416,6 +1451,7 @@
         }
         for (nm in names(cell_lists)) {
             off <- ev$cell_lists[[nm]]
+            if (!is.null(off) && !is.list(off)) off <- .lccd_cells_split(off)
             if (!is.list(off) || length(off) != nrow(theta_nodes))
                 off <- vector("list", nrow(theta_nodes))
             new_cell_lists[[nm]][[length(new_cell_lists[[nm]]) + 1L]] <-
@@ -1459,8 +1495,9 @@
     out_modes <- if (n_x > 0L)
         rbind(modes[keep, , drop = FALSE], do.call(rbind, new_mode_blocks)) else NULL
     out_cell_lists <- lapply(stats::setNames(nm = names(cell_lists)), function(nm)
-        c(cell_lists[[nm]][keep],
-          unlist(new_cell_lists[[nm]], recursive = FALSE)))
+        .lccd_cells_restore(c(cell_lists[[nm]][keep],
+                              unlist(new_cell_lists[[nm]], recursive = FALSE)),
+                            cell_shape[[nm]]))
 
     if (isTRUE(verbose)) {
         message(sprintf(

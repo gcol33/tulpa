@@ -896,9 +896,12 @@ expansion is in its regime, and the mode mixture with its quantiles
 everywhere else. The mean is the mixture over outer cells of each cell's
 leading-order posterior mean, mode + (1/2) Sigma A' (l''' * s) (the centre
 \code{gamma_1 + gamma_3 / 2} in posterior SDs, the shift
-\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} centres its nodes with); \verb{$grid_mean_shift} holds
-each weighted cell's shift and \verb{$grid_mean_shift_declined} why none was
-formed. Modes and weights are untouched, so a fit run with it off reports
+\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} centres its nodes with), formed in each cell's
+own solve; \verb{$grid_mean_shift} holds each weighted cell's shift for the
+whole latent vector and \verb{$grid_mean_shift_declined} why none was
+formed. The latent draws (\code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}}), the random effects
+(\code{\link[=ranef]{ranef()}}) and the predictions centre each cell at the same shifted
+mode. Modes and weights are untouched, so a fit run with it off reports
 the mode mixture it reported before. The band that bounded the
 relocation itself (\code{centre_unreliable}) is off (\code{Inf}):
 every finite cutoff was measured to decline the coefficients the

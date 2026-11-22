@@ -499,8 +499,11 @@ LaplaceResult laplace_newton_solve_ll(
                         used_sparse_factor, compute_eta, x, scratch.eta, scratch.eta_tmp,
                         curvature3 ? *curvature3 : no_oracle, probe
                     );
-                    inner_skew_store(result, sk, probe, pre_center_x,
-                                     [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
+                    inner_skew_store(result, sk, probe);
+                    inner_mean_shift_store(
+                        result, sk.mean_shift, sk.mean_shift_declined,
+                        pre_center_x,
+                        [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
 
                     // The likelihood-agnostic inner k-hat over the same probed subspace,
                     // along the same conditional-mean curve the cubic term just walked.

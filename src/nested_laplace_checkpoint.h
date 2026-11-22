@@ -64,6 +64,7 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put_span(buf, r.re_cov_block_sizes);
     ckpt_put_span(buf, r.eta_var);
     ckpt_put_span(buf, r.eta_mean);
+    ckpt_put_span(buf, r.eta_shift);
     // Inner-Laplace skewness + location term
     ckpt_put_span(buf, r.inner_skew);
     ckpt_put_span(buf, r.inner_skew_gamma1);
@@ -72,6 +73,9 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put<std::int32_t>(buf, r.inner_skew_dropped);
     ckpt_put_str(buf, r.inner_skew_declined);
     ckpt_put_span(buf, r.inner_skew_arms_declined);
+    // Leading-order mean shift
+    ckpt_put_span(buf, r.inner_mean_shift);
+    ckpt_put_str(buf, r.inner_mean_shift_declined);
     // Inner-Laplace importance curve
     ckpt_put_span(buf, r.inner_is_z);
     ckpt_put_span(buf, r.inner_is_log_joint);
@@ -124,6 +128,7 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.re_cov_block_sizes = rd.get_span<int>();
     r.eta_var            = rd.get_span<double>();
     r.eta_mean           = rd.get_span<double>();
+    r.eta_shift          = rd.get_span<double>();
     r.inner_skew                 = rd.get_span<double>();
     r.inner_skew_gamma1          = rd.get_span<double>();
     r.inner_skew_gamma1_declined = rd.get_str();
@@ -131,6 +136,8 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.inner_skew_dropped         = rd.get<std::int32_t>();
     r.inner_skew_declined        = rd.get_str();
     r.inner_skew_arms_declined   = rd.get_span<int>();
+    r.inner_mean_shift           = rd.get_span<double>();
+    r.inner_mean_shift_declined  = rd.get_str();
     r.inner_is_z         = rd.get_span<double>();
     r.inner_is_log_joint = rd.get_span<double>();
     r.inner_is_sigma     = rd.get_span<double>();

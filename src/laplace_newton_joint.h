@@ -636,8 +636,7 @@ inline void joint_newton_finalize_dense(
                         used_sparse_factor, compute_eta_joint, x, scratch.etas,
                         scratch.etas_tmp, *curvature3_fns, probe
                     );
-                    inner_skew_store(result, sk, probe, pre_center_x,
-                                     [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); });
+                    inner_skew_store(result, sk, probe);
                 } else {
                     // No oracle set was built at all: report the indices as unscored
                     // rather than emit nothing, so the reason reaches the fit.
@@ -679,6 +678,12 @@ inline void joint_newton_finalize_dense(
                        inner_gaussian_constraint(hard_on ? hard : nullptr));
     }
 
+    const bool want_eta_var =
+        eta_var && eta_var->active() && scratch.extract_solver;
+    const JointShiftRows shift =
+        joint_newton_shift_rows(result, eta_var, want_eta_var, pre_center_x,
+                                compute_eta_joint, x, scratch.etas_tmp);
+
     center_effects_fn(x);
     for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
 
@@ -692,13 +697,12 @@ inline void joint_newton_finalize_dense(
     // `converged` flag is what says why, and the R retention reads it.
     const bool want_block =
         fixed_block && fixed_block->active() && scratch.extract_solver;
-    const bool want_eta_var =
-        eta_var && eta_var->active() && scratch.extract_solver;
-    RowLoadings loadings;
-    if (want_eta_var) {
-        eta_var->loadings(pre_center_x.data(), loadings);
-        result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
-                              std::numeric_limits<double>::quiet_NaN());
+    auto center_fold = [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); };
+    if (want_eta_var && !hessian_pd_at_mode) {
+        joint_cell_variance_pass(result, *eta_var, shift, pre_center_x,
+                                 /*readable=*/false, nullptr, nullptr, nullptr,
+                                 n_x, 0, CellConstraintRows(),
+                                 *scratch.extract_solver, center_fold);
     }
     if ((store_Q || want_block || want_eta_var) && hessian_pd_at_mode) {
         TULPA_PROFILE_PHASE(PHASE_HESSIAN_EXTRACT);
@@ -719,10 +723,11 @@ inline void joint_newton_finalize_dense(
                 result.re_cov_flat, result.re_cov_block_sizes);
         }
         if (want_eta_var) {
-            extract_joint_eta_var(
+            joint_cell_variance_pass(
+                result, *eta_var, shift, pre_center_x, /*readable=*/true,
                 csc_p.data(), csc_i.data(), csc_x.data(), n_x,
-                static_cast<int>(csc_x.size()), loadings, cell_cons,
-                *scratch.extract_solver, result.eta_var);
+                static_cast<int>(csc_x.size()), cell_cons,
+                *scratch.extract_solver, center_fold);
         }
         if (store_Q) {
             result.Q_csc_p = std::move(csc_p);

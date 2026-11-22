@@ -345,8 +345,11 @@ bool extract_joint_eta_var(
     const RowLoadings& L,
     const CellConstraintRows& cons,
     SparseCholeskySolver& solver,
-    std::vector<double>& var_out
+    std::vector<double>& var_out,
+    const JointShiftRhs* shift_rhs,
+    std::vector<double>* shift_out
 ) {
+    if (shift_out) shift_out->clear();
     const int N = L.n_rows();
     const double failed = std::numeric_limits<double>::quiet_NaN();
     var_out.assign(N > 0 ? static_cast<std::size_t>(N) : 0, failed);
@@ -403,6 +406,21 @@ bool extract_joint_eta_var(
         class_var[c] = (ok && std::isfinite(v) && v >= 0.0) ? v : failed;
     }
     for (int r = 0; r < N; r++) var_out[r] = class_var[classes.row_class[r]];
+
+    if (shift_rhs && shift_out) {
+        std::vector<double> g;
+        if ((*shift_rhs)(var_out, g) && static_cast<int>(g.size()) == n_x) {
+            // Sigma g = H_a^-1 g less the fold's correction (apply()), the
+            // conditioning-by-kriging the variances above subtract per row.
+            std::vector<double> ainv_g(n_x, 0.0), sg(n_x, 0.0);
+            if (solver.solve(g.data(), ainv_g.data(), n_x)) {
+                pins.apply(g.data(), ainv_g.data(), sg.data(), n_x);
+                bool finite = true;
+                for (double v : sg) if (!std::isfinite(v)) { finite = false; break; }
+                if (finite) *shift_out = std::move(sg);
+            }
+        }
+    }
     return true;
 }
 

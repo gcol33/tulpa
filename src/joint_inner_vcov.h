@@ -137,10 +137,25 @@ bool extract_joint_fixed_block(
 // a_r = d eta_r / d x at the latent point it is handed (joint_row_loadings), so
 // the request carries the cell's own block amplitudes and the loop needs no
 // knowledge of the arms.
+//
+// `shift_oracles`, when set, has the same pass also form the cell's
+// leading-order mean shift off those variances (inner_laplace_skew.h,
+// joint_cell_variance_pass); `keep_var` false reads the variances for the
+// shift only and leaves them off the result. `keep_eta_shift` also keeps each
+// row's predictor shift a_r' delta.
+struct JointCurvature3Oracles;
 struct JointEtaVarRequest {
     std::function<void(const double* x, RowLoadings& out)> loadings;
+    bool keep_var = true;
+    bool keep_eta_shift = false;
+    const JointCurvature3Oracles* shift_oracles = nullptr;
     bool active() const { return static_cast<bool>(loadings); }
 };
+
+// Forms the right-hand side g of a solve against the cell's covariance from
+// the per-row variances just read; false declines the solve.
+using JointShiftRhs = std::function<bool(const std::vector<double>& var,
+                                         std::vector<double>& g)>;
 
 // Sigma_k is the covariance of the cell's Gaussian: the CSC `(Qp, Qi, Qx)` plus
 // the soft pins of `cons`, conditioned on its hard rows, folded by Woodbury
@@ -150,12 +165,18 @@ struct JointEtaVarRequest {
 // sharing a loading vector share one solve (row_classes.h). Returns false, with
 // `var_out` all NaN, when the precision does not factor; a row whose solve loses
 // positivity reads NaN on its own.
+//
+// With `shift_rhs` given, the same factor and fold then give
+// `shift_out` = Sigma_k g for the g `shift_rhs` forms from `var_out`; it stays
+// empty when `shift_rhs` declines or the solve fails.
 bool extract_joint_eta_var(
     const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
     const RowLoadings& L,
     const CellConstraintRows& cons,
     SparseCholeskySolver& solver,
-    std::vector<double>& var_out
+    std::vector<double>& var_out,
+    const JointShiftRhs* shift_rhs = nullptr,
+    std::vector<double>* shift_out = nullptr
 );
 
 // Draws of N(0, V) for one cell, V = B (B' M B)^{-1} B' the covariance of the

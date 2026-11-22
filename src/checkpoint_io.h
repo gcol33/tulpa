@@ -302,7 +302,7 @@ public:
     // carries, so a file written by an older layout would otherwise be replayed
     // field-by-field into the new one and mis-parsed. A magic mismatch errors
     // and points the user at a fresh path.
-    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','E'};
+    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','F'};
 
     CheckpointLog(const std::string& path,
                   std::uint64_t fingerprint,

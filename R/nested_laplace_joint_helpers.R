@@ -1089,6 +1089,7 @@ tulpa_joint_axis_specs_from_grid <- function(
 #   "int" -- a length-n_grid integer vector
 #   "num" -- a length-n_grid numeric vector; a cell without one reads NA
 #   "lgl" -- a length-n_grid logical vector; a cell without one reads FALSE
+#   "chr" -- a length-n_grid character vector; a cell without one reads NA
 #   "elt" -- a length-n_grid list; cell k is element k
 .JOINT_CELL_FIELDS <- list(
     # The cells the cheap-pass screen dropped unsolved, and each screened
@@ -1105,6 +1106,15 @@ tulpa_joint_axis_specs_from_grid <- function(
     # only, the variance additionally only under `control$fitted_var`.
     list(res = "fitted_eta",        extra = "eta",       kind = "row"),
     list(res = "fitted_eta_var",    extra = "eta_var",   kind = "row"),
+    # The predictor's shift under the cell's mean shift, read with
+    # `fitted_eta` through `.nested_grid_eta_means()`.
+    list(res = "fitted_eta_shift",  extra = "eta_shift", kind = "row"),
+    # Each cell's leading-order offset of its latent posterior mean from its
+    # mode, formed in the cell's own solve under `control$skew_correct`, and
+    # why a cell formed none (`.nlj_mean_shift_cells()`).
+    list(res = "inner_mean_shift",  extra = "mean_shift", kind = "row"),
+    list(res = "inner_mean_shift_declined", extra = "mean_shift_declined",
+         kind = "chr"),
     list(res = "n_iter",            extra = "n_iter",    kind = "int"),
     list(res = "device_cpu_recovered", extra = "device_cpu_recovered", kind = "lgl"),
     # Whether the cell's inner Newton reached a mode. A refined cell's flag rides
@@ -1151,6 +1161,7 @@ tulpa_joint_axis_specs_from_grid <- function(
                                    int = as.integer(v[k]),
                                    num = as.numeric(v[k]),
                                    lgl = as.logical(v[k]),
+                                   chr = as.character(v[k]),
                                    elt = v[[k]])
         }
         e
@@ -1216,6 +1227,10 @@ tulpa_joint_axis_specs_from_grid <- function(
                 if (is.null(v)) NA_real_ else as.numeric(v)
             }, numeric(1)),
             lgl = vapply(extras, function(e) isTRUE(e[[f$extra]]), logical(1)),
+            chr = vapply(extras, function(e) {
+                v <- e[[f$extra]]
+                if (is.null(v)) NA_character_ else as.character(v)
+            }, character(1)),
             elt = lapply(extras, `[[`, f$extra))
     }
     res

@@ -239,6 +239,7 @@ Rcpp::List nl_pack_grid_results(
     };
     if (store_modes) attach_eta("fitted_eta", &LaplaceResult::eta_mean);
     attach_eta("fitted_eta_var", &LaplaceResult::eta_var);
+    attach_eta("fitted_eta_shift", &LaplaceResult::eta_shift);
     // The leading-order mean shift of each cell's latent posterior from its
     // mode, one row per cell (NA where a cell formed none), with the reason
     // per cell. Formed by every cell a skew-probing call solves, so a call

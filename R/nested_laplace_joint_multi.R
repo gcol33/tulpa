@@ -1222,9 +1222,10 @@
                                       fixed_block_p = 0L,
                                       fixed_block_extra = NULL,
                                       inner_sparse_override = 0L,
-                                      prepared = NULL) {
+                                      prepared = NULL,
+                                      mean_shift = FALSE) {
     force(arms); force(cp); force(blocks_spec); force(axis_offsets); force(B)
-    force(prepared)
+    force(prepared); force(mean_shift)
     force(n_threads); force(force_sparse); force(cell_coupling)
     force(inner_sparse_override)
     force(hessian_pd_mode); force(step_curvature_mode)
@@ -1246,11 +1247,12 @@
              inner_refresh_   = NULL,
              compute_skew     = FALSE,
              skew_idx         = NULL,
-             # Per-cell fixed-effect covariance retention.
-             # Off by default so the mode-find, the Pareto-k re-solve batch and
-             # the skew probe -- none of which contribute an integrated cell --
-             # never pay for it; the grid solve and the local-CCD node solves
-             # switch it on.
+             # An integrated cell: per-cell fixed-effect covariance retention
+             # and, under `mean_shift` (`control$skew_correct`), the cell's
+             # leading-order mean shift. Off by default so the mode-find, the
+             # Pareto-k re-solve batch and the skew probe -- none of which
+             # contribute an integrated cell -- never pay for either; the grid
+             # solve, the refinement and the local-CCD node solves switch it on.
              fixed_block      = FALSE,
              # Subspace debias: the kernel-facing request
              # list, off by default so no existing call site re-solves anything
@@ -1299,7 +1301,8 @@
             cila                = cila,
             inner_sparse_override = as.integer(inner_sparse_override),
             screen_log_offset   = screen_log_offset,
-            screen_only         = isTRUE(screen_only))
+            screen_only         = isTRUE(screen_only),
+            mean_shift          = isTRUE(fixed_block) && isTRUE(mean_shift))
     }
 }
 
@@ -1630,7 +1633,8 @@
         fixed_block_p = fixed_block_p,
         fixed_block_extra = fixed_block_extra,
         inner_sparse_override = inner_sparse_override,
-        prepared = prepared)
+        prepared = prepared,
+        mean_shift = skew_correct)
     # At n_quad > 1 every cell solve is the adaptive Gauss-Hermite marginal of
     # the random effects (`.joint_aghq_plan()`), behind the same closure.
     aghq_plan <- .joint_aghq_plan(n_quad, arms, blocks_spec, prepared,
@@ -2087,7 +2091,8 @@
     # pins) indexes the refined cells.
     lccd_lists <- c("cov_block_per_grid", "Q_csc_p_per_grid",
                     "Q_csc_i_per_grid", "Q_csc_x_per_grid",
-                    "Q_soft_D_per_grid")
+                    "Q_soft_D_per_grid", "inner_mean_shift",
+                    "inner_mean_shift_declined")
     if (!is.null(local_ccd) && !use_ccd && !use_adaptive && !use_design &&
         !has_phi && .joint_local_ccd_engage(d_axes)) {
         lc <- if (is.list(local_ccd)) local_ccd else list()
@@ -2102,7 +2107,7 @@
                     as.numeric(warm) else x_init
                 r <- .joint_with_quiet_opts(call_kernel(
                     theta_mat, x_init = xi,
-                    fixed_block = (fixed_block_p > 0L),
+                    fixed_block = TRUE,
                     n_threads_outer = n_threads_outer))
                 list(log_marginal = .joint_multi_add_hp(
                          r$log_marginal, theta_mat, axis_offsets, B,
@@ -2139,8 +2144,9 @@
                 # against the new cells, so the grid-mixture predictive read
                 # falls back to the fit's coefficients instead of drawing from
                 # cells that are no longer the fit's (gcol33/tulpa#850).
-                res$fitted_eta     <- NULL
-                res$fitted_eta_var <- NULL
+                res$fitted_eta       <- NULL
+                res$fitted_eta_var   <- NULL
+                res$fitted_eta_shift <- NULL
             }
         }
         tm$mark("grid")
@@ -2450,7 +2456,7 @@
                                     compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)
     res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
-    res <- .nlj_mean_shift_cells(res, skew_probe, skew_idx, skew_correct)
+    res <- .nlj_mean_shift_cells(res, skew_correct)
     tm$mark("diagnostics")
     # Per-cell fixed-effect mode + precision for the grid marginalization.
     # Local-CCD refinement invalidates the stored cells, so a fit it engaged on

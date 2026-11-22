@@ -155,6 +155,10 @@ struct LaplaceResult {
   std::vector<double> eta_var;
   // Linear predictor at the reported mode, retained while its cell loading is live.
   std::vector<double> eta_mean;
+  // The linear predictor's shift under the cell's leading-order mean shift,
+  // a_r' inner_mean_shift per row (rows arm-major), when the variance pass
+  // formed the shift and its request keeps it (JointEtaVarRequest::keep_eta_shift).
+  std::vector<double> eta_shift;
 
   // Inner-Laplace skewness diagnostic (Rue, Martino & Chopin 2009, JRSSB
   // 71(2) Sec 3.2.3, eq. 21's cubic term, generalized to tulpa's eta =
