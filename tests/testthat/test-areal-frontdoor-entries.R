@@ -91,8 +91,9 @@ test_that("an outer-grid knob a fitter does not read stops the call", {
   expect_identical(tulpa:::.control_subset(list(integration = "ccd"),
                                            ks$re_cov_nested),
                    list(integration = "ccd"))
-  expect_identical(tulpa:::.control_subset(list(n_grid = 5), ks$spde),
-                   list(n_grid = 5))
+  expect_identical(tulpa:::.control_subset(list(axis_refine = "none"), ks$spde),
+                   list(axis_refine = "none"))
+  expect_error(tulpa:::.control_subset(list(n_grid = 5), ks$spde), "`n_grid`")
 })
 
 test_that("tulpa() lays an areal field's stated grid and refuses an unread knob", {
@@ -110,7 +111,7 @@ test_that("tulpa() lays an areal field's stated grid and refuses an unread knob"
     tulpa(y ~ x + spatial(region), fx$d, family = "poisson",
           spatial = list(type = "icar", adjacency = fx$A),
           mode = "nested_laplace", control = c(.fe_ctl, list(n_grid = 3))),
-    "`n_grid`")
+    "n_grid")
   expect_error(
     tulpa(y ~ x + spatial(region), fx$d, family = "poisson",
           spatial = list(type = "icar", adjacency = fx$A, tau_grid = c(1, 2)),
