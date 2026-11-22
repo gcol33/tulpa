@@ -912,8 +912,10 @@
 #'     to draw with and is declined with `"sparse_factor_not_ll"`.
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node.
-#'     `FALSE` integrates over the grid exactly as given, whatever it is, and
-#'     records `outer_grid_recenter_declined = "auto_recenter_disabled"`. The
+#'     `FALSE` places no axis, whatever its grid is, and records
+#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`; the
+#'     refinement passes still resolve each axis as `axis_refine` allows, and
+#'     `axis_refine = "none"` integrates the grid exactly as given. The
 #'     joint FIELD rescues trigger on the whole grid's collapsed-edge regime
 #'     rather than on a per-axis rail, so the per-axis policy names
 #'     [tulpa_nested_laplace()] takes (`"rail"`, `"resolve"`, `"always"`) are

@@ -59,3 +59,30 @@ test_that("a temporal precision far below its default axis is placed and covered
   .covers(fit, "b1.tau", 4)
   expect_cells_solved(fit)
 })
+
+test_that("an AR(1) rho heaviest on its lowest default level is followed below it", {
+  skip_on_cran()
+  # The default rho levels run 0, 0.4, 0.7, 0.9, 0.97. Here the lowest holds
+  # 0.45 of the posterior at an ESS of 2.85: its inner marginal is too flat to
+  # rail and its spacing resolves it, so nothing places it, and a collapsed
+  # axis is only followed out once a mode is known -- unless its density
+  # peaks on an end level, which is this axis (gcol33/tulpa#1285). A dense
+  # reference (rho on tanh(seq(-3.5, 3.5, length.out = 57))) reads
+  # (-0.665, 0.154, 0.876); the declared levels alone read (-0.186, 0.268,
+  # 0.903).
+  set.seed(1)
+  n_s <- 16L; n_t <- 8L; N <- 400L
+  s <- sample(n_s, N, TRUE); tt <- sample(n_t, N, TRUE)
+  us <- as.numeric(scale(cumsum(rnorm(n_s))))
+  vt <- as.numeric(scale(cumsum(rnorm(n_t))))
+  x <- rnorm(N)
+  y <- rbinom(N, 1, plogis(0.2 + 0.5 * x + 0.7 * us[s] + 0.6 * vt[tt]))
+  fit <- suppressWarnings(fit_st_nested(y, cbind(1, x), s, .chain_adj_st(n_s),
+                                        tt, n_t, family = "binomial",
+                                        control = list(progress = FALSE)))
+  expect_lt(min(fit$theta_grid[, "b2.rho"]), -0.5)
+  expect_equal(c(fit$theta_ci_lo[["b2.rho"]], fit$theta_median[["b2.rho"]],
+                 fit$theta_ci_hi[["b2.rho"]]),
+               c(-0.665, 0.154, 0.876), tolerance = 0.03)
+  expect_cells_solved(fit)
+})

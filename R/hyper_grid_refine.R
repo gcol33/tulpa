@@ -266,12 +266,9 @@
   u <- .hyper_axis_coord(v, spec)
   # A marginal whose density peaks on an outermost level is truncated by the
   # span, not under-resolved inside it: bisecting towards that level only
-  # shrinks its box, and the extension that would serve it belongs to the
-  # adaptive pass. The density is the mass less the level's own box width, so
-  # a level made heavy by the width it owns does not read as the mode.
-  lw <- .nl_level_log_width(u)
-  ld <- if (is.null(lw)) lm else lm - lw
-  if (which.max(ld) %in% c(1L, length(ld))) return(numeric(0))
+  # shrinks its box, and what serves it is the edge-closing extension
+  # (`.hyper_consistency_pass()`).
+  if (.hyper_marginal_end_peaked(spec, vals, log_mass)) return(numeric(0))
   gap <- p[-1L] + p[-length(p)]
   width <- diff(u)
   ok <- is.finite(width) & width > 1e-8 * pmax(1, abs(u[-1L]))
@@ -282,6 +279,24 @@
   idx <- idx[order(-gap[idx])]
   u_mid <- 0.5 * (u[idx] + u[idx + 1L])
   if (.hyper_axis_is_log_scale(spec)) exp(u_mid) else u_mid
+}
+
+# Does an axis marginal's density peak on an outermost continuum level?
+# `vals` / `log_mass` as `.hyper_propose_mass_bisection()` takes them. The
+# density is the mass less the level's own box width on the integration
+# coordinate, so a level made heavy by the width it owns does not read as the
+# mode. FALSE for fewer than two continuum levels.
+.hyper_marginal_end_peaked <- function(spec, vals, log_mass) {
+  vals <- as.numeric(vals)
+  keep <- is.finite(vals) & !.hyper_is_atom_level(vals, spec)
+  if (.hyper_axis_is_log_scale(spec)) keep <- keep & vals > 0
+  v  <- vals[keep]
+  lm <- as.numeric(log_mass)[keep]
+  if (length(v) < 2L || !any(is.finite(lm))) return(FALSE)
+  o  <- order(v); v <- v[o]; lm <- lm[o]
+  lw <- .nl_level_log_width(.hyper_axis_coord(v, spec))
+  ld <- if (is.null(lw)) lm else lm - lw
+  which.max(ld) %in% c(1L, length(ld))
 }
 
 # Points laid at an axis's outer MODE, when the fit has one: the mode and the
@@ -1085,7 +1100,9 @@
 # node holding 11% of the axis spread it over a half-cell and read the 2.5%
 # bound at 0.124 against 0.177. Without a mode those rounds wait until the axis
 # is resolved: a collapsed axis's grid spread is its node spacing, not the
-# posterior's.
+# posterior's. A collapsed axis whose density peaks on an outermost level does
+# not wait where it may be extended, since bisection declines it and nothing
+# else would follow it out; an axis the caller stated keeps its span.
 #
 # The pass re-reads the ESS after every round and bisects again until the axis
 # reaches `min_ess` or has taken `max_nodes` new levels inside its span; a level
@@ -1216,9 +1233,20 @@
     # not only after a placement refit.
     # Without a mode, a collapsed axis's grid spread is the node spacing rather
     # than the posterior's, so it is bisected first and followed out only once
-    # its marginal spreads over `min_ess` levels.
+    # its marginal spreads over `min_ess` levels -- unless its density peaks on
+    # an outermost level, which bisection hands to these rounds
+    # (`.hyper_marginal_end_peaked()`): its mass is spread over the levels
+    # inward of that end, and waiting for the ESS left such an axis on its
+    # declared span. An AR(1) rho laid on the default levels 0 to 0.97 held
+    # 0.45 of its posterior on rho = 0 at an ESS of 2.85, and the fit read the
+    # 2.5% bound at -0.186 against a dense reference's -0.665
+    # (gcol33/tulpa#1285).
     edge_close <- function(rd) {
-      m <- at_mode %||% if (rd$ess >= min_ess) .hyper_marginal_mode(spec, rd$marg)
+      m <- at_mode %||% if (rd$ess >= min_ess ||
+                            (.hyper_axis_may_extend(spec) &&
+                             .hyper_marginal_end_peaked(spec, rd$marg$vals,
+                                                        rd$marg$log_marg)))
+        .hyper_marginal_mode(spec, rd$marg)
       if (is.null(m)) return(numeric(0))
       .hyper_propose_edge_close(
         spec, rd$marg, m,

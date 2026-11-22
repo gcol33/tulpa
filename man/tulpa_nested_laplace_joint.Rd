@@ -930,8 +930,10 @@ triangular and permutation solves; an LDL' factor carries no square root
 to draw with and is declined with \code{"sparse_factor_not_ll"}.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node.
-\code{FALSE} integrates over the grid exactly as given, whatever it is, and
-records \code{outer_grid_recenter_declined = "auto_recenter_disabled"}. The
+\code{FALSE} places no axis, whatever its grid is, and records
+\code{outer_grid_recenter_declined = "auto_recenter_disabled"}; the
+refinement passes still resolve each axis as \code{axis_refine} allows, and
+\code{axis_refine = "none"} integrates the grid exactly as given. The
 joint FIELD rescues trigger on the whole grid's collapsed-edge regime
 rather than on a per-axis rail, so the per-axis policy names
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes (\code{"rail"}, \code{"resolve"}, \code{"always"}) are

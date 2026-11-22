@@ -246,6 +246,16 @@
   0.083 to 0.037. Integration weights change on every such axis; log-scale and
   unbounded axes are bit-identical (#1279).
 
+* An axis whose posterior density peaks on its outermost level is followed past
+  it by the consistency pass even when its marginal is collapsed (ESS under 3)
+  and no placement mode is known. Bisection declines such an axis, and the
+  edge-closing rounds had waited for an ESS that cannot come, so an axis whose
+  inner marginal was too flat to rail stayed on its declared span. On a
+  binomial ICAR + AR(1) `fit_st_nested()` fit the AR(1) rho held 0.45 of its
+  posterior on the lowest default level, 0; its 95% interval and median went
+  from (-0.186, 0.268, 0.903) to (-0.654, 0.153, 0.875) against a dense
+  reference's (-0.664, 0.153, 0.876), at 1717 cells against 771 (#1285).
+
 * `tgmrf()` and `tgmrf_cpp()` take `grid_span` where they took `bounds`: the
   box the outer theta grid and the samplers' pilot are laid over. The support
   of `theta` is that of `prior(theta)` alone, as the samplers already read it.

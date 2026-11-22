@@ -409,10 +409,18 @@ test_that("control$auto_recenter = FALSE holds the default grid where it is", {
         responses = list(occ = sim$arm), prior = prior,
         control = list(diagnose_k = FALSE, auto_recenter = FALSE))
 
-    # Same data as the collapse test above; the opt-out integrates the default
-    # axis as given, railed and all, and says so.
+    # Same data as the collapse test above; the opt-out places no axis and says
+    # so. The consistency pass still follows the default axis past its railed
+    # end, since its density peaks on its top level (gcol33/tulpa#1285);
+    # `axis_refine = "none"` holds the declared grid as given.
     expect_identical(fit$outer_grid_placement, "fixed")
     expect_identical(fit$outer_grid_recenter_declined, "auto_recenter_disabled")
-    expect_identical(fit$pareto_k_regime, "collapsed_edge")
-    expect_equal(max(fit$theta_grid[, "sigma"]), 3.0)
+    expect_gt(max(fit$theta_grid[, "sigma"]), 3.0)
+
+    held <- tulpa_nested_laplace_joint(
+        responses = list(occ = sim$arm), prior = prior,
+        control = list(diagnose_k = FALSE, auto_recenter = FALSE,
+                       axis_refine = "none"))
+    expect_identical(held$pareto_k_regime, "collapsed_edge")
+    expect_equal(max(held$theta_grid[, "sigma"]), 3.0)
 })
