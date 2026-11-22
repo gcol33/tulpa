@@ -20,7 +20,7 @@
     provenance <- .nl_grid_provenance(prior)
     axes <- unlist(lapply(seq_along(prior), function(b)
         .axis_label(b, colnames(blocks$grids[[b]]))))
-    modes <- .nl_registry_refine_modes(axes, axes, provenance$prior, TRUE,
+    modes <- .nl_registry_refine_modes(axes, axes, provenance$prior,
         provenance$auto, user = control$axis_refine)
     all(modes == "extend")
 }

@@ -8,28 +8,24 @@
 # (`.nl_bind_cell_results()`), rather than described by a table that would
 # drift from the kernel's own output.
 
-# The registry slots of a prior, each named as the grid names its axis.
-.nl_registry_named_slots <- function(prior, multi) {
-    blocks <- if (isTRUE(multi)) prior else list(prior)
+# The registry slots of a block list, each named as the grid names its axis.
+.nl_registry_named_slots <- function(blocks) {
     slots <- .nl_registry_axis_slots(blocks)
-    names(slots) <- vapply(slots, function(s)
-        if (isTRUE(multi)) .axis_label(s$block, s$axis) else s$axis,
-        character(1))
+    names(slots) <- vapply(slots, function(s) .axis_label(s$block, s$axis),
+                           character(1))
     slots
 }
 
 # The refinement mode of each refinable axis of one registry grid, from who wrote
 # its nodes (`.nl_slot_hold()` on the axis's slot, the rule the placement pass
 # reads), `user` the caller's `control$axis_refine`.
-.nl_registry_refine_modes <- function(axes, refinable, prior, multi, auto,
+.nl_registry_refine_modes <- function(axes, refinable, blocks, auto,
                                       user = NULL) {
-    blocks <- if (isTRUE(multi)) prior else list(prior)
-    slots <- .nl_registry_named_slots(prior, multi)
+    slots <- .nl_registry_named_slots(blocks)
     stated <- function(a) {
         s <- slots[[a]]
         if (is.null(s)) return(TRUE)
-        !is.null(.nl_slot_hold(
-            blocks, s, .nl_auto_fields_at(auto, if (isTRUE(multi)) s$block)))
+        !is.null(.nl_slot_hold(blocks, s, .nl_auto_fields_at(auto, s$block)))
     }
     .joint_axis_refine_modes_by(
         axes, stated, user,
