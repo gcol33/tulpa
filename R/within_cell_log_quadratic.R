@@ -85,6 +85,22 @@
 # distribution. A tail runs to `lq_tail_nats` below the row's peak, and no
 # farther than `lq_tail_sd` of the row's SDs past its outer node.
 #
+# A TAIL IS CONTINUED ONLY WHERE THE ROW'S NODES SAW ITS DENSITY FALL. Past the
+# outer node the read extrapolates the end triple's quadratic, and the mass it
+# puts there is set by that quadratic's curvature alone. For a Gaussian whose
+# outer node lies `d` SDs from the mode, the tail beyond carries
+# `(1 - Phi(d)) / (Phi(d) - 1/2)` times the mass between the mode and that node:
+# unbounded as `d` goes to zero, so a row whose nodes barely see its density
+# fall hands nearly all its mass to a curvature at the level of the log
+# densities' own noise. On a two-row axis whose second row falls 2e-8 nats
+# across its nodes, that row's tails reached +/- 1.9e5, 40000 times its span
+# (gcol33/tulpa#1278). So a side is continued only where the extrapolated tail
+# carries no more mass than the stretch the nodes measured, `d >= qnorm(3/4)`,
+# i.e. where the row's top node stands at least `lq_tail_min_fall =
+# qnorm(3/4)^2 / 2` nats (0.227) above that end node, read off the node log
+# densities rather than off the curvature. A side short of it ends at its outer
+# box edge, the box read's own half-cell.
+#
 # THE TABLE RESOLVES EVERY ROW WHEREVER ANOTHER ROW'S TAIL REACHES
 # (`.nl_lq_table()`). Its spacing is at most an eighth of the closest node gap
 # over the nodes and their boxes, where every row's body lies; a row whose
@@ -346,7 +362,8 @@
     a <- p$d2[i]
     end <- if (side < 0) uv[1L] else uv[n]
     walled <- if (side < 0) laid[1L] < end else laid[2L] > end
-    if (a >= 0 || walled) return(if (side < 0) lo_b[1L] else hi_b[n])
+    unseen <- top - p$lg[if (side < 0) 1L else n] < .nl_diag("lq_tail_min_fall")
+    if (a >= 0 || walled || unseen) return(if (side < 0) lo_b[1L] else hi_b[n])
     # The quadratic as a(x - x0)^2 + c: its peak and where it falls
     # `tail_nats` below the larger of that peak and the row's top node.
     b <- p$d1[i] - a * (uv[i] + uv[i + 1L])

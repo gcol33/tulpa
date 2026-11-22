@@ -1236,7 +1236,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # read's 0.932. `ENGINEERING_HISTORY.md` has the fixed-truth coverage.
 #
 # `lq_tail_nats` and `lq_tail_sd` bound how far a row's tail is tabulated past
-# its outer node, and `lq_grid_points` is the minimum size of the table the
+# its outer node, `lq_tail_min_fall` is the fall from a row's top node to its
+# end node below which that side is not continued at all, and `lq_grid_points` is the minimum size of the table the
 # rows' CDFs are read off; `R/within_cell_log_quadratic.R` gives the reasons.
 #
 # `grid_resolved = 1` is `h / sd`, both in the axis's own coordinate. It is not
@@ -1479,6 +1480,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     lq_max_h_over_sd     = 2,
     lq_tail_nats         = 36,
     lq_tail_sd           = 10,
+    lq_tail_min_fall     = stats::qnorm(0.75)^2 / 2,
     lq_grid_points       = 8193L,
     grid_resolved        = 1,
     axis_sd_ess          = 3,

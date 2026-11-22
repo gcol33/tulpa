@@ -202,22 +202,43 @@ test_that("a correlation measured on its own scale is read by its density on ata
   expect_lt(rc$h_over_sd, 1)
 })
 
-test_that("a row flat on its own coordinate leaves the other rows resolved", {
+test_that("a row flat on its own coordinate ends at its outer boxes", {
   skip_on_cran_budget()
   # Two rows over the same 22 levels: one Gaussian with sd 0.5 holding 0.99 of
   # the mass, one whose log density falls by 2e-8 nats over its nodes. The
-  # flat row's tails reach +/- 1.9e5; one uniform table over that extent spaced
-  # its points 5.8 apart and read the 95% interval as +/- 5.56.
+  # flat row's nodes never saw its density fall, so its curvature says nothing
+  # about a tail: before gcol33/tulpa#1278 it reached +/- 1.9e5 and put almost
+  # all of that row's mass outside the grid. It now ends at its outer box
+  # edges, half a spacing past the outer levels, and holds its mass as the
+  # uniform its nodes describe.
   u <- seq(-4.5, 4.5, length.out = 22)
   ldA <- -0.5 * (u / 0.5)^2
   ldB <- -1e-9 * u^2
   v <- c(u, u); row <- rep(1:2, each = 22)
   w <- c(exp(ldA) / sum(exp(ldA)) * 0.99, exp(ldB) / sum(exp(ldB)) * 0.01)
   rc <- .nl_lq_reconstruct(v, w, "unbounded", NULL, row, c(ldA, ldB))
-  expect_gt(max(rc$x), 1e5)
+  edge <- 4.5 + 0.5 * diff(u)[1L]
+  expect_equal(c(rc$pieces[[2L]]$lo, rc$pieces[[2L]]$hi), c(-edge, edge))
+  expect_equal(range(rc$x), c(-edge, edge))
   q <- .nl_lq_cdf_quantile(rc, c(0.025, 0.5, 0.975))
-  # The flat row puts half its mass far below and half far above, so the
-  # Gaussian row carries the rest of each tail probability.
-  lo <- 0.5 * stats::qnorm((0.025 - 0.005) / 0.99)
-  expect_equal(q, c(lo, 0, -lo), tolerance = 2e-3)
+  F <- function(x) 0.99 * stats::pnorm(x / 0.5) + 0.01 * (x + edge) / (2 * edge)
+  hi <- stats::uniroot(function(x) F(x) - 0.975, c(0, edge), tol = 1e-12)$root
+  expect_equal(q, c(-hi, 0, hi), tolerance = 2e-3)
+})
+
+test_that("a side whose nodes saw the density fall keeps its tail", {
+  skip_on_cran_budget()
+  # One Gaussian row laid from its mode to 1.5 SDs above and 0.3 SDs below:
+  # the upper end node stands 1.125 nats under the top, past the
+  # qnorm(3/4)^2 / 2 = 0.227 at which an extrapolated tail would carry more
+  # mass than the stretch the nodes measured, so that side continues; the
+  # lower end stands 0.045 nats under it and ends at its box edge.
+  u <- seq(-0.3, 1.5, by = 0.3)
+  ld <- -0.5 * u^2
+  rc <- .nl_lq_reconstruct(u, exp(ld) / sum(exp(ld)), "unbounded", NULL,
+                           rep(1L, length(u)), ld)
+  p <- rc$pieces[[1L]]
+  expect_identical(p$kind, "lq")
+  expect_equal(p$lo, -0.45)
+  expect_gt(p$hi, 1.65)
 })

@@ -203,6 +203,15 @@
   post-fit HSGP field mean moves at rounding level (at most 7e-16), because a
   threaded Eigen product blocks its inner sums differently (#1284).
 
+* The log-quadratic hyperparameter read continues a row's tail past its outer
+  node only where the row's nodes saw its density fall: its top node at least
+  `qnorm(3/4)^2 / 2` (0.227) nats above that end node, the fall at which the
+  extrapolated tail of a Gaussian carries as much mass as the stretch from the
+  mode to the node. A row whose density fell 2e-8 nats across its nodes had
+  tails reaching +/- 1.9e5, 40000 times its span; it now ends at its outer box
+  edge, and a mixture of it with a resolved row reads its 97.5% point at 1.014
+  where it read 1.025 (#1278).
+
 * `tgmrf()` and `tgmrf_cpp()` take `grid_span` where they took `bounds`: the
   box the outer theta grid and the samplers' pilot are laid over. The support
   of `theta` is that of `prior(theta)` alone, as the samplers already read it.
