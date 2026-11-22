@@ -99,21 +99,14 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
   }
 
   // Local GP scale
-  tulpa::PgNngpScale local;
-  local.w.assign(n_spatial, 0.0);
-  local.sigma2 = sigma2_local_init;
-  local.phi = phi_local_init;
-  local.top = tulpa::pg_nngp_topology(nn_idx_local, nn_dist_local,
-                                      nn_order_local, n_spatial, nn_local);
+  tulpa::PgNngpScale local = tulpa::pg_nngp_scale_init(
+      n_spatial, sigma2_local_init, phi_local_init, nn_idx_local,
+      nn_dist_local, nn_order_local, nn_local);
 
   // Regional GP scale
-  tulpa::PgNngpScale regional;
-  regional.w.assign(n_spatial, 0.0);
-  regional.sigma2 = sigma2_regional_init;
-  regional.phi = phi_regional_init;
-  regional.top = tulpa::pg_nngp_topology(nn_idx_regional, nn_dist_regional,
-                                         nn_order_regional, n_spatial,
-                                         nn_regional);
+  tulpa::PgNngpScale regional = tulpa::pg_nngp_scale_init(
+      n_spatial, sigma2_regional_init, phi_regional_init, nn_idx_regional,
+      nn_dist_regional, nn_order_regional, nn_regional);
 
   // Per-variant working vectors
   Rcpp::NumericVector local_contrib(N, 0.0);
@@ -148,48 +141,20 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         prior_beta_sd_value, prior_sigma_re_scale, C.n_threads_team);
 
     // 5. Update the local scale, conditioning on the regional contribution.
-    for (int i = 0; i < N; i++) {
-      C.offset[i] = C.X_beta[i] + C.re_contrib[i] + regional_contrib[i];
-    }
-    tulpa::pg_accumulate_stats(N, nullptr, n_spatial, C.omega.begin(),
-                               C.kappa.begin(), C.offset.begin(),
-                               sum_omega_sc.data(), sum_resid_sc.data());
-    tulpa::pg_nngp_scale_update(
-        local, cov_type, coords, nn_dist_local, sum_omega_sc, sum_resid_sc,
-        prior_sigma_local_U, prior_sigma_local_alpha,
-        prior_phi_local_lower, prior_phi_local_upper);
-    // Each scale's level shared with the intercept, drawn from its conditional.
-    {
-      double prec_field = 0.0, lin_field = 0.0;
-      tulpa::pg_nngp_level_terms(local, prec_field, lin_field);
-      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd_value,
-                                                      prec_field, lin_field);
-      for (int s = 0; s < n_spatial; s++) local.w[s] -= c;
-      C.absorb_level(c);
-    }
-    for (int i = 0; i < n_spatial; i++) local_contrib[i] = local.w[i];
+    tulpa::pg_nngp_scale_step(
+        C, local, regional_contrib.begin(), cov_type, coords, nn_dist_local,
+        sum_omega_sc, sum_resid_sc, prior_sigma_local_U,
+        prior_sigma_local_alpha, prior_phi_local_lower, prior_phi_local_upper,
+        prior_beta_sd_value, local_contrib.begin());
 
     // 6. Update the regional scale, conditioning on the just-updated local
     //    contribution.
-    for (int i = 0; i < N; i++) {
-      C.offset[i] = C.X_beta[i] + C.re_contrib[i] + local_contrib[i];
-    }
-    tulpa::pg_accumulate_stats(N, nullptr, n_spatial, C.omega.begin(),
-                               C.kappa.begin(), C.offset.begin(),
-                               sum_omega_sc.data(), sum_resid_sc.data());
-    tulpa::pg_nngp_scale_update(
-        regional, cov_type, coords, nn_dist_regional, sum_omega_sc,
-        sum_resid_sc, prior_sigma_regional_U, prior_sigma_regional_alpha,
-        prior_phi_regional_lower, prior_phi_regional_upper);
-    {
-      double prec_field = 0.0, lin_field = 0.0;
-      tulpa::pg_nngp_level_terms(regional, prec_field, lin_field);
-      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd_value,
-                                                      prec_field, lin_field);
-      for (int s = 0; s < n_spatial; s++) regional.w[s] -= c;
-      C.absorb_level(c);
-    }
-    for (int i = 0; i < n_spatial; i++) regional_contrib[i] = regional.w[i];
+    tulpa::pg_nngp_scale_step(
+        C, regional, local_contrib.begin(), cov_type, coords, nn_dist_regional,
+        sum_omega_sc, sum_resid_sc, prior_sigma_regional_U,
+        prior_sigma_regional_alpha, prior_phi_regional_lower,
+        prior_phi_regional_upper, prior_beta_sd_value,
+        regional_contrib.begin());
 
     // Store draws after warmup
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {

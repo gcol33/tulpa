@@ -1401,6 +1401,59 @@ inline void pg_nngp_scale_update(
                        prior_phi_lower, prior_phi_upper);
 }
 
+// A scale at its starting (sigma2, phi), its field at zero.
+inline PgNngpScale pg_nngp_scale_init(int n_spatial, double sigma2, double phi,
+                                      const Rcpp::IntegerMatrix& nn_idx,
+                                      const Rcpp::NumericMatrix& nn_dist,
+                                      const Rcpp::IntegerVector& nn_order,
+                                      int nn) {
+  PgNngpScale sc;
+  sc.w.assign(n_spatial, 0.0);
+  sc.sigma2 = sigma2;
+  sc.phi = phi;
+  sc.top = pg_nngp_topology(nn_idx, nn_dist, nn_order, n_spatial, nn);
+  return sc;
+}
+
+// One NNGP scale's step inside a Polya-Gamma sweep with one observation per
+// location: the data aggregates at offset X beta + re (+ `other`, the
+// per-observation contribution of any further field the scale is conditioned
+// on; nullptr: none), the field and its hyperparameters, then the level the
+// scale shares with the intercept, drawn from its conditional and absorbed
+// into the intercept. Writes the scale's field into `contrib`.
+inline void pg_nngp_scale_step(
+    PgGibbsCommon& C, PgNngpScale& sc, const double* other, int cov_type,
+    const Rcpp::NumericMatrix& coords, const Rcpp::NumericMatrix& nn_dist,
+    std::vector<double>& sum_omega, std::vector<double>& sum_resid,
+    double prior_sigma_U, double prior_sigma_alpha,
+    double prior_phi_lower, double prior_phi_upper,
+    double prior_beta_sd, double* contrib
+) {
+  const int n_spatial = static_cast<int>(sc.w.size());
+  if (other) {
+    for (int i = 0; i < C.N; i++) {
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i] + other[i];
+    }
+  } else {
+    for (int i = 0; i < C.N; i++) {
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i];
+    }
+  }
+  pg_accumulate_stats(C.N, nullptr, n_spatial, C.omega.begin(),
+                      C.kappa.begin(), C.offset.begin(),
+                      sum_omega.data(), sum_resid.data());
+  pg_nngp_scale_update(sc, cov_type, coords, nn_dist, sum_omega, sum_resid,
+                       prior_sigma_U, prior_sigma_alpha,
+                       prior_phi_lower, prior_phi_upper);
+  double prec_field = 0.0, lin_field = 0.0;
+  pg_nngp_level_terms(sc, prec_field, lin_field);
+  const double c = pg_draw_intercept_level(C.beta[0], prior_beta_sd,
+                                           prec_field, lin_field);
+  for (int s = 0; s < n_spatial; s++) sc.w[s] -= c;
+  C.absorb_level(c);
+  for (int s = 0; s < n_spatial; s++) contrib[s] = sc.w[s];
+}
+
 } // namespace tulpa
 
 #endif // TULPA_PG_SHARED_H

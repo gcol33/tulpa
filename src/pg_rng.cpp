@@ -3,7 +3,7 @@
 // Implements the sampler of Polson, Scott & Windle (2013) JASA.
 
 #include "pg_rng.h"
-#include "tulpa_stop.h"
+#include "elementwise_map.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <algorithm>
@@ -248,18 +248,9 @@ NumericVector rpg1_vec(NumericVector z) {
 
 // Vectorized PG(b, z)
 NumericVector rpg_vec(IntegerVector b, NumericVector z) {
-  int n = b.size();
-  if (z.size() != n) {
-    tulpa::stop("b and z must have the same length");
-  }
-
-  NumericVector out(n);
-
-  for (int i = 0; i < n; i++) {
-    out[i] = rpg_int(b[i], z[i]);
-  }
-
-  return out;
+  return map_elementwise<REALSXP>("b and z must have the same length",
+                                  [](int bi, double zi) { return rpg_int(bi, zi); },
+                                  b, z);
 }
 
 } // namespace tulpa
@@ -280,13 +271,7 @@ Rcpp::NumericVector cpp_rpg(Rcpp::IntegerVector b, Rcpp::NumericVector z) {
 
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_rpg_real(Rcpp::NumericVector b, Rcpp::NumericVector z) {
-  int n = b.size();
-  if (z.size() != n) {
-    tulpa::stop("b and z must have the same length");
-  }
-  Rcpp::NumericVector out(n);
-  for (int i = 0; i < n; i++) {
-    out[i] = tulpa::rpg_real(b[i], z[i]);
-  }
-  return out;
+  return tulpa::map_elementwise<REALSXP>(
+      "b and z must have the same length",
+      [](double bi, double zi) { return tulpa::rpg_real(bi, zi); }, b, z);
 }

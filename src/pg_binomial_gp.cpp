@@ -81,11 +81,8 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
   Rcpp::NumericVector phi_gp_draws(n_save);
 
   // Per-variant state
-  tulpa::PgNngpScale gp;
-  gp.w.assign(n_spatial, 0.0);
-  gp.sigma2 = sigma2_gp_init;
-  gp.phi = phi_gp_init;
-  gp.top = tulpa::pg_nngp_topology(nn_idx, nn_dist, nn_order, n_spatial, nn);
+  tulpa::PgNngpScale gp = tulpa::pg_nngp_scale_init(
+      n_spatial, sigma2_gp_init, phi_gp_init, nn_idx, nn_dist, nn_order, nn);
   Rcpp::NumericVector gp_contrib(N, 0.0);
   std::vector<double> sum_omega_gp(n_spatial, 0.0), sum_resid_gp(n_spatial, 0.0);
 
@@ -102,32 +99,12 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
         gp_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd_value, prior_sigma_re_scale, C.n_threads_team);
 
-    // 5. Update the GP scale (field, marginal variance, range)
-    for (int i = 0; i < N; i++) {
-      C.offset[i] = C.X_beta[i] + C.re_contrib[i];
-    }
-    tulpa::pg_accumulate_stats(N, nullptr, n_spatial, C.omega.begin(),
-                               C.kappa.begin(), C.offset.begin(),
-                               sum_omega_gp.data(), sum_resid_gp.data());
-    tulpa::pg_nngp_scale_update(
-        gp, cov_type, coords, nn_dist, sum_omega_gp, sum_resid_gp,
+    // 5. Update the GP scale (field, marginal variance, range, level)
+    tulpa::pg_nngp_scale_step(
+        C, gp, nullptr, cov_type, coords, nn_dist, sum_omega_gp, sum_resid_gp,
         prior_sigma_gp_U, prior_sigma_gp_alpha,
-        prior_phi_lower, prior_phi_upper);
-
-    // The field level shared with the intercept, drawn from its conditional.
-    {
-      double prec_field = 0.0, lin_field = 0.0;
-      tulpa::pg_nngp_level_terms(gp, prec_field, lin_field);
-      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd_value,
-                                                      prec_field, lin_field);
-      for (int s = 0; s < n_spatial; s++) gp.w[s] -= c;
-      C.absorb_level(c);
-    }
-
-    // Update GP contributions
-    for (int i = 0; i < n_spatial; i++) {
-      gp_contrib[i] = gp.w[i];
-    }
+        prior_phi_lower, prior_phi_upper, prior_beta_sd_value,
+        gp_contrib.begin());
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {

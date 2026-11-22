@@ -97,29 +97,24 @@ static double negbin_log_prior_r(double r, double shape, double rate) {
   return pg_log_gamma(r, shape, rate) - std::log(mass);
 }
 
-// The NB2 log-likelihood at the log-mean eta through the shared family density.
-static double negbin_log_lik_family(const IntegerVector& y,
-                                    const NumericVector& eta, double r) {
+// The NB2 log-likelihood through the shared family density at log-mean
+// eta + eta_offset: the samplers read the log-mean eta directly (offset 0),
+// the log-odds reading mu = r exp(eta) is offset log(r).
+static double negbin_log_lik(const IntegerVector& y, const NumericVector& eta,
+                             double r, double eta_offset) {
   double ll = 0.0;
   for (int i = 0; i < y.size(); i++) {
-    ll += glmm_elt(GLMMFamily::NegBin, eta[i], y[i], 0.0, r).l;
+    ll += glmm_elt(GLMMFamily::NegBin, eta[i] + eta_offset, y[i], 0.0, r).l;
   }
   return ll;
 }
 
-// The log-odds reading of the shared NB2 density, mu = r exp(eta).
 double negbin_loglik_eta(
     const IntegerVector& y,
     const NumericVector& eta,
     double r
 ) {
-  const double log_r = std::log(r);
-  double ll = 0.0;
-  for (int i = 0; i < y.size(); i++) {
-    ll += glmm_elt(GLMMFamily::NegBin, eta[i] + log_r, y[i], 0.0, r).l;
-  }
-
-  return ll;
+  return negbin_log_lik(y, eta, r, std::log(r));
 }
 
 // Joint MH update in (log r, beta_0_nb2). A symmetric perturbation of the NB2
@@ -179,8 +174,8 @@ JointRBeta0Result update_r_beta0_joint(
   }
 
   // Log likelihood
-  double ll_current = negbin_log_lik_family(y, eta_current, r_current);
-  double ll_prop = negbin_log_lik_family(y, eta_prop, r_prop);
+  double ll_current = negbin_log_lik(y, eta_current, r_current, 0.0);
+  double ll_prop = negbin_log_lik(y, eta_prop, r_prop, 0.0);
 
   // Log prior for r: Gamma(shape, rate)
   double log_prior_r_current = (prior_r_shape - 1.0) * log_r_current - prior_r_rate * r_current;
@@ -229,8 +224,8 @@ double update_r_negbin(
   double log_prior_current = (prior_shape - 1.0) * log_r_current - prior_rate * r_current;
   double log_prior_prop = (prior_shape - 1.0) * log_r_prop - prior_rate * r_prop;
 
-  double log_lik_current = negbin_log_lik_family(y, eta, r_current);
-  double log_lik_prop = negbin_log_lik_family(y, eta, r_prop);
+  double log_lik_current = negbin_log_lik(y, eta, r_current, 0.0);
+  double log_lik_prop = negbin_log_lik(y, eta, r_prop, 0.0);
 
   double log_alpha = (log_prior_prop + log_lik_prop + log_r_prop)
                    - (log_prior_current + log_lik_current + log_r_current);
@@ -498,7 +493,7 @@ List pg_negbin_gibbs(
       sigma_draws[save_idx] = sigma_re;
       r_draws[save_idx] = r;
       log_prob_draws[save_idx] =
-          negbin_log_lik_family(y, eta, r) +
+          negbin_log_lik(y, eta, r, 0.0) +
           pg_log_normal_iid(beta.begin(), p, prior_beta_sd) +
           negbin_log_prior_r(r, prior_r_shape, prior_r_rate) +
           (n_groups > 0
@@ -741,7 +736,7 @@ List pg_negbin_gibbs_spatial(
       tau_draws[save_idx] = tau;
       r_draws[save_idx] = r;
       log_prob_draws[save_idx] =
-          negbin_log_lik_family(y, eta, r) +
+          negbin_log_lik(y, eta, r, 0.0) +
           pg_log_normal_iid(beta.begin(), p, prior_beta_sd) +
           (n_re_groups > 0
                ? pg_log_normal_iid(re.begin(), n_re_groups, sigma_re) +

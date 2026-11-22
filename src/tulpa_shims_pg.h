@@ -52,6 +52,36 @@ inline void fill_pg_result(
     }
 }
 
+// The response, the column-major design and the 1-based grouping every PG
+// sampler reads, copied off the C buffers.
+struct PgShimDesign {
+    Rcpp::IntegerVector y;
+    Rcpp::NumericMatrix X;
+    Rcpp::IntegerVector group;
+};
+
+inline PgShimDesign pg_shim_design(
+    const int* y, const double* X_flat, int N_obs, int p, const int* group
+) {
+    PgShimDesign d;
+    d.y = Rcpp::IntegerVector(y, y + N_obs);
+    d.X = build_matrix_colmajor(X_flat, N_obs, p);
+    d.group = Rcpp::IntegerVector(group, group + N_obs);
+    return d;
+}
+
+// Runs one PG sampler under R's RNG state and writes its draws to `out`.
+template <typename Sampler>
+inline void run_pg_shim(
+    Sampler&& sample, int n_obs, int n_spatial_units, bool has_r,
+    tulpa::PGShimResult* out
+) {
+    GetRNGstate();
+    Rcpp::List draws = sample();
+    PutRNGstate();
+    fill_pg_result(draws, n_obs, n_spatial_units, has_r, out);
+}
+
 } // namespace
 
 // Forward declaration: defined inside namespace tulpa in pg_binomial.cpp.
@@ -83,21 +113,16 @@ extern "C" void tulpa_pg_binomial_gibbs_impl(
     tulpa::PGShimResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
-    Rcpp::IntegerVector yv(y, y + N_obs);
+    PgShimDesign d = pg_shim_design(y, X_flat, N_obs, p, group);
     Rcpp::IntegerVector nv(n_trials, n_trials + N_obs);
-    Rcpp::NumericMatrix Xm = build_matrix_colmajor(X_flat, N_obs, p);
-    Rcpp::IntegerVector gv(group, group + N_obs);
-
-    GetRNGstate();
-    Rcpp::List draws = tulpa::pg_binomial_gibbs_impl(
-        yv, nv, Xm, gv, n_groups,
-        n_iter, n_warmup, thin,
-        prior_beta_sd, prior_sigma_scale,
-        store_eta != 0, verbose != 0, n_threads
-    );
-    PutRNGstate();
-
-    fill_pg_result(draws, N_obs, /*n_spatial_units=*/0, /*has_r=*/false, result_out);
+    run_pg_shim([&] {
+        return tulpa::pg_binomial_gibbs_impl(
+            d.y, nv, d.X, d.group, n_groups,
+            n_iter, n_warmup, thin,
+            prior_beta_sd, prior_sigma_scale,
+            store_eta != 0, verbose != 0, n_threads
+        );
+    }, N_obs, /*n_spatial_units=*/0, /*has_r=*/false, result_out);
     TULPA_SHIM_GUARD_END("tulpa_pg_binomial_gibbs")
 }
 
@@ -121,21 +146,16 @@ extern "C" void tulpa_pg_negbin_gibbs_impl(
     tulpa::PGShimResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
-    Rcpp::IntegerVector yv(y, y + N_obs);
-    Rcpp::NumericMatrix Xm = build_matrix_colmajor(X_flat, N_obs, p);
-    Rcpp::IntegerVector gv(group, group + N_obs);
-
-    GetRNGstate();
-    Rcpp::List draws = tulpa::pg_negbin_gibbs(
-        yv, Xm, gv, n_groups,
-        n_iter, n_warmup, thin,
-        prior_beta_sd, prior_sigma_scale,
-        prior_r_shape, prior_r_rate, r_init,
-        store_eta != 0, verbose != 0, n_threads
-    );
-    PutRNGstate();
-
-    fill_pg_result(draws, N_obs, /*n_spatial_units=*/0, /*has_r=*/true, result_out);
+    PgShimDesign d = pg_shim_design(y, X_flat, N_obs, p, group);
+    run_pg_shim([&] {
+        return tulpa::pg_negbin_gibbs(
+            d.y, d.X, d.group, n_groups,
+            n_iter, n_warmup, thin,
+            prior_beta_sd, prior_sigma_scale,
+            prior_r_shape, prior_r_rate, r_init,
+            store_eta != 0, verbose != 0, n_threads
+        );
+    }, N_obs, /*n_spatial_units=*/0, /*has_r=*/true, result_out);
     TULPA_SHIM_GUARD_END("tulpa_pg_negbin_gibbs")
 }
 
@@ -166,9 +186,7 @@ extern "C" void tulpa_pg_negbin_spatial_gibbs_impl(
     tulpa::PGShimResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
-    Rcpp::IntegerVector yv(y, y + N_obs);
-    Rcpp::NumericMatrix Xm = build_matrix_colmajor(X_flat, N_obs, p);
-    Rcpp::IntegerVector reg(re_group, re_group + N_obs);
+    PgShimDesign d = pg_shim_design(y, X_flat, N_obs, p, re_group);
     Rcpp::IntegerVector sg(spatial_group, spatial_group + N_obs);
     Rcpp::IntegerVector nn(n_neighbors, n_neighbors + n_spatial_units);
 
@@ -181,19 +199,17 @@ extern "C" void tulpa_pg_negbin_spatial_gibbs_impl(
         adj_list[i] = neighbors;
     }
 
-    GetRNGstate();
-    Rcpp::List draws = tulpa::pg_negbin_gibbs_spatial(
-        yv, Xm, reg, n_re_groups, sg, n_spatial_units,
-        adj_list, nn,
-        n_iter, n_warmup, thin,
-        prior_beta_sd, prior_sigma_re_scale,
-        prior_sigma_spatial_U, prior_sigma_spatial_alpha,
-        prior_r_shape, prior_r_rate, r_init,
-        store_eta != 0, verbose != 0, n_threads
-    );
-    PutRNGstate();
-
-    fill_pg_result(draws, N_obs, n_spatial_units, /*has_r=*/true, result_out);
+    run_pg_shim([&] {
+        return tulpa::pg_negbin_gibbs_spatial(
+            d.y, d.X, d.group, n_re_groups, sg, n_spatial_units,
+            adj_list, nn,
+            n_iter, n_warmup, thin,
+            prior_beta_sd, prior_sigma_re_scale,
+            prior_sigma_spatial_U, prior_sigma_spatial_alpha,
+            prior_r_shape, prior_r_rate, r_init,
+            store_eta != 0, verbose != 0, n_threads
+        );
+    }, N_obs, n_spatial_units, /*has_r=*/true, result_out);
     TULPA_SHIM_GUARD_END("tulpa_pg_negbin_spatial_gibbs")
 }
 

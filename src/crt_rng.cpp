@@ -3,7 +3,7 @@
 // Reference: Zhou et al. (2012) "Lognormal and Gamma Mixed Negative Binomial Regression" ICML
 
 #include "crt_rng.h"
-#include "tulpa_stop.h"
+#include "elementwise_map.h"
 #include "laplace_likelihoods.h"   // polygamma_rising_difference
 #include <Rcpp.h>
 #include <cmath>
@@ -53,18 +53,9 @@ IntegerVector sample_crt_vec(IntegerVector y, double r) {
 
 // Vectorized CRT sampler (vector r)
 IntegerVector sample_crt_vec2(IntegerVector y, NumericVector r) {
-  int n = y.size();
-  if (r.size() != n) {
-    tulpa::stop("y and r must have the same length");
-  }
-
-  IntegerVector L(n);
-
-  for (int j = 0; j < n; j++) {
-    L[j] = sample_crt(y[j], r[j]);
-  }
-
-  return L;
+  return map_elementwise<INTSXP>("y and r must have the same length",
+                                 [](int yj, double rj) { return sample_crt(yj, rj); },
+                                 y, r);
 }
 
 // Expected value of CRT(y, r)

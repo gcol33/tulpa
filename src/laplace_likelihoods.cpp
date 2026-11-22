@@ -3,6 +3,7 @@
 
 #include "laplace_likelihoods.h"
 #include "tulpa_stop.h"
+#include "elementwise_map.h"
 #include "linalg_fast.h"
 #include "autodiff_utils.h"  // tulpa::math::log_lik_negbin_log
 #include <Rcpp.h>
@@ -76,31 +77,27 @@ double log_lik_poisson(int y, double eta) {
 Rcpp::NumericVector cpp_precision_density(const Rcpp::NumericVector& y,
     const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi,
     bool beta, int order = 0) {
-  const R_xlen_t n = y.size();
-  if (mu.size() != n || phi.size() != n || order < 0 || order > 2)
-    tulpa::stop("Equal input lengths and derivative order 0, 1 or 2 are required.");
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; ++i) {
-    if (ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i])) out[i] = NA_REAL;
-    else if (order == 0) out[i] = beta ? tulpa::log_lik_beta(y[i], mu[i], phi[i])
-                                     : tulpa::log_lik_gamma(y[i], mu[i], phi[i]);
-    else out[i] = beta ? tulpa::math::beta_phi_derivative(y[i], mu[i], phi[i], order)
-                       : tulpa::math::gamma_phi_derivative(y[i], mu[i], phi[i], order);
-  }
-  return out;
+  const char* msg = "Equal input lengths and derivative order 0, 1 or 2 are required.";
+  if (order < 0 || order > 2) tulpa::stop(msg);
+  return tulpa::map_elementwise_na(msg, [beta, order](double yi, double mi, double phii) -> double {
+    if (order == 0) return beta ? tulpa::log_lik_beta(yi, mi, phii)
+                                : tulpa::log_lik_gamma(yi, mi, phii);
+    return beta ? tulpa::math::beta_phi_derivative(yi, mi, phii, order)
+                : tulpa::math::gamma_phi_derivative(yi, mi, phii, order);
+  }, y, mu, phi);
 }
 
 // Beta mean score or its precision derivative on the logit scale.
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_beta_precision_score(const Rcpp::NumericVector& y,
     const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi, bool derivative) {
-  if (mu.size() != y.size() || phi.size() != y.size()) tulpa::stop("Equal input lengths are required.");
-  Rcpp::NumericVector out(y.size());
-  for (R_xlen_t i = 0; i < y.size(); ++i)
-    out[i] = ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i]) ? NA_REAL : derivative
-      ? tulpa::math::beta_score_phi_derivative(y[i], mu[i], phi[i])
-      : tulpa::math::beta_mu_score(y[i], mu[i], phi[i]);
-  return out;
+  return tulpa::map_elementwise_na(
+      "Equal input lengths are required.",
+      [derivative](double yi, double mi, double phii) {
+        return derivative ? tulpa::math::beta_score_phi_derivative(yi, mi, phii)
+                          : tulpa::math::beta_mu_score(yi, mi, phii);
+      },
+      y, mu, phi);
 }
 
 // Stirling remainder derivatives or d - log(1+d).
@@ -121,14 +118,10 @@ Rcpp::NumericVector cpp_precision_math(const Rcpp::NumericVector& x,
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_log_rising_factorial(const Rcpp::NumericVector& y,
                                              const Rcpp::NumericVector& size) {
-  const R_xlen_t n = y.size();
-  if (size.size() != n) tulpa::stop("`y` and `size` must have the same length.");
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; ++i) {
-    out[i] = (ISNAN(y[i]) || ISNAN(size[i])) ? NA_REAL
-           : tulpa::log_rising_factorial((int) y[i], size[i]);
-  }
-  return out;
+  return tulpa::map_elementwise_na(
+      "`y` and `size` must have the same length.",
+      [](double yi, double si) { return tulpa::log_rising_factorial((int) yi, si); },
+      y, size);
 }
 
 // Elementwise psi^(k)(y + size) - psi^(k)(size), k in 0..3, over equal-length
@@ -138,14 +131,12 @@ Rcpp::NumericVector cpp_polygamma_rising_difference(int k,
                                                     const Rcpp::NumericVector& y,
                                                     const Rcpp::NumericVector& size) {
   if (k < 0 || k > 3) tulpa::stop("`k` must be 0, 1, 2 or 3.");
-  const R_xlen_t n = y.size();
-  if (size.size() != n) tulpa::stop("`y` and `size` must have the same length.");
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; ++i) {
-    out[i] = (ISNAN(y[i]) || ISNAN(size[i])) ? NA_REAL
-           : tulpa::polygamma_rising_difference(k, (int) y[i], size[i]);
-  }
-  return out;
+  return tulpa::map_elementwise_na(
+      "`y` and `size` must have the same length.",
+      [k](double yi, double si) {
+        return tulpa::polygamma_rising_difference(k, (int) yi, si);
+      },
+      y, size);
 }
 
 // Elementwise negative binomial (type 2) log density at mean mu and size phi
@@ -154,13 +145,10 @@ Rcpp::NumericVector cpp_polygamma_rising_difference(int k,
 Rcpp::NumericVector cpp_negbin2_log_density(const Rcpp::NumericVector& y,
                                             const Rcpp::NumericVector& mu,
                                             const Rcpp::NumericVector& phi) {
-  const R_xlen_t n = y.size();
-  if (mu.size() != n || phi.size() != n)
-    tulpa::stop("`y`, `mu` and `phi` must have the same length.");
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; ++i) {
-    out[i] = (ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i])) ? NA_REAL
-           : tulpa::log_lik_negbin((int) y[i], std::log(mu[i]), phi[i]);
-  }
-  return out;
+  return tulpa::map_elementwise_na(
+      "`y`, `mu` and `phi` must have the same length.",
+      [](double yi, double mi, double phii) {
+        return tulpa::log_lik_negbin((int) yi, std::log(mi), phii);
+      },
+      y, mu, phi);
 }
