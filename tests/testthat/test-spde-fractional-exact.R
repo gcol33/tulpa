@@ -109,14 +109,14 @@ test_that("the fractional marginal orders the ranges as the exact one does", {
   expect_lt(max(abs(k - e)), 5)
 })
 
-test_that("a nested fractional fit finds an interior mode and lays the aligned tensor", {
+test_that("a nested fractional fit finds an interior mode and lays its CCD there", {
   skip_on_cran()
   fx <- .frac_fixture()
   sp <- .frac_spec(fx, 0.5)
   expect_no_warning(
     f <- fit_spde(fx$y, fx$X, sp, family = "gaussian", phi = fx$phi,
                   control = list(diagnose_k = FALSE)))
-  expect_identical(f$nested$method, "aligned_grid")
+  expect_identical(f$nested$design, "ccd")
   expect_gt(f$nested$range_mean, 0.05)
   expect_lt(f$nested$range_mean, 0.8)
 })

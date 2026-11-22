@@ -47,61 +47,17 @@
 #'   is named in `log_hyperprior_declined` as `"flat_hyperprior"`, and the
 #'   evidence declines. Not read by `mode = "nuts"`, where `"flat"` errors.
 #' @param control A named list of numerical / tuning knobs (statistical
-#'   arguments stay in the signature above). Recognized entries:
-#'   \itemize{
-#'     \item `method`: hyperparameter integration backend when nested Laplace is
-#'       active. `"auto"` (default) finds the joint posterior mode of
-#'       `(log range, log sigma)` and lays the aligned tensor there: 21 x 21
-#'       nodes over +/- 6 SDs of the whitened coordinates, oriented by the
-#'       Cholesky factor of the inverse mode Hessian so the nodes follow the
-#'       posterior's correlation, with the PC priors from
-#'       `spatial$prior_range` / `spatial$prior_sigma` folded into the
-#'       integrated marginal. `"ccd"` lays the 9-point central composite design
-#'       in the same orientation instead: 9 inner solves against 441, and a
-#'       95\% interval read off its moments, which on a curved (range, sigma)
-#'       ridge falls well short of the upper tail. Either falls back to
-#'       `"grid"` if the surface is too flat for a Hessian-based design.
-#'       `"grid"` uses a rectangular grid in `log(range) x log(sigma)` around
-#'       the prior modes.
-#'     \item `n_grid`: grid points per hyperparameter dimension for
-#'       `method = "grid"` (ignored under `"ccd"`). Default 5.
-#'     \item `diagnose_k`: if TRUE (default), compute the outer
-#'       Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
-#'       sampling the joint `(range, sigma)` posterior on the log scale against
-#'       the Gaussian proposal that orients the integration. See [tulpa_psis()].
-#'     \item `k_samples`: importance draws for `diagnose_k`. Default 500, each
-#'       one extra batched SPDE marginal evaluation. It is a precision knob:
-#'       the GPD tail size is held at the fraction the default budget implies,
-#'       so a larger budget sharpens the same k-hat rather than moving it to a
-#'       deeper quantile of the weight distribution (gcol33/tulpa#631).
-#'     \item `k_tail_points`: expert override for that tail size, in upper-tail
-#'       order statistics. Silently capped at 20% of the draws, beyond which
-#'       body ratios enter the tail and bias the shape.
-#'     \item `mode_find`: tuning for the outer `(range, sigma)` mode-find under
-#'       `method = "auto"` or `"ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
-#'       subset. `ndeps` is the central-difference step for `optim()`'s
-#'       numerical gradient on the log scale (default 1e-2): it must clear the
-#'       inner solver's convergence tolerance, and a step wide enough that its
-#'       truncation error exceeds the reduction the line search chases near a
-#'       flat optimum leaves L-BFGS-B aborting at the mode it just reached, in
-#'       which case the CCD design declines to the rectangular grid. `factr` is
-#'       the relative-reduction stop in units of `.Machine$double.eps` (default
-#'       1e5); `maxit` the iteration cap (default 300).
-#'     \item `max_iter`: maximum Newton iterations. Default 100.
-#'     \item `tol`: Newton convergence tolerance. Default 1e-6.
-#'     \item `n_threads`: OpenMP threads. Default 1.
-#'     \item `n_threads_outer`: concurrent outer-grid cells. Default 1.
-#'     \item `checkpoint`: grid-cell checkpoint/resume spec
-#'       `list(path =, resume =)`. Each solved `(range, sigma)` cell is appended
-#'       to `path`; a `resume = TRUE` run loads the finished cells and re-solves
-#'       only the rest, so a killed or rebooted fit resumes instead of
-#'       restarting. `resume = FALSE` starts a fresh file. Default `NULL` (off).
-#'     \item `progress`, `progress.every`, `progress.file`,
-#'       `progress.throttle`: the integration grid's progress reporter, as on
-#'       [tulpa_nested_laplace()]: whether to print (default `TRUE`), every how
-#'       many cells, a heartbeat file to overwrite, and the minimum seconds
-#'       between lines. The mode-find and Pareto-k solves do not report.
-#'   }
+#'   arguments stay in the signature above). When `(range, sigma)` is
+#'   integrated, an integer-nu field is fitted as an `spde` block of
+#'   [tulpa_nested_laplace_joint()] and `control` is that door's control: its
+#'   outer grid is placed at the outer mode of `(log range, log sigma)`, refined,
+#'   screened and scored by the outer Pareto-\eqn{\hat{k}} as on every joint
+#'   fit (`diagnose_k`, `k_samples`, `k_tail_points`, `prune`, `checkpoint`,
+#'   `progress`, ...). The inner-solve knobs `max_iter` (default 100), `tol`
+#'   (default 1e-6) and `n_threads` (default 1) also apply at fixed
+#'   hyperparameters. A fractional-nu field integrates through
+#'   [tulpa_hyper_grid()] on a mode-centred CCD, or on the tensor of its axes
+#'   with `integration = "grid"`.
 #'
 #' @return A list with:
 #'   \itemize{
@@ -116,7 +72,9 @@
 #'       the best kept), and the k-hat of the first pass -- the proposal exactly
 #'       as placed, before refinement. A large gap says the placement is poor
 #'       even where the verdict is fine.
-#'     \item `nested`: nested Laplace results (if used)
+#'     \item `nested`: the outer-grid fit (if used), with the `(range, sigma)`
+#'       summaries `range_mean`, `sigma_mean` and the cell of highest posterior
+#'       density (`range_best`, `sigma_best`), whose inner mode is `mode`
 #'   }
 #'
 #' @references
@@ -193,32 +151,10 @@ fit_spde <- function(y, X, spatial,
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
-  method     <- match.arg(control$method %||% "auto", c("auto", "ccd", "grid"))
-  n_grid     <- as.integer(control$n_grid %||% 5L)
-  diagnose_k <- isTRUE(control$diagnose_k %||% TRUE)
-  k_samples  <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
-  k_tail_pts <- control$k_tail_points
-  mode_find  <- .nl_mode_find_tuning("spde", control)
+  # The nested integration is the joint door's, so `control` is its control.
   max_iter   <- as.integer(control$max_iter %||% 100L)
   tol        <- control$tol %||% 1e-6
   n_threads  <- as.integer(control$n_threads %||% 1L)
-  n_threads_outer <- .nl_outer_threads(control$n_threads_outer %||% 1L,
-                                     "fit_spde()")$realised
-  checkpoint <- control$checkpoint
-  # The cheap screen, the per-row predictive-variance loop and the two
-  # correction requests, resolved exactly as tulpa_nested_laplace() resolves
-  # them. They were unreachable on this path until the SPDE entry went through
-  # the shared bundle (gcol33/tulpa#699), which hardcoded prune_tol = 0.
-  prune       <- isTRUE(control[["prune"]] %||% .nl_screen("prune")[["spde"]])
-  prune_tol   <- .nl_prune_tol_from_control(
-    control,
-    .nl_check_prune_tol(control$prune_tol %||% .nl_screen("prune_tol")))
-  prune_tol_eff <- if (prune) prune_tol else 0
-  screen_it   <- .nl_check_screen_iters(
-    control$screen_iters %||% .nl_screen("iters"))
-  fitted_var  <- isTRUE(control$fitted_var %||% TRUE)
-  debias_req  <- control$subspace_debias
-  cila_req    <- control$cila
 
   if (!is.null(offset)) {
     offset <- as.numeric(offset)
@@ -228,26 +164,12 @@ fit_spde <- function(y, X, spatial,
     }
   }
 
-  # Grid-cell checkpoint/resume. `checkpoint = list(path =,
-  # resume =)` appends each solved (range, sigma) cell to `path`; a resume loads
-  # finished cells and re-solves only the rest. The outer integrator
-  # (CCD / grid) calls spde_log_marginal() many times across mode search and the
-  # final grid -- every cell is keyed by its (range, sigma) coordinate, so all
-  # those calls share one file and any previously solved coordinate is reused.
-  .ckpt <- .nl_checkpoint_args(list(checkpoint = checkpoint))
-  ckpt_loaded0 <- .nl_checkpoint_loaded()
-  if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
-    file.remove(.ckpt$path)
-  }
-
   y <- as.numeric(y)
   n_obs <- length(y)
   X <- as.matrix(X)
   n_trials <- .validate_glm_design(y, X, n_trials, "fit_spde()",
                              missing_response = TRUE)$n_trials
-  # A stated prior equal to the engine default is the kernels' own default, so
-  # it keeps the paths that implement only that prior (the analytic outer
-  # gradient below).
+  # A stated prior equal to the engine default is the kernels' own default.
   bp <- .normalize_beta_prior(beta_prior, ncol(X))
   if (!is.null(bp) && all(bp$mean == 0) && all(bp$sd == .tulpa_prior_sd())) {
     bp <- NULL
@@ -287,141 +209,41 @@ fit_spde <- function(y, X, spatial,
                 sigma_re = no_re_sigma, max_iter = max_iter, tol = tol,
                 beta_prior = bp)
 
-  # Fractional nu integrates the covariance-based rational SPDE:
-  # each (range, sigma) cell assembles its own (Q, A_eff)
-  # (.spde_assemble_at) and is solved by the precomputed C++ fit, whose
-  # precision-space Laplace marginal is the per-cell marginal. The outer
-  # CCD / grid integrators are reused unchanged -- they read only $log_marginal
-  # and $n_iter. The cpp grid-cell checkpoint is integer-path only.
-  is_frac   <- .spde_nu_is_fractional(sp$nu)
-  order_rat <- .spde_rational_order(sp)
+  is_frac <- .spde_nu_is_fractional(sp$nu)
   if (is_frac && has_re) {
     stop("A random-effect term alongside a fractional-nu SPDE field is not ",
          "supported yet; use an integer nu, or drop the (1 | g) term.",
          call. = FALSE)
   }
-  if (is_frac && nzchar(.ckpt$path)) {
-    warning("Grid-cell checkpointing is not supported for fractional nu; ",
-            "the fractional SPDE grid runs without it.", call. = FALSE)
+  single_at <- function(r, s) {
+    laplace_spde_at(
+      y = y, n_trials = n_trials, X = X, spatial = sp,
+      family = family, phi = phi, range = r, sigma = s,
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      offset = offset, beta_prior = bp,
+      re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma)
   }
-
-  # `keep_Q = TRUE` retains each cell's joint precision, which the final
-  # integration grid reads its per-node field variances from
-  # (`.spde_nested_record()`); the mode-find and diagnostic calls do not need it.
-  # The same call is the fit's integration grid, so it is the one that reports
-  # progress; the mode-find and k-hat solves stay quiet.
-  progress_grid <- .nl_progress_args(control)
-  progress_off  <- .nl_progress_args(list(progress = FALSE))
-  spde_log_marginal <- function(range_vec, sigma_vec, keep_Q = FALSE) {
-    if (is_frac) {
-      K  <- length(range_vec)
-      lm <- numeric(K); ni <- integer(K)
-      # The cells are solved here in R, so the grid's reporter is the R-side
-      # one, on the same settings and wire format as the C++ grid's.
-      prog <- tulpa_iter_progress("nested-laplace", K, unit = "cells",
-                                  config = if (keep_Q) progress_grid
-                                           else progress_off)
-      for (k in seq_len(K)) {
-        f <- .spde_nested_logmarginal_at(
-          spatial = sp, range = range_vec[k], sigma = sigma_vec[k],
-          y = y, X = X, family = family, phi = phi, n_trials = n_trials,
-          order = order_rat, max_iter = max_iter, tol = tol,
-          n_threads = n_threads, offset = offset, beta_prior = bp
-        )
-        lm[k] <- f$log_marginal
-        ni[k] <- f$n_iter
-        prog$tick()
-      }
-      prog$finish()
-      return(list(log_marginal = lm, n_iter = ni))
-    }
-    .spde_grid_solve(
-      sp, y = y, n_trials = n_trials, X = X, family = family, phi = phi,
-      offset = offset, solve = solve, range_vec = range_vec,
-      sigma_vec = sigma_vec, n_threads = n_threads, store_Q = isTRUE(keep_Q),
-      extra = list(
-        n_threads_outer = n_threads_outer,
-        checkpoint_path = .ckpt$path,
-        debias = debias_req, cila = cila_req,
-        prune_tol = prune_tol_eff, screen_iters = screen_it,
-        compute_fitted_var = fitted_var,
-        # The grid and the CCD design weigh a cell by its marginal plus the PC
-        # prior on (log range, log sigma), so a screened solve ranks with both.
-        screen_log_offset = if (prune_tol_eff > 0)
-                              .spde_log_hyperprior(range_vec, sigma_vec, sp,
-                                                   hyperprior),
-        progress = (if (keep_Q) progress_grid else progress_off)$progress,
-        progress_every = progress_grid$progress_every,
-        progress_throttle = progress_grid$progress_throttle,
-        progress_file = (if (keep_Q) progress_grid else progress_off)$progress_file))
-  }
-
-  # Analytic (log range, log sigma) gradient of the log-marginal, for the CCD
-  # outer mode-find's L-BFGS-B (fit_spde_nested_mode() -> .nl_lbfgsb_mode_find()).
-  # cpp_spde_laplace_gradient() implements exactly the alpha = 2 (nu = 1)
-  # operator with no offset, no random-effect term and the engine default
-  # fixed-effect prior (gcol33/tulpa#809); outside that scope the mode-find
-  # keeps its central-difference gradient.
-  spde_log_marginal_grad <- if (!is_frac && isTRUE(all.equal(sp$nu, 1)) &&
-                                is.null(offset) && !has_re && is.null(bp)) {
-    function(log_range, log_sigma) {
-      g <- cpp_spde_laplace_gradient(
-        y = y, n_trials = n_trials, X = X,
-        A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,
-        n_obs = n_obs, n_mesh = sp$n_mesh,
-        C0_diag = sp$C0_diag,
-        G1_x = sp$G1_x, G1_i = sp$G1_i, G1_p = sp$G1_p,
-        log_range = log_range, log_sigma = log_sigma,
-        nu = sp$nu, family = family, phi = .phi_to_kernel(family, phi),
-        max_iter = max_iter, tol = tol, n_threads = n_threads
-      )
-      c(g$grad_log_range, g$grad_log_sigma)
-    }
-  } else NULL
 
   fit <- if (nested_laplace && (is.null(range) || is.null(sigma))) {
-    if (method == "grid") {
-      fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial,
-                           diagnose_k = diagnose_k, k_samples = k_samples,
-                           k_tail_points = k_tail_pts,
-                           hyperprior = hyperprior)
+    nested <- if (is_frac) {
+      .spde_nested_fractional(sp, y = y, X = X, family = family, phi = phi,
+                              n_trials = n_trials, offset = offset,
+                              beta_prior = bp, hyperprior = hyperprior,
+                              control = control)
     } else {
-      fit_spde_nested_mode(spde_log_marginal,
-                                 fit_spde_single = function(r, s) {
-                                   laplace_spde_at(
-                                     y = y, n_trials = n_trials, X = X,
-                                     spatial = sp, family = family, phi = phi,
-                                     range = r, sigma = s,
-                                     max_iter = max_iter, tol = tol,
-                                     n_threads = n_threads, offset = offset,
-                                     beta_prior = bp,
-                                     re_idx = no_re_idx,
-                                     n_re_groups = no_re_n_groups,
-                                     sigma_re = no_re_sigma
-                                   )
-                                 },
-                                 sp = sp, spatial = spatial,
-                          diagnose_k = diagnose_k, k_samples = k_samples,
-                          k_tail_points = k_tail_pts,
-                          mode_find = mode_find,
-                          hyperprior = hyperprior,
-                          spde_log_marginal_grad = spde_log_marginal_grad,
-                          design = .nl_outer_design(
-                            2L, list(integration = method)))
+      .spde_nested_joint(sp, y = y, X = X, family = family, phi = phi,
+                         n_trials = n_trials, offset = offset, beta_prior = bp,
+                         re = if (has_re) solve[c("re_idx", "n_re_groups",
+                                                  "sigma_re")],
+                         hyperprior = hyperprior, control = control)
     }
+    .spde_fit_from_nested(nested, sp, spatial, n_fixed = ncol(X),
+                          refit = single_at)
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---
     # Delegate to the shared helper used by dispatch_laplace_spatial so the
     # SPDE Laplace call site stays singular.
-    result <- laplace_spde_at(
-      y = y, n_trials = n_trials, X = X, spatial = sp,
-      family = family, phi = phi,
-      range = range, sigma = sigma,
-      max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset, beta_prior = bp,
-      re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
-    )
-
+    result <- single_at(range, sigma)
     list(
       mode = result$mode,
       beta = result$beta,
@@ -443,50 +265,33 @@ fit_spde <- function(y, X, spatial,
   fit$family <- fit$family %||% family
   fit$phi    <- phi
   # The record a cell of the fit is solved again from when its latent
-  # posterior is drawn (`.field_cell_solve()`). The fractional-nu operator is
-  # assembled per cell in R and keeps no precision, so it has none.
-  if (!is_frac) fit$field_solve <- .nl_field_solve_record("spde", solve)
+  # posterior is drawn (`.field_cell_solve()`): a nested fit draws from the
+  # precisions its outer grid kept, a fit at fixed hyperparameters solves its
+  # one cell again. The fractional-nu operator is assembled per cell in R and
+  # keeps no precision, so it has none.
+  if (!is_frac) {
+    fit$field_solve <- if (is.list(fit$nested$Q_csc_p_per_grid)) {
+      list(door = "stored")
+    } else {
+      .nl_field_solve_record("spde", solve)
+    }
+  }
 
-  # Fixed-effect mode + marginal curvature so the generic accessors (coef /
-  # summary / confint / vcov / predict) work on a direct or auto-mode SPDE
-  # fit. The nested grid path stores no per-cell modes, so anchor one refit
-  # at the posterior-mean hyperparameters; H_beta is the field-marginal Schur
-  # complement (.marginal_H_beta_spde), the same block mode = "laplace"
-  # attaches.
-  if (is.null(fit$mode) && !is.null(fit$nested)) {
-    range_hy <- fit$nested$range_mean %||% fit$nested$range_best
-    sigma_hy <- fit$nested$sigma_mean %||% fit$nested$sigma_best
-    anchor <- laplace_spde_at(
-      y = y, n_trials = n_trials, X = X, spatial = sp,
+  # Fixed-effect marginal curvature so the generic accessors (coef / summary /
+  # confint / vcov / predict) work on an SPDE fit: the field-marginal Schur
+  # complement (.marginal_H_beta_spde) at the hyperparameters the mode was
+  # solved at, the same block mode = "laplace" attaches.
+  fit$H_beta <- fit$H_beta %||% tryCatch(
+    .marginal_H_beta_spde(
+      mode = fit$mode, X = X, spatial = sp,
       family = family, phi = phi,
-      range = range_hy, sigma = sigma_hy,
-      max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset, beta_prior = bp,
-      re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
-    )
-    fit$mode            <- anchor$mode
-    fit$beta            <- fit$beta %||% anchor$beta
-    fit$spatial_effects <- fit$spatial_effects %||% anchor$spatial_effects
-    fit$range           <- fit$range %||% range_hy
-    fit$sigma           <- fit$sigma %||% sigma_hy
-  }
-  if (!is.null(fit$mode)) {
-    range_hy <- fit$range %||% fit$nested$range_mean %||% fit$nested$range_best
-    sigma_hy <- fit$sigma %||% fit$nested$sigma_mean %||% fit$nested$sigma_best
-    fit$H_beta <- fit$H_beta %||% tryCatch(
-      .marginal_H_beta_spde(
-        mode = fit$mode, X = X, spatial = sp,
-        family = family, phi = phi,
-        n_trials = n_trials, offset = offset,
-        range_val = range_hy, sigma_val = sigma_hy,
-        re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma,
-        y = y
-      ),
-      error = function(e) NULL
-    )
-  }
-
-  fit <- .nl_attach_checkpoint_loaded(fit, .ckpt, ckpt_loaded0)
+      n_trials = n_trials, offset = offset,
+      range_val = fit$range, sigma_val = fit$sigma,
+      re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma,
+      y = y
+    ),
+    error = function(e) NULL
+  )
   fit$beta_prior <- .normalize_beta_prior(beta_prior, ncol(X))
   .finalize_fit(fit, backend = "spde",
                 n_fixed = ncol(X), fixed_names = colnames(X),

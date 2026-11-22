@@ -190,10 +190,16 @@
     spde_registry = list(data_dependent = TRUE, n = 5L, span = 1.4,
                          centre_range = 1),
 
-    # SPDE range / sigma on the `fit_spde(method = "grid")` path, which scores
-    # the PC prior explicitly at every cell and so can afford the wide window
-    # (`mode * lo` .. `mode * hi`) the registry path avoids.
-    spde_direct = list(data_dependent = TRUE, lo_mult = 0.3, hi_mult = 3),
+    # SPDE range / marginal SD of a fit_spde() field: the first-pass axes the
+    # joint door's placement mode-find searches from, `anchor / span` ..
+    # `anchor * span` in log around each PC anchor. Marked as an engine default
+    # (`auto_grid()`), so the placement pass lays both axes at the outer mode.
+    # The placement box pads an axis's own node range by 1.5 spans, so the
+    # registry's tight span leaves a field whose range sits a factor of 4 below
+    # its anchor outside the box: on a Poisson fixture with a flat prior on
+    # sigma the mode-find ended at the box edge with an unusable curvature and
+    # the grid stayed on its first pass.
+    spde_direct = list(data_dependent = TRUE, n = 5L, span = 100),
 
     # User-defined GMRF (`tgmrf`): per-axis nodes over the block's stated
     # `grid_span`, or `init +/- half_width` when it states none.
@@ -1293,14 +1299,6 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # different objectives, so they are recorded separately rather than averaged
 # into one number that serves neither:
 #
-#  * `spde` -- `fit_spde_nested_mode()` over (log range, log sigma). `factr`
-#    1e5 rather than the 1e7 default, which accepted the prior mode unchanged
-#    on weakly informative problems. `ndeps` 1e-2 measured across 1e-4 to 5e-2
-#    on both the analytic fixture and a real inner-Laplace marginal: every step
-#    up to 2.5e-2 returns convergence 0 on Linux and Windows alike and agrees
-#    bit for bit, and on the real marginal 1e-2 reaches the same mode in the
-#    same evaluation count at a lower objective.
-#
 #  * `st` -- `fit_st_nested()`'s auto-grid over (tau_spatial, tau_temporal,
 #    rho). `ndeps` 1e-3 is `optim()`'s own default, written out so the step
 #    this path depends on is stated rather than inherited.
@@ -1316,7 +1314,6 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #    wide against the inner solve's tolerance because every evaluation is a
 #    full inner Laplace fit.
 .NL_MODE_FIND <- list(
-    spde       = list(factr = 1e5, ndeps = 1e-2, maxit = 300L),
     st         = list(factr = 1e7, ndeps = 1e-3, maxit = 300L),
     pathfinder = list(factr = 1e7),
     hyper_ccd  = list(factr = 1e7, ndeps = 5e-2)
@@ -1622,7 +1619,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # SDs of the unscreened fit, and within 0.003 on a 30 x 25 gaussian fixture,
 # at 1.3-1.4x and 2.0-2.4x the speed.
 .NL_SCREEN <- list(
-    prune     = c(joint = TRUE, registry = TRUE, spde = FALSE, re_cov = TRUE),
+    prune     = c(joint = TRUE, registry = TRUE, re_cov = TRUE),
     prune_tol = 1e-4,
     iters     = 2L,
     min_keep  = 5L,
@@ -1894,7 +1891,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 
 # Default outer design of every door that lays its hyperparameter nodes from the
 # outer mode and the Cholesky factor of the mode Hessian's inverse
-# (`tulpa_re_cov_nested()`, `fit_spde()`), by the number k of outer
+# (`tulpa_re_cov_nested()`), by the number k of outer
 # coordinates. Up to `length(tensor_n)` coordinates the default is the aligned
 # tensor (`.nl_aligned_tensor()`): `tensor_n[k]` nodes per whitened axis over
 # +/- `tensor_span[k]` SDs. Above it the default is the CCD.

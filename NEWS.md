@@ -8,6 +8,15 @@
   the placement of every other axis in the fit. A stated span is now held as
   declared (`axis_pinned`) like any stated grid, and the fit's other axes are
   placed (#1263).
+* `fit_spde()` integrates `(range, sigma)` of an integer-nu field as an `spde`
+  block of `tulpa_nested_laplace_joint()`: the outer grid is placed at the
+  outer mode, refined, screened and scored by the joint door's outer
+  Pareto-k-hat, and `control` is that door's control (`method`, `n_grid` and
+  `mode_find` are gone). `$nested` holds the joint fit, its axes named
+  `b1.range` / `b1.sigma`, and `mode` is the inner mode of the cell of highest
+  posterior density. A fractional-nu field integrates through
+  `tulpa_hyper_grid()` on a mode-centred CCD (#1198).
+
 * Sparse GPU fit equivalence covers SPDE, ICAR, proper CAR, AR1 and joint
   CAR/AR1 grids at 2,000 and 15,000 latent nodes. CPU, automatic and forced
   CUDA execution agree on log marginals, modes and latent marginal variances.

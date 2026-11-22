@@ -1,7 +1,6 @@
-# fit_spde()'s default outer design over (log range, log sigma) is the aligned
-# tensor (`.nl_outer_design()`, `.nl_aligned_tensor()`): uniform cells on the
-# whitened coordinates of the mode's Gaussian. The 9-point CCD stays the
-# explicit opt-in `control$method = "ccd"`.
+# fit_spde()'s outer grid over (range, sigma) is the joint door's: laid from
+# the outer mode of (log range, log sigma) by the placement pass and read as a
+# density over its cells.
 
 skip_on_cran()
 
@@ -14,50 +13,40 @@ skip_on_cran()
   list(d = d, sp = sp, X = model.matrix(~ x, d))
 })
 
-.spde_fit <- function(fx, method = NULL) {
-  ctl <- list(diagnose_k = FALSE)
-  if (!is.null(method)) ctl$method <- method
+.spde_fit <- function(fx) {
   suppressWarnings(fit_spde(fx$d$y, fx$X, fx$sp, family = "poisson",
-                            control = ctl))
+                            control = list(diagnose_k = FALSE, progress = FALSE)))
 }
 
-test_that("the default lays the aligned tensor and the CCD is an opt-in", {
+test_that("the outer grid is laid at the outer mode and carries the evidence", {
   skip_on_cran()
   fx <- .spde_design_fixture()
   fa <- .spde_fit(fx)
-  des <- .nl_outer_design(2L)
-  expect_identical(fa$nested$method, "aligned_grid")
-  expect_identical(fa$nested$integration, "grid")
-  expect_identical(nrow(fa$nested$theta_grid), as.integer(des$n_per_axis^2L))
+  expect_identical(fa$nested$outer_grid_placement, "auto_recentered")
   expect_equal(sum(fa$nested$weights), 1)
   expect_true(is.finite(fa$log_evidence))
-  fc <- .spde_fit(fx, "ccd")
-  expect_identical(fc$nested$method, "ccd")
-  expect_identical(nrow(fc$nested$theta_grid), 9L)
 })
 
-test_that("the aligned tensor reads the upper tail a dense quadrature reads", {
+test_that("the outer grid reads the upper tail a dense quadrature reads", {
   skip_if_not_slow()
   fx <- .spde_design_fixture()
-  # The fit's own (range, sigma) log posterior, captured from the door.
-  cap <- new.env()
-  trace("fit_spde_nested_mode", where = asNamespace("tulpa"), print = FALSE,
-        at = 1, tracer = bquote(assign("f", list(lm = spde_log_marginal,
-                                                 sp = sp, hp = hyperprior),
-                                       envir = .(cap))))
-  on.exit(untrace("fit_spde_nested_mode", where = asNamespace("tulpa")),
-          add = TRUE)
   fa <- .spde_fit(fx)
-  fc <- .spde_fit(fx, "ccd")
-  S <- solve(fa$nested$hessian_logsc)
-  ctr <- log(c(fa$nested$range_mode, fa$nested$sigma_mode))
-  g1 <- seq(ctr[1] - 6 * sqrt(S[1, 1]), ctr[1] + 6 * sqrt(S[1, 1]),
-            length.out = 61)
-  g2 <- seq(ctr[2] - 6 * sqrt(S[2, 2]), ctr[2] + 6 * sqrt(S[2, 2]),
-            length.out = 61)
+  n <- length(fx$d$y)
+  L <- log(fa$nested$theta_grid)
+  wg <- fa$nested$weights
+  ctr <- as.numeric(crossprod(wg, L))
+  sdl <- sqrt(as.numeric(crossprod(wg, sweep(L, 2L, ctr)^2)))
+  g1 <- seq(ctr[1] - 6 * sdl[1], ctr[1] + 6 * sdl[1], length.out = 61)
+  g2 <- seq(ctr[2] - 6 * sdl[2], ctr[2] + 6 * sdl[2], length.out = 61)
   G <- expand.grid(a = g1, b = g2)
-  lp <- cap$f$lm(exp(G$a), exp(G$b))$log_marginal +
-    .spde_log_hyperprior(exp(G$a), exp(G$b), cap$f$sp, cap$f$hp)
+  solve <- list(re_idx = rep(0L, n), n_re_groups = 0L, sigma_re = 1,
+                max_iter = 100L, tol = 1e-6, beta_prior = NULL)
+  lm <- tulpa:::.spde_grid_solve(fx$sp, y = fx$d$y, n_trials = rep(1L, n),
+                                 X = fx$X, family = "poisson", phi = 1,
+                                 offset = NULL, solve = solve,
+                                 range_vec = exp(G$a), sigma_vec = exp(G$b),
+                                 extra = list(progress = FALSE))$log_marginal
+  lp <- lm + tulpa:::.spde_log_hyperprior(exp(G$a), exp(G$b), fx$sp)
   w <- exp(lp - max(lp[is.finite(lp)])); w[!is.finite(w)] <- 0; w <- w / sum(w)
   hi <- function(x) {
     o <- order(x); cw <- cumsum(w[o]) - w[o] / 2
@@ -65,8 +54,7 @@ test_that("the aligned tensor reads the upper tail a dense quadrature reads", {
   }
   ref <- c(range = hi(G$a), sigma = hi(G$b))
   ra <- spatial_range(fa)[c("range", "sigma"), "q97.5"]
-  rc <- spatial_range(fc)[c("range", "sigma"), "q97.5"]
-  # Reference (3.47, 1.20); the CCD read (2.68, 0.83), the tensor (3.60, 1.20).
-  expect_true(all(abs(ra / ref - 1) < 0.1))
-  expect_true(all(rc / ref < 0.8))
+  expect_true(all(abs(ra / ref - 1) < 0.1),
+              info = sprintf("grid %s / dense %s", paste(signif(ra, 3), collapse = ", "),
+                             paste(signif(ref, 3), collapse = ", ")))
 })

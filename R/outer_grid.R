@@ -94,7 +94,7 @@ tulpa_outer_grid <- function(fit) {
 # Where a fit keeps its outer-grid record: on the fit itself (the registry and
 # multi-block drivers), on the joint fit a one-arm wrapper holds
 # (`$joint_fit`), or on the (range, sigma) integration of an SPDE fit
-# (`$nested`, `.spde_nested_record()`).
+# (`$nested`, `.spde_fit_from_nested()`).
 .nl_outer_record <- function(fit) {
   if (!is.null(fit[["theta_grid"]])) return(fit)
   if (is.list(fit[["joint_fit"]])) return(fit[["joint_fit"]])

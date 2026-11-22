@@ -624,14 +624,10 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
                                keep_role = "spatial")
     if (!is.null(s)) return(s)
   }
-  # fit_spde()'s CCD / grid path (the "auto"/nested SPDE backend) carries its
-  # (range, sigma) outer-grid record in $nested (`.spde_nested_record()`);
-  # $range / $sigma on the fit are the single anchor point the fixed effects
-  # were refit at, a point rather than a posterior. The record is read by the
-  # same summary as every other nested grid, which reads a CCD as the moment
-  # rule it is: the weighted quantile of its nine nodes cannot reach past the
-  # outermost one, about 1.6 posterior SDs out, so a 95% interval read that
-  # way is cut at the design.
+  # fit_spde() integrating (range, sigma) carries its outer-grid fit in $nested;
+  # $range / $sigma on the fit are the cell of highest posterior density, a
+  # point rather than a posterior. The record is read by the same summary as
+  # every other nested grid.
   if (is.list(object$nested) && !is.null(object$nested$theta_grid)) {
     s <- .nested_hyper_summary(object$nested, probs,
                                transform = .SPATIAL_HYPER_TRANSFORM)
@@ -771,9 +767,7 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 }
 
 # Weighted mean / sd / `probs`-quantile summary row for a named [range, sigma,
-# ...] list of outer-grid quantities sharing one weight vector `w` -- the SPDE
-# `$nested` CCD/grid representation, which carries neither `$theta_grid`
-# (the generic nested-Laplace multi-block grid) nor draw columns.
+# ...] list of outer-grid quantities sharing one weight vector `w`.
 .wtd_grid_summary <- function(named_vals, w, probs) {
   w <- w / sum(w)
   rows <- lapply(names(named_vals), function(nm) {

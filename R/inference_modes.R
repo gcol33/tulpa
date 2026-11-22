@@ -118,8 +118,8 @@ TIER_META <- list(
 #'                       blocks (`latent(tgmrf(...))`), integrated over the block
 #'                       hyperparameters by the nested-Laplace driver.
 #'     - `"spde"`      : a design bundle plus a self-contained SPDE spec
-#'                       (mesh + FEM matrices); fit_spde()'s own CCD / grid
-#'                       hyperparameter engine.
+#'                       (mesh + FEM matrices), fitted by fit_spde() as an
+#'                       `spde` block of the joint nested-Laplace door.
 #' * `fitter`   -- name of the R function implementing the backend, or `NULL`
 #'     when only a C++ kernel exists with no R entry point yet. Stored as a
 #'     *string* (not the function object) so the registry is independent of
@@ -344,9 +344,9 @@ BACKEND_REGISTRY <- list(
     # "tulpa_nested_laplace_spde" (gcol33/tulpa#775).
     cabi = "tulpa_nested_laplace_spde", hyperprior = TRUE,
     note = paste("Continuous Matern SPDE field; nested-Laplace integration over",
-                 "(range, sigma) via fit_spde(). Uses its own CCD / grid",
-                 "hyperparameter engine (the FEM Q-builder rebuilds the precision",
-                 "per node), not the generic registry grid that tulpa_nested_laplace",
+                 "(range, sigma) via fit_spde(), which fits the field as an spde",
+                 "block of tulpa_nested_laplace_joint() (the FEM Q-builder rebuilds",
+                 "the precision per cell), not the registry grid that tulpa_nested_laplace",
                  "drives -- so an SPDE field selecting nested_laplace is redirected",
                  "here in tulpa().")
   ),
@@ -442,9 +442,8 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 }
 
 # SPDE is also coordinate-addressed (no spatial(col) term) and nested-integrated,
-# but it carries its OWN nested engine -- fit_spde() rebuilds the Matern precision
-# Q(range, sigma) per node via the FEM Q-builder and integrates (range, sigma)
-# with a CCD / grid design in R, not the generic registry grid above. The spec
+# but it is fitted by fit_spde(), which integrates (range, sigma) as an `spde`
+# block of the joint nested-Laplace door, not the registry grid above. The spec
 # (spatial_spde() / spatial_spde_custom()) is self-contained (mesh + FEM matrices
 # built at construction), so there is no validate_* step. Kept separate from
 # .NL_FRONTDOOR_CONTINUOUS so the grammar branch knows it is coord-addressed yet
@@ -1101,7 +1100,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   #    nested Laplace (Tier 2) integrates the spatial hyperparameter through the
   #    tulpa() front door (.NL_FRONTDOOR_NESTED). The areal + gp/nngp/hsgp subset
   #    runs the generic nested_laplace backend; SPDE is redirected in tulpa() to
-  #    the dedicated `spde` backend (its own fit_spde CCD / grid engine).
+  #    the dedicated `spde` backend (fit_spde, an spde block on the joint door).
   #  * other continuous field types: the conditional Laplace path.
   if (has_spatial && !is.null(spatial_type)) {
     fam_nm <- family$name %||% family$distribution %||% ""
@@ -1306,7 +1305,7 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
     # structured routes the nested-wired types (.NL_FRONTDOOR_NESTED: areal +
     # gp/nngp/hsgp + spde) to nested_laplace too (conditioning at a fixed scale
     # is the explicit mode = "laplace"). SPDE is redirected from nested_laplace
-    # to the `spde` backend in tulpa() (its own fit_spde engine), and a
+    # to the `spde` backend in tulpa() (fit_spde), and a
     # multi-scale field rides the multi-block driver as two blocks. Otherwise
     # Laplace is the Tier 2 default.
     if (has_latent) return("nested_laplace")

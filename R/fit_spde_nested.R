@@ -1,490 +1,193 @@
-# Nested-Laplace integration backends for fit_spde().
+# The nested-Laplace integration of fit_spde() over (range, sigma).
 #
-# Three methods are supported:
-#   * "grid" -- rectangular grid in log(range) x log(sigma) around the
-#     prior modes. Cheap, defensible, but burns most of its budget on
-#     points that the data have already ruled out.
-#   * "auto" -- the aligned tensor (`.nl_aligned_tensor()`) centered on the
-#     joint posterior mode of (range, sigma) and oriented by the local
-#     Hessian: 21^2 nodes over +/- 6 whitened SDs (default).
-#   * "ccd"  -- Central composite design in the same orientation, R-INLA's
-#     hyperparameter integration recipe: 1 + 2*2 + 2^2 = 9 design points.
+# An integer-nu field is an `spde` block of the joint door: one arm carrying the
+# response, the fixed effects and the conditioned random intercept, and the
+# field's precision assembled per cell by the C++ block factory. The outer grid
+# is the joint door's (placement from the outer mode, refinement, cheap screen,
+# outer Pareto-k), and its fit is the record `$nested` holds.
 #
-# All three return the same shape so the user-facing fit_spde()
-# return contract is unchanged across methods.
+# A fractional-nu field is the covariance-based rational SPDE, whose
+# precision and observation map are assembled per cell in R
+# (`.spde_nested_logmarginal_at()`); no compiled block carries that operator, so
+# its cells reach the generic callback driver `tulpa_hyper_grid()` instead.
 
-# Outer Pareto-k-hat for the SPDE (range, sigma) integration: importance-sample
-# the joint hyperparameter posterior on the log scale against the Gaussian
-# proposal (theta_hat, L_scale, both in (log_range, log_sigma) space) and
-# PSIS-smooth. The target is the SAME posterior the quadrature weights use, the
-# marginal plus the hyperprior carried to (log range, log sigma)
-# (`.spde_log_hyperprior()`). Runs with the RNG restored so the fit is
-# unperturbed.
-#
-# Scored through the shared candidate dispatch
-# (R/outer_pareto_candidates.R). `u_grid` / `w` are the integration nodes, which
-# the GRID method has and whose weighted moments its proposal IS -- so the grid
-# mixture is offered there. The CCD method's proposal is the mode-find's own
-# Gaussian, so it passes neither and the mixture declines rather than reading a
-# design spacing as a grid resolution.
-.spde_pareto_k <- function(theta_hat, L_scale, spde_log_marginal, sp, n_samples,
-                           u_grid = NULL, w = NULL,
-                           proposal_source = "mode_hessian",
-                           tail_points = NULL, hyperprior = "proper") {
-  lt <- function(U) {
-    r <- exp(U[, 1L]); s <- exp(U[, 2L])
-    lm <- tryCatch(spde_log_marginal(r, s)$log_marginal,
-                   error = function(e) rep(-Inf, length(r)))
-    if (length(lm) != length(r)) return(rep(-Inf, length(r)))
-    lm + .spde_log_hyperprior(r, s, sp, hyperprior)
-  }
-  .k_tail_cap_warn(tail_points, n_samples)
-  kd <- .with_preserved_seed(
-    tryCatch(.k_dispatch_report(
-      .k_cand_spec(lt = lt, u_hat = theta_hat,
-                   Su = L_scale %*% t(L_scale), u_grid = u_grid, w = w,
-                   proposal_source = proposal_source),
-      n_samples, tail_points = tail_points,
-      scope = "fit_spde (log range, log sigma)"),
-      error = function(e) NULL)
-  )
-  if (is.null(kd)) {
-    list(pareto_k = NA_real_, is_ess = NA_real_,
-         proposal_source = NA_character_,
-         declined = .k_decline_label(.k_decline("degenerate_proposal",
-                                               "the scorer errored")))
-  } else kd
-}
-
-# ---------------------------------------------------------------------
-# Method = "grid": rectangular grid over the SPDE hyperparameters, on the
-# nested-Laplace ABI (re_idx / n_re_groups / sigma_re).
-# ---------------------------------------------------------------------
-fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
-                                 diagnose_k = TRUE,
-                                 k_samples = .nl_diag("k_samples"),
-                                 k_tail_points = NULL,
-                                 hyperprior = "proper") {
-  range_mode <- sp$prior_range[1]
-  sigma_mode <- sp$prior_sigma[1]
-
-  lo_m <- .nl_grid_par("spde_direct", "lo_mult")
-  hi_m <- .nl_grid_par("spde_direct", "hi_mult")
-  range_grid <- exp(seq(log(range_mode * lo_m), log(range_mode * hi_m),
-                        length.out = n_grid))
-  sigma_grid <- exp(seq(log(sigma_mode * lo_m), log(sigma_mode * hi_m),
-                        length.out = n_grid))
-
-  grid <- expand.grid(range = range_grid, sigma = sigma_grid)
-  result <- spde_log_marginal(grid$range, grid$sigma, keep_Q = TRUE)
-
-  hp <- .spde_hyperprior_record(grid$range, grid$sigma, sp, hyperprior)
-  log_post <- result$log_marginal + hp$lp
-
-  if (!any(is.finite(log_post))) {
-    stop("fit_spde() nested grid: every hyperparameter cell returned a ",
-         "non-finite log-marginal. Check the mesh, the data, and the range / ",
-         "sigma PC priors.", call. = FALSE)
-  }
-  best <- which.max(log_post)
-  log_max <- max(log_post[is.finite(log_post)])
-  weights <- exp(log_post - log_max)
-  weights[!is.finite(weights)] <- 0
-  weights <- weights / sum(weights)
-
-  # Outer k-hat: no mode Hessian on the grid path, so fit the Gaussian proposal
-  # to the grid posterior moments in (log_range, log_sigma).
-  kd <- list(pareto_k = NA_real_, is_ess = NA_real_,
-             declined = .k_decline_label(.k_decline("not_requested")))
-  if (isTRUE(diagnose_k)) {
-    u_grid <- cbind(log(grid$range), log(grid$sigma))
-    u_hat  <- as.numeric(crossprod(weights, u_grid))
-    cen    <- sweep(u_grid, 2L, u_hat)
-    Su     <- crossprod(cen * weights, cen); Su <- (Su + t(Su)) / 2
-    Lk <- tryCatch(t(chol(Su)), error = function(e) NULL)
-    kd <- if (is.null(Lk)) {
-      list(pareto_k = NA_real_, is_ess = NA_real_,
-           declined = .k_decline_label(.k_decline("degenerate_proposal",
-                                                  "grid-moment covariance not positive definite")))
-    } else .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples,
-                          u_grid = u_grid, w = weights,
-                          proposal_source = "grid_moment",
-                          tail_points = k_tail_points, hyperprior = hyperprior)
-  }
-
-  # Outer-grid collapse visibility. This span is
-  # already centred on the PC-prior mode (mode * 0.3 to mode * 3), unlike
-  # the other families' universal fixed ceiling, but a data mode far from
-  # the prior's can still rail it -- and `method = "grid"` is an explicit
-  # opt-in (fit_spde()'s default `control$method` is `"auto"`, the
-  # mode-Hessian path the auto-recenter uses), so this attaches the diagnostic
-  # rather than silently overriding the user's chosen method with a refit.
-  regime <- .joint_attach_pareto_k_regime(
-    list(theta_grid = cbind(range = grid$range, sigma = grid$sigma),
-        weights = weights))
-
-  # The evidence against each cell's absolute measure in (log range,
-  # log sigma), over the axes whose normalised density `log_post` carries.
-  tg <- cbind(range = grid$range, sigma = grid$sigma)
-  ev <- .nl_attach_evidence(
-    list(log_marginal = log_post, log_hyperprior_axes = hp$axes,
-         log_hyperprior_declined = hp$declined), tg,
-    .joint_axis_specs_from_grid(tg, folded_axes = hp$axes))
-
+# The SPDE spec as a joint-door `spde` block of one arm. The PC anchors the
+# spec carries -- stated or defaulted -- place the outer grid either way
+# (`default_range_prior` / `default_sigma_prior`); under `"flat"` only a stated
+# anchor is a density on its axis, as in `.spde_hyperprior_record()`.
+.spde_joint_block <- function(sp, n_obs, hyperprior = "proper") {
+  flat <- identical(.hp_choice(hyperprior), "flat")
+  stated <- sp$prior_stated %||% c(range = TRUE, sigma = TRUE)
+  n <- .nl_grid_par("spde_direct", "n")
+  span <- .nl_grid_par("spde_direct", "span")
+  ladder <- exp(seq(-log(span), log(span), length.out = n))
+  cells <- expand.grid(range = sp$prior_range[1L] * ladder,
+                       sigma = sp$prior_sigma[1L] * ladder)
   list(
-    mode = NULL,
-    log_marginal = result$log_marginal,
-    log_hyperprior = log_post - result$log_marginal,
-    log_evidence = ev$log_evidence,
-    log_evidence_declined = ev$log_evidence_declined,
-    log_hyperprior_declined = if (length(hp$declined)) hp$declined,
-    converged = all(result$n_iter > 0),
-    spatial = spatial,
-    pareto_k = kd$pareto_k,
-    pareto_k_is_ess = kd$is_ess,
-    pareto_k_declined = .k_reason_of(kd),
-    pareto_k_proposal_source = kd$proposal_source %||% NA_character_,
-    pareto_k_first_pass = kd$first_pass_k %||% NA_real_,
-    # The GPD tail the shape was fitted on. A raised or capped tail was
-    # invisible on this path (gcol33/tulpa#692).
-    pareto_k_tail_points = kd$tail_points %||% NA_integer_,
-    pareto_k_scope = "outer (range, sigma) Gaussian proposal",
-    pareto_k_regime          = regime$pareto_k_regime,
-    pareto_k_grid_edge_axes  = regime$pareto_k_grid_edge_axes,
-    pareto_k_grid_edge_sides = regime$pareto_k_grid_edge_sides,
-    nested = c(list(
-      method     = "grid",
-      range_grid = grid$range,
-      sigma_grid = grid$sigma,
-      weights    = weights,
-      pareto_k   = kd$pareto_k,
-      n_iter     = result$n_iter,
-      best_idx   = best,
-      range_mean = sum(weights * grid$range),
-      sigma_mean = sum(weights * grid$sigma),
-      range_best = grid$range[best],
-      sigma_best = grid$sigma[best]
-    ), .spde_nested_record(result, grid$range, grid$sigma, log_post, sp,
-                         integration = "grid", hyperprior = hyperprior))
+    type                = "spde",
+    role                = "spatial",
+    n_mesh              = as.integer(sp$n_mesh),
+    A_x                 = list(as.numeric(sp$A_x)),
+    A_i                 = list(as.integer(sp$A_i)),
+    A_p                 = list(as.integer(sp$A_p)),
+    n_obs_per_arm       = as.integer(n_obs),
+    C0_diag             = as.numeric(sp$C0_diag),
+    G1_x                = as.numeric(sp$G1_x),
+    G1_i                = as.integer(sp$G1_i),
+    G1_p                = as.integer(sp$G1_p),
+    nu                  = as.numeric(sp$nu),
+    range_grid          = auto_grid(cells$range),
+    sigma_grid          = auto_grid(cells$sigma),
+    prior_range        = if (!flat || stated[["range"]]) sp$prior_range,
+    prior_sigma         = if (!flat || stated[["sigma"]]) sp$prior_sigma,
+    default_range_prior = sp$prior_range,
+    default_sigma_prior = sp$prior_sigma
   )
 }
 
-# The outer-grid record every nested-Laplace fit carries, for the (range,
-# sigma) integration: the rule that laid it (`integration`, "ccd" or "grid"),
-# the cells (`theta_grid`), each cell's log posterior
-# density (`log_marginal`, hyperprior included), its inner Laplace mode
-# (`modes`, the latent [beta, RE, mesh] vector) and the marginal variance of
-# every mesh node within the cell (`grid_field_var`, columns
-# `grid_field_var_cols` of `modes`). `weights` sits beside it in the same list.
-# The variances are the diagonal of the cell's constrained inverse precision,
-# one Takahashi pass per cell on unit loadings (`cpp_loading_marginal_var()`);
-# with the modes they are the Gaussian components of the grid mixture
-# `field_effects()` summarizes. A cell whose precision was not retained (the
-# fractional-nu path solves its own operator and stores none) carries modes and
-# variances only where the kernel returned them.
-.spde_nested_record <- function(result, range_grid, sigma_grid, log_post, sp,
-                               integration, hyperprior = "proper") {
-  rec <- list(
-    integration  = integration,
-    theta_grid   = cbind(range = as.numeric(range_grid),
-                         sigma = as.numeric(sigma_grid)),
-    log_marginal = as.numeric(log_post)
+# The integer-nu nested fit: the joint door over one arm and the field's
+# block. `re` is the conditioned random intercept (`re_idx`, `n_re_groups`,
+# `sigma_re`) or NULL; its effects sit between the fixed effects and the mesh
+# nodes in every cell's latent vector, the order a fit_spde() mode has.
+.spde_nested_joint <- function(sp, y, X, family, phi, n_trials, offset,
+                               beta_prior, re, hyperprior, control) {
+  arm <- list(y = y, X = X, family = family, phi = phi, n_trials = n_trials,
+              offset = offset)
+  if (!is.null(beta_prior)) {
+    arm$beta_prior_mean <- beta_prior$mean
+    arm$beta_prior_prec <- 1 / beta_prior$sd^2
+  }
+  if (!is.null(re)) arm[names(re)] <- re
+  tulpa_nested_laplace_joint(
+    responses = list(y = arm),
+    prior = list(.spde_joint_block(sp, length(y), hyperprior)),
+    hyperprior = hyperprior, control = control)
+}
+
+# The fractional-nu nested fit: `tulpa_hyper_grid()` over (range, sigma), each
+# cell the rational operator's Laplace marginal. The axes span the PC anchors
+# times / divided by the `spde_direct` span in log; the CCD is centred at the mode its own
+# mode-find reaches inside that box, and `control$integration = "grid"` takes
+# the tensor of the axes instead.
+.spde_nested_fractional <- function(sp, y, X, family, phi, n_trials, offset,
+                                    beta_prior, hyperprior, control) {
+  block <- .spde_joint_block(sp, length(y), hyperprior)
+  anchors <- c(range = sp$prior_range[1L], sigma = sp$prior_sigma[1L])
+  span <- .nl_grid_par("spde_direct", "span")
+  specs <- lapply(names(anchors), function(a) {
+    hp <- .hp_axis_prior(a, block, hyperprior = hyperprior)
+    hyper_axis_spec(a, grid = anchors[[a]] * exp(seq(-log(span), log(span),
+                                                     length.out = 9L)),
+                    log_prior = hp$fn, log_scale = TRUE, bounds = c(0, Inf))
+  })
+  order <- .spde_rational_order(sp)
+  max_iter <- as.integer(control$max_iter %||% 100L)
+  tol <- control$tol %||% 1e-6
+  n_threads <- as.integer(control$n_threads %||% 1L)
+  inner <- function(h) {
+    f <- .spde_nested_logmarginal_at(
+      spatial = sp, range = h[["range"]], sigma = h[["sigma"]], y = y, X = X,
+      family = family, phi = phi, n_trials = n_trials, order = order,
+      max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset,
+      beta_prior = beta_prior)
+    list(log_marginal = f$log_marginal)
+  }
+  res <- tulpa_hyper_grid(
+    specs, inner, combine = "none",
+    design = if (identical(control$integration, "grid")) "grid" else "ccd",
+    ccd_start = anchors)
+  res$prior <- list(block)
+  res
+}
+
+# A fit_spde() result from its nested record `nested` (a joint-door fit, or a
+# `tulpa_hyper_grid()` result on the fractional path). The fit reports the cell
+# of highest posterior density as its mode: that cell's inner mode, from the
+# record where the record kept it, else solved again by `refit(range, sigma)`.
+# The record keeps the outer grid the accessors read (`.nl_outer_record()`) and
+# gains the (range, sigma) summaries and per-node field variances fit_spde()
+# fits report.
+.spde_fit_from_nested <- function(nested, sp, spatial, n_fixed, refit = NULL) {
+  tg <- nested$theta_grid
+  bare <- .hyper_axis_bare(colnames(tg))
+  rg <- as.numeric(tg[, match("range", bare)])
+  sg <- as.numeric(tg[, match("sigma", bare)])
+  w <- nested$weights
+  lp <- nested$log_marginal
+  best <- which.max(ifelse(is.finite(lp), lp, -Inf))
+  nested$range_grid <- rg
+  nested$sigma_grid <- sg
+  nested$range_mean <- sum(w * rg)
+  nested$sigma_mean <- sum(w * sg)
+  nested$best_idx <- best
+  nested$range_best <- rg[best]
+  nested$sigma_best <- sg[best]
+
+  M <- nested$modes
+  if (is.matrix(M) && nrow(M) == length(lp)) {
+    mode <- as.numeric(M[best, ])
+    n_x <- length(mode)
+    at <- list(mode = mode, beta = mode[seq_len(n_fixed)],
+               spatial_effects = mode[seq.int(n_x - as.integer(sp$n_mesh) + 1L, n_x)],
+               log_det_Q = nested$log_det_Q[best])
+    nested <- .spde_grid_field_var(nested, sp$n_mesh)
+  } else {
+    at <- refit(rg[best], sg[best])
+  }
+
+  lhp <- nested$log_hyperprior %||% nested$log_prior %||% 0
+  # A cell the cheap screen dropped is never solved; convergence is a statement
+  # about the cells that were.
+  dropped <- as.logical(nested$prune_mask %||% logical(length(lp)))
+  solved_converged <- as.logical(nested$converged %||% TRUE)
+  if (length(solved_converged) == length(lp)) {
+    solved_converged <- solved_converged[!dropped]
+  }
+  declined <- nested$log_hyperprior_declined
+  if (length(declined)) names(declined) <- .hyper_axis_bare(names(declined))
+  out <- list(
+    mode            = at$mode,
+    beta            = at$beta,
+    spatial_effects = at$spatial_effects,
+    log_det_Q       = at$log_det_Q,
+    log_marginal    = lp - lhp,
+    log_evidence    = nested$log_evidence %||% NA_real_,
+    log_evidence_declined = nested$log_evidence_declined,
+    log_hyperprior_declined = if (length(declined)) declined,
+    converged       = all(solved_converged),
+    spatial         = spatial,
+    range           = rg[best],
+    sigma           = sg[best]
   )
-  rec$range_tail <- list(range = list(prior_power = if (hyperprior == "proper" ||
-    isTRUE(sp$prior_stated[["range"]])) 1 else 0, field = "spde", fixed = FALSE))
-  M <- result$modes
-  if (!is.matrix(M) || nrow(M) != length(log_post)) return(rec)
-  rec$modes <- M
+  out$prune_mask <- nested$prune_mask
+  k <- grep("^pareto_k", names(nested), value = TRUE)
+  out[k] <- nested[k]
+  out$nested <- nested
+  out
+}
+
+# The marginal variance of every mesh node within each cell of a nested
+# record: the diagonal of the cell's inverse precision on unit loadings, one
+# Takahashi pass per cell (`cpp_loading_marginal_var()`), conditioned on the
+# record's constraint rows. With the cells' modes these are the Gaussian
+# components of the grid mixture `field_effects()` summarizes. The mesh nodes
+# are the last `n_mesh` latent coordinates.
+.spde_grid_field_var <- function(nested, n_mesh) {
+  M <- nested$modes
+  Q_p <- nested$Q_csc_p_per_grid
   n_x <- ncol(M)
-  mesh_cols <- seq.int(n_x - as.integer(sp$n_mesh) + 1L, n_x)
-  Q_p <- result$Q_csc_p_per_grid
-  if (is.list(Q_p) && length(Q_p) == nrow(M) &&
-      identical(as.integer(result$Q_csc_n), n_x)) {
-    p_mesh <- length(mesh_cols)
-    rec$grid_field_var <- cpp_loading_marginal_var(
-      Q_p_per_grid = Q_p, Q_i_per_grid = result$Q_csc_i_per_grid,
-      Q_x_per_grid = result$Q_csc_x_per_grid, n_x = n_x,
-      load_idx = as.integer(mesh_cols), load_ptr = seq.int(0L, p_mesh),
-      load_w = matrix(1, nrow(M), p_mesh),
-      A_cols_list = .constraint_rows_for_cpp(result$constraint_cols))
-    rec$grid_field_var_cols <- mesh_cols
+  if (!is.list(Q_p) || length(Q_p) != nrow(M) ||
+      !identical(as.integer(nested$Q_csc_n), n_x)) {
+    return(nested)
   }
-  rec
-}
-
-# ---------------------------------------------------------------------
-# Method = "auto" / "ccd": find the joint posterior mode of (log_range,
-# log_sigma), lay the outer design `design` (`.nl_outer_design()`: the aligned
-# tensor by default, the CCD on request) oriented by the local negative-Hessian
-# inverse, and integrate. Refits at the mode so `mode` is non-NULL.
-# ---------------------------------------------------------------------
-fit_spde_nested_mode <- function(spde_log_marginal,
-                                fit_spde_single,
-                                sp, spatial,
-                                diagnose_k = TRUE,
-                                k_samples = .nl_diag("k_samples"),
-                                k_tail_points = NULL,
-                                mode_find = .nl_mode_find_tuning("spde"),
-                                hyperprior = "proper",
-                                spde_log_marginal_grad = NULL,
-                                design = .nl_outer_design(2L)) {
-  range_mode <- sp$prior_range[1]
-  sigma_mode <- sp$prior_sigma[1]
-
-  # Outer mode-find on log scale, box-constrained around the prior modes
-  # (log range / sigma in [prior * 1e-2, prior * 1e2]). Nelder-Mead drifted
-  # to (~0, +Inf) on weakly-identified data; L-BFGS-B with bounds keeps the
-  # optimiser inside the prior support and lets the post-fit sanity check
-  # below catch the rare cases where the mode still lands at a corner.
-  obj <- function(theta) {
-    r <- exp(theta[1])
-    s <- exp(theta[2])
-    lm <- tryCatch(
-      spde_log_marginal(r, s)$log_marginal,
-      error = function(e) NA_real_
-    )
-    if (!is.finite(lm)) return(1e10)
-    lp <- .spde_log_hyperprior(r, s, sp, hyperprior)
-    if (!is.finite(lp)) return(1e10)
-    -(lm + lp)
-  }
-  # `spde_log_marginal_grad(log_range, log_sigma)` is the ANALYTIC (implicit-
-  # differentiation) gradient of the log-marginal term alone (gcol33/tulpa#809);
-  # the hyperprior term is a closed-form density with no compiled Newton solve
-  # behind it, so a plain central difference of it costs nothing next to the
-  # inner Laplace solve the marginal gradient replaces. Any failure (a Q that is
-  # not PD at this theta, an unconverged inner solve) falls back to a central
-  # difference of `obj` itself at that point, so `gr` never disagrees with what
-  # `optim()`'s own numerical gradient would have produced there.
-  gr <- if (is.null(spde_log_marginal_grad)) {
-    NULL
-  } else {
-    function(theta) {
-      out <- tryCatch({
-        dlm <- spde_log_marginal_grad(theta[1], theta[2])
-        if (!all(is.finite(dlm))) stop("non-finite marginal gradient")
-        r <- exp(theta[1]); s <- exp(theta[2])
-        eps <- 1e-6
-        lp0 <- .spde_log_hyperprior(r, s, sp, hyperprior)
-        lp_r <- .spde_log_hyperprior(exp(theta[1] + eps), s, sp, hyperprior)
-        lp_s <- .spde_log_hyperprior(r, exp(theta[2] + eps), sp, hyperprior)
-        if (!all(is.finite(c(lp0, lp_r, lp_s)))) stop("non-finite hyperprior")
-        dlp <- c((lp_r - lp0) / eps, (lp_s - lp0) / eps)
-        -(dlm + dlp)
-      }, error = function(e) NULL)
-      if (!is.null(out)) return(out)
-      fd_step <- 1e-4
-      vapply(seq_along(theta), function(j) {
-        h <- fd_step * pmax(abs(theta[j]), 1)
-        tp <- theta; tp[j] <- tp[j] + h
-        tm <- theta; tm[j] <- tm[j] - h
-        (obj(tp) - obj(tm)) / (2 * h)
-      }, numeric(1))
-    }
-  }
-  init  <- c(log(range_mode), log(sigma_mode))
-  lower <- init - log(100)
-  upper <- init + log(100)
-  op <- .nl_lbfgsb_mode_find(par = init, fn = obj, gr = gr,
-                             lower = lower, upper = upper,
-                             tuning = mode_find)
-
-  # L-BFGS-B ends with ABNORMAL_TERMINATION_IN_LNSRCH (code 52) when its line
-  # search cannot buy the relative reduction `factr` asks for, which is what
-  # happens AT the optimum of an objective with a resolution floor above it: a
-  # fractional-nu cell's marginal moves by a few 1e-6 nats under a 1e-7 step in
-  # log range, where `factr` asks for 1e-8. Such an end is a mode when the point is
-  # stationary on the posterior's own scale: the Newton step H^-1 g left to
-  # take is under `stationary_sd` of each axis's posterior SD sqrt(diag H^-1),
-  # far below what the 1.1-SD CCD design resolves.
-  stationary_sd <- 0.05
-  stationary <- function(par) {
-    h <- mode_find$ndeps
-    g <- vapply(seq_along(par), function(j) {
-      tp <- par; tp[j] <- tp[j] + h
-      tm <- par; tm[j] <- tm[j] - h
-      (obj(tp) - obj(tm)) / (2 * h)
-    }, numeric(1))
-    Hs <- stats::optimHess(par = par, fn = obj)
-    Hs <- 0.5 * (Hs + t(Hs))
-    V <- tryCatch(.spd_inverse(Hs), error = function(e) NULL)
-    if (is.null(V) || any(!is.finite(g))) return(FALSE)
-    all(abs(V %*% g) < stationary_sd * sqrt(diag(V)))
-  }
-  bad_mode <- function(op) {
-    if (is.null(op)) return(TRUE)
-    if (any(!is.finite(op$par))) return(TRUE)
-    if (op$convergence != 0 &&
-        !(op$convergence == 52L && stationary(op$par))) return(TRUE)
-    # Mode pinned to the optimisation box -> data are uninformative for
-    # this hyper; fall back to the rectangular grid.
-    eps <- 1e-3
-    any(abs(op$par - lower) < eps) || any(abs(op$par - upper) < eps)
-  }
-
-  if (bad_mode(op)) {
-    warning("nested-Laplace mode-find did not produce a usable mode ",
-            "(degenerate or hit prior bounds); falling back to the ",
-            "rectangular grid.")
-    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
-                                diagnose_k = diagnose_k, k_samples = k_samples,
-                                k_tail_points = k_tail_points,
-                                hyperprior = hyperprior))
-  }
-  theta_hat <- op$par
-  range_hat <- exp(theta_hat[1])
-  sigma_hat <- exp(theta_hat[2])
-
-  # Local Hessian via stats::optimHess (central differences). obj is the
-  # negative log-posterior, so its Hessian at the mode is the precision of
-  # the Gaussian approximation to p(theta | y); the Cholesky of its inverse
-  # scales the CCD design.
-  H <- stats::optimHess(par = theta_hat, fn = obj)
-  prec <- 0.5 * (H + t(H))   # symmetrise before the conditioning check
-  ev <- eigen(prec, symmetric = TRUE, only.values = TRUE)$values
-  # Reject degenerate Hessians: if the smallest eigenvalue is essentially
-  # zero relative to the largest, the posterior is too flat for a CCD
-  # design to wrap. Quadratic-rule integration would put nodes at extreme
-  # log-scale values where the SPDE Newton fails.
-  if (any(!is.finite(ev)) ||
-      max(abs(ev)) <= 0 ||
-      min(ev) <= 1e-6 * max(abs(ev))) {
-    warning("nested-Laplace Hessian is degenerate at the mode ",
-            "(condition unfit for CCD); falling back to the rectangular grid.")
-    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
-                                diagnose_k = diagnose_k, k_samples = k_samples,
-                                k_tail_points = k_tail_points,
-                                hyperprior = hyperprior))
-  }
-  sigma_post <- tryCatch(.spd_inverse(prec), error = function(e) NULL)
-  if (is.null(sigma_post)) {
-    warning("nested-Laplace Hessian inverse failed; ",
-            "falling back to the rectangular grid.")
-    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
-                                diagnose_k = diagnose_k, k_samples = k_samples,
-                                k_tail_points = k_tail_points,
-                                hyperprior = hyperprior))
-  }
-  L <- t(chol(sigma_post))   # sigma_post = L L^T
-
-  # The outer design (`.nl_outer_design()`), laid in the orientation of the
-  # mode's Gaussian. The default is the aligned tensor (`.nl_aligned_tensor()`):
-  # uniform cells on the whitened coordinates, read as a density. The opt-in CCD
-  # (k = 2 -> 1 + 4 + 4 = 9 points) has radius sqrt(2)*1.1, placing the
-  # factorial corners at +/- 1.1 per axis -- INLA's standardized scaling (f0 =
-  # 1.1) -- with the corrected R-INLA design weights `ccd_weights()`. Either is
-  # mapped to (log_range, log_sigma), then exponentiated. A CCD's log-scale
-  # excursions are capped at the optimisation box so an axial node past the
-  # prior support snaps back to the boundary instead of overflowing to 1e+200.
-  # The tensor's nodes are not moved: a cell is measured where it lies, the
-  # box is only where the mode-find searched, and a node whose inner solve
-  # fails carries no weight.
-  is_ccd <- identical(design$integration, "ccd")
-  if (is_ccd) {
-    ccd <- ccd_grid(k = 2L, f_0 = sqrt(2) * 1.1)
-    z <- ccd$z
-    dnode <- ccd_weights(ccd)
-    design_log_measure <- .ccd_log_measure(ccd, L)
-  } else {
-    tens <- .nl_aligned_tensor(2L, design$n_per_axis, design$span)
-    z <- tens$z
-    dnode <- rep(1, nrow(z))
-    design_log_measure <- .nl_aligned_tensor_log_measure(tens, L)
-  }
-  theta_grid <- ccd_to_theta(z, theta_hat, L, log_scale = FALSE)
-  theta_free <- theta_grid
-  if (is_ccd) {
-    theta_grid[, 1] <- pmin(pmax(theta_grid[, 1], lower[1]), upper[1])
-    theta_grid[, 2] <- pmin(pmax(theta_grid[, 2], lower[2]), upper[2])
-  }
-  range_grid <- exp(theta_grid[, 1])
-  sigma_grid <- exp(theta_grid[, 2])
-
-  result <- spde_log_marginal(range_grid, sigma_grid, keep_Q = TRUE)
-  hp <- .spde_hyperprior_record(range_grid, sigma_grid, sp, hyperprior)
-  log_post <- result$log_marginal + hp$lp
-  # Node weight = design weight (Delta_k; 1 on the tensor) times
-  # exp(log_post), the INLA convention int ~ sum_k Delta_k pi(theta_k). A node
-  # whose inner solve failed carries no weight.
-  log_max <- max(log_post[is.finite(log_post)])
-  weights <- dnode * exp(log_post - log_max)
-  weights[!is.finite(weights)] <- 0
-  weights <- weights / sum(weights)
-
-  best <- which.max(log_post)
-
-  # The evidence on (log range, log sigma), the coordinate the hyperprior
-  # density and the design both live on: each node's absolute measure there,
-  # the tensor's cell volume or the CCD's moment-rule weight calibrated against
-  # the Gaussian it was laid on (`.ccd_log_measure()`). A node the box moved is
-  # no longer where the rule placed it, and then the design carries no
-  # measure.
-  ev <- if (identical(theta_grid, theta_free)) {
-    tg <- cbind(range = range_grid, sigma = sigma_grid)
-    .nl_attach_evidence(
-      list(log_marginal = log_post, log_hyperprior_axes = hp$axes,
-           log_hyperprior_declined = hp$declined), tg,
-      .joint_axis_specs_from_grid(tg, folded_axes = hp$axes),
-      log_measure = design_log_measure)
-  } else {
-    list(log_evidence = NA_real_, log_evidence_declined = "moment_rule_design")
-  }
-
-  # Refit at the joint posterior mode so the result has a usable mode
-  # (the Laplace posterior at the marginal-mode hypers).
-  fit_at_mode <- fit_spde_single(range_hat, sigma_hat)
-
-  # Outer k-hat reuses the mode-find's own Gaussian (theta_hat on the log scale,
-  # L = chol of the posterior covariance) as the importance proposal -- the same
-  # Gaussian the CCD design is oriented by.
-  kd <- if (isTRUE(diagnose_k)) {
-    .spde_pareto_k(theta_hat, L, spde_log_marginal, sp, k_samples,
-                   tail_points = k_tail_points, hyperprior = hyperprior)
-  } else list(pareto_k = NA_real_, is_ess = NA_real_,
-              declined = .k_decline_label(.k_decline("not_requested")))
-
-  list(
-    mode             = fit_at_mode$mode,
-    beta             = fit_at_mode$beta,
-    spatial_effects  = fit_at_mode$spatial_effects,
-    log_det_Q        = fit_at_mode$log_det_Q,
-    log_marginal     = result$log_marginal,
-    log_evidence     = ev$log_evidence,
-    log_evidence_declined = ev$log_evidence_declined,
-    log_hyperprior_declined = if (length(hp$declined)) hp$declined,
-    converged        = all(result$n_iter > 0),
-    spatial          = spatial,
-    range            = range_hat,
-    sigma            = sigma_hat,
-    pareto_k         = kd$pareto_k,
-    pareto_k_is_ess  = kd$is_ess,
-    pareto_k_declined = .k_reason_of(kd),
-    pareto_k_proposal_source = kd$proposal_source %||% NA_character_,
-    pareto_k_first_pass = kd$first_pass_k %||% NA_real_,
-    # The GPD tail the shape was fitted on. A raised or capped tail was
-    # invisible on this path (gcol33/tulpa#692).
-    pareto_k_tail_points = kd$tail_points %||% NA_integer_,
-    pareto_k_scope   = "outer (range, sigma) Gaussian proposal",
-    nested = c(list(
-      method        = if (is_ccd) "ccd" else "aligned_grid",
-      range_grid    = range_grid,
-      sigma_grid    = sigma_grid,
-      weights       = weights,
-      pareto_k      = kd$pareto_k,
-      n_iter        = result$n_iter,
-      kind          = if (is_ccd) ccd$kind else rep("tensor", nrow(z)),
-      best_idx      = best,
-      range_mode    = range_hat,
-      sigma_mode    = sigma_hat,
-      range_mean    = sum(weights * range_grid),
-      sigma_mean    = sum(weights * sigma_grid),
-      range_best    = range_grid[best],
-      sigma_best    = sigma_grid[best],
-      hessian_logsc = H,
-      f_0           = if (is_ccd) ccd$f_0,
-      n_points      = nrow(z)
-    ), .spde_nested_record(result, range_grid, sigma_grid, log_post, sp,
-                         integration = if (is_ccd) "ccd" else "grid",
-                         hyperprior = hyperprior))
-  )
+  mesh_cols <- seq.int(n_x - as.integer(n_mesh) + 1L, n_x)
+  p_mesh <- length(mesh_cols)
+  nested$grid_field_var <- cpp_loading_marginal_var(
+    Q_p_per_grid = Q_p, Q_i_per_grid = nested$Q_csc_i_per_grid,
+    Q_x_per_grid = nested$Q_csc_x_per_grid, n_x = n_x,
+    load_idx = as.integer(mesh_cols), load_ptr = seq.int(0L, p_mesh),
+    load_w = matrix(1, nrow(M), p_mesh),
+    A_cols_list = .constraint_rows_for_cpp(nested$constraint_cols))
+  nested$grid_field_var_cols <- mesh_cols
+  nested
 }

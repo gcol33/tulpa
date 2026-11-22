@@ -1,10 +1,9 @@
 # SPDE (Matern via FEM mesh) nested routing through the tulpa() front door
 # (dev_notes/plan_gibbs_spatial_frontdoor.md, increment 4 -- the final
 # continuous family). SPDE is coordinate-addressed like gp/nngp/hsgp -- no
-# spatial(col) term -- but carries its OWN nested-Laplace engine: fit_spde()
-# rebuilds the Matern precision Q(range, sigma) per node via the FEM Q-builder
-# and integrates (range, sigma) with a CCD / grid design in R, not the generic
-# registry grid that tulpa_nested_laplace drives. So a nested mode selects the
+# spatial(col) term -- and is fitted by fit_spde(), which integrates
+# (range, sigma) as an `spde` block of the joint nested-Laplace door rather than
+# the registry grid that tulpa_nested_laplace drives. So a nested mode selects the
 # generic nested_laplace backend, and tulpa() redirects an SPDE field to the
 # dedicated `spde` backend (fit_spde). The routing adds no math: it is identical
 # to a direct fit_spde() call on the same spec.
@@ -13,7 +12,7 @@
 # intercept + slope and a Matern field on the mesh nodes. A tight PC prior on
 # sigma keeps the joint (range, sigma) posterior mode interior -- the SPDE
 # marginal likelihood drifts upward in sigma at the Laplace mode otherwise, the
-# same reason test-spde-ccd.R tightens prior_sigma.
+# same reason test-spde-nested.R tightens prior_sigma.
 make_spde_panel <- function(n_obs = 250L, range_true = 0.3, sigma_true = 0.6,
                             beta = c(2.0, 0.5), seed = 11L) {
   set.seed(seed)
@@ -64,7 +63,6 @@ test_that("the SPDE front-door route is numerically identical to a direct fit_sp
   direct <- suppressWarnings(fit_spde(
     y = s$data$y, X = X, spatial = s$spec, family = "poisson"
   ))
-  expect_equal(via$nested$method, direct$nested$method)
   expect_equal(via$nested$range_mean, direct$nested$range_mean)
   expect_equal(via$nested$sigma_mean, direct$nested$sigma_mean)
   expect_equal(via$nested$weights, direct$nested$weights)
@@ -200,17 +198,13 @@ test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
   expect_equal(fit$inference_tier, 2L)
   expect_s3_class(fit, "tulpa_fit")
   # (range, sigma) were integrated, not conditioned on.
-  expect_true(fit$nested$method %in% c("aligned_grid", "ccd", "grid"))
+  expect_identical(fit$nested$backend, "nested_laplace_joint")
   expect_equal(sum(fit$nested$weights), 1, tolerance = 1e-8)
   expect_true(is.finite(fit$nested$range_mean) && fit$nested$range_mean > 0)
   expect_true(is.finite(fit$nested$sigma_mean) && fit$nested$sigma_mean > 0)
-  # Recovery (when CCD found an interior mode): beta at the joint posterior mode.
-  # On a degenerate Hessian CCD falls back to the grid and drops `beta`, which
-  # is correct behaviour -- only assert recovery when the mode is usable.
-  if (identical(fit$nested$method, "ccd")) {
-    expect_lt(abs(fit$beta[1] - s$beta[1]), 0.5)   # intercept
-    expect_lt(abs(fit$beta[2] - s$beta[2]), 0.3)   # slope
-  }
+  # Recovery: beta at the cell of highest posterior density.
+  expect_lt(abs(fit$beta[1] - s$beta[1]), 0.5)   # intercept
+  expect_lt(abs(fit$beta[2] - s$beta[2]), 0.3)   # slope
 })
 
 test_that("structured and auto route an SPDE field to the spde backend", {

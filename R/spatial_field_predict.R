@@ -325,7 +325,9 @@
 # Where the cells sit on each door: a nested-Laplace grid on the fit itself, an
 # SPDE grid in `$nested`, and a fit at fixed hyperparameters as one cell
 # (`.field_fixed_cell()`). `prior` is the latent block list the layout is read
-# from (the fit's own, or the block a one-cell fit is solved again with).
+# from (the fit's own, or the block a one-cell fit is solved again with);
+# `store` is the record holding the cells' stored precisions where that is not
+# the fit itself (an SPDE fit's `$nested`).
 #' @keywords internal
 .field_cells <- function(object) {
   modes <- object$modes
@@ -341,7 +343,7 @@
         length(nst$weights) == nrow(nst$modes)) {
       return(list(modes = nst$modes, weights = as.numeric(nst$weights),
                   theta = nst$theta_grid, solve = object$field_solve,
-                  prior = NULL))
+                  prior = NULL, store = nst))
     }
     if (is.numeric(object$mode) && is.numeric(object$range) &&
         is.numeric(object$sigma)) {
@@ -1241,11 +1243,12 @@
   }
   n_x <- ncol(src$modes)
   if (identical(rec$door, "stored")) {
-    return(list(Q_p = object$Q_csc_p_per_grid[cells],
-                Q_i = object$Q_csc_i_per_grid[cells],
-                Q_x = object$Q_csc_x_per_grid[cells],
+    st <- src$store %||% object
+    return(list(Q_p = st$Q_csc_p_per_grid[cells],
+                Q_i = st$Q_csc_i_per_grid[cells],
+                Q_x = st$Q_csc_x_per_grid[cells],
                 modes = src$modes[cells, , drop = FALSE],
-                constraint = .inner_constraint(object, cells)))
+                constraint = .inner_constraint(st, cells)))
   }
   out <- .field_solve_cache_get(rec$key, cells, src$modes)
   miss <- which(!out$found)

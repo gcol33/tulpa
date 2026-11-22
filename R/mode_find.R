@@ -1,11 +1,10 @@
 # Outer hyperparameter mode-find.
 #
-# `fit_spde_nested_mode()` and `fit_st_nested()`'s auto-grid both locate an outer
-# mode the same way: box-constrained L-BFGS-B on a marginal that arrives from a
-# compiled kernel with no analytic gradient, so both depend on `optim()`'s
-# central-difference step and both treat a failed call as "no usable mode".
-# The invocation lives here once; the tuning each one uses is in
-# `.NL_MODE_FIND` (R/settings.R).
+# `fit_st_nested()`'s auto-grid locates an outer mode by box-constrained
+# L-BFGS-B on a marginal that arrives from a compiled kernel with no analytic
+# gradient, so it depends on `optim()`'s central-difference step and treats a
+# failed call as "no usable mode". The invocation lives here once; the tuning
+# each consumer uses is in `.NL_MODE_FIND` (R/settings.R).
 
 # Resolve a consumer's mode-find tuning, applying a caller's `control$mode_find`
 # overrides on top of the settings defaults.

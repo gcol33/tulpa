@@ -683,7 +683,7 @@ test_that("fit_spde nested integrates offset (offset = 0 == no offset) (gcol33/t
   fit <- function(o) fit_spde(
     y = y, X = X, spatial = ss$spec, family = "poisson",
     n_trials = rep(1L, ss$n_obs), offset = o,
-    control = list(method = "grid", n_grid = 3L, diagnose_k = FALSE))
+    control = list(diagnose_k = FALSE, progress = FALSE))
 
   base <- fit(NULL)
   zero <- fit(rep(0, ss$n_obs))

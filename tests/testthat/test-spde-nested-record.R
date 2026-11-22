@@ -27,13 +27,13 @@ test_that("tulpa_outer_grid() reads a fit_spde() fit's (range, sigma) grid", {
   skip_on_cran()
   fx <- .spde_record_fixture()
   g <- tulpa_outer_grid(fx$fit)
-  expect_equal(colnames(g$nodes), c("range", "sigma"))
-  expect_equal(unname(g$nodes[, "range"]), fx$fit$nested$range_grid)
+  expect_equal(tulpa:::.hyper_axis_bare(colnames(g$nodes)), c("range", "sigma"))
+  expect_equal(unname(g$nodes[, 1L]), fx$fit$nested$range_grid)
   expect_equal(sum(g$weights), 1)
   expect_equal(nrow(g$modes), nrow(g$nodes))
   expect_equal(ncol(g$modes), ncol(fx$X) + fx$sp$n_mesh)
   expect_identical(g$n_fixed, ncol(fx$X))
-  expect_true(all(is.finite(g$log_marginal)))
+  expect_true(all(is.finite(g$log_marginal[g$weights > 0])))
 })
 
 test_that("field_effects() on a nested SPDE fit is the grid's Gaussian mixture", {
@@ -45,11 +45,15 @@ test_that("field_effects() on a nested SPDE fit is the grid's Gaussian mixture",
   expect_true(all(is.finite(fe$sd) & fe$sd > 0))
   rec <- fx$fit$nested
   mesh <- rec$grid_field_var_cols
-  w <- rec$weights / sum(rec$weights)
-  mu <- rec$modes[, mesh, drop = FALSE]
+  # The cells carrying weight; a cell the cheap screen dropped keeps no
+  # precision and so no field variance.
+  on <- rec$weights > 0
+  expect_true(all(is.finite(rec$grid_field_var[on, ])))
+  w <- rec$weights[on] / sum(rec$weights[on])
+  mu <- rec$modes[on, mesh, drop = FALSE]
   expect_equal(fe$estimate, as.numeric(crossprod(w, mu)), tolerance = 1e-10)
   # Law of total variance over the cells.
-  tv <- as.numeric(crossprod(w, rec$grid_field_var)) +
+  tv <- as.numeric(crossprod(w, rec$grid_field_var[on, , drop = FALSE])) +
     as.numeric(crossprod(w, sweep(mu, 2L, fe$estimate)^2))
   expect_equal(fe$sd, sqrt(tv), tolerance = 1e-8)
 })
@@ -72,7 +76,7 @@ test_that("the per-node field variance is the exact Gaussian posterior variance"
     n_obs = n, n_mesh = sp$n_mesh, C0_diag = sp$C0_diag, G1_x = sp$G1_x,
     G1_i = sp$G1_i, G1_p = sp$G1_p, range_grid = r, sigma_grid = s, nu = 1,
     family = "gaussian", phi = sqrt(phi), store_Q = TRUE)
-  rec <- tulpa:::.spde_nested_record(res, r, s, 0, sp, "grid")
+  rec <- tulpa:::.spde_grid_field_var(res, sp$n_mesh)
   kappa <- sqrt(8) / r
   Q <- tulpa_spde_precision_Q(sp, kappa, 1 / (sqrt(4 * pi) * kappa * s))
   D <- cbind(X, as.matrix(sp$A))
@@ -89,16 +93,8 @@ test_that("spatial_range() reads a fit_spde() outer grid through the nested summ
   fx <- .spde_record_fixture()
   fit <- fx$fit
   rec <- fit$nested
-  expect_identical(rec$integration,
-                   if (identical(rec$method, "ccd")) "ccd" else "grid")
   sr <- spatial_range(fit)
   ref <- tulpa:::.nested_hyper_summary(rec, c(0.025, 0.975),
                                        transform = tulpa:::.SPATIAL_HYPER_TRANSFORM)
   expect_equal(sr, ref)
-  if (identical(rec$method, "ccd")) {
-    # A weighted quantile of the nine design nodes stops at the outermost node,
-    # about 1.6 posterior SDs out; the moment-rule read reaches past it.
-    expect_gt(sr["range", "q97.5"], max(rec$range_grid))
-    expect_gt(sr["sigma", "q97.5"], max(rec$sigma_grid))
-  }
 })

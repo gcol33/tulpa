@@ -64,7 +64,7 @@ test_that("logLik() of a CCD re_cov fit matches a dense tensor grid", {
             0.05)
 })
 
-test_that("logLik() of a CCD SPDE fit matches a covering dense grid", {
+test_that("the evidence of an SPDE fit matches a covering dense grid", {
   skip_if_not_installed("fmesher")
   set.seed(7)
   n_obs <- 150L
@@ -72,8 +72,6 @@ test_that("logLik() of a CCD SPDE fit matches a covering dense grid", {
   mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.15, 0.4), cutoff = 0.05)
   fem  <- fmesher::fm_fem(mesh)
   A    <- methods::as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
-  # Anchors whose default grid box covers the posterior, so the grid is a
-  # reference rather than a truncation of it.
   spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1,
                               prior_range = c(0.1, 0.5),
                               prior_sigma = c(0.6, 0.05))
@@ -82,14 +80,30 @@ test_that("logLik() of a CCD SPDE fit matches a covering dense grid", {
   y <- rpois(n_obs, exp(2 + 0.5 * x + as.numeric(spec$A %*% w)))
   X <- cbind(1, x)
   fc <- suppressWarnings(fit_spde(y = y, X = X, spatial = spec, family = "poisson",
-                                  control = list(method = "ccd")))
-  fg <- suppressWarnings(fit_spde(y = y, X = X, spatial = spec, family = "poisson",
-                                  control = list(method = "grid", n_grid = 41L)))
-  expect_identical(fc$nested$method, "ccd")
-  m <- matrix(fg$nested$weights, 41L)
-  expect_lt(max(sum(m[1, ]), sum(m[41, ]), sum(m[, 1]), sum(m[, 41])), 1e-3)
+                                  control = list(progress = FALSE)))
   expect_true(is.finite(fc$log_evidence))
-  expect_lt(abs(fc$log_evidence - fg$log_evidence), 0.1)
+  # The reference: the same per-cell marginal and hyperprior on a dense 41 x 41
+  # grid in (log range, log sigma) covering +/- 6 posterior SDs, its evidence
+  # the cell-width-weighted sum.
+  L <- log(fc$nested$theta_grid); wg <- fc$nested$weights
+  ctr <- as.numeric(crossprod(wg, L))
+  sdl <- sqrt(as.numeric(crossprod(wg, sweep(L, 2L, ctr)^2)))
+  g1 <- seq(ctr[1] - 6 * sdl[1], ctr[1] + 6 * sdl[1], length.out = 41L)
+  g2 <- seq(ctr[2] - 6 * sdl[2], ctr[2] + 6 * sdl[2], length.out = 41L)
+  G <- expand.grid(a = g1, b = g2)
+  solve <- list(re_idx = rep(0L, n_obs), n_re_groups = 0L, sigma_re = 1,
+                max_iter = 100L, tol = 1e-6, beta_prior = NULL)
+  lm <- tulpa:::.spde_grid_solve(spec, y = y, n_trials = rep(1L, n_obs), X = X,
+                                 family = "poisson", phi = 1, offset = NULL,
+                                 solve = solve, range_vec = exp(G$a),
+                                 sigma_vec = exp(G$b),
+                                 extra = list(progress = FALSE))$log_marginal
+  lp <- lm + tulpa:::.spde_log_hyperprior(exp(G$a), exp(G$b), spec)
+  mx <- max(lp)
+  m <- matrix(exp(lp - mx) / sum(exp(lp - mx)), 41L)
+  expect_lt(max(sum(m[1, ]), sum(m[41, ]), sum(m[, 1]), sum(m[, 41])), 1e-3)
+  ref <- mx + log(sum(exp(lp - mx))) + log(diff(g1[1:2]) * diff(g2[1:2]))
+  expect_lt(abs(fc$log_evidence - ref), 0.1)
 })
 
 test_that("a joint CCD design reads its evidence on the axes' own coordinates", {

@@ -625,8 +625,17 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   w <- exp(logw - max(logw[is.finite(logw)]))
   w[!is.finite(w)] <- 0
   w <- w / sum(w)
+  # The evidence on the unconstrained coordinates the design lives on, where
+  # every axis carries a normalised density and the design kept its nodes.
+  proper <- all(vapply(specs[vary], function(s) !is.null(s$log_prior), logical(1)))
+  log_evidence <- if (proper && !is.null(cc$log_measure)) {
+    .tulpa_logsumexp((lm + cc$log_measure)[is.finite(lm)])
+  } else NA_real_
   list(ok = TRUE, grid = grid, log_marginal = lm, weights = w,
-       extras = ev$extras, pareto_k = cc$pareto_k, kind = cc$kind)
+       extras = ev$extras, pareto_k = cc$pareto_k, kind = cc$kind,
+       log_evidence = log_evidence,
+       log_evidence_declined = if (!proper) "improper_hyperprior"
+                               else if (is.null(cc$log_measure)) "moment_rule_design")
 }
 
 # The result of a CCD integration in tulpa_hyper_grid()'s shape: the
@@ -654,6 +663,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     n_samples = if (!is.null(pool$draws)) nrow(pool$draws) else 0L,
     n_params = length(pool$param_names), N = NA_integer_,
     extras_mean = pool$extras_mean, mixture = pool$mixture,
+    log_evidence = ccd$log_evidence,
+    log_evidence_declined = ccd$log_evidence_declined,
     design = "ccd", ccd_declined = NULL, pareto_k = ccd$pareto_k,
     ccd_kind = ccd$kind, hyper_specs = specs, combine = combine,
     n_failed = state$n_failed, n_grid = nrow(ccd$grid))

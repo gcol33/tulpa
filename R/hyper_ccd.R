@@ -93,6 +93,7 @@ tulpa_ccd_outer_grid <- function(eval_logm, axes, f0_mult = 1.1,
   ccd    <- ccd_grid(k, f_0 = sqrt(k) * f0_mult)
   dnode  <- ccd_weights(ccd)
   u_grid <- ccd_to_theta(ccd$z, u_hat, L, log_scale = FALSE)
+  u_free <- u_grid
   for (j in seq_len(k)) u_grid[, j] <- pmin(pmax(u_grid[, j], lower[j]), upper[j])
   nodes <- t(apply(u_grid, 1L, phys))
   if (k == 1L) nodes <- t(nodes)
@@ -110,6 +111,11 @@ tulpa_ccd_outer_grid <- function(eval_logm, axes, f0_mult = 1.1,
                    error = function(e) list(pareto_k = NA_real_))
     pareto_k <- kd$pareto_k
   }
+  # Each node's absolute measure on the unconstrained coordinates, the
+  # moment-rule weight calibrated against the Gaussian it was laid on. A node
+  # the box moved is no longer where the rule placed it, so then none.
+  log_measure <- if (identical(u_grid, u_free)) .ccd_log_measure(ccd, L)
   list(ok = TRUE, nodes = nodes, dnode = dnode, u_hat = u_hat, L = L,
-       kind = ccd$kind, n_points = ccd$n_points, pareto_k = pareto_k)
+       kind = ccd$kind, n_points = ccd$n_points, pareto_k = pareto_k,
+       log_measure = log_measure)
 }

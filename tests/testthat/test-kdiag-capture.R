@@ -325,9 +325,12 @@ test_that("fit_spde: aperture reproduces the reported k-hat", {
     k <- .kcap_run(function()
         suppressWarnings(fit_spde(y, X, spec, family = "binomial",
                                   n_trials = rep(1L, n_obs),
-                                  control = list(method = "grid", n_grid = 5L))))
+                                  control = list(progress = FALSE))))
     skip_if(is.na(k$value$pareto_k), "SPDE k-hat declined on this fixture")
-    expect_identical(k$n_writes, 1L)
+    # The joint door scores the fit its placement was read off and the placed
+    # refit, one write each; the refit's is the last and the reported one.
+    expect_identical(k$n_writes,
+                     1L + as.integer(k$value$nested$outer_grid_recenter_attempts %||% 0L))
     .kcap_expect_reproduces(k, k$value$pareto_k)
 })
 

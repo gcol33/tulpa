@@ -78,7 +78,7 @@ skip_on_cran_budget()
 
 test_that("a spec carrying no grid withholds the mixture and keeps the rest", {
     skip_on_cran_budget()
-    # The shape `tulpa_re_cov_nested()` and `fit_spde(method = "ccd")` build:
+    # The shape `tulpa_re_cov_nested()` builds:
     # the proposal is the mode-find's own Gaussian, so there is no node set. The
     # mixture's bump width is a grid RESOLUTION, which a mode-Hessian proposal
     # does not have, so that candidate must DECLINE rather than invent one --
@@ -185,7 +185,7 @@ test_that("widening a heavy-tailed grid lowers the k-hat; densifying does not", 
 
 test_that("the joint dispatch reads a strictly better k than its first pass", {
     skip_on_cran()
-    # .nested_grid_pareto_k / .spde_pareto_k / .nested_outer_pareto_k each call
+    # .nested_grid_pareto_k / .nested_outer_pareto_k each call
     # .nested_is_pareto_k ONCE, so what they report is the raw grid-moment
     # Gaussian -- `k_gm` here. The joint path adds moment matching and the two
     # rescues and keeps the minimum, so it can never read worse, and on a

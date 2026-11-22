@@ -102,7 +102,7 @@ test_that("the SPDE route keeps a stated anchor and drops a defaulted one", {
   expect_identical(rec$axes, "range")
   expect_identical(names(rec$declined), "sigma")
 
-  ctrl <- list(method = "grid", n_grid = 4L, diagnose_k = FALSE)
+  ctrl <- list(diagnose_k = FALSE, progress = FALSE)
   fp <- fit_spde(y, X, sp_range, control = ctrl)
   ff <- fit_spde(y, X, sp_range, control = ctrl, hyperprior = "flat")
   expect_true(is.finite(fp$log_evidence))

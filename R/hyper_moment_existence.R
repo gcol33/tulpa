@@ -211,8 +211,9 @@
     rec$y <- object$y
     rec$n_trials <- object$n_trials
     rec <- .hyper_attach_moments(rec)
-    rec$range_mean <- rec$theta_mean[["range"]]
-    rec$range_sd <- rec$theta_sd[["range"]]
+    at <- match("range", .hyper_axis_bare(names(rec$theta_mean)))
+    rec$range_mean <- unname(rec$theta_mean[at])
+    rec$range_sd <- unname(rec$theta_sd[at])
     object$nested <- rec
     object$moment_existence <- rec$moment_existence
     object$theta_log_mean <- rec$theta_log_mean

@@ -236,14 +236,6 @@ tulpa_check_control <- function(control, allowed, where) {
                   "rho_spatial", "sigma_lower", "sigma_upper",
                   "max_iter", "tol", "n_threads",
                   "auto_recenter", "within_cell"),
-    spde = c("method", "n_grid", "max_iter", "tol", "n_threads", "n_threads_outer",
-             "diagnose_k", "k_samples", "k_tail_points", "checkpoint",
-             "mode_find",
-             # Reachable since the SPDE grid entry went through the shared
-             # entry bundle (gcol33/tulpa#699); it hand-rolled its driver call
-             # and hardcoded prune_tol = 0 before that.
-             "prune", "prune_tol", "prune_log_gap", "screen_iters",
-             "fitted_var", "subspace_debias", "cila", progress),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
                       "k_samples", "k_threads", "k_tail_points", "checkpoint",
@@ -327,6 +319,8 @@ tulpa_check_control <- function(control, allowed, where) {
   # not exist -- gcol33/tulpa#708.)
   .tulpa_hyperprior_keys <- c("prior_sigma", "eta", "prior_df", "prior_scale",
                               "sigma_re_scale", "prior_sigma_scale")
+  # fit_spde()'s nested path is the joint door, which reads its control whole.
+  keys$spde <- keys$nested_laplace_joint
   keys <- lapply(keys, function(x) union(x, "device"))
   keys$tulpa <- sort(unique(setdiff(c(
     keys$nested_laplace, keys$nested_laplace_joint, keys$spde,

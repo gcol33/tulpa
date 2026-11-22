@@ -96,61 +96,17 @@ is named in \code{log_hyperprior_declined} as \code{"flat_hyperprior"}, and the
 evidence declines. Not read by \code{mode = "nuts"}, where \code{"flat"} errors.}
 
 \item{control}{A named list of numerical / tuning knobs (statistical
-arguments stay in the signature above). Recognized entries:
-\itemize{
-\item \code{method}: hyperparameter integration backend when nested Laplace is
-active. \code{"auto"} (default) finds the joint posterior mode of
-\verb{(log range, log sigma)} and lays the aligned tensor there: 21 x 21
-nodes over +/- 6 SDs of the whitened coordinates, oriented by the
-Cholesky factor of the inverse mode Hessian so the nodes follow the
-posterior's correlation, with the PC priors from
-\code{spatial$prior_range} / \code{spatial$prior_sigma} folded into the
-integrated marginal. \code{"ccd"} lays the 9-point central composite design
-in the same orientation instead: 9 inner solves against 441, and a
-95\\% interval read off its moments, which on a curved (range, sigma)
-ridge falls well short of the upper tail. Either falls back to
-\code{"grid"} if the surface is too flat for a Hessian-based design.
-\code{"grid"} uses a rectangular grid in \verb{log(range) x log(sigma)} around
-the prior modes.
-\item \code{n_grid}: grid points per hyperparameter dimension for
-\code{method = "grid"} (ignored under \code{"ccd"}). Default 5.
-\item \code{diagnose_k}: if TRUE (default), compute the outer
-Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
-sampling the joint \verb{(range, sigma)} posterior on the log scale against
-the Gaussian proposal that orients the integration. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
-\item \code{k_samples}: importance draws for \code{diagnose_k}. Default 500, each
-one extra batched SPDE marginal evaluation. It is a precision knob:
-the GPD tail size is held at the fraction the default budget implies,
-so a larger budget sharpens the same k-hat rather than moving it to a
-deeper quantile of the weight distribution (gcol33/tulpa#631).
-\item \code{k_tail_points}: expert override for that tail size, in upper-tail
-order statistics. Silently capped at 20\% of the draws, beyond which
-body ratios enter the tail and bias the shape.
-\item \code{mode_find}: tuning for the outer \verb{(range, sigma)} mode-find under
-\code{method = "auto"} or \code{"ccd"}, as \code{list(factr =, ndeps =, maxit =)}; supply any
-subset. \code{ndeps} is the central-difference step for \code{optim()}'s
-numerical gradient on the log scale (default 1e-2): it must clear the
-inner solver's convergence tolerance, and a step wide enough that its
-truncation error exceeds the reduction the line search chases near a
-flat optimum leaves L-BFGS-B aborting at the mode it just reached, in
-which case the CCD design declines to the rectangular grid. \code{factr} is
-the relative-reduction stop in units of \code{.Machine$double.eps} (default
-1e5); \code{maxit} the iteration cap (default 300).
-\item \code{max_iter}: maximum Newton iterations. Default 100.
-\item \code{tol}: Newton convergence tolerance. Default 1e-6.
-\item \code{n_threads}: OpenMP threads. Default 1.
-\item \code{n_threads_outer}: concurrent outer-grid cells. Default 1.
-\item \code{checkpoint}: grid-cell checkpoint/resume spec
-\code{list(path =, resume =)}. Each solved \verb{(range, sigma)} cell is appended
-to \code{path}; a \code{resume = TRUE} run loads the finished cells and re-solves
-only the rest, so a killed or rebooted fit resumes instead of
-restarting. \code{resume = FALSE} starts a fresh file. Default \code{NULL} (off).
-\item \code{progress}, \code{progress.every}, \code{progress.file},
-\code{progress.throttle}: the integration grid's progress reporter, as on
-\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}: whether to print (default \code{TRUE}), every how
-many cells, a heartbeat file to overwrite, and the minimum seconds
-between lines. The mode-find and Pareto-k solves do not report.
-}}
+arguments stay in the signature above). When \verb{(range, sigma)} is
+integrated, an integer-nu field is fitted as an \code{spde} block of
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} and \code{control} is that door's control: its
+outer grid is placed at the outer mode of \verb{(log range, log sigma)}, refined,
+screened and scored by the outer Pareto-\eqn{\hat{k}} as on every joint
+fit (\code{diagnose_k}, \code{k_samples}, \code{k_tail_points}, \code{prune}, \code{checkpoint},
+\code{progress}, ...). The inner-solve knobs \code{max_iter} (default 100), \code{tol}
+(default 1e-6) and \code{n_threads} (default 1) also apply at fixed
+hyperparameters. A fractional-nu field integrates through
+\code{\link[=tulpa_hyper_grid]{tulpa_hyper_grid()}} on a mode-centred CCD, or on the tensor of its axes
+with \code{integration = "grid"}.}
 }
 \value{
 A list with:
@@ -166,7 +122,9 @@ family the reported k-hat came from (several candidates are scored and
 the best kept), and the k-hat of the first pass -- the proposal exactly
 as placed, before refinement. A large gap says the placement is poor
 even where the verdict is fine.
-\item \code{nested}: nested Laplace results (if used)
+\item \code{nested}: the outer-grid fit (if used), with the \verb{(range, sigma)}
+summaries \code{range_mean}, \code{sigma_mean} and the cell of highest posterior
+density (\code{range_best}, \code{sigma_best}), whose inner mode is \code{mode}
 }
 }
 \description{

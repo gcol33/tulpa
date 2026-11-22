@@ -127,8 +127,8 @@ test_that("the default axes are exactly these values", {
     expect_equal(tulpa:::.nl_grid_par("car_rho", "margin"), 0.05)
     expect_equal(tulpa:::.nl_grid_par("car_rho", "bounds"), c(0, 1))
     expect_equal(tulpa:::.nl_grid_par("spde_registry", "span"), 1.4)
-    expect_equal(tulpa:::.nl_grid_par("spde_direct", "lo_mult"), 0.3)
-    expect_equal(tulpa:::.nl_grid_par("spde_direct", "hi_mult"), 3)
+    expect_equal(tulpa:::.nl_grid_par("spde_direct", "n"), 5L)
+    expect_equal(tulpa:::.nl_grid_par("spde_direct", "span"), 100)
     expect_equal(tulpa:::.nl_grid_par("tgmrf_axis", "half_width"), 2)
 
     # Diagnostic / recenter / spatiotemporal defaults.

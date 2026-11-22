@@ -34,7 +34,7 @@ test_that("fit_spde() accepts a single random intercept and recovers beta", {
   fit <- suppressWarnings(fit_spde(
     d$y, d$X, d$spec, family = "poisson",
     re_idx = d$grp, n_re_groups = d$G, sigma_re = 0.7,
-    control = list(method = "ccd", diagnose_k = FALSE)))
+    control = list(diagnose_k = FALSE, progress = FALSE)))
   expect_false(is.null(fit$nested))
   expect_true(all(is.finite(fit$beta)))
   # Slope near the truth 0.8 (a real recovery bound, not a sanity check).
