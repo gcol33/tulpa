@@ -170,3 +170,54 @@ test_that("a row's tail stops at a level laid beyond it that holds no mass", {
                                     log_density = ld[-1L])
   expect_lt(free$q[1L], edge)
 })
+
+test_that("a correlation measured on its own scale is read by its density on atanh", {
+  skip_on_cran_budget()
+  # An AR(1)-like rho grid running to tanh(+/- 4.5), integrated on the natural
+  # scale, with a likelihood that barely moves over it: the posterior is the
+  # uniform prior on (-1, 1). Per unit of rho that density is flat, so a read
+  # interpolating it on atanh took the rows' sd far past their nodes
+  # (gcol33/tulpa#1274); per unit of atanh it is 1 - rho^2, sd near 0.9.
+  rho <- tanh(seq(-4.5, 4.5, length.out = 22))
+  sig <- exp(c(-0.5, 0, 0.5))
+  tg <- as.matrix(expand.grid(sigma = sig, rho = rho))
+  specs <- list(hyper_axis_spec("sigma", grid = sig, log_scale = TRUE),
+                hyper_axis_spec("rho", grid = rho, bounds = c(-1, 1)))
+  lm <- -0.5 * log(tg[, "sigma"])^2 - 1e-10 * tg[, "rho"]^2
+  lq <- .hyper_log_quad_weights(tg, specs)
+  qs <- .nl_axis_quantiles(tg, lm, log_quad = lq,
+                           domains = list("positive", "correlation"),
+                           within = "log_quadratic", specs = specs)
+  expect_identical(unname(qs$within[["rho"]]), "log_quadratic")
+  got <- c(qs$ci_lo[["rho"]], qs$median[["rho"]], qs$ci_hi[["rho"]])
+  # Within the grid measure's own quadrature error at this spacing (its box
+  # read gives +/- 0.954).
+  expect_lt(max(abs(got - c(-0.95, 0, 0.95))), 0.01)
+  # The rows' resolution is read off the density on atanh: spacing 0.43 over
+  # an sd near 0.9, not over one of thousands.
+  ld <- .nl_read_log_density(tg, lm, specs, list("positive", "correlation"))
+  rc <- .nl_lq_reconstruct(tg[, "rho"], exp(lm + lq) / sum(exp(lm + lq)),
+                           "correlation", NULL, .nl_axis_row_id(tg, 2L), ld)
+  expect_gt(rc$h_over_sd, 0.3)
+  expect_lt(rc$h_over_sd, 1)
+})
+
+test_that("a row flat on its own coordinate leaves the other rows resolved", {
+  skip_on_cran_budget()
+  # Two rows over the same 22 levels: one Gaussian with sd 0.5 holding 0.99 of
+  # the mass, one whose log density falls by 2e-8 nats over its nodes. The
+  # flat row's tails reach +/- 1.9e5; one uniform table over that extent spaced
+  # its points 5.8 apart and read the 95% interval as +/- 5.56.
+  u <- seq(-4.5, 4.5, length.out = 22)
+  ldA <- -0.5 * (u / 0.5)^2
+  ldB <- -1e-9 * u^2
+  v <- c(u, u); row <- rep(1:2, each = 22)
+  w <- c(exp(ldA) / sum(exp(ldA)) * 0.99, exp(ldB) / sum(exp(ldB)) * 0.01)
+  rc <- .nl_lq_reconstruct(v, w, "unbounded", NULL, row, c(ldA, ldB))
+  expect_gt(max(rc$x), 1e5)
+  q <- .nl_lq_cdf_quantile(rc, c(0.025, 0.5, 0.975))
+  # The flat row puts half its mass far below and half far above, so the
+  # Gaussian row carries the rest of each tail probability.
+  lo <- 0.5 * stats::qnorm((0.025 - 0.005) / 0.99)
+  expect_equal(q, c(lo, 0, -lo), tolerance = 2e-3)
+})

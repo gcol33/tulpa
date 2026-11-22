@@ -413,12 +413,12 @@ cpp_test_joint_logpost_grad <- function(arms_list, copy_arms, copy_blocks, block
     .Call(`_tulpa_cpp_test_joint_logpost_grad`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, x, k_grid, sparse)
 }
 
-cpp_nl_lq_group_cdf <- function(piece, x) {
-    .Call(`_tulpa_cpp_nl_lq_group_cdf`, piece, x)
+cpp_nl_lq_group_cdf <- function(piece, x, r) {
+    .Call(`_tulpa_cpp_nl_lq_group_cdf`, piece, x, r)
 }
 
-cpp_nl_lq_mixture_cdf <- function(pieces, mass, x) {
-    .Call(`_tulpa_cpp_nl_lq_mixture_cdf`, pieces, mass, x)
+cpp_nl_lq_mixture_cdf <- function(pieces, mass, x, r) {
+    .Call(`_tulpa_cpp_nl_lq_mixture_cdf`, pieces, mass, x, r)
 }
 
 cpp_nl_axis_row_id <- function(points, axis) {

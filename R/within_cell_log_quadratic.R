@@ -27,13 +27,29 @@
 # DENSITY TIMES SLAB. Along a row, a cell's mass is the posterior density at its
 # node times its box on this axis times its box on the OTHER axes -- its slab.
 # So the row's density along the axis is `exp(q(u)) t(u)`: `q` interpolates the
-# cells' own `log_marginal` (the node density on the coordinate the cell measure
-# is taken in, the axis's own), and `t` is each cell's slab,
-# `w / (exp(log_marginal) width)`, held over that cell's box. The refinement
-# passes add levels to the tensor, so `t` is one number along a row and the read
-# is the plain interpolation; a row whose cells carry a measure the product rule
+# cells' node log densities on the coordinate `u` the row is read on
+# (`.nl_read_log_density()`), and `t` is each cell's slab,
+# `w / (exp(log_density) width)`, held over that cell's box. The refinement
+# passes add levels to the tensor, so `t` is one number along a row where the
+# cell measure is taken on `u` itself, and differs from it only by the ratio of
+# a cell's measured width to the change of coordinate at its node where the
+# measure is taken on another coordinate (a correlation measured on its natural
+# scale and read on atanh); a row whose cells carry a measure the product rule
 # did not build (a caller's own weights) is still read on its own slabs. The
 # mass over width alone would fold the slab into the density.
+#
+# `q` HAS TO BE THE DENSITY ON `u`. A quadratic through three log densities is
+# exact for a Gaussian on the coordinate the densities are taken per unit of,
+# and the row's resolution (`sd` below), its gate and the reach of its tails are
+# all read off `q`. A density per unit of another coordinate leaves the change
+# of coordinate in the slabs, a staircase `q` never sees: a correlation whose
+# likelihood is nearly flat over its grid has a nearly flat density per unit of
+# the correlation, so on an AR(1) rho grid running to tanh(+/- 4.5) `q` read the
+# rows' sds on atanh at a median of 22 and up to 141667, where their densities
+# on atanh, `1 - rho^2` times the likelihood, have sds of 0.70 to 0.76. The
+# tails ran to atanh -424924, the table spaced its points 7 apart, wider than
+# every row's nodes together, and the median read -0.918 against the cells'
+# 0.110 (gcol33/tulpa#1274).
 #
 # THE GATE, PER ROW. A quadratic through nodes several posterior SDs apart reads
 # the location of a skewed conditional off its tails, and on such a grid the box
@@ -67,14 +83,67 @@
 # linear interpolation, and `tulpa_hyper_draws()` inverts the same tables
 # (`.nl_lq_axis_draw()`), so the interval and the draws describe one
 # distribution. A tail runs to `lq_tail_nats` below the row's peak, and no
-# farther than `lq_tail_sd` of the row's SDs past its outer node: a quadratic
-# whose curvature is far flatter than the row's own would otherwise stretch the
-# table over a range where its spacing no longer resolves the nodes.
+# farther than `lq_tail_sd` of the row's SDs past its outer node.
+#
+# THE TABLE RESOLVES EVERY ROW WHEREVER ANOTHER ROW'S TAIL REACHES
+# (`.nl_lq_table()`). Its spacing is at most an eighth of the closest node gap
+# over the nodes and their boxes, where every row's body lies; a row whose
+# density is nearly flat on its own coordinate has an sd far beyond its nodes,
+# and its tails with it, and one uniform spacing over that extent would put the
+# other rows' bodies between two points. Past the nodes the spacing grows
+# geometrically, by 1/64 of the distance already covered, so a tail an sd `s`
+# past the outer node is spaced about `s / 16` there.
+
+# The node log density every axis's read interpolates (`log_density` below):
+# at each cell, the posterior density per unit of the coordinate each axis is
+# read on (`.nl_cell_partition()` over the axis's continuum levels, the
+# partition `.nl_level_edges()` takes). `log_marginal` is the density on each
+# axis's measure coordinate (`.hyper_axis_coord()` of its spec: log on a
+# log-scale axis, the natural scale otherwise) with the folded hyperprior; each
+# axis `specs` describes adds its declared unit density
+# (`.hyper_axis_log_unit()`) and the change from its measure coordinate onto
+# its read coordinate, the same carry `.hyper_outer_log_density_u()` makes onto
+# a proposal coordinate. An axis's term depends on its own coordinate alone, so
+# along a row of any other axis it is one constant, which the row's
+# normalization absorbs: one vector serves every axis. A log-scale axis read on
+# log with no declared unit density adds exactly zero. An axis no spec
+# describes is taken as measured on its read coordinate. A cell its axis's read
+# coordinate does not reach (the declared point mass, split off before the
+# read) takes a zero term there, since that read drops it and every other
+# axis's row holds the term constant.
+.nl_read_log_density <- function(tg, log_marginal, specs = NULL,
+                                 domains = NULL, atoms = NULL) {
+  if (is.null(log_marginal)) return(NULL)
+  if (is.null(dim(tg))) tg <- matrix(as.numeric(tg), ncol = 1L)
+  out <- as.numeric(log_marginal)
+  cn <- colnames(tg)
+  if (!length(specs) || is.null(cn) || length(out) != nrow(tg)) return(out)
+  names(specs) <- vapply(specs, function(s) s$name %||% "", character(1))
+  for (j in which(cn %in% names(specs))) {
+    sp <- specs[[cn[j]]]
+    v <- as.numeric(tg[, j])
+    at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
+    cont <- is.finite(v) & !(length(at) == 1L && is.finite(at) & v == at)
+    uv <- sort(unique(v[cont]))
+    if (length(uv) < 2L) next
+    dm <- if (length(domains) < j) NA_character_ else domains[[j]]
+    tr <- .nl_cell_partition(uv, dm)$tr
+    x <- v[cont]
+    log_dc <- if (isTRUE(sp$log_scale)) -log(x) else 0
+    term <- rep(0, length(v))
+    term[cont] <- .hyper_axis_log_unit(x, sp) + log_dc +
+                  tr$log_dfrom(tr$to(x))
+    term[!is.finite(term)] <- 0
+    out <- out + term
+  }
+  out
+}
 
 # The reconstruction of ONE axis's continuum. `v` / `w` are the cells'
 # coordinates and masses, `declared` the levels the axis was declared on
 # (`.nl_level_edges()`), `row_id` each cell's row (`.nl_axis_row_id()`) and
-# `log_density` each cell's `log_marginal`. Returns either
+# `log_density` each cell's node density on the read coordinate
+# (`.nl_read_log_density()`). Returns either
 # `list(declined = <reason>)` or the tables: `x` the grid on the coordinate
 # `tr`, `F` the axis CDF on it, `pieces` the rows' density parameters,
 # `mass` the rows' masses, `lq_mass` the share of the mass on
@@ -125,13 +194,13 @@
   } else NA_real_
   if (!any(is_lq)) return(list(declined = "unresolved", h_over_sd = heavy))
 
-  lo_x <- min(vapply(pieces, `[[`, numeric(1), "lo"))
-  hi_x <- max(vapply(pieces, `[[`, numeric(1), "hi"))
-  min_gap <- min(vapply(pieces, `[[`, numeric(1), "min_gap"))
-  m <- as.integer(.nl_diag("lq_grid_points"))
-  need <- ceiling((hi_x - lo_x) / (min_gap / 8)) + 1L
-  m <- max(m, min(need, 8L * m + 1L))
-  x <- seq(lo_x, hi_x, length.out = m)
+  tab <- .nl_lq_table(
+    c(min(vapply(pieces, `[[`, numeric(1), "lo")),
+      max(vapply(pieces, `[[`, numeric(1), "hi"))),
+    c(min(vapply(pieces, function(p) min(p$lo_b), numeric(1))),
+      max(vapply(pieces, function(p) max(p$hi_b), numeric(1)))),
+    min(vapply(pieces, `[[`, numeric(1), "min_gap")))
+  x <- tab$x
 
   # Each row's density on `x`, unnormalized and zero outside its extent: the
   # interpolated log density plus the slab of the box `x` falls in. Past the
@@ -140,7 +209,7 @@
   # zero here, as it is in the box read. Tabulated and integrated to the row's
   # normalized CDF in C++ (src/nl_lq_density.cpp), accumulated one row at a
   # time into the axis's CDF slopes.
-  mixture <- cpp_nl_lq_mixture_cdf(pieces, mass, x)
+  mixture <- cpp_nl_lq_mixture_cdf(pieces, mass, x, tab$r)
   bad <- !mixture$usable
   if (all(bad)) return(list(declined = "no_usable_node"))
   mass[bad] <- 0
@@ -155,10 +224,53 @@
     c0[p$cells] <- p$c0
     c1[p$cells] <- p$c1
   }
-  list(declined = NA_character_, tr = tr, x = x, F = Fax, pieces = pieces, mass = mass,
+  list(declined = NA_character_, tr = tr, x = x, r = tab$r, F = Fax,
+       pieces = pieces, mass = mass,
        lq_mass = sum(mass[is_lq & !bad]) / sum(mass[!bad]),
        group = cg, c0 = c0, c1 = c1, lo = bx$lo, hi = bx$hi,
        h_over_sd = heavy, coord = bx$coord, edge_declined = bx$declined)
+}
+
+# The table the rows are tabulated on: `x` over `extent`, the rows' reach, and
+# `r`, each interval's width in units of the first. `core` is the span of the
+# nodes' boxes and `min_gap` the closest node gap. The spacing is at most
+# `min_gap / 8`, with at least `lq_grid_points` points; when that spacing
+# reaches the whole extent within `8 lq_grid_points + 1` points the table is
+# one uniform grid over it. Otherwise the core takes that rule on its own span
+# (within the same budget) and the stretches of the extent past it are laid by
+# `.nl_lq_tail_points()`. The core is widened by one spacing on each side, so a
+# box row, which lives inside the core, meets zeros on every interval of
+# another width.
+.nl_lq_table <- function(extent, core, min_gap) {
+  m0 <- as.integer(.nl_diag("lq_grid_points"))
+  cap <- 8L * m0 + 1L
+  need <- ceiling(diff(extent) / (min_gap / 8)) + 1L
+  if (need <= cap) {
+    m <- max(m0, need)
+    return(list(x = seq(extent[1L], extent[2L], length.out = m),
+                r = rep(1, m - 1L)))
+  }
+  h <- max(min(min_gap / 8, diff(core) / (m0 - 1L)), diff(core) / (cap - 3L))
+  lo <- max(extent[1L], core[1L] - h)
+  hi <- min(extent[2L], core[2L] + h)
+  nc <- max(2L, ceiling((hi - lo) / h) + 1L)
+  xc <- seq(lo, hi, length.out = nc)
+  hc <- xc[2L] - xc[1L]
+  x <- c(rev(lo - .nl_lq_tail_points(lo - extent[1L], hc)), xc,
+         hi + .nl_lq_tail_points(extent[2L] - hi, hc))
+  dx <- diff(x)
+  list(x = x, r = dx / dx[1L])
+}
+
+# Offsets past a core edge out to `reach`, starting at spacing `h` and growing
+# each step by 1/64 of the offset already covered; the last one is `reach`.
+.nl_lq_tail_points <- function(reach, h) {
+  if (!(reach > 0)) return(numeric(0))
+  g <- 1 + 1 / 64
+  k <- ceiling(log1p(reach * (g - 1) / h) / log(g))
+  d <- h * (g^seq_len(k) - 1) / (g - 1)
+  d <- d[d < reach]
+  c(d, reach)
 }
 
 .nl_lq_group_cells <- function(group, cells = which(!is.na(group))) {
@@ -326,7 +438,7 @@
   hi <- full(rc$hi, NA_real_)
   if (ia) { lo[!cont] <- atom; hi[!cont] <- atom }
   list(kind = "log_quadratic", per_cell = TRUE, values = v, lo = lo, hi = hi,
-       x = rc$x, pieces = rc$pieces, from = rc$tr$from,
+       x = rc$x, r = rc$r, pieces = rc$pieces, from = rc$tr$from,
        group = full(rc$group, NA_integer_), c0 = full(rc$c0, NA_real_),
        c1 = full(rc$c1, NA_real_), declined = NA_character_)
 }
@@ -347,7 +459,7 @@
     gi <- g[s[1L]]
     c0 <- geom$c0[k[s]]
     p <- c0 + U[s, , drop = FALSE] * (geom$c1[k[s]] - c0)
-    curve <- cpp_nl_lq_group_cdf(geom$pieces[[gi]], geom$x)
+    curve <- cpp_nl_lq_group_cdf(geom$pieces[[gi]], geom$x, geom$r)
     out[s, ] <- geom$from(.nl_lq_inverse(geom$x[curve$index], curve$F, p))
   }
   if (is.matrix(u)) out else out[, 1L]

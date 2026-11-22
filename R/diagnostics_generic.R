@@ -401,8 +401,6 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
     tg <- matrix(tg, ncol = 1L,
                  dimnames = list(NULL, object$theta_names %||% "theta"))
   }
-  lmd <- object$log_marginal
-  if (length(lmd) != nrow(tg)) lmd <- NULL
   axes <- colnames(tg) %||% object$theta_names %||%
     paste0("theta", seq_len(ncol(tg)))
   # Map every axis to the field it belongs to, so a mixed / spatiotemporal fit
@@ -423,6 +421,12 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
   # interval at all, and a density read needs it to place its outer cell edges
   # inside the quantity's own support.
   geo <- .joint_axis_geometry(object)
+  # The node density on each axis's read coordinate. A derived row's map is a
+  # power of a positive axis, whose log is an affine map of the axis's own, so
+  # the axis's density serves the derived row too.
+  lm_all <- if (length(object$log_marginal) == nrow(tg)) object$log_marginal
+  lmd <- .nl_read_log_density(tg, lm_all, object$outer_axis_specs,
+                              geo$domain, geo$atom)
   # And the WITHIN-CELL construction the fit's own reported intervals were read
   # with, so a derived-axis summary and `theta_ci_lo` /
   # `theta_ci_hi` on the same fit cannot be built two different ways.
@@ -455,9 +459,21 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
     rid_j  <- .nl_axis_row_id(tg, j)
     qs <- if (is.finite(lo) && is.finite(hi) && hi > lo &&
               all(v > lo & v < hi)) {
-      lo + (hi - lo) * .nl_summary_quantile((v - lo) / (hi - lo), w, probs,
+      # Read on the logit of the unit interval, so the axis's density is
+      # carried there: onto its natural scale (`unbounded` reads it as it is),
+      # then through the logit's own change of coordinate.
+      p_u <- (v - lo) / (hi - lo)
+      dom_u <- as.list(geo$domain)
+      dom_u[[j]] <- "unbounded"
+      lmd_u <- .nl_read_log_density(tg, lm_all, object$outer_axis_specs,
+                                    dom_u, geo$atom)
+      if (!is.null(lmd_u) && axes[j] %in% vapply(object$outer_axis_specs,
+            function(s) s$name %||% "", character(1))) {
+        lmd_u <- lmd_u + .NL_DOMAIN_TRANSFORM$unit$log_dfrom(stats::qlogis(p_u))
+      }
+      lo + (hi - lo) * .nl_summary_quantile(p_u, w, probs,
                                             "unit", support, within, NA_real_,
-                                            dcl_j, rid_j, lmd)
+                                            dcl_j, rid_j, lmd_u)
     } else {
       .nl_summary_quantile(v, w, probs, dm, support, within, at, dcl_j, rid_j,
                            lmd)

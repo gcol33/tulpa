@@ -34,7 +34,8 @@
   qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
                            log_quad = res$log_quad,
                            domains = geo$domain, within = within,
-                           atoms = geo$atom, sd = TRUE)
+                           atoms = geo$atom, sd = TRUE,
+                           specs = res$outer_axis_specs)
   res$theta_median <- qs$median
   res$theta_ci_lo  <- qs$ci_lo
   res$theta_ci_hi  <- qs$ci_hi
@@ -783,17 +784,28 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # coordinates map as `positive`'s do; `floor` is where its lowest cell starts,
 # the atom, rather than a mirrored half step, and that cell is read on the
 # natural scale, the only one on which it has a finite width.
+#
+# `log_dfrom(u)` is `log |d from(u) / du|`, the change of a density from the
+# quantity's own scale onto the unbounded coordinate, in forms that stay finite
+# far into the tails (`sech^2 u = 4 e^(-2|u|) / (1 + e^(-2|u|))^2`).
 .NL_DOMAIN_TRANSFORM <- list(
   positive    = list(to = log,      from = exp,
-                     in_domain = function(x) x > 0),
+                     in_domain = function(x) x > 0,
+                     log_dfrom = function(u) u),
   positive_atom = list(to = log,    from = exp,
-                       in_domain = function(x) x > 0, floor = 0),
+                       in_domain = function(x) x > 0, floor = 0,
+                       log_dfrom = function(u) u),
   correlation = list(to = atanh,    from = tanh,
-                     in_domain = function(x) abs(x) < 1),
+                     in_domain = function(x) abs(x) < 1,
+                     log_dfrom = function(u)
+                       log(4) - 2 * abs(u) - 2 * log1p(exp(-2 * abs(u)))),
   unit        = list(to = stats::qlogis, from = stats::plogis,
-                     in_domain = function(x) x > 0 & x < 1),
+                     in_domain = function(x) x > 0 & x < 1,
+                     log_dfrom = function(u)
+                       -abs(u) - 2 * log1p(exp(-abs(u)))),
   unbounded   = list(to = identity, from = identity,
-                     in_domain = function(x) rep(TRUE, length(x)))
+                     in_domain = function(x) rep(TRUE, length(x)),
+                     log_dfrom = function(u) rep(0, length(u)))
 )
 
 # Median and interval of a quantity evaluated on a QUADRATURE DESIGN rather than
@@ -1315,6 +1327,10 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # own rather than taking the whole fit with it, so a fit can carry a mixture of
 # constructions and still say which produced each interval.
 #
+# `specs` are the axes' measure specs (the fit's `outer_axis_specs`), which
+# carry `log_marginal` to each axis's read coordinate for the log-quadratic read
+# (`.nl_read_log_density()`).
+#
 # `edge_coord` / `edge_declined` are the same statement one layer down: the
 # COORDINATE that axis's outer half-cells were mirrored in, and -- when the
 # axis declared a support whose own mirror was not usable -- why the declared
@@ -1326,7 +1342,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                 support = .NL_SUPPORT_KINDS,
                                 domains = NULL,
                                 within = NULL,
-                                atoms = NULL, sd = FALSE) {
+                                atoms = NULL, sd = FALSE, specs = NULL) {
   support <- match.arg(support)
   within  <- .nl_within_cell_mode(within)
   if (is.null(dim(tg))) {
@@ -1369,9 +1385,10 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   # say so.
   onn <- setNames(rep(NA_character_, n_ax), nms)
   if (!is.null(log_quad) && length(log_quad) != nrow(tg)) log_quad <- NULL
-  # The node density, before any cell measure is folded in: what the
-  # log-quadratic read interpolates.
-  log_density <- if (length(log_marginal) == nrow(tg)) log_marginal else NULL
+  # The node density on each axis's read coordinate, before any cell measure is
+  # folded in: what the log-quadratic read interpolates.
+  log_density <- if (length(log_marginal) == nrow(tg))
+    .nl_read_log_density(tg, log_marginal, specs, domains, atoms)
   if (is.null(weights) && !is.null(log_quad)) {
     log_marginal <- log_marginal + log_quad
     log_marginal[is.na(log_marginal)] <- -Inf

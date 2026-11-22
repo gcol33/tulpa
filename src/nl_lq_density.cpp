@@ -3,6 +3,12 @@
 // `.nl_lq_group()` (R/within_cell_log_quadratic.R) builds the row -- its nodes,
 // the Newton-form quadratics through consecutive node triples, the box slabs and
 // the extent its tails reach -- and this tabulates it, once per row.
+//
+// `r` holds each interval of `x` as a multiple of the first
+// (`.nl_lq_table()`): all ones on a uniform table, growing past the nodes on
+// one whose extent outruns them. A box row lives inside the uniform core of
+// such a table and meets zeros on every interval of another width, so its
+// curve is taken in index units there.
 
 #include <Rcpp.h>
 #include "tulpa_stop.h"
@@ -121,7 +127,8 @@ inline Rcpp::List box_cdf_curve(const Rcpp::NumericVector& lg,
 }  // namespace
 
 // [[Rcpp::export]]
-Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x) {
+Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x,
+                               Rcpp::NumericVector r) {
     const bool is_lq = Rcpp::as<std::string>(piece["kind"]) == "lq";
     Rcpp::NumericVector u = piece["u"], lg = piece["lg"];
     Rcpp::NumericVector lo_b = piece["lo_b"], hi_b = piece["hi_b"];
@@ -140,6 +147,9 @@ Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x) {
                    "n - 2 quadratics and n slabs.");
     }
     if (m < 2) tulpa::stop("cpp_nl_lq_group_cdf: the grid needs two points.");
+    if (r.size() != m - 1) {
+        tulpa::stop("cpp_nl_lq_group_cdf: r needs one width per grid interval.");
+    }
 
     const double NEG_INF = -std::numeric_limits<double>::infinity();
     if (!is_lq) {
@@ -188,15 +198,15 @@ Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x) {
         }
     }
 
-    // Trapezoid CDF on the uniform grid, accumulated in long double as R's
-    // cumsum() does, then normalized; NA throughout when the row carries no
-    // finite positive mass on the grid.
+    // Trapezoid CDF on the grid, in units of its first interval, accumulated
+    // in long double as R's cumsum() does, then normalized; NA throughout when
+    // the row carries no finite positive mass on the grid.
     const double dx = x[1] - x[0];
     Rcpp::NumericVector cf(m);
     cf[0] = 0.0;
     long double acc = 0.0L;
     for (int j = 1; j < m; j++) {
-        acc += (f[j] + f[j - 1]) / 2;
+        acc += (f[j] + f[j - 1]) / 2 * r[j - 1];
         cf[j] = static_cast<double>(acc) * dx;
     }
     const double total = cf[m - 1];
@@ -209,7 +219,7 @@ Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x) {
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nl_lq_mixture_cdf(Rcpp::List pieces, Rcpp::NumericVector mass,
-                                Rcpp::NumericVector x) {
+                                Rcpp::NumericVector x, Rcpp::NumericVector r) {
     const int m = x.size(), n = pieces.size();
     if (m < 2 || mass.size() != n) {
         tulpa::stop("A CDF mixture needs two grid points and one mass per row.");
@@ -221,7 +231,7 @@ Rcpp::List cpp_nl_lq_mixture_cdf(Rcpp::List pieces, Rcpp::NumericVector mass,
             tulpa::stop("CDF row masses must be finite and nonnegative.");
         }
         if (mass[i] == 0) continue;
-        Rcpp::List curve = cpp_nl_lq_group_cdf(Rcpp::as<Rcpp::List>(pieces[i]), x);
+        Rcpp::List curve = cpp_nl_lq_group_cdf(Rcpp::as<Rcpp::List>(pieces[i]), x, r);
         Rcpp::IntegerVector index = curve["index"];
         Rcpp::NumericVector F = curve["F"];
         if (F.size() < 2) continue;

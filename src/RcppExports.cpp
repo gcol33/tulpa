@@ -1685,27 +1685,29 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nl_lq_group_cdf
-Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x);
-RcppExport SEXP _tulpa_cpp_nl_lq_group_cdf(SEXP pieceSEXP, SEXP xSEXP) {
+Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x, Rcpp::NumericVector r);
+RcppExport SEXP _tulpa_cpp_nl_lq_group_cdf(SEXP pieceSEXP, SEXP xSEXP, SEXP rSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List >::type piece(pieceSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nl_lq_group_cdf(piece, x));
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type r(rSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nl_lq_group_cdf(piece, x, r));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nl_lq_mixture_cdf
-Rcpp::List cpp_nl_lq_mixture_cdf(Rcpp::List pieces, Rcpp::NumericVector mass, Rcpp::NumericVector x);
-RcppExport SEXP _tulpa_cpp_nl_lq_mixture_cdf(SEXP piecesSEXP, SEXP massSEXP, SEXP xSEXP) {
+Rcpp::List cpp_nl_lq_mixture_cdf(Rcpp::List pieces, Rcpp::NumericVector mass, Rcpp::NumericVector x, Rcpp::NumericVector r);
+RcppExport SEXP _tulpa_cpp_nl_lq_mixture_cdf(SEXP piecesSEXP, SEXP massSEXP, SEXP xSEXP, SEXP rSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List >::type pieces(piecesSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mass(massSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nl_lq_mixture_cdf(pieces, mass, x));
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type r(rSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nl_lq_mixture_cdf(pieces, mass, x, r));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3185,8 +3187,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_joint_arm_loadings", (DL_FUNC) &_tulpa_cpp_joint_arm_loadings, 8},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 9},
-    {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 2},
-    {"_tulpa_cpp_nl_lq_mixture_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_mixture_cdf, 3},
+    {"_tulpa_cpp_nl_lq_group_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_group_cdf, 3},
+    {"_tulpa_cpp_nl_lq_mixture_cdf", (DL_FUNC) &_tulpa_cpp_nl_lq_mixture_cdf, 4},
     {"_tulpa_cpp_nl_axis_row_id", (DL_FUNC) &_tulpa_cpp_nl_axis_row_id, 2},
     {"_tulpa_cpp_nl_group_logsumexp", (DL_FUNC) &_tulpa_cpp_nl_group_logsumexp, 3},
     {"_tulpa_cpp_nl_mixture_quantiles", (DL_FUNC) &_tulpa_cpp_nl_mixture_quantiles, 7},

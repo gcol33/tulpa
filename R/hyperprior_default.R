@@ -608,6 +608,17 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   tg
 }
 
+# Axis specs (`hyper_axis_spec` records) without those of the columns a design
+# carries into its own coordinates (`.hp_grid_design_coords()`): the cells of
+# those columns are measured in the design's coordinates, not on the
+# log-Cholesky columns the specs describe.
+.hp_specs_off_designs <- function(specs, tg, designs) {
+  cn <- colnames(as.matrix(tg))
+  off <- unlist(lapply(names(designs), function(key)
+    .hp_logchol_block_cols(cn, .hp_logchol_key_pre(key))))
+  Filter(function(s) !((s$name %||% "") %in% off), specs)
+}
+
 # Each free-covariance block among `axes` with the design its grid declares,
 # keyed by `.hp_logchol_key()`. `grid` is the grid the fit declared -- a block's
 # own grid or a joint tensor over it -- never a batch evaluated from it.

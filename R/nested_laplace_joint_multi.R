@@ -2898,7 +2898,8 @@
                               res$refining_axis, weights = int_weights,
                               log_quad = if (is.null(int_weights)) res$log_quad,
                               support = support, domains = geo$domain,
-                              within = within, atoms = geo$atom, sd = TRUE)
+                              within = within, atoms = geo$atom, sd = TRUE,
+                              specs = res$outer_axis_specs)
     res$theta_median <- qs$median
     res$theta_ci_lo  <- qs$ci_lo
     res$theta_ci_hi  <- qs$ci_hi
@@ -2916,7 +2917,10 @@
         within = if (identical(support, "density") && lc_tensor)
             .nl_within_cell_setup(.hp_grid_design_coords(joint_grid, lc$designs),
                                   w, res$log_marginal, res$refining_axis,
-                                  geo$domain, geo$atom, within, support),
+                                  geo$domain, geo$atom, within, support,
+                                  specs = .hp_specs_off_designs(
+                                      res$outer_axis_specs, joint_grid,
+                                      lc$designs)),
         designs = lc$designs)
     .nl_attach_interval_provenance(res, qs, joint_grid, geo$domain, geo$atom)
 }

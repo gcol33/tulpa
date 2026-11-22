@@ -1,5 +1,21 @@
 # tulpa 0.8.0
 
+* The log-quadratic within-cell read interpolates each axis's node density per
+  unit of the coordinate it reads the axis on, and its table keeps its spacing
+  over the nodes whatever extent a row's tails reach. A correlation or mixing
+  weight is integrated on its natural scale and read on atanh or the logit, so
+  the read interpolated a density per unit of the correlation and left the
+  change of coordinate in a staircase of slabs; where the likelihood barely
+  moves the rows' read sds ran to 141667 on atanh (true 0.70 to 0.76), their
+  tails to -424924, and the table spaced its points 7 apart. On a dense
+  `fit_st_nested()` HSGP x AR(1) grid the AR(1) correlation's median read
+  -0.918 where the cell weights give 0.110; it now reads 0.113 (interval
+  -0.907 to 0.950 against the cells' -0.906 to 0.949). On ordinary AR(1) and
+  BYM2 fits the correlation and mixing-weight reads move by up to 0.021, in 8
+  of the 9 ends checked toward a reference dense on that axis; axes integrated
+  on the coordinate they are read on (variances, precisions, lengthscales)
+  keep their intervals (#1274).
+
 * The cells the cheap-pass screen drops across a refinement's rounds are held
   to the screen's gate as a whole: each round bounded only its own, and past
   the gate the dropped cells carrying the bound are now solved in full. On a

@@ -500,7 +500,8 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
   wc <- .nl_within_cell_setup(
     tg_d, w, lmd, fit$refining_axis, geo$domain, geo$atom,
     within %||% fit$within_cell_requested,
-    .nl_node_support(fit$integration, fit$weight_kind))
+    .nl_node_support(fit$integration, fit$weight_kind),
+    specs = .hp_specs_off_designs(fit$outer_axis_specs, tg, designs))
 
   nms <- .nl_axis_names(tg)
   # One uniform per draw and axis, tied across axes by the copula that keeps
@@ -529,13 +530,15 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
 # (`declined`). `tg` is the cell matrix, `w` the cells' weights, `lmd` their
 # node log density (NULL leaves the log-quadratic read to decline),
 # `refining` the cells' refinement tags, `domains` / `atoms` the per-axis
-# reporting geometry (`.nl_axis_geometry()`), `within` the requested read and
-# `support` the kind of node set (`.nl_node_support()`). The draws and every
-# quantity read within the cells go through it, so they describe one
-# distribution.
+# reporting geometry (`.nl_axis_geometry()`), `within` the requested read,
+# `support` the kind of node set (`.nl_node_support()`) and `specs` the axes'
+# measure specs, which carry `lmd` to each axis's read coordinate
+# (`.nl_read_log_density()`). The draws and every quantity read within the
+# cells go through it, so they describe one distribution.
 .nl_within_cell_setup <- function(tg, w, lmd, refining, domains, atoms, within,
-                                  support) {
+                                  support, specs = NULL) {
   within  <- .nl_within_cell_mode(within)
+  lmd <- .nl_read_log_density(tg, lmd, specs, domains, atoms)
   outside <- .NL_SUPPORT[[support]]$outside
   # A support that does not admit the requested construction falls back to the
   # chord read exactly as the interval does, and says so per axis.

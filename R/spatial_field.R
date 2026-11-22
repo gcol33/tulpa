@@ -714,6 +714,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # hyperparameter summary and the fit's `theta_ci_*` are one read.
   within <- .nl_within_cell_mode(jfit$within_cell_requested)
   doms <- stats::setNames(.joint_axis_domains(jfit), colnames(tg))
+  geo <- .joint_axis_geometry(jfit)
   dom_of <- function(nm) if (is.null(doms)) NA_character_ else unname(doms[nm])
   probs <- c(0.025, 0.5, 0.975)
   hypers <- lapply(seq_along(blocks), function(b) {
@@ -722,7 +723,9 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     tau_nm <- paste0(prefix, "tau")
     rho_nm <- paste0(prefix, "rho")
     rid <- function(nm) .nl_axis_row_id(tg, match(nm, colnames(tg)))
-    lmd <- if (length(jfit$log_marginal) == nrow(tg)) jfit$log_marginal
+    lmd <- if (length(jfit$log_marginal) == nrow(tg))
+      .nl_read_log_density(tg, jfit$log_marginal, jfit$outer_axis_specs,
+                           geo$domain, geo$atom)
     sigma <- if (has_col(tau_nm))
       .nl_summary_quantile(1 / sqrt(tg[, tau_nm]), w, probs,
                            "positive", support, within,

@@ -460,7 +460,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   qs <- .nl_axis_quantiles(
     theta_grid, log_marginal, refining_axis, log_quad = log_quad,
     domains = vapply(specs, function(s)
-      .nl_domain_of_bounds(s$bounds, s$log_scale), character(1)))
+      .nl_domain_of_bounds(s$bounds, s$log_scale), character(1)),
+    specs = specs)
   theta_median <- qs$median
   theta_ci_lo  <- qs$ci_lo
   theta_ci_hi  <- qs$ci_hi
