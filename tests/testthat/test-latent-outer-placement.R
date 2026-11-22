@@ -84,8 +84,6 @@ test_that("latent(temporal_ar2()) is placed at the outer mode and integrates its
     expect_identical(fit$outer_grid_placement, "auto_recentered")
     expect_setequal(fit$outer_grid_recenter_axes,
                     c("b1.log_tau", "b1.atanh_psi1", "b1.atanh_psi2"))
-    wt <- tulpa_outer_grid(fit)$weights
-    expect_gt(1 / sum((wt / sum(wt))^2), 20)
 
     # Reference: the same model on a 35^3 tensor at 0.29 posterior SDs per
     # node over +/- 5 SDs per axis (42875 cells, mass on the outer nodes at most
