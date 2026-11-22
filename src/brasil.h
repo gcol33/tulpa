@@ -5,7 +5,7 @@
 // barycentric form, with its zeros and poles extracted.
 //
 // This is the compiled counterpart of the reference implementation in
-// R/brasil.R, which stays as the oracle the port must reproduce
+// tests/testthat/helper-brasil-reference.R, the oracle the port reproduces
 // (test-brasil-cpp-oracle.R pins them together). The fractional-SPDE fitter
 // calls this one: every (range, sigma) cell the outer integrator visits needs
 // its own rational approximation on that cell's spectrum interval, so the

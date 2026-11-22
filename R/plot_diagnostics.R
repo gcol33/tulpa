@@ -156,155 +156,76 @@ NULL
 #' @rdname mcmc_plots
 #' @export
 plot_rhat <- function(fit, threshold = 1.01, pars = NULL) {
-  if (!inherits(fit, "tulpa_fit")) {
-    stop("fit must be a tulpa_fit object", call. = FALSE)
-  }
-
-  if (!.tulpa_is_chain(fit)) {
-    message(.tulpa_non_chain_msg(fit))
-    return(invisible(NULL))
-  }
-
-  # Get diagnostics
-
-  diag <- .tulpa_diagnostics(fit, pars = pars)
-
-  # Filter to main parameters if not specified
-  if (is.null(pars)) {
-    main_pars <- select_main_params(diag$parameter)
-    diag <- diag[diag$parameter %in% main_pars, ]
-  }
-
-  # Remove NA values
-
-  diag <- diag[!is.na(diag$rhat), ]
-
-  if (nrow(diag) == 0) {
-    message("No Rhat values available for selected parameters")
-    return(invisible(NULL))
-  }
-
-  # Assign colors based on thresholds
-  diag$color <- ifelse(
-    diag$rhat < threshold, tulpa_diag_colors$good,
-    ifelse(diag$rhat < 1.05, tulpa_diag_colors$warn, tulpa_diag_colors$bad)
+  .plot_param_dots(
+    fit, pars, value = function(diag) diag$rhat, what = "Rhat",
+    color = function(v) ifelse(v < threshold, tulpa_diag_colors$good,
+                               ifelse(v < 1.05, tulpa_diag_colors$warn,
+                                      tulpa_diag_colors$bad)),
+    decreasing = TRUE, title = "Rhat Convergence Diagnostic",
+    xlab = expression(hat(R)), threshold = threshold, reference = 1,
+    xlim = function(v) c(min(0.99, min(v)), max(1.1, max(v)))
   )
-
-  # Sort by Rhat value
-
-  diag <- diag[order(diag$rhat, decreasing = TRUE), ]
-  diag$parameter <- factor(diag$parameter, levels = diag$parameter)
-
-  # Plot with ggplot2 if available
-
-  if (requireNamespace("ggplot2", quietly = TRUE)) {
-    p <- ggplot2::ggplot(diag, ggplot2::aes(x = .data$rhat, y = .data$parameter)) +
-      ggplot2::geom_point(ggplot2::aes(color = .data$color), size = 3) +
-      ggplot2::geom_vline(xintercept = threshold, linetype = "dashed",
-                          color = tulpa_diag_colors$warn, linewidth = 0.8) +
-      ggplot2::geom_vline(xintercept = 1, linetype = "solid",
-                          color = "gray50", linewidth = 0.5) +
-      ggplot2::scale_color_identity() +
-      ggplot2::labs(
-        title = "Rhat Convergence Diagnostic",
-        x = expression(hat(R)),
-        y = NULL,
-        caption = paste0("Threshold: ", threshold, " (dashed line)")
-      ) +
-      theme_tulpa() +
-      ggplot2::theme(
-        plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
-        panel.grid.major.y = ggplot2::element_line(color = "gray90")
-      )
-
-    return(p)
-  }
-
-  # Base R fallback
-  plot_rhat_base(diag, threshold)
-  invisible(NULL)
-}
-
-
-#' Base R Rhat plot
-#' @noRd
-plot_rhat_base <- function(diag, threshold) {
-  n_pars <- nrow(diag)
-  old_par <- graphics::par(mar = c(4, 8, 3, 1))
-  on.exit(graphics::par(old_par))
-
-  graphics::plot(
-    diag$rhat, seq_len(n_pars),
-    xlim = c(min(0.99, min(diag$rhat)), max(1.1, max(diag$rhat))),
-    ylim = c(0.5, n_pars + 0.5),
-    pch = 19, col = diag$color, cex = 1.5,
-    xlab = expression(hat(R)),
-    ylab = "",
-    yaxt = "n",
-    main = "Rhat Convergence Diagnostic"
-  )
-
-  graphics::axis(2, at = seq_len(n_pars), labels = diag$parameter, las = 2, cex.axis = 0.8)
-  graphics::abline(v = threshold, lty = 2, col = tulpa_diag_colors$warn, lwd = 2)
-  graphics::abline(v = 1, lty = 1, col = "gray50")
 }
 
 
 #' @rdname mcmc_plots
 #' @export
 plot_ess <- function(fit, type = c("bulk", "tail"), threshold = 400, pars = NULL) {
+  type <- match.arg(type)
+  ess_col <- if (type == "bulk") "ess_bulk" else "ess_tail"
+  .plot_param_dots(
+    fit, pars, value = function(diag) diag[[ess_col]], what = "ESS",
+    color = function(v) ifelse(v >= threshold, tulpa_diag_colors$good,
+                               ifelse(v >= threshold / 2, tulpa_diag_colors$warn,
+                                      tulpa_diag_colors$bad)),
+    decreasing = FALSE, title = paste0("Effective Sample Size (", type, ")"),
+    xlab = "ESS", threshold = threshold, reference = NULL,
+    xlim = function(v) c(0, max(v) * 1.1)
+  )
+}
+
+
+# One dot per parameter for a per-parameter chain diagnostic (Rhat, ESS),
+# sorted worst first, coloured by `color(value)`, with the threshold as a dashed
+# line and an optional solid `reference` line. Main parameters only unless
+# `pars` names them. ggplot2 when available, base graphics otherwise.
+.plot_param_dots <- function(fit, pars, value, what, color, decreasing, title,
+                             xlab, threshold, reference, xlim) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
-
-  type <- match.arg(type)
-
   if (!.tulpa_is_chain(fit)) {
     message(.tulpa_non_chain_msg(fit))
     return(invisible(NULL))
   }
-
-  # Get diagnostics
   diag <- .tulpa_diagnostics(fit, pars = pars)
-
-  # Filter to main parameters if not specified
   if (is.null(pars)) {
-    main_pars <- select_main_params(diag$parameter)
-    diag <- diag[diag$parameter %in% main_pars, ]
+    diag <- diag[diag$parameter %in% select_main_params(diag$parameter), ]
   }
-
-  # Select ESS column
-  ess_col <- if (type == "bulk") "ess_bulk" else "ess_tail"
-  diag$ess <- diag[[ess_col]]
-
-  # Remove NA values
-  diag <- diag[!is.na(diag$ess), ]
-
+  diag$value <- value(diag)
+  diag <- diag[!is.na(diag$value), ]
   if (nrow(diag) == 0) {
-    message("No ESS values available for selected parameters")
+    message("No ", what, " values available for selected parameters")
     return(invisible(NULL))
   }
-
-  # Assign colors based on thresholds
-  diag$color <- ifelse(
-    diag$ess >= threshold, tulpa_diag_colors$good,
-    ifelse(diag$ess >= threshold / 2, tulpa_diag_colors$warn, tulpa_diag_colors$bad)
-  )
-
-  # Sort by ESS (ascending so worst are at top)
-  diag <- diag[order(diag$ess), ]
+  diag$color <- color(diag$value)
+  diag <- diag[order(diag$value, decreasing = decreasing), ]
   diag$parameter <- factor(diag$parameter, levels = diag$parameter)
 
-  # Plot with ggplot2 if available
   if (requireNamespace("ggplot2", quietly = TRUE)) {
-    p <- ggplot2::ggplot(diag, ggplot2::aes(x = .data$ess, y = .data$parameter)) +
+    p <- ggplot2::ggplot(diag, ggplot2::aes(x = .data$value, y = .data$parameter)) +
       ggplot2::geom_point(ggplot2::aes(color = .data$color), size = 3) +
       ggplot2::geom_vline(xintercept = threshold, linetype = "dashed",
-                          color = tulpa_diag_colors$warn, linewidth = 0.8) +
+                          color = tulpa_diag_colors$warn, linewidth = 0.8)
+    if (!is.null(reference)) {
+      p <- p + ggplot2::geom_vline(xintercept = reference, linetype = "solid",
+                                   color = "gray50", linewidth = 0.5)
+    }
+    return(p +
       ggplot2::scale_color_identity() +
       ggplot2::labs(
-        title = paste0("Effective Sample Size (", type, ")"),
-        x = "ESS",
+        title = title,
+        x = xlab,
         y = NULL,
         caption = paste0("Threshold: ", threshold, " (dashed line)")
       ) +
@@ -312,37 +233,23 @@ plot_ess <- function(fit, type = c("bulk", "tail"), threshold = 400, pars = NULL
       ggplot2::theme(
         plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
         panel.grid.major.y = ggplot2::element_line(color = "gray90")
-      )
-
-    return(p)
+      ))
   }
 
-  # Base R fallback
-  plot_ess_base(diag, threshold, type)
-  invisible(NULL)
-}
-
-
-#' Base R ESS plot
-#' @noRd
-plot_ess_base <- function(diag, threshold, type) {
   n_pars <- nrow(diag)
   old_par <- graphics::par(mar = c(4, 8, 3, 1))
   on.exit(graphics::par(old_par))
-
   graphics::plot(
-    diag$ess, seq_len(n_pars),
-    xlim = c(0, max(diag$ess) * 1.1),
+    diag$value, seq_len(n_pars),
+    xlim = xlim(diag$value),
     ylim = c(0.5, n_pars + 0.5),
     pch = 19, col = diag$color, cex = 1.5,
-    xlab = "ESS",
-    ylab = "",
-    yaxt = "n",
-    main = paste0("Effective Sample Size (", type, ")")
+    xlab = xlab, ylab = "", yaxt = "n", main = title
   )
-
   graphics::axis(2, at = seq_len(n_pars), labels = diag$parameter, las = 2, cex.axis = 0.8)
   graphics::abline(v = threshold, lty = 2, col = tulpa_diag_colors$warn, lwd = 2)
+  if (!is.null(reference)) graphics::abline(v = reference, lty = 1, col = "gray50")
+  invisible(NULL)
 }
 
 

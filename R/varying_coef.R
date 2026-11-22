@@ -233,3 +233,23 @@
   print.data.frame(x, ...)
   invisible(x)
 }
+
+# The terms line of an unvalidated or validated SVC / TVC specification: the
+# resolved term count and names once validated, else the terms as the caller
+# stated them (a formula, column indices or names).
+.print_varying_terms <- function(label, n_terms, term_names, terms_spec) {
+  if (!is.null(n_terms)) {
+    cat("\n", label, " terms: ", n_terms, " \n", sep = "")
+    if (!is.null(term_names)) cat("  ", paste(term_names, collapse = ", "), "\n")
+    return(invisible(NULL))
+  }
+  cat("\nTerms: ")
+  if (terms_spec$type == "formula") {
+    cat(deparse(terms_spec$formula), "\n")
+  } else if (terms_spec$type == "index") {
+    cat("columns ", paste(terms_spec$indices, collapse = ", "), "\n")
+  } else {
+    cat(paste(terms_spec$names, collapse = ", "), "\n")
+  }
+  invisible(NULL)
+}

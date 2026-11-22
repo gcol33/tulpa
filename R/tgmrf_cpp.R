@@ -77,12 +77,7 @@ tgmrf_cpp <- function(cpp_file, id, init,
     stop("`id` must be a single non-empty character string ",
          "matching the first argument of TULPA_REGISTER_TGMRF.", call. = FALSE)
   }
-  if (!is.numeric(init) || length(init) < 1L || anyNA(init)) {
-    stop("`init` must be a finite numeric vector of length >= 1.", call. = FALSE)
-  }
-  theta_dim   <- length(init)
-  theta_names <- if (!is.null(names(init))) names(init) else paste0("theta_", seq_len(theta_dim))
-  names(init) <- theta_names
+  init <- .tgmrf_check_init(init)
 
   # ---- 1. Compile (cached) ---------------------------------------------------
   # Cache is keyed on (sha256 of file contents, ABI version). Two sources
@@ -157,72 +152,13 @@ tgmrf_cpp <- function(cpp_file, id, init,
   if (n_latent < 1L) {
     stop("Registered Q(init) must have at least one row/column.", call. = FALSE)
   }
-  # Reconstruct as dgCMatrix to capture the sparsity pattern in the same
-  # form as tgmrf() does for the R path.
-  Qc <- Matrix::sparseMatrix(
+  Q0 <- Matrix::sparseMatrix(
     i = eval0$i, p = eval0$p, x = eval0$x,
     dims = c(n_latent, n_latent), index1 = FALSE
   )
-  Qc <- methods::as(methods::as(Qc, "generalMatrix"), "CsparseMatrix")
-  max_abs <- if (length(Qc@x) > 0L) max(abs(Qc@x)) else 0
-  sym_err <- max(abs(Qc - Matrix::t(Qc)))
-  if (is.finite(sym_err) && sym_err > 1e-8 * max(1, max_abs)) {
-    stop("Registered Q(init) must be symmetric; max |Q - t(Q)| = ",
-         format(sym_err), ".", call. = FALSE)
-  }
-  pattern <- Qc
-  pattern@x <- rep(1, length(pattern@x))
-
-  # Validate graph hint against captured pattern (same logic as tgmrf()).
-  if (!is.null(graph)) {
-    if (!methods::is(graph, "sparseMatrix")) {
-      stop("`graph` must be NULL or a Matrix::sparseMatrix.", call. = FALSE)
-    }
-    if (nrow(graph) != n_latent || ncol(graph) != n_latent) {
-      stop("`graph` must be ", n_latent, " x ", n_latent, "; got ",
-           nrow(graph), " x ", ncol(graph), ".", call. = FALSE)
-    }
-    gC <- methods::as(graph, "CsparseMatrix")
-    extra <- Matrix::which((pattern != 0) & (gC == 0), arr.ind = TRUE)
-    if (nrow(extra) > 0) {
-      stop("Registered Q(init) has ", nrow(extra),
-           " nonzero entries outside the supplied `graph` pattern.",
-           call. = FALSE)
-    }
-  }
-
-  # log p(init) sanity check.
   if (!is.numeric(eval0$log_prior) || !is.finite(eval0$log_prior)) {
     stop("Registered log_prior(init) must return a finite numeric scalar; got ",
          deparse(eval0$log_prior), ".", call. = FALSE)
-  }
-
-  # Validate obs_idx, if supplied.
-  if (!is.null(obs_idx)) {
-    if (!is.numeric(obs_idx) || anyNA(obs_idx)) {
-      stop("`obs_idx` must be a finite integer vector.", call. = FALSE)
-    }
-    obs_idx <- as.integer(obs_idx)
-    if (any(obs_idx < 1L) || any(obs_idx > n_latent)) {
-      stop("`obs_idx` entries must be in [1, n_latent = ", n_latent, "].",
-           call. = FALSE)
-    }
-  }
-
-  # Validate bounds, if supplied (same shape contract as tgmrf()).
-  if (!is.null(bounds)) {
-    if (!is.list(bounds) || !all(c("lower", "upper") %in% names(bounds))) {
-      stop("`bounds` must be a list with components `lower` and `upper`.",
-           call. = FALSE)
-    }
-    if (length(bounds$lower) != theta_dim || length(bounds$upper) != theta_dim) {
-      stop("`bounds$lower` and `bounds$upper` must each have length ",
-           theta_dim, ".", call. = FALSE)
-    }
-    if (any(bounds$lower >= bounds$upper)) {
-      stop("`bounds$lower` must be strictly below `bounds$upper` for every theta.",
-           call. = FALSE)
-    }
   }
 
   # ---- 4. Build R-callable wrappers around the registered kernels -----------
@@ -249,28 +185,11 @@ tgmrf_cpp <- function(cpp_file, id, init,
   has_mu <- !is.null(mu_wrapper(init))
   mu_field <- if (has_mu) mu_wrapper else NULL
 
-  structure(
-    list(
-      type        = "tgmrf",
-      Q           = Q_wrapper,
-      prior       = prior_wrapper,
-      mu          = mu_field,
-      init        = init,
-      theta_names = theta_names,
-      theta_dim   = as.integer(theta_dim),
-      n_latent    = as.integer(n_latent),
-      pattern     = pattern,
-      graph       = graph,
-      bounds      = bounds,
-      n_grid      = .tgmrf_check_n_grid(n_grid, theta_dim),
-      obs_idx     = obs_idx,
-      name        = name,
-      backend     = "cpp",
-      cpp_id      = id,
-      cpp_file    = normalizePath(cpp_file, mustWork = FALSE)
-    ),
-    class = c("tgmrf", "tulpa_latent_block")
-  )
+  .tgmrf_block(Q0, "Registered Q(init)", Q = Q_wrapper, prior = prior_wrapper,
+               mu = mu_field, init = init, graph = graph, bounds = bounds,
+               obs_idx = obs_idx, name = name, n_grid = n_grid, backend = "cpp",
+               extra = list(cpp_id = id,
+                            cpp_file = normalizePath(cpp_file, mustWork = FALSE)))
 }
 
 #' Cache of `tgmrf_cpp()`-compiled DLLs

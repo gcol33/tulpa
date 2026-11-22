@@ -184,21 +184,7 @@ print.tulpa_tvc <- function(x, ...) {
   }
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
-  if (!is.null(x$n_tvc)) {
-    cat("\nTVC terms:", x$n_tvc, "\n")
-    if (!is.null(x$tvc_names)) {
-      cat("  ", paste(x$tvc_names, collapse = ", "), "\n")
-    }
-  } else {
-    cat("\nTerms: ")
-    if (x$terms_spec$type == "formula") {
-      cat(deparse(x$terms_spec$formula), "\n")
-    } else if (x$terms_spec$type == "index") {
-      cat("columns ", paste(x$terms_spec$indices, collapse = ", "), "\n")
-    } else {
-      cat(paste(x$terms_spec$names, collapse = ", "), "\n")
-    }
-  }
+  .print_varying_terms("TVC", x$n_tvc, x$tvc_names, x$terms_spec)
 
   if (!is.null(x$n_times)) {
     cat("Time points:", x$n_times, "\n")

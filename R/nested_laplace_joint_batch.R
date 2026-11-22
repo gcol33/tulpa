@@ -377,22 +377,11 @@ tulpa_joint_grid_batch <- function(fits) {
   arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
   cp <- .resolve_copy_multi(copy, responses, prior_list)
   B <- length(prior_list)
-
-  per_block <- lapply(seq_len(B), function(b) {
-    copy_pos <- if (cp$has_copy) match((b - 1L), cp$copy_blocks_zero) else NA_integer_
-    is_copy  <- !is.na(copy_pos)
-    alpha_grid_b <- if (is_copy) cp$alpha_grids[[copy_pos]] else numeric(0)
-    .joint_block_axis_grid(prior_list[[b]], is_copy, alpha_grid_b, b)
-  })
-  block_grids <- lapply(per_block, function(x) x$grid)
-  prepared    <- lapply(per_block, function(x) x$prepared)
-  axis_counts  <- vapply(block_grids, ncol, integer(1))
-  axis_offsets <- as.integer(c(0L, cumsum(axis_counts)))
-  axis_names   <- unlist(lapply(seq_along(block_grids), function(b) {
-    cn <- colnames(block_grids[[b]])
-    if (is.null(cn) || length(cn) == 0L) character(0) else paste0("b", b, ".", cn)
-  }))
-  blocks_spec <- .joint_blocks_spec_for_cpp(prepared, n_arms, arms = arms)
+  layout <- .joint_multi_block_layout(prior_list, cp)
+  block_grids  <- layout$grids
+  axis_offsets <- layout$axis_offsets
+  axis_names   <- layout$axis_names
+  blocks_spec  <- .joint_blocks_spec_for_cpp(layout$prepared, n_arms, arms = arms)
 
   row_counts <- vapply(block_grids, nrow, integer(1))
   idx <- do.call(expand.grid, lapply(row_counts, seq_len))

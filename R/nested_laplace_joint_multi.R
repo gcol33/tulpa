@@ -1460,62 +1460,28 @@
                             extra_axes = placement_axes)
 }
 
-# Inner-Laplace skewness diagnostic for the multi-block
-# joint driver -- the multi-block analogue of
-# .nlj_inner_skew_at_theta() (R/nested_laplace_joint.R). Reuses
-# `call_kernel` (the SAME
-# closure the outer Pareto-k diagnostic and the adaptive-grid refinement
-# already call), re-dispatched at the fitted MAP grid cell with
-# `compute_skew = TRUE`: one extra deterministic Newton solve, no importance
-# sampling -- mirrors the single-block helper exactly except for the
-# multi-block `call_kernel` signature (`x_init` instead of `warm_start`, and
-# an explicit `phi_grid_per_arm` for the probed cell, since only the
-# multi-block path carries per-arm dispersion axes).
-#
-# Default probe scope is every arm's fixed-effects coefficients, read from
-# `res$arm_layout$beta_start` / `$p` (.joint_multi_layout(), already attached
-# by the caller) -- the direct multi-block analogue of the single-block
-# default ("every arm's beta").
-#
-# A coupled arm (`cell_coupling != "separable"` on that arm) has no per-obs
-# oracle to score (build_joint_curvature3_fns excludes it) -- its indices
-# come back NaN, not a silently wrong 0, exactly as for the single-block and
-# single-arm paths.
-.nlj_multi_inner_skew_at_theta <- function(res, call_kernel, arm_names,
-                                           skew_idx = NULL, compute = TRUE) {
-    res <- .inner_skew_decline(res, "not_requested")
-    if (!compute) return(res)
-
-    modal_theta <- .joint_modal_theta(res)
-    if (is.null(modal_theta)) return(.inner_skew_decline(res, "backend_unsupported"))
-
-    probe_idx <- skew_idx
-    if (is.null(probe_idx)) {
-        al <- res$arm_layout
-        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) {
-            return(.inner_skew_decline(res, "no_probe_indices"))
-        }
-        probe_idx <- unlist(lapply(seq_len(al$n_arms), function(k) {
-            if (al$p[k] <= 0L) return(integer(0))
-            (al$beta_start[k] + 1L):(al$beta_start[k] + al$p[k])
+# Per-block axis grids of a multi-block prior (a copy block carrying its
+# alpha axis), the prepared blocks, and the axis layout every node placement
+# shares: offset of each block's axes and the `b<k>.` prefixed axis names.
+.joint_multi_block_layout <- function(prior_list, cp) {
+    per_block <- lapply(seq_along(prior_list), function(b) {
+        copy_pos <- if (cp$has_copy) match((b - 1L), cp$copy_blocks_zero)
+                    else NA_integer_
+        is_copy  <- !is.na(copy_pos)
+        alpha_grid_b <- if (is_copy) cp$alpha_grids[[copy_pos]] else numeric(0)
+        .joint_block_axis_grid(prior_list[[b]], is_copy, alpha_grid_b, b)
+    })
+    grids <- lapply(per_block, function(x) x$grid)
+    list(
+        grids        = grids,
+        prepared     = lapply(per_block, function(x) x$prepared),
+        axis_offsets = as.integer(c(0L, cumsum(vapply(grids, ncol, integer(1))))),
+        axis_names   = unlist(lapply(seq_along(grids), function(b) {
+            cn <- colnames(grids[[b]])
+            if (is.null(cn) || length(cn) == 0L) return(character(0))
+            paste0("b", b, ".", cn)
         }))
-    }
-    probe_idx <- as.integer(probe_idx)
-    if (length(probe_idx) == 0L) return(.inner_skew_decline(res, "no_probe_indices"))
-    res <- .inner_skew_decline(res, "solve_failed")
-
-    warm_mode <- .joint_modal_mode(res)
-    theta_mat <- matrix(modal_theta, nrow = 1L,
-                        dimnames = list(NULL, colnames(res$theta_grid)))
-
-    out <- tryCatch(
-        .joint_with_quiet_opts(call_kernel(
-            theta_mat, x_init = warm_mode,
-            phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
-            compute_skew = TRUE, skew_idx = probe_idx)),
-        error = function(e) NULL)
-
-    .inner_skew_attach_probe(res, out)
+    )
 }
 
 # Main multi-block joint dispatch. Mirrors the structure of the
@@ -1587,26 +1553,13 @@
     cp <- .resolve_copy_multi(copy, responses, prior_list)
     hp_families <- .joint_multi_hp_families(arms, arm_names)
 
-    # Per-block axis grids (with copy-block parameterisation if applicable).
     B <- length(prior_list)
-    per_block <- lapply(seq_len(B), function(b) {
-        copy_pos <- if (cp$has_copy) match((b - 1L), cp$copy_blocks_zero)
-                    else NA_integer_
-        is_copy  <- !is.na(copy_pos)
-        alpha_grid_b <- if (is_copy) cp$alpha_grids[[copy_pos]] else numeric(0)
-        .joint_block_axis_grid(prior_list[[b]], is_copy, alpha_grid_b, b)
-    })
-    block_grids <- lapply(per_block, function(x) x$grid)
-    prepared    <- lapply(per_block, function(x) x$prepared)
-
-    # Axis layout (independent of node placement: tensor or CCD).
-    axis_counts  <- vapply(block_grids, ncol, integer(1))
-    axis_offsets <- as.integer(c(0L, cumsum(axis_counts)))
-    axis_names <- unlist(lapply(seq_along(block_grids), function(b) {
-        cn <- colnames(block_grids[[b]])
-        if (is.null(cn) || length(cn) == 0L) return(character(0))
-        paste0("b", b, ".", cn)
-    }))
+    layout <- .joint_multi_block_layout(prior_list, cp)
+    block_grids  <- layout$grids
+    prepared     <- layout$prepared
+    axis_offsets <- layout$axis_offsets
+    axis_names   <- layout$axis_names
+    axis_counts  <- diff(axis_offsets)
     d_axes <- as.integer(axis_offsets[B + 1L])
 
     # Which axes the regularizing hyperpriors reach. Read off the axis layout,
@@ -2412,8 +2365,12 @@
                                         copy_atom_mass = copy_atom_mass,
                                         hyperprior = hyperprior,
                                         hp_declared = hp_declared)
-    res <- .nlj_multi_inner_skew_at_theta(res, call_kernel, arm_names,
-                                          skew_idx, compute = diagnose_skew)
+    res <- .nlj_inner_skew_at_theta(
+        res, function(theta_mat, warm, probe_idx) {
+            call_kernel(theta_mat, x_init = warm,
+                        phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
+                        compute_skew = TRUE, skew_idx = probe_idx)
+        }, skew_idx, compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)
     res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
     tm$mark("diagnostics")

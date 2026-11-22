@@ -2540,8 +2540,12 @@ tulpa_nested_laplace_joint <- function(responses,
                                          k_tail_points = k_tail_points,
                                          k_conf_bands = k_conf_bands,
                                          placement_axes = placement_axes)
-    res <- .nlj_inner_skew_at_theta(res, kernel_fn, skew_idx,
-                                    compute = diagnose_skew)
+    res <- .nlj_inner_skew_at_theta(
+        res, function(theta_mat, warm, probe_idx) {
+            kernel_fn(theta_mat,
+                      warm_start = if (is.null(warm)) NULL else list(mode = warm),
+                      compute_skew = TRUE, skew_idx = probe_idx)
+        }, skew_idx, compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)
     res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
     tm$mark("diagnostics")
@@ -2604,10 +2608,12 @@ tulpa_nested_laplace_joint <- function(responses,
 # A coupled arm (cell_coupling != "separable" on that arm) has no per-obs
 # oracle to score (build_joint_curvature3_fns excludes it, see
 # laplace_newton_joint.h) -- its indices come back NaN, not a silently wrong
-# 0. The joint MULTI-block path (nested_laplace_joint_multi.R, used when a
-# fit carries a per-group RE / trend / arm-specific field block) has its own
-# counterpart, `.nlj_multi_inner_skew_at_theta()`.
-.nlj_inner_skew_at_theta <- function(res, kernel_fn, skew_idx = NULL,
+# 0. Both joint drivers call it: `probe(theta_mat, warm, probe_idx)` re-runs
+# the driver's own kernel at the one-row cell `theta_mat`, warm-started from
+# the modal mode `warm` (NULL when none was kept), with `compute_skew = TRUE`
+# at `probe_idx`; the multi-block driver's closure also hands the probed
+# cell's per-arm dispersions.
+.nlj_inner_skew_at_theta <- function(res, probe, skew_idx = NULL,
                                      compute = TRUE) {
     res <- .inner_skew_decline(res, "not_requested")
     if (!compute) return(res)
@@ -2630,8 +2636,6 @@ tulpa_nested_laplace_joint <- function(responses,
     if (length(probe_idx) == 0L) return(.inner_skew_decline(res, "no_probe_indices"))
     res <- .inner_skew_decline(res, "solve_failed")
 
-    warm     <- .joint_modal_mode(res)
-    warm_arg <- if (is.null(warm)) NULL else list(mode = warm)
     # .joint_grids_from_cells() reads colnames(new_cells) to rebuild the named
     # grids list, so the 1-row matrix must carry them (.joint_modal_theta()
     # strips to a bare numeric vector).
@@ -2639,9 +2643,7 @@ tulpa_nested_laplace_joint <- function(responses,
                         dimnames = list(NULL, colnames(res$theta_grid)))
 
     out <- tryCatch(
-        .joint_with_quiet_opts(kernel_fn(theta_mat, warm_start = warm_arg,
-                                         compute_skew = TRUE,
-                                         skew_idx = probe_idx)),
+        .joint_with_quiet_opts(probe(theta_mat, .joint_modal_mode(res), probe_idx)),
         error = function(e) NULL)
 
     .inner_skew_attach_probe(res, out)

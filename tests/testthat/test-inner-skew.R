@@ -707,7 +707,7 @@ test_that("gamma_3 is exactly zero for a coupled GAUSSIAN cell (K = 2 tensor, to
 
 # --------------------------------------------------------------------------- #
 # (7) Joint front door: tulpa_nested_laplace_joint() MULTI-block path         #
-#     (gcol33/tulpa#273 -- .nlj_multi_inner_skew_at_theta())                  #
+#     (gcol33/tulpa#273 -- .nlj_inner_skew_at_theta())                        #
 # --------------------------------------------------------------------------- #
 
 test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block dispatch", {

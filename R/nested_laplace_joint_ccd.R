@@ -145,16 +145,6 @@
 # projects a phase from.
 .ccd_now <- function() as.numeric(Sys.time())
 
-# Human-readable duration, mirroring `tulpa_progress::format_secs()` in
-# inst/include/tulpa/nested_progress.h so a mode-find line and a grid line read
-# the same. ASCII only (logs, redirects).
-.ccd_format_secs <- function(s) {
-    if (!is.finite(s) || s < 0) return("?")
-    if (s < 90)   return(sprintf("%.0fs", s))
-    if (s < 5400) return(sprintf("%.1fmin", s / 60))
-    sprintf("%.1fh", s / 3600)
-}
-
 # The heartbeat's gate is the fit's own progress record, the same
 # `tulpa.nl_progress` the outer-grid reporter reads and the joint front door
 # sets once per fit, so the placement phase and the grid loop are on one switch.
@@ -264,7 +254,7 @@
     line <- sprintf("[%s] %s | %s%s | elapsed %s | %s/eval",
                     meter$label %||% "ccd mode-find", phase, spent,
                     if (nzchar(detail)) paste0(" | ", detail) else "",
-                    .ccd_format_secs(elapsed), .ccd_format_secs(per))
+                    .tulpa_progress_format_secs(elapsed), .tulpa_progress_format_secs(per))
     cat(line, "\n", sep = "")
     utils::flush.console()
     f <- meter$progress$file

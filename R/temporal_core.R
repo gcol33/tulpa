@@ -19,8 +19,6 @@
 #'
 #' @param parameterization Sampler coordinates: `"auto"` uses field information
 #'   to scale field amplitudes; `"centered"` samples effect coordinates.
-#' @param parameterization Sampler coordinates: `"auto"` uses field information
-#'   to scale field amplitudes; `"centered"` samples effect coordinates.
 #' @return A `tulpa_temporal` object.
 #'
 #' @details
@@ -41,33 +39,8 @@
 #' @export
 temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
                          shared = NULL, parameterization = c("auto", "centered")) {
-
   parameterization <- match.arg(parameterization)
-  time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
-  if (is.null(time_var)) {
-    stop("`time_var` must be a formula (~ time) or single character string",
-         call. = FALSE)
-  }
-  group_var <- .coerce_var_arg(group_var, "group_var")
-
-  if (isFALSE(shared)) .warn_nonshared("temporal effects")
-
- structure(
-   list(
-     type = "rw1",
-     parameterization = parameterization,
-     time_var = time_var,
-     group_var = group_var,
-     cyclic = cyclic,
-     shared = shared,
-     # These will be filled in when validated against data
-     n_times = NULL,
-     n_groups = NULL,
-     time_index = NULL,
-     group_index = NULL
-   ),
-   class = c("tulpa_temporal", "list")
- )
+  .temporal_spec("rw1", time_var, group_var, cyclic, shared, parameterization)
 }
 
 
@@ -119,32 +92,8 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' @export
 temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
                          shared = NULL, parameterization = c("auto", "centered")) {
-
   parameterization <- match.arg(parameterization)
-  time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
-  if (is.null(time_var)) {
-    stop("`time_var` must be a formula (~ time) or single character string",
-         call. = FALSE)
-  }
-  group_var <- .coerce_var_arg(group_var, "group_var")
-
-  if (isFALSE(shared)) .warn_nonshared("temporal effects")
-
- structure(
-   list(
-     type = "rw2",
-     parameterization = parameterization,
-     time_var = time_var,
-     group_var = group_var,
-     cyclic = cyclic,
-     shared = shared,
-     n_times = NULL,
-     n_groups = NULL,
-     time_index = NULL,
-     group_index = NULL
-   ),
-   class = c("tulpa_temporal", "list")
- )
+  .temporal_spec("rw2", time_var, group_var, cyclic, shared, parameterization)
 }
 
 
@@ -205,8 +154,20 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' @export
 temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
                          rho_prior = NULL, parameterization = c("auto", "centered")) {
-
   parameterization <- match.arg(parameterization)
+  if (!is.null(rho_prior) && !inherits(rho_prior, "tulpa_prior_beta")) {
+    stop("`rho_prior` must be a Beta prior (prior_beta(alpha, beta)) on ",
+         "u = (rho + 1)/2, or NULL for the default Uniform(-1, 1).",
+         call. = FALSE)
+  }
+  .temporal_spec("ar1", time_var, group_var, cyclic = FALSE, shared,
+                 parameterization, list(rho_prior = rho_prior))
+}
+
+# The unvalidated spec every grid temporal constructor returns. The indices
+# and counts are filled in when the spec is validated against data.
+.temporal_spec <- function(type, time_var, group_var, cyclic, shared,
+                           parameterization, extra = list()) {
   time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
   if (is.null(time_var)) {
     stop("`time_var` must be a formula (~ time) or single character string",
@@ -214,28 +175,15 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
   }
   group_var <- .coerce_var_arg(group_var, "group_var")
   if (isFALSE(shared)) .warn_nonshared("temporal effects")
-  if (!is.null(rho_prior) && !inherits(rho_prior, "tulpa_prior_beta")) {
-    stop("`rho_prior` must be a Beta prior (prior_beta(alpha, beta)) on ",
-         "u = (rho + 1)/2, or NULL for the default Uniform(-1, 1).",
-         call. = FALSE)
-  }
-
   structure(
-   list(
-     type = "ar1",
-     parameterization = parameterization,
-     time_var = time_var,
-     group_var = group_var,
-     cyclic = FALSE,  # AR1 is not cyclic
-     shared = shared,
-     rho_prior = rho_prior,
-     n_times = NULL,
-     n_groups = NULL,
-     time_index = NULL,
-     group_index = NULL
-   ),
-   class = c("tulpa_temporal", "list")
- )
+    c(list(type = type, parameterization = parameterization,
+           time_var = time_var, group_var = group_var, cyclic = cyclic,
+           shared = shared),
+      extra,
+      list(n_times = NULL, n_groups = NULL, time_index = NULL,
+           group_index = NULL)),
+    class = c("tulpa_temporal", "list")
+  )
 }
 
 # Beta(a, b) shape parameters for the AR1 rho prior on u = (rho + 1)/2. NULL (the

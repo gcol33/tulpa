@@ -22,7 +22,7 @@ test_that("the compiled search equioscillates to its tolerance", {
 
 skip_on_cran()
 # The compiled BRASIL search (src/brasil.h) against the R reference
-# implementation it was ported from (.spde_rational_roots_r, R/brasil.R).
+# implementation it was ported from (.spde_rational_roots_r, helper-brasil-reference.R).
 #
 # The fractional-SPDE assembler needs a fresh rational approximation for every
 # (range, sigma) cell the outer integrator visits -- 1102 of them, essentially
@@ -57,7 +57,7 @@ test_that("the compiled rational roots match the R oracle", {
   for (i in seq_len(nrow(design))) {
     order <- design$order[i]; beta <- design$beta[i]; s <- design$s[i]
     cpp <- tulpa:::.spde_rational_roots(order, beta, s)
-    ref <- tulpa:::.spde_rational_roots_r(order, beta, s)
+    ref <- .spde_rational_roots_r(order, beta, s)
     info <- sprintf("order = %d, beta = %g, spectrum_ratio = %g",
                     order, beta, s)
     expect_equal(length(cpp$rb), length(ref$rb), info = info)
@@ -81,8 +81,8 @@ test_that("the approximation the port defines is the R oracle's function", {
   for (s in c(0.3, 0.02)) {
     x   <- seq(s, 1, length.out = 41)
     cpp <- cpp_brasil_approx(x, s, 1, 3L, -0.75)
-    ref <- tulpa:::.brasil(function(t) t^(-0.75), c(s, 1), 3L, tol = 1e-7)
-    expect_equal(as.numeric(cpp), tulpa:::.bary_eval(ref$br, x),
+    ref <- .brasil(function(t) t^(-0.75), c(s, 1), 3L, tol = 1e-7)
+    expect_equal(as.numeric(cpp), .bary_eval(ref$br, x),
                  tolerance = 1e-7, info = sprintf("spectrum_ratio = %g", s))
     # ... and both approximate the function they were asked for.
     expect_lt(max(abs(as.numeric(cpp) - x^(-0.75))) / max(x^(-0.75)), 0.05)

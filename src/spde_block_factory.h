@@ -136,7 +136,7 @@ LatentBlock make_spde_block(
 
 // SPDE block over a PRECOMPUTED precision and observation map.
 //
-// The covariance-based rational SPDE (.spde_rational_assemble, R/brasil.R)
+// The covariance-based rational SPDE (.spde_rational_assemble, R/rational_spde.R)
 // makes the latent the stack of its independent GMRF components with field
 // u = Pr x, so the obs map is A_eff = A Pr and the precision is the block
 // diagonal of the components'. Both arrive assembled as CSC; nothing here depends on the outer cell, so `refresh` only

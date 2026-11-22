@@ -1,8 +1,9 @@
 // brasil_export.cpp
 // R entry point for the compiled BRASIL rational-approximation search
 // (src/brasil.h). The fractional-SPDE assembler calls this once per
-// (range, sigma) cell; the R implementation in R/brasil.R stays as the oracle
-// the port is pinned against.
+// (range, sigma) cell; the R implementation in
+// tests/testthat/helper-brasil-reference.R is the oracle the port is pinned
+// against.
 
 #include <RcppEigen.h>
 #include "tulpa_stop.h"

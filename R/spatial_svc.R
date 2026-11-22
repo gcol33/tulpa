@@ -160,21 +160,7 @@ print.tulpa_svc <- function(x, ...) {
   cat("Neighbors (NNGP):", x$nn, "\n")
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
-  if (!is.null(x$n_svc)) {
-    cat("\nSVC terms:", x$n_svc, "\n")
-    if (!is.null(x$svc_names)) {
-      cat("  ", paste(x$svc_names, collapse = ", "), "\n")
-    }
-  } else {
-    cat("\nTerms: ")
-    if (x$terms_spec$type == "formula") {
-      cat(deparse(x$terms_spec$formula), "\n")
-    } else if (x$terms_spec$type == "index") {
-      cat("columns ", paste(x$terms_spec$indices, collapse = ", "), "\n")
-    } else {
-      cat(paste(x$terms_spec$names, collapse = ", "), "\n")
-    }
-  }
+  .print_varying_terms("SVC", x$n_svc, x$svc_names, x$terms_spec)
 
   if (!is.null(x$n_obs)) {
     cat("Observations:", x$n_obs, "\n")

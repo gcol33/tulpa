@@ -105,12 +105,7 @@ tgmrf <- function(Q, prior, init,
     stop("`mu` must be NULL or a function of theta.", call. = FALSE)
   }
 
-  if (!is.numeric(init) || length(init) < 1L || anyNA(init)) {
-    stop("`init` must be a finite numeric vector of length >= 1.", call. = FALSE)
-  }
-  theta_dim   <- length(init)
-  theta_names <- if (!is.null(names(init))) names(init) else paste0("theta_", seq_len(theta_dim))
-  names(init) <- theta_names
+  init <- .tgmrf_check_init(init)
 
   # Evaluate Q(init) once to (1) catch user errors at registration, (2) infer
   # n_latent, (3) capture the sparsity pattern.
@@ -127,49 +122,6 @@ tgmrf <- function(Q, prior, init,
   if (nrow(Q0) != ncol(Q0)) {
     stop("`Q(init)` must be square; got ", nrow(Q0), " x ", ncol(Q0), ".",
          call. = FALSE)
-  }
-  n_latent <- nrow(Q0)
-  if (n_latent < 1L) {
-    stop("`Q(init)` must have at least one row/column.", call. = FALSE)
-  }
-
-  # Symmetry check on numeric values (Q is the precision matrix). Coerce
-  # through generalMatrix first so unit-diagonal / unit-triangular shortcuts
-  # (e.g. ddiMatrix(diag = "U"), dtCMatrix) materialise their structural
-  # entries into the dgCMatrix slot. Tolerance loose enough to allow
-  # user-supplied dsCMatrix or floating-point round-trips through
-  # bandSparse / sparseMatrix.
-  Qc  <- methods::as(methods::as(Q0, "generalMatrix"), "CsparseMatrix")
-  max_abs <- if (length(Qc@x) > 0L) max(abs(Qc@x)) else 0
-  sym_err <- max(abs(Qc - Matrix::t(Qc)))
-  if (is.finite(sym_err) && sym_err > 1e-8 * max(1, max_abs)) {
-    stop("`Q(init)` must be symmetric; max |Q - t(Q)| = ", format(sym_err),
-         ".", call. = FALSE)
-  }
-
-  # Sparsity pattern (1 where Qc has a stored entry; ignore exact-zero stored
-  # entries to avoid penalising users who keep structural zeros for sparsity
-  # reuse).
-  pattern <- Qc
-  pattern@x <- rep(1, length(pattern@x))
-
-  # Validate graph hint against captured pattern.
-  if (!is.null(graph)) {
-    if (!methods::is(graph, "sparseMatrix")) {
-      stop("`graph` must be NULL or a Matrix::sparseMatrix.", call. = FALSE)
-    }
-    if (nrow(graph) != n_latent || ncol(graph) != n_latent) {
-      stop("`graph` must be ", n_latent, " x ", n_latent, "; got ",
-           nrow(graph), " x ", ncol(graph), ".", call. = FALSE)
-    }
-    gC <- methods::as(graph, "CsparseMatrix")
-    # Subset check: every (i, j) with pattern[i, j] != 0 must have gC[i, j] != 0.
-    extra <- Matrix::which((pattern != 0) & (gC == 0), arr.ind = TRUE)
-    if (nrow(extra) > 0) {
-      stop("`Q(init)` has ", nrow(extra),
-           " nonzero entries outside the supplied `graph` pattern.",
-           call. = FALSE)
-    }
   }
 
   # Evaluate the user prior once at init.
@@ -192,13 +144,73 @@ tgmrf <- function(Q, prior, init,
         stop("`mu(init)` raised an error: ", conditionMessage(e), call. = FALSE)
       }
     )
-    if (!is.numeric(mu0) || length(mu0) != n_latent || anyNA(mu0)) {
+    if (!is.numeric(mu0) || length(mu0) != nrow(Q0) || anyNA(mu0)) {
       stop("`mu(init)` must return a finite numeric vector of length ",
-           n_latent, ".", call. = FALSE)
+           nrow(Q0), ".", call. = FALSE)
     }
   }
 
-  # Validate obs_idx, if supplied.
+  .tgmrf_block(Q0, "`Q(init)`", Q = Q, prior = prior, mu = mu, init = init,
+               graph = graph, bounds = bounds, obs_idx = obs_idx, name = name,
+               n_grid = n_grid, backend = "r")
+}
+
+# A tgmrf block's validated `init`, named theta_1, theta_2, ... when the caller
+# left it unnamed.
+.tgmrf_check_init <- function(init) {
+  if (!is.numeric(init) || length(init) < 1L || anyNA(init)) {
+    stop("`init` must be a finite numeric vector of length >= 1.", call. = FALSE)
+  }
+  if (is.null(names(init))) names(init) <- paste0("theta_", seq_along(init))
+  init
+}
+
+# The block object both constructors return, from the precision at `init`
+# (`Q0`, a sparse matrix) and the callables. `label` names Q(init) in the
+# errors. Checks Q0 for symmetry, captures its sparsity pattern (1 where an
+# entry is stored, so structural zeros a user keeps for pattern reuse are not
+# penalised), and validates `graph`, `obs_idx`, `bounds` and `n_grid` against
+# it.
+.tgmrf_block <- function(Q0, label, Q, prior, mu, init, graph, bounds, obs_idx,
+                         name, n_grid, backend, extra = list()) {
+  n_latent <- nrow(Q0)
+  if (n_latent < 1L) {
+    stop(label, " must have at least one row/column.", call. = FALSE)
+  }
+  theta_dim <- length(init)
+
+  # Coerce through generalMatrix first so unit-diagonal / unit-triangular
+  # shortcuts (e.g. ddiMatrix(diag = "U"), dtCMatrix) materialise their
+  # structural entries into the dgCMatrix slot. The tolerance allows a
+  # dsCMatrix or floating-point round-trips through bandSparse / sparseMatrix.
+  Qc  <- methods::as(methods::as(Q0, "generalMatrix"), "CsparseMatrix")
+  max_abs <- if (length(Qc@x) > 0L) max(abs(Qc@x)) else 0
+  sym_err <- max(abs(Qc - Matrix::t(Qc)))
+  if (is.finite(sym_err) && sym_err > 1e-8 * max(1, max_abs)) {
+    stop(label, " must be symmetric; max |Q - t(Q)| = ", format(sym_err),
+         ".", call. = FALSE)
+  }
+  pattern <- Qc
+  pattern@x <- rep(1, length(pattern@x))
+
+  if (!is.null(graph)) {
+    if (!methods::is(graph, "sparseMatrix")) {
+      stop("`graph` must be NULL or a Matrix::sparseMatrix.", call. = FALSE)
+    }
+    if (nrow(graph) != n_latent || ncol(graph) != n_latent) {
+      stop("`graph` must be ", n_latent, " x ", n_latent, "; got ",
+           nrow(graph), " x ", ncol(graph), ".", call. = FALSE)
+    }
+    gC <- methods::as(graph, "CsparseMatrix")
+    # Every (i, j) with pattern[i, j] != 0 must have gC[i, j] != 0.
+    extra_nz <- Matrix::which((pattern != 0) & (gC == 0), arr.ind = TRUE)
+    if (nrow(extra_nz) > 0) {
+      stop(label, " has ", nrow(extra_nz),
+           " nonzero entries outside the supplied `graph` pattern.",
+           call. = FALSE)
+    }
+  }
+
   if (!is.null(obs_idx)) {
     if (!is.numeric(obs_idx) || anyNA(obs_idx)) {
       stop("`obs_idx` must be a finite integer vector.", call. = FALSE)
@@ -210,7 +222,6 @@ tgmrf <- function(Q, prior, init,
     }
   }
 
-  # Validate bounds, if supplied.
   if (!is.null(bounds)) {
     if (!is.list(bounds) || !all(c("lower", "upper") %in% names(bounds))) {
       stop("`bounds` must be a list with components `lower` and `upper`.",
@@ -226,26 +237,24 @@ tgmrf <- function(Q, prior, init,
     }
   }
 
-  n_grid <- .tgmrf_check_n_grid(n_grid, theta_dim)
-
   structure(
-    list(
+    c(list(
       type        = "tgmrf",          # registry key for .NL_REGISTRY dispatch
       Q           = Q,
       prior       = prior,
       mu          = mu,
       init        = init,
-      theta_names = theta_names,
+      theta_names = names(init),
       theta_dim   = as.integer(theta_dim),
       n_latent    = as.integer(n_latent),
       pattern     = pattern,
       graph       = graph,
       bounds      = bounds,
-      n_grid      = n_grid,
+      n_grid      = .tgmrf_check_n_grid(n_grid, theta_dim),
       obs_idx     = obs_idx,
       name        = name,
-      backend     = "r"
-    ),
+      backend     = backend
+    ), extra),
     class = c("tgmrf", "tulpa_latent_block")
   )
 }
