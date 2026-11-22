@@ -292,12 +292,15 @@ test_that("fit_spde runs the nu = 2 operator end to end (gcol33/tulpa#279, #280)
   eta <- as.numeric(spec$A %*% w)
   y <- rnorm(n_obs, mean = 0.5 + eta, sd = 0.3)
 
-  fit <- fit_spde(y, matrix(1, n_obs, 1), spec, family = "gaussian", phi = 0.0081,
+  # `phi` is the residual variance the response was simulated with.
+  fit <- fit_spde(y, matrix(1, n_obs, 1), spec, family = "gaussian", phi = 0.3^2,
                   control = list(progress = FALSE))
   expect_true(fit$converged)
   expect_cells_solved(fit)
   expect_gt(fit$sigma, 0.6 * sigma_true)
   expect_lt(fit$sigma, 1.6 * sigma_true)
+  expect_gt(fit$range, 0.5 * 0.35)
+  expect_lt(fit$range, 2 * 0.35)
 })
 
 # --- #437: the joint-NUTS hyper prior reads the same map ---------------------
