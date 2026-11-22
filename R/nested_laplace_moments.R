@@ -1880,8 +1880,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # from the estimator its own resolution calls for (`.nl_axis_sd_choice()`).
 #
 # Called from `.nl_posterior_moments()` (single-block, spatiotemporal, joint),
-# from the two multi-block moment builders (`.nl_posterior_moments_multi()`,
-# `.joint_posterior_moments_multi()`), and by `tulpa_hyper_grid()`, which
+# from the multi-block moment builder (`.joint_posterior_moments_multi()`),
+# and by `tulpa_hyper_grid()`, which
 # assembles its own moments -- so every nested path reports one rule.
 #
 # The marginal carries the fit's cell measure `log_quad` where the fit has one.
@@ -1955,69 +1955,3 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   res
 }
 
-# Posterior moments for multi-block grids. Two flavours:
-#  * joint moments: across all axes (same as single-block 2D scatter).
-#  * per-block marginal moments: integrate out the other blocks' axes.
-.nl_posterior_moments_multi <- function(out, prepared, axis_offsets, joint_grid,
-                                        within = NULL) {
-  if (!is.null(out$outer_posterior)) {
-    view <- .nl_outer_hyper_view(out)
-    moments <- .nl_posterior_moments_multi(view, prepared, axis_offsets,
-      view$theta_grid, within)
-    fields <- c(grep("^theta_", names(moments), value = TRUE), "block_moments",
-                "within_cell_requested", "outer_grid_railed_axes", "outer_grid_edge_mass_axes")
-    fields <- setdiff(fields, c("theta_grid", "theta_names"))
-    out[fields] <- moments[fields]
-    return(out)
-  }
-  within <- .nl_within_cell_mode(within)
-  w  <- out$weights
-  tg <- joint_grid
-  out$theta_mean <- as.numeric(crossprod(w, tg))
-  names(out$theta_mean) <- colnames(tg)
-  out$theta_sd <- sqrt(pmax(0, as.numeric(crossprod(w, tg^2)) -
-                              out$theta_mean^2))
-  names(out$theta_sd) <- colnames(tg)
-
-  # Each block's moments use its columns and the joint integration weights.
-  B <- length(prepared)
-  per_block_moments <- vector("list", B)
-  for (b in seq_len(B)) {
-    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
-    sub <- joint_grid[, cols, drop = FALSE]
-    block_mean <- as.numeric(crossprod(w, sub))
-    block_sd   <- sqrt(pmax(0, as.numeric(crossprod(w, sub^2)) - block_mean^2))
-    # Use bare per-block axis names (e.g. "tau", "rho") instead of the
-    # joint-grid-prefixed "b<N>.tau" -- the block index is already implicit
-    # in the list position.
-    bare_names <- .nl_block_axis_grid(prepared[[b]])$names
-    names(block_mean) <- bare_names
-    names(block_sd)   <- bare_names
-    per_block_moments[[b]] <- list(
-      type      = tolower(prepared[[b]]$type),
-      mean      = block_mean,
-      sd        = block_sd,
-      axis_cols = cols
-    )
-  }
-  out$block_moments <- per_block_moments
-  # Each axis's SD from the estimator its own resolution calls for, the rule
-  # `.nl_posterior_moments()` applies on every other nested path.
-  out <- .nl_attach_axis_sd(out)
-
-  # Weighted-quantile median + 2.5/97.5 CI per axis (calibrated summary
-  # for right-skewed scale-like hyperparameters; see `.nl_axis_quantiles`).
-  geo <- .joint_axis_geometry(list(theta_grid = joint_grid,
-                                   axis_offsets = axis_offsets,
-                                   blocks = prepared))
-  qs <- .nl_axis_quantiles(
-    joint_grid, out$log_marginal, out$refining_axis, log_quad = out$log_quad,
-    domains = geo$domain, within = within, atoms = geo$atom, sd = TRUE,
-    support = .nl_node_support(out$integration),
-    weights = if (isTRUE(out$integration %in% c("qmc", "user", "aghq"))) out$weights)
-  out$theta_median <- qs$median
-  out$theta_ci_lo  <- qs$ci_lo
-  out$theta_ci_hi  <- qs$ci_hi
-  out$within_cell_requested <- within
-  .nl_attach_interval_provenance(out, qs, joint_grid, geo$domain, geo$atom)
-}

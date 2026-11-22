@@ -218,7 +218,7 @@ test_that("the default construction is log-quadratic, and one setting decides it
   expect_identical(.nl_within_cell_mode(NULL), dflt)
   for (fn in list(.nl_posterior_moments, .nl_summary_quantile,
                   .nl_summary_quantile_read, .nl_read_sd, .nl_axis_quantiles,
-                  .nl_posterior_moments_multi, .joint_posterior_moments_multi)) {
+                  .nl_registry_moments_multi, .joint_posterior_moments_multi)) {
     expect_null(formals(fn)$within)
   }
   expect_true(dflt %in% .NL_SUPPORT[["density"]]$within)

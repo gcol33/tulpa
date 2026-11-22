@@ -824,8 +824,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       # The dispatcher integrated the base grid; the appended cells are measured
       # and read with the rest.
       refined <- .nl_attach_outer_integration(refined, "multi-block outer grid")
-      .nl_posterior_moments_multi(refined, refined$blocks, refined$axis_offsets,
-                                  refined$theta_grid, within = within_cell)
+      .nl_registry_moments_multi(refined, within_cell)
     }
     # The first solve leaves its grid unrefined when the placement pass below
     # will lay it again (`.nl_refine_deferred()`).
@@ -905,8 +904,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           bounds = bounds, view = qmc_view, tol = qmc_tol),
         user = .nl_user_integrate(res, solve_outer, outer_design, tags),
         aghq = .nl_aghq_integrate(res, solve_outer, prior, quad_config))
-      res <- .nl_posterior_moments_multi(res, res$blocks, res$axis_offsets,
-                                        res$theta_grid, within = within_cell)
+      res <- .nl_registry_moments_multi(res, within_cell)
       if (keep_joint_prec) {
         k <- which.max(replace(res$log_marginal, !is.finite(res$log_marginal), -Inf))
         modal_args <- utils::modifyList(cargs_no_ckpt,
@@ -933,16 +931,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         cargs_no_ckpt, prior, likelihood = likelihood, debias = req,
         theta_grid_override = .nl_refined_theta(res)),
       p_fixed = p_fixed, beta_names = colnames(X),
-      remoments = function(r) .nl_posterior_moments_multi(
-        r, r$blocks, r$axis_offsets, r$theta_grid, within = within_cell))
+      remoments = function(r) .nl_registry_moments_multi(r, within_cell))
     res <- .nl_cila_attach(
       res, cila_cfg,
       redispatch = function(req) .nl_dispatch_multi(
         cargs_no_ckpt, prior, likelihood = likelihood, cila = req,
         theta_grid_override = .nl_refined_theta(res)),
       p_fixed = p_fixed, beta_names = colnames(X),
-      remoments = function(r) .nl_posterior_moments_multi(
-        r, r$blocks, r$axis_offsets, r$theta_grid, within = within_cell))
+      remoments = function(r) .nl_registry_moments_multi(r, within_cell))
     tm$mark("diagnostics")
     res$prior <- prior
     res$beta_prior <- cargs$beta_prior
@@ -3061,6 +3057,17 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   paste(parts, collapse = " x ")
 }
 
+# A multi-block registry fit's hyperparameter moments, read off the blocks,
+# axis layout and grid the fit carries. An outer quadrature's importance or
+# design weights are read as such; a grid's cell masses as a density.
+.nl_registry_moments_multi <- function(out, within = NULL) {
+  .joint_posterior_moments_multi(
+    out, out$blocks, out$axis_offsets, out$theta_grid,
+    int_weights = if (isTRUE(out$integration %in% c("qmc", "user", "aghq")))
+      out$weights,
+    support = .nl_node_support(out$integration), within = within)
+}
+
 .nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL,
                                progress = .nl_progress_args(list(progress = FALSE)),
                                within_cell = NULL,
@@ -3215,8 +3222,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                                   # auto-recenter FD stencil
 
   out <- .nl_attach_outer_integration(out, "multi-block outer grid")
-  out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid,
-                                     within = .nl_within_cell_mode(within_cell))
+  out <- .nl_registry_moments_multi(out, within_cell)
   out
 }
 

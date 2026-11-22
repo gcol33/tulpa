@@ -2312,7 +2312,7 @@
     res$theta_interval_read        <- prov$read
     res$theta_interval_design_mass <- prov$design_mass
     res <- .joint_posterior_moments_multi(
-        res, prepared, axis_offsets, joint_grid, cp,
+        res, prepared, axis_offsets, joint_grid,
         int_weights = if (is_design_weighted) res$weights else NULL,
         support = prov$read, within = within_cell)
     res$arm_layout    <- .joint_multi_layout(arms, prepared)
@@ -2390,7 +2390,7 @@
             debias = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names,
         remoments = function(r) .joint_posterior_moments_multi(
-            r, prepared, axis_offsets, joint_grid, cp,
+            r, prepared, axis_offsets, joint_grid,
             int_weights = if (is_design_weighted) r$weights else NULL,
             support = prov$read, within = within_cell))
     # Corrected integrated Laplace, over the same settled
@@ -2405,7 +2405,7 @@
         p_fixed = fixed$n_fixed, beta_names = fixed$names,
         remoments = function(r) {
             r <- .joint_posterior_moments_multi(
-                r, prepared, axis_offsets, joint_grid, cp,
+                r, prepared, axis_offsets, joint_grid,
                 int_weights = if (is_design_weighted) r$weights else NULL,
                 support = prov$read, within = within_cell)
             r
@@ -2737,17 +2737,32 @@
 }
 
 # Posterior moments for the multi-block joint grid. Mirrors the single-arm
-# multi-block helper (`.nl_posterior_moments_multi`) and additionally
+# multi-block helper and additionally
 # attaches the weighted-quantile median + 2.5/97.5 CI for every joint-grid
 # axis -- the calibrated headline summary for right-skewed scale-like
 # hyperparameters (alpha at small n_pos, sigma/range/phi near boundary).
 .joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
-                                            joint_grid, cp,
+                                            joint_grid,
                                             int_weights = NULL,
                                             support = .NL_SUPPORT_KINDS,
                                             within = NULL) {
     support <- match.arg(support)
     within  <- .nl_within_cell_mode(within)
+    # An outer quadrature that carries its own posterior (`outer_posterior`, the
+    # adaptive sparse rule) reports the hyperparameters off that posterior's
+    # points and weights rather than off the solved cells.
+    if (!is.null(res$outer_posterior)) {
+        view <- .nl_outer_hyper_view(res)
+        moments <- .joint_posterior_moments_multi(
+            view, prepared, axis_offsets, view$theta_grid,
+            int_weights = view$weights, support = support, within = within)
+        fields <- setdiff(c(grep("^theta_", names(moments), value = TRUE),
+                            "block_moments", "within_cell_requested",
+                            "outer_grid_railed_axes", "outer_grid_edge_mass_axes"),
+                          c("theta_grid", "theta_names"))
+        res[fields] <- moments[fields]
+        return(res)
+    }
     w <- res$weights
     # Joint moments across every column of joint_grid (including phi
     # columns appended for per-arm dispersion overrides).
