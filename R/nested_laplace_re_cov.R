@@ -2742,13 +2742,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # leading-order mean, else the reason it stayed at the mode. NULL when the
     # centring was not requested.
     mean_shift  = if (mean_shift_on) mean_shift_node,
-    ranef_unavailable = if (!re_cond) paste0(
-      "the adaptive Gauss-Hermite inner marginal (n_quad > 1) integrates each ",
-      "group's random effects out by quadrature instead of conditioning at ",
-      "their mode, so this fit carries no per-group posterior. Refit with ",
-      "n_quad = 1 (the joint-field Laplace inner solve) or with ",
-      "control$re_cov = \"gibbs\", both of which report random effects.")
-      else ranef_note,
+    ranef_unavailable = if (!re_cond) .AGHQ_RANEF_UNAVAILABLE else ranef_note,
     means       = beta_mean,
     param_names = beta_names,
     process_info = list(list(name = "fixed_effects", p = p_fix,

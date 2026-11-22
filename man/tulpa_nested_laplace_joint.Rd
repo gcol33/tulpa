@@ -903,6 +903,17 @@ third-derivative oracle, and an absent \code{gamma_1} is never read as zero.
 Such a fit therefore reports what it reported before the default moved, to
 the bit -- a declined coefficient keeps the grid-mixture read. See
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement behind the default.
+\item \code{n_quad} (\code{1}) -- the inner marginal. \code{1} is the Laplace approximation
+at the joint mode. Above 1, for a single arm whose latent blocks are
+random effects (\code{iid}, \code{miid}) over one grouping factor, each group's
+random effects are integrated by \code{n_quad}-point adaptive Gauss-Hermite
+quadrature and the fixed effects by a Laplace step over the result, the
+inner marginal of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} and of
+\code{tulpa_re_cov_nested(n_quad = )}. It reduces the small-cluster variance
+attenuation of binary and low-count data. The groups are integrated out,
+so such a fit keeps no latent precision, runs no cheap-pass screen, skew
+probe or skew correction, refuses \code{subspace_debias} / \code{cila}, and
+reports \code{ranef_unavailable} in place of per-group effects.
 \item \code{subspace_debias} (\code{FALSE}) -- the same \code{method = "fast"} or
 \code{method = "exact"} composition and controls as \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.
 Fast correction uses the Gaussian conditional-mean surface and keeps

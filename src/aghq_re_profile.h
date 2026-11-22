@@ -43,7 +43,8 @@ struct AghqProfile {
     bool ok = false;
 };
 
-// Gaussian fixed-effect prior; `on = false` for none (F is the marginal alone).
+// Gaussian fixed-effect prior; `on = false` for none (F is the marginal alone),
+// and a coefficient whose SD is infinite carries none.
 struct AghqBetaPrior {
     bool on = false;
     Eigen::VectorXd mean, sd;
@@ -75,6 +76,8 @@ inline AghqProfile aghq_profile_beta(REGroupOracle& orc,
         e.g = r.grad.head(p);
         if (prior.on) {
             for (int j = 0; j < p; ++j) {
+                // An infinite SD is a flat prior on that coefficient: no term.
+                if (!std::isfinite(prior.sd(j))) continue;
                 const double s = prior.sd(j), z = (b(j) - prior.mean(j)) / s;
                 e.F += -0.5 * z * z - std::log(s) - 0.5 * LOG_2PI;
                 e.g(j) -= z / s;

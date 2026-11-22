@@ -1737,6 +1737,14 @@ ranef <- function(object, ...) UseMethod("ranef")
 #' @rdname ranef
 #' @export
 ranef.tulpa_fit <- function(object, ...) {
+  # A backend that fits random-effect terms without ever forming their per-group
+  # posterior says so, with its reason. The model HAS random effects, so an empty
+  # table would be indistinguishable from one that does not -- the reason is the
+  # useful answer and it names the fits that do report them.
+  if (is.character(object$ranef_unavailable)) {
+    stop("ranef(): this fit carries no per-group random effects -- ",
+         object$ranef_unavailable, call. = FALSE)
+  }
   if (inherits(object, "tulpa_nested_laplace_joint") && is.null(object$formula)) {
     return(.ranef_joint_direct(object))
   }
@@ -1747,15 +1755,6 @@ ranef.tulpa_fit <- function(object, ...) {
   # Nice RE labels from the layout (not the sampler's full param_names, which
   # also carries the latent field and variance-component hyperparameters).
   re_names <- .re_names_from_layout(layout)
-
-  # A backend that fits random-effect terms without ever forming their per-group
-  # posterior says so, with its reason. The model HAS random effects, so an empty
-  # table would be indistinguishable from one that does not -- the reason is the
-  # useful answer and it names the fits that do report them.
-  if (is.character(object$ranef_unavailable)) {
-    stop("ranef(): this fit carries no per-group random effects -- ",
-         object$ranef_unavailable, call. = FALSE)
-  }
 
   re <- .re_coef_draws(object)
   if (!is.null(re)) {

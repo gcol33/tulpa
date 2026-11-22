@@ -262,6 +262,7 @@
                                         re_block_conditioned, re_terms) {
   fit$re_block_index       <- re_block_index
   fit$re_block_conditioned <- re_block_conditioned
+  if (is.character(fit$ranef_unavailable)) return(fit)
   fit <- .joint_arm_attach_re(fit, blocks, re_block_index, re_terms)
   .joint_arm_attach_field_read(
     fit, .joint_arm_re_map(fit, blocks, re_block_index, re_terms))

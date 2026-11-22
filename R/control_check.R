@@ -226,7 +226,7 @@ tulpa_check_control <- function(control, allowed, where) {
       "diagnose_skew", "skew_idx", "skew_correct", "auto_recenter",
       "recenter_pilot",
       "subspace_debias", "cila", "max_grid_cells", "within_cell",
-      "checkpoint", progress),
+      "n_quad", "checkpoint", progress),
     # `tulpa_hyper_grid()`'s own surface: the refinement / consistency passes
     # it drives and the per-cell progress reporter, since the inner solve is
     # the caller's own callback and takes no knobs from here.

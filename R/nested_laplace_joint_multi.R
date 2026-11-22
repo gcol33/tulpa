@@ -1551,6 +1551,7 @@
                                   axis_refine = NULL,
                                   grid_auto = list(),
                                   phi_auto = NULL,
+                                  n_quad = 1L,
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()
     integration <- match.arg(integration, c("auto", "ccd", "grid",
@@ -1630,6 +1631,16 @@
         fixed_block_extra = fixed_block_extra,
         inner_sparse_override = inner_sparse_override,
         prepared = prepared)
+    # At n_quad > 1 every cell solve is the adaptive Gauss-Hermite marginal of
+    # the random effects (`.joint_aghq_plan()`), behind the same closure.
+    aghq_plan <- .joint_aghq_plan(n_quad, arms, blocks_spec, prepared,
+                                  axis_names, axis_offsets, cp, cell_coupling,
+                                  .normalise_phi_grid(phi_grid, arm_names),
+                                  laplace_kernel = call_kernel)
+    if (!is.null(aghq_plan)) {
+        call_kernel <- .joint_aghq_call_factory(aghq_plan, fb_layout$n_x,
+                                                n_threads)
+    }
 
     # Per-latent-axis fine grid values (sorted unique), shared by the CCD and the
     # adaptive-lattice integrators to place / locate the outer nodes.
@@ -2484,6 +2495,8 @@
         })
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
+    res$n_quad <- as.integer(n_quad)
+    if (!is.null(aghq_plan)) res$ranef_unavailable <- .AGHQ_RANEF_UNAVAILABLE
     .finalize_fit(res, backend = "nested_laplace_joint",
                   n_fixed = fixed$n_fixed, fixed_names = fixed$names,
                   extra_class = c("tulpa_nested_laplace_joint_multi",

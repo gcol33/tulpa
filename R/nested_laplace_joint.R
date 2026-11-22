@@ -886,6 +886,17 @@
 #'     Such a fit therefore reports what it reported before the default moved, to
 #'     the bit -- a declined coefficient keeps the grid-mixture read. See
 #'     [tulpa_nested_laplace()] for the measurement behind the default.
+#'   * `n_quad` (`1`) -- the inner marginal. `1` is the Laplace approximation
+#'     at the joint mode. Above 1, for a single arm whose latent blocks are
+#'     random effects (`iid`, `miid`) over one grouping factor, each group's
+#'     random effects are integrated by `n_quad`-point adaptive Gauss-Hermite
+#'     quadrature and the fixed effects by a Laplace step over the result, the
+#'     inner marginal of [tulpa_re_aghq()] and of
+#'     `tulpa_re_cov_nested(n_quad = )`. It reduces the small-cluster variance
+#'     attenuation of binary and low-count data. The groups are integrated out,
+#'     so such a fit keeps no latent precision, runs no cheap-pass screen, skew
+#'     probe or skew correction, refuses `subspace_debias` / `cila`, and
+#'     reports `ranef_unavailable` in place of per-group effects.
 #'   * `subspace_debias` (`FALSE`) -- the same `method = "fast"` or
 #'     `method = "exact"` composition and controls as [tulpa_nested_laplace()].
 #'     Fast correction uses the Gaussian conditional-mean surface and keeps
@@ -2103,6 +2114,21 @@ tulpa_nested_laplace_joint <- function(responses,
       !is.null(sd_cfg) && !identical(sd_cfg$closure, FALSE)
     }
     if (keep_joint_prec) store_Q <- TRUE
+    # The inner marginal: Laplace at 1, adaptive Gauss-Hermite over each group's
+    # random effects above (`.joint_aghq_plan()`). The quadrature integrates the
+    # groups out, so it keeps no latent precision, has no conditional field to
+    # probe, centre, screen or correct, and those requests are refused or off.
+    n_quad                    <- .check_n_quad(control$n_quad %||% 1L)
+    if (n_quad > 1L) {
+      if (!is.null(.subspace_debias_config(control$subspace_debias, control$cila)) ||
+          !is.null(.cila_config(control$cila))) {
+        stop("`control$subspace_debias` / `control$cila` need the Laplace inner ",
+             "solve (`control$n_quad = 1`). The adaptive Gauss-Hermite inner ",
+             "marginal integrates each group's random effects out, so it ",
+             "exposes no conditional latent field to correct.", call. = FALSE)
+      }
+      store_Q <- FALSE
+    }
     adaptive_grid             <- control$adaptive_grid %||% FALSE
     adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
@@ -2347,7 +2373,12 @@ tulpa_nested_laplace_joint <- function(responses,
     # prune_tol). The tolerance and the screening depth are validated whatever
     # `prune` says, so a misspecified value is reported where the user set it
     # rather than at the next fit that happens to switch pruning on.
-    prune_tol_eff <- if (isTRUE(prune)) prune_tol else 0.0
+    prune_tol_eff <- if (isTRUE(prune) && n_quad == 1L) prune_tol else 0.0
+    if (n_quad > 1L) {
+      diagnose_skew <- FALSE
+      skew_correct  <- FALSE
+      local_ccd     <- NULL
+    }
     screen_iters <- .nl_check_screen_iters(screen_iters)
 
     # Cheap-screen depth reaches the cpp entry on the same scoped-option
@@ -2421,6 +2452,7 @@ tulpa_nested_laplace_joint <- function(responses,
             var_of_means_consistency = var_of_means_consistency,
             axis_refine = axis_refine,
             grid_auto = grid_auto, phi_auto = phi_auto,
+            n_quad = n_quad,
             timer = tm
     )
 }
