@@ -185,11 +185,26 @@ auto_grid_place <- function(x)
 # field over. Absent, marked with `auto_grid()`, or equal by value to
 # the engine's own `.NL_RECENTER$sigma_pc_prior` are all defaults; anything else
 # is a deliberate choice the rescue leaves alone.
-.nl_prior_sigma_is_pinned <- function(prior_sigma) {
-    if (is.null(prior_sigma)) return(FALSE)
-    if (is_auto_grid(prior_sigma)) return(FALSE)
-    d <- .nl_recenter("sigma_pc_prior")
-    !isTRUE(all.equal(d, .nl_strip_auto(prior_sigma), check.attributes = FALSE))
+#
+# A caller states an SD prior at the door (`prior_sigma`, a spec) or on a block
+# (`blocks[[k]]$prior_sigma`, the PC anchor `c(U, alpha)`), and the same rule
+# reads both: a block anchor is the spec `list("pc.prec", anchor)`. The
+# escalated prior is a door spec, which replaces every block's density on its
+# field-scale axis, so a prior stated on ANY block pins the escalation.
+.nl_prior_sigma_is_pinned <- function(prior_sigma, blocks = list()) {
+    stated <- function(spec) {
+        if (is.null(spec) || is_auto_grid(spec)) return(FALSE)
+        !isTRUE(all.equal(.nl_recenter("sigma_pc_prior"), .nl_strip_auto(spec),
+                          check.attributes = FALSE))
+    }
+    if (stated(prior_sigma)) return(TRUE)
+    if (!is.null(blocks$type)) blocks <- list(blocks)
+    for (b in blocks) {
+        a <- b$prior_sigma
+        if (!is.null(a) && !is_auto_grid(a) &&
+            stated(list("pc.prec", as.numeric(a)[1:2]))) return(TRUE)
+    }
+    FALSE
 }
 
 # Drop the marker so nothing downstream of the rescue sees an attributed

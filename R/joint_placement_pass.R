@@ -541,7 +541,7 @@
     for (i in which(fam_of == "alpha")) {
         slots[[i]]$atom <- any(slots[[i]]$ref(res) <= 0)
     }
-    prior_pinned <- .nl_prior_sigma_is_pinned(st$prior_sigma)
+    prior_pinned <- .nl_prior_sigma_is_pinned(st$prior_sigma, st$prior)
 
     attempt  <- 0L
     placed   <- character(0)

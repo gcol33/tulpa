@@ -382,7 +382,10 @@
 #'   `prior_sigma` also interacts with the auto-recenter above: its second
 #'   attempt engages the engine's own weakly-informative PC(U = 3,
 #'   alpha = 0.01) prior, and a `prior_sigma` the caller PINNED suppresses
-#'   that (the caller's prior stands). Pinning is decided by provenance, not
+#'   that (the caller's prior stands), whether it was stated here or as a
+#'   block's own `prior_sigma` anchor: the escalated prior reaches every
+#'   block's field-scale axis, so a prior stated on any block pins it. Pinning
+#'   is decided by provenance, not
 #'   presence: a spec marked with [auto_grid()], or one
 #'   equal by value to the engine's own default, is a default and does not
 #'   suppress the escalation. When it does, the fit carries
@@ -1107,7 +1110,8 @@
 #'      and `outer_grid_prior_added` (logical: whether the light default
 #'      PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it, plus
 #'      `outer_grid_prior_declined = "prior_pinned"` when a second attempt ran
-#'      but the caller's pinned `prior_sigma` held that prior back.
+#'      but a pinned `prior_sigma`, at the door or on a block, held that prior
+#'      back.
 #'   * `outer_grid_recenter_declined` -- on a `"fixed"` placement, why the
 #'      recenter did not run: `"grid_not_collapsed"` (the grid already brackets
 #'      the mode -- the common case, no refit needed), `"axis_pinned"` (the

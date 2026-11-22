@@ -1,5 +1,19 @@
 # tulpa 0.8.0
 
+* A `prior_sigma` stated on a block (the field's own PC anchor) pins the
+  joint door's second placement attempt the way a door-level `prior_sigma`
+  does: the escalated door prior would have replaced that block's density on
+  its field-scale axis. The fit then carries
+  `outer_grid_prior_declined = "prior_pinned"` (#1295).
+
+* A door-level `prior_sigma` on a field precision `b<k>.tau` carries the
+  precision's tau^(-3/2) tail record, as the default PC prior does, so the
+  precision's posterior mean and SD read as nonexistent (`Inf`) under either.
+  On a 30-region binomial ICAR, `prior_sigma = list("pc.prec", c(3, 0.01))`
+  (the default density) read a mean of 6.5e5 and an SD of 2.9e7, values set
+  by where the grid stops, beside the default fit's `Inf` and an identical
+  interval (#1294).
+
 * WAIC, LOO, DIC and `posterior_predict()` on a zero-inflated fit through
   the joint nested-Laplace door draw the linear predictor from the grid's
   latent mixture: the count coefficients, the structural-zero coefficients and

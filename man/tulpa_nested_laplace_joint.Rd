@@ -388,7 +388,10 @@ the block indices reached, and the grid columns those are.
 \code{prior_sigma} also interacts with the auto-recenter above: its second
 attempt engages the engine's own weakly-informative PC(U = 3,
 alpha = 0.01) prior, and a \code{prior_sigma} the caller PINNED suppresses
-that (the caller's prior stands). Pinning is decided by provenance, not
+that (the caller's prior stands), whether it was stated here or as a
+block's own \code{prior_sigma} anchor: the escalated prior reaches every
+block's field-scale axis, so a prior stated on any block pins it. Pinning
+is decided by provenance, not
 presence: a spec marked with \code{\link[=auto_grid]{auto_grid()}}, or one
 equal by value to the engine's own default, is a default and does not
 suppress the escalation. When it does, the fit carries
@@ -1126,7 +1129,8 @@ argument above). \code{outer_grid_recenter_attempts} (integer)
 and \code{outer_grid_prior_added} (logical: whether the light default
 PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it, plus
 \code{outer_grid_prior_declined = "prior_pinned"} when a second attempt ran
-but the caller's pinned \code{prior_sigma} held that prior back.
+but a pinned \code{prior_sigma}, at the door or on a block, held that prior
+back.
 \item \code{outer_grid_recenter_declined} -- on a \code{"fixed"} placement, why the
 recenter did not run: \code{"grid_not_collapsed"} (the grid already brackets
 the mode -- the common case, no refit needed), \code{"axis_pinned"} (the

@@ -430,6 +430,53 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     expect_equal(calls$last_prior_sigma, chosen)
 })
 
+test_that("a prior_sigma stated on a block pins the escalation like one at the door", {
+    skip_on_cran_budget()
+    pinned <- tulpa:::.nl_prior_sigma_is_pinned
+    icar <- function(anchor = NULL) c(list(type = "icar"),
+                                      if (!is.null(anchor)) list(prior_sigma = anchor))
+    expect_true(pinned(NULL, list(icar(c(1, 0.01)))))
+    expect_true(pinned(NULL, list(icar(), icar(c(1, 0.01)))))
+    expect_true(pinned(NULL, icar(c(1, 0.01))))
+    # The engine's own anchor, or one the caller marked a default, adds nothing.
+    expect_false(pinned(NULL, list(icar(c(3, 0.01)))))
+    expect_false(pinned(NULL, list(icar(auto_grid(c(1, 0.01))))))
+    expect_false(pinned(NULL, list(icar(), icar())))
+
+    # A railed copy block whose own anchor the caller stated: the escalated door
+    # spec would replace that anchor's density, so the second attempt holds it.
+    stub_res <- list(pareto_k_regime = "collapsed_edge",
+                     pareto_k_grid_edge_axes = "b1.sigma",
+                     outer_mode_u = c(log(3), 0.4),
+                     outer_mode_cov_u = diag(c(0.25, 0.09)),
+                     outer_mode_axis_tags = c("log", "identity"),
+                     outer_mode_axis_names = c("b1.sigma", "b1.alpha"),
+                     outer_grid_placement = "fixed",
+                     blocks = list(list(type = "icar")))
+    cp <- list(has_copy = TRUE, copy_blocks_zero = 0L)
+    calls <- new.env(parent = emptyenv())
+    refit <- function(prior_i, prior_sigma_i) {
+        calls$last_prior_sigma <- prior_sigma_i
+        stub_res
+    }
+    out <- .place_copy_sd(stub_res, list(icar(c(1, 0.01))), NULL, cp, NULL, refit)
+    expect_identical(out$res$outer_grid_recenter_attempts, 2L)
+    expect_false(out$res$outer_grid_prior_added)
+    expect_identical(out$res$outer_grid_prior_declined, "prior_pinned")
+    expect_null(calls$last_prior_sigma)
+
+    # The same holds when the stated anchor sits on another block of the fit.
+    out <- .place_copy_sd(stub_res, list(icar(), icar(c(1, 0.01))), NULL, cp,
+                          NULL, refit)
+    expect_identical(out$res$outer_grid_prior_declined, "prior_pinned")
+    expect_null(calls$last_prior_sigma)
+
+    # A block anchor at the engine's own value escalates as before.
+    out <- .place_copy_sd(stub_res, list(icar(c(3, 0.01))), NULL, cp, NULL, refit)
+    expect_true(out$res$outer_grid_prior_added)
+    expect_equal(calls$last_prior_sigma, tulpa:::.nl_recenter("sigma_pc_prior"))
+})
+
 test_that("the multi-block rescue reports a pinned copy-block axis", {
     skip_on_cran_budget()
     stub_res <- list(pareto_k_regime = "collapsed_edge",
