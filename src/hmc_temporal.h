@@ -145,7 +145,7 @@ inline double ar1_one_minus_rho2_slope(double rho) {
 // The pseudo-determinant 0.5 * log|Q0|_+ is not included here. It is constant
 // in the hyperparameters, so no sampler or gradient reads it; the nested-Laplace
 // field densities that report a log marginal likelihood add it on top
-// (log_prior_rw1_field / log_prior_rw2_field, intrinsic_log_pdet.h), which is
+// (log_prior_rw_field, intrinsic_log_pdet.h), which is
 // what makes their evidence comparable across temporal structures.
 template <typename T>
 inline T gmrf_log_norm(int rank, const T& log_tau) {

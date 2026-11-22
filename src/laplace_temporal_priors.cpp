@@ -4,6 +4,7 @@
 #include "laplace_temporal_priors.h"
 #include "sparse_hessian.h"
 #include "laplace_s2z.h"        // add_s2z_pin* / s2z_pin_quad
+#include "laplace_hessian_target.h"
 #include <cmath>
 
 #ifndef M_PI
@@ -30,62 +31,78 @@ inline double s2z_pin_log_norm(double tau) {
     return tulpa_temporal::gmrf_log_norm(1, std::log(tau));
 }
 
-} // anonymous namespace
+// Coefficient k of the order-K difference operator over the window
+// (x[p_0], ..., x[p_K]): (-1, 1) for RW1, (1, -2, 1) for RW2.
+template <int Order> inline double rw_coef(int k);
+template <> inline double rw_coef<1>(int k) { return k == 0 ? -1.0 : 1.0; }
+template <> inline double rw_coef<2>(int k) { return k == 1 ? -2.0 : 1.0; }
 
-void add_rw1_precision(
-    DenseVec& grad, DenseMat& H, const NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-) {
-    for (int t = 1; t < n_times; t++) {
-        int idx = start_idx + t;
-        double diff = x[idx] - x[idx - 1];
-        grad[idx] -= tau * diff;
-        grad[idx - 1] += tau * diff;
-        H[idx][idx] += tau;
-        H[idx - 1][idx - 1] += tau;
-        H[idx][idx - 1] -= tau;
-        H[idx - 1][idx] -= tau;
+// One difference term d = sum_k c_k x[p_k] of tau/2 d^2 into grad and H:
+// grad[p_k] -= tau c_k d, H[p_k][p_l] += tau c_k c_l.
+template <int Order, class Hess>
+inline void add_rw_term(DenseVec& grad, Hess& H, const NumericVector& x,
+                        const int (&p)[Order + 1], double tau) {
+    double diff = rw_coef<Order>(0) * x[p[0]];
+    for (int k = 1; k <= Order; k++) diff += rw_coef<Order>(k) * x[p[k]];
+    for (int k = 0; k <= Order; k++) {
+        grad[p[k]] -= (tau * rw_coef<Order>(k)) * diff;
     }
-    if (cyclic && n_times > 1) {
-        int idx_first = start_idx;
-        int idx_last = start_idx + n_times - 1;
-        double diff = x[idx_first] - x[idx_last];
-        grad[idx_first] -= tau * diff;
-        grad[idx_last] += tau * diff;
-        H[idx_first][idx_first] += tau;
-        H[idx_last][idx_last] += tau;
-        H[idx_first][idx_last] -= tau;
-        H[idx_last][idx_first] -= tau;
+    for (int k = 0; k <= Order; k++) {
+        const double ck = rw_coef<Order>(k);
+        hess_add_sym(H, p[k], p[k], tau * (ck * ck));
+    }
+    for (int k = 0; k <= Order; k++) {
+        for (int l = k + 1; l <= Order; l++) {
+            hess_add_sym(H, p[k], p[l],
+                         tau * (rw_coef<Order>(k) * rw_coef<Order>(l)));
+        }
     }
 }
 
-void add_rw2_precision(
-    DenseVec& grad, DenseMat& H, const NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-) {
-    if (n_times < 3) return;
-    // One second-difference term (x[p] - 2 x[q] + x[r]) into grad and H.
-    auto add_term = [&](int p, int q, int r) {
-        double diff2 = x[p] - 2.0 * x[q] + x[r];
-        grad[p] -= tau * diff2;
-        grad[q] += 2.0 * tau * diff2;
-        grad[r] -= tau * diff2;
-        H[p][p] += tau;         H[q][q] += 4.0 * tau;   H[r][r] += tau;
-        H[p][q] -= 2.0 * tau;   H[q][p] -= 2.0 * tau;
-        H[q][r] -= 2.0 * tau;   H[r][q] -= 2.0 * tau;
-        H[p][r] += tau;         H[r][p] += tau;
-    };
-    for (int t = 1; t < n_times - 1; t++) {
-        int idx = start_idx + t;
-        add_term(idx - 1, idx, idx + 1);
+// The order-K random-walk precision of one walk of n_times at start_idx: one
+// term per window of K + 1 consecutive times, and on a cyclic walk the K
+// windows that wrap past the last time.
+template <int Order, class Hess>
+void add_rw_precision(DenseVec& grad, Hess& H, const NumericVector& x,
+                      int start_idx, int n_times, double tau, bool cyclic) {
+    constexpr int W = Order + 1;
+    if (n_times < W) return;
+    int p[W];
+    for (int t = 0; t + W <= n_times; t++) {
+        for (int k = 0; k < W; k++) p[k] = start_idx + t + k;
+        add_rw_term<Order>(grad, H, x, p, tau);
     }
     if (cyclic) {
-        // Close the ring: centres at t = n-1 and t = 0 with wrapped neighbours.
-        int i0 = start_idx, iL = start_idx + n_times - 1;
-        add_term(iL - 1, iL, i0);
-        add_term(iL, i0, i0 + 1);
+        for (int t = n_times - W + 1; t < n_times; t++) {
+            for (int k = 0; k < W; k++) p[k] = start_idx + (t + k) % n_times;
+            add_rw_term<Order>(grad, H, x, p, tau);
+        }
     }
 }
+
+template <int Order, class Hess>
+void add_rw_field_impl(DenseVec& grad, Hess& H, const NumericVector& x,
+                       int start, int n_groups, int n_times, double tau,
+                       bool cyclic) {
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        add_rw_precision<Order>(grad, H, x, s, n_times, tau, cyclic);
+    });
+    add_s2z_pin_to(grad, H, x, start, static_cast<const int*>(nullptr),
+                   n_groups * n_times, tau, S2ZStorage::Fold);
+}
+
+template <class Hess>
+void add_rw_field_dispatch(int order, DenseVec& grad, Hess& H,
+                           const NumericVector& x, int start, int n_groups,
+                           int n_times, double tau, bool cyclic) {
+    if (order == 2) {
+        add_rw_field_impl<2>(grad, H, x, start, n_groups, n_times, tau, cyclic);
+    } else {
+        add_rw_field_impl<1>(grad, H, x, start, n_groups, n_times, tau, cyclic);
+    }
+}
+
+} // anonymous namespace
 
 void add_ar1_precision(
     DenseVec& grad, DenseMat& H, const NumericVector& x,
@@ -106,67 +123,6 @@ void add_ar1_precision(
         H[idx_prev][idx_prev] += tau * rho * rho;
         H[idx][idx_prev] -= tau * rho;
         H[idx_prev][idx] -= tau * rho;
-    }
-}
-
-// ============================================================
-// Sparse twins. Same math; SparseHessianBuilder::add normalizes
-// (row, col) to lower triangle internally, so each off-diagonal
-// edge is written once.
-// ============================================================
-
-void add_rw1_precision_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-) {
-    for (int t = 1; t < n_times; t++) {
-        int idx = start_idx + t;
-        double diff = x[idx] - x[idx - 1];
-        grad[idx] -= tau * diff;
-        grad[idx - 1] += tau * diff;
-        H.add(idx,     idx,     tau);
-        H.add(idx - 1, idx - 1, tau);
-        H.add(idx,     idx - 1, -tau);
-    }
-    if (cyclic && n_times > 1) {
-        int idx_first = start_idx;
-        int idx_last  = start_idx + n_times - 1;
-        double diff = x[idx_first] - x[idx_last];
-        grad[idx_first] -= tau * diff;
-        grad[idx_last]  += tau * diff;
-        H.add(idx_first, idx_first, tau);
-        H.add(idx_last,  idx_last,  tau);
-        H.add(idx_last,  idx_first, -tau);
-    }
-}
-
-void add_rw2_precision_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-) {
-    if (n_times < 3) return;
-    // SparseHessianBuilder::add normalizes (row, col) to the lower triangle, so
-    // each unique off-diagonal edge is written once regardless of orientation.
-    auto add_term = [&](int p, int q, int r) {
-        double diff2 = x[p] - 2.0 * x[q] + x[r];
-        grad[p] -= tau * diff2;
-        grad[q] += 2.0 * tau * diff2;
-        grad[r] -= tau * diff2;
-        H.add(p, p, tau);
-        H.add(q, q, 4.0 * tau);
-        H.add(r, r, tau);
-        H.add(p, q, -2.0 * tau);
-        H.add(q, r, -2.0 * tau);
-        H.add(p, r, tau);
-    };
-    for (int t = 1; t < n_times - 1; t++) {
-        int idx = start_idx + t;
-        add_term(idx - 1, idx, idx + 1);
-    }
-    if (cyclic) {
-        int i0 = start_idx, iL = start_idx + n_times - 1;
-        add_term(iL - 1, iL, i0);
-        add_term(iL, i0, i0 + 1);
     }
 }
 
@@ -239,78 +195,29 @@ void add_ar1_pattern(
 // sum-to-zero pin. See the header for why the pin is global.
 // ============================================================
 
-void add_rw1_field(
-    DenseVec& grad, DenseMat& H, const NumericVector& x,
+void add_rw_field(
+    int order, DenseVec& grad, DenseMat& H, const NumericVector& x,
     int start, int n_groups, int n_times, double tau, bool cyclic
 ) {
-    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        add_rw1_precision(grad, H, x, s, n_times, tau, cyclic);
-    });
-    add_s2z_pin(grad, H, x, start, n_groups * n_times, tau);
+    add_rw_field_dispatch(order, grad, H, x, start, n_groups, n_times, tau,
+                          cyclic);
 }
 
-void add_rw1_field_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
+void add_rw_field(
+    int order, DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
     int start, int n_groups, int n_times, double tau, bool cyclic
 ) {
-    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        add_rw1_precision_sparse(grad, H, x, s, n_times, tau, cyclic);
-    });
-    add_s2z_pin_sparse(grad, H, x, start, n_groups * n_times, tau,
-                       S2ZStorage::Fold);
+    add_rw_field_dispatch(order, grad, H, x, start, n_groups, n_times, tau,
+                          cyclic);
 }
 
-void add_rw1_field_pattern(
-    std::vector<std::pair<int,int>>& out,
+void add_rw_field_pattern(
+    int order, std::vector<std::pair<int,int>>& out,
     int start, int n_groups, int n_times, bool cyclic
 ) {
     for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        add_rw1_pattern(out, s, n_times, cyclic);
-    });
-    add_s2z_pin_pattern(out, start, n_groups * n_times, S2ZStorage::Fold);
-}
-
-double log_prior_rw1_field(
-    const NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic,
-    double log_pdet
-) {
-    double lp = 0.0;
-    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        lp += log_prior_rw1(x, s, n_times, tau, cyclic);
-    });
-    return lp + s2z_pin_log_norm(tau)
-         - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau)
-         + 0.5 * n_groups * log_pdet;
-}
-
-void add_rw2_field(
-    DenseVec& grad, DenseMat& H, const NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
-) {
-    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        add_rw2_precision(grad, H, x, s, n_times, tau, cyclic);
-    });
-    add_s2z_pin(grad, H, x, start, n_groups * n_times, tau);
-}
-
-void add_rw2_field_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
-) {
-    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        add_rw2_precision_sparse(grad, H, x, s, n_times, tau, cyclic);
-    });
-    add_s2z_pin_sparse(grad, H, x, start, n_groups * n_times, tau,
-                       S2ZStorage::Fold);
-}
-
-void add_rw2_field_pattern(
-    std::vector<std::pair<int,int>>& out,
-    int start, int n_groups, int n_times, bool cyclic
-) {
-    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        add_rw2_pattern(out, s, n_times, cyclic);
+        if (order == 2) add_rw2_pattern(out, s, n_times, cyclic);
+        else            add_rw1_pattern(out, s, n_times, cyclic);
     });
     add_s2z_pin_pattern(out, start, n_groups * n_times, S2ZStorage::Fold);
 }
@@ -318,14 +225,15 @@ void add_rw2_field_pattern(
 // A non-cyclic RW2 keeps its per-group LINEAR null direction, which the pin
 // does not touch: rank(Q_aug) = sum_g rank(Q_g) + 1 either way, and
 // log_prior_rw2 already carries the per-group rank that reflects it.
-double log_prior_rw2_field(
-    const NumericVector& x,
+double log_prior_rw_field(
+    int order, const NumericVector& x,
     int start, int n_groups, int n_times, double tau, bool cyclic,
     double log_pdet
 ) {
+    const TemporalType type = order == 2 ? TemporalType::RW2 : TemporalType::RW1;
     double lp = 0.0;
     for_each_temporal_group(start, n_groups, n_times, [&](int s) {
-        lp += log_prior_rw2(x, s, n_times, tau, cyclic);
+        lp += log_prior_temporal_span(x, s, n_times, type, tau, 0.0, cyclic);
     });
     return lp + s2z_pin_log_norm(tau)
          - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau)

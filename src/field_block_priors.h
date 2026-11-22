@@ -98,35 +98,28 @@ inline void set_temporal_block_priors(
     TauAt tau_at, RhoAt rho_at, bool cyclic
 ) {
     if (type == "rw1" || type == "rw2") {
-        const bool rw2 = (type == "rw2");
-        block.add_prior = [start, n_groups, n_times, tau_at, cyclic, rw2](
+        const int order = (type == "rw2") ? 2 : 1;
+        block.add_prior = [start, n_groups, n_times, tau_at, cyclic, order](
             DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x, int k) {
-            if (rw2) add_rw2_field(grad, H, x, start, n_groups, n_times,
-                                   tau_at(k), cyclic);
-            else     add_rw1_field(grad, H, x, start, n_groups, n_times,
-                                   tau_at(k), cyclic);
+            add_rw_field(order, grad, H, x, start, n_groups, n_times,
+                         tau_at(k), cyclic);
         };
         block.add_prior_sparse = [start, n_groups, n_times, tau_at, cyclic,
-                                  rw2](SparseHessianBuilder& H, DenseVec& grad,
-                                       const Rcpp::NumericVector& x, int k) {
-            if (rw2) add_rw2_field_sparse(grad, H, x, start, n_groups, n_times,
-                                          tau_at(k), cyclic);
-            else     add_rw1_field_sparse(grad, H, x, start, n_groups, n_times,
-                                          tau_at(k), cyclic);
+                                  order](SparseHessianBuilder& H, DenseVec& grad,
+                                         const Rcpp::NumericVector& x, int k) {
+            add_rw_field(order, grad, H, x, start, n_groups, n_times,
+                         tau_at(k), cyclic);
         };
-        block.add_prior_pattern = [start, n_groups, n_times, cyclic, rw2](
+        block.add_prior_pattern = [start, n_groups, n_times, cyclic, order](
             std::vector<std::pair<int,int>>& out) {
-            if (rw2) add_rw2_field_pattern(out, start, n_groups, n_times, cyclic);
-            else     add_rw1_field_pattern(out, start, n_groups, n_times, cyclic);
+            add_rw_field_pattern(order, out, start, n_groups, n_times, cyclic);
         };
-        const double log_pdet = rw_log_pdet(n_times, rw2 ? 2 : 1, cyclic);
-        block.log_prior = [start, n_groups, n_times, tau_at, cyclic, rw2,
+        const double log_pdet = rw_log_pdet(n_times, order, cyclic);
+        block.log_prior = [start, n_groups, n_times, tau_at, cyclic, order,
                            log_pdet](
             const Rcpp::NumericVector& x, int k) -> double {
-            return rw2 ? log_prior_rw2_field(x, start, n_groups, n_times,
-                                             tau_at(k), cyclic, log_pdet)
-                       : log_prior_rw1_field(x, start, n_groups, n_times,
-                                             tau_at(k), cyclic, log_pdet);
+            return log_prior_rw_field(order, x, start, n_groups, n_times,
+                                      tau_at(k), cyclic, log_pdet);
         };
     } else if (type == "ar1") {
         block.add_prior = [start, n_groups, n_times, tau_at, rho_at](

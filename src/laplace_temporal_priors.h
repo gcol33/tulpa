@@ -1,10 +1,10 @@
 // laplace_temporal_priors.h
 // Temporal prior utilities and precision interfaces for Laplace solvers.
 //
-// Each precision (RW1/RW2/AR1) is exposed in two scatter flavors:
-//   * Dense:  `add_*_precision`         -> DenseMat& H  (legacy fallback)
-//   * Sparse: `add_*_precision_sparse`  -> SparseHessianBuilder& H  (scale path)
-// Both must agree numerically. Pattern enumeration is provided alongside.
+// The RW1/RW2 field precision is one scatter over either Hessian storage
+// (DenseMat or SparseHessianBuilder); AR1 is exposed in a dense and a sparse
+// flavor. Both storages must agree numerically. Pattern enumeration is
+// provided alongside.
 
 #ifndef TULPA_LAPLACE_TEMPORAL_PRIORS_H
 #define TULPA_LAPLACE_TEMPORAL_PRIORS_H
@@ -64,26 +64,6 @@ inline double log_prior_ar1(
                                    TemporalType::AR1, tau, rho, false);
 }
 
-void add_rw1_precision(
-    DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-);
-
-void add_rw1_precision_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-);
-
-void add_rw2_precision(
-    DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-);
-
-void add_rw2_precision_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
-    int start_idx, int n_times, double tau, bool cyclic
-);
-
 void add_ar1_precision(
     DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
     int start_idx, int n_times, double tau, double rho
@@ -119,7 +99,7 @@ void add_ar1_pattern(
 // RW1 and RW2 are intrinsic, so the field carries a constant null direction
 // that is jointly unidentified with the intercept. These entry points add the
 // per-group precision AND the sum-to-zero pin that identifies it (laplace_s2z.h),
-// which the per-group `add_rw*_precision` helpers below deliberately do not: the
+// which the per-group precision scatter deliberately does not: the
 // pin is over the field's GLOBAL constant, not per walk. The G - 1 between-group
 // level contrasts stay improper by design -- the front door does not fit them --
 // so this pins exactly the one direction the sampler path augments
@@ -134,44 +114,25 @@ void add_ar1_pattern(
 // group, and the pinned global constant contributes its unit eigenvalue.
 //
 // AR1 is proper (full rank), needs no pin, and keeps the per-group helpers.
-void add_rw1_field(
-    DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
+// `order` is the random walk's order, 1 (RW1) or 2 (RW2).
+void add_rw_field(
+    int order, DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
     int start, int n_groups, int n_times, double tau, bool cyclic
 );
 
-void add_rw1_field_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
+void add_rw_field(
+    int order, DenseVec& grad, SparseHessianBuilder& H,
+    const Rcpp::NumericVector& x,
     int start, int n_groups, int n_times, double tau, bool cyclic
 );
 
-void add_rw1_field_pattern(
-    std::vector<std::pair<int,int>>& out,
+void add_rw_field_pattern(
+    int order, std::vector<std::pair<int,int>>& out,
     int start, int n_groups, int n_times, bool cyclic
 );
 
-double log_prior_rw1_field(
-    const Rcpp::NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic,
-    double log_pdet
-);
-
-void add_rw2_field(
-    DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
-);
-
-void add_rw2_field_sparse(
-    DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
-    int start, int n_groups, int n_times, double tau, bool cyclic
-);
-
-void add_rw2_field_pattern(
-    std::vector<std::pair<int,int>>& out,
-    int start, int n_groups, int n_times, bool cyclic
-);
-
-double log_prior_rw2_field(
-    const Rcpp::NumericVector& x,
+double log_prior_rw_field(
+    int order, const Rcpp::NumericVector& x,
     int start, int n_groups, int n_times, double tau, bool cyclic,
     double log_pdet
 );
