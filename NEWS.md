@@ -1,5 +1,15 @@
 # tulpa 0.8.0
 
+* A `latent()` block's axes are refined on the joint door as well as placed:
+  refinement admits every axis the transform registry gives a coordinate,
+  which for a tgmrf block's theta is the identity whatever the block calls it,
+  and a stated `grid_span` keeps them inside it, read through the provenance
+  the placement pass reads. On a latent AR(1) fixture the upper end of
+  atanh(psi) read 0.52 posterior SDs short of a dense 33 x 49 tensor on the
+  placed span alone (89 cells now, 25 before) and now reads 0.02 short; an
+  iid block's start box grows from 5 to 8 nodes, its read unchanged at 0.01
+  SDs from its dense reference (#1280).
+
 * The log-quadratic within-cell read interpolates each axis's node density per
   unit of the coordinate it reads the axis on, and its table keeps its spacing
   over the nodes whatever extent a row's tails reach. A correlation or mixing

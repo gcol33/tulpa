@@ -1667,8 +1667,13 @@
     refine_axes <- c(as.character(axis_names),
                      if (has_phi) paste0("phi_", names(phi_axes)[
                          vapply(phi_axes, length, integer(1)) > 0L]))
+    refine_tags <- stats::setNames(.joint_axis_tags_raw(list(
+        theta_grid = matrix(numeric(0), 0L, length(refine_axes),
+                            dimnames = list(NULL, refine_axes)),
+        axis_offsets = axis_offsets, blocks = prepared)), refine_axes)
     refine_eligible <- function(a)
-        .joint_axis_refine_eligible(a, logchol = hp_declared$logchol)
+        .joint_axis_refine_eligible(a, logchol = hp_declared$logchol,
+                                    tag = refine_tags[[a]])
     axis_is_stated <- function(a) .joint_multi_axis_is_stated(
         a, prior_list, grid_auto, copy, as.integer(cp$copy_blocks_zero) + 1L,
         phi_grid, arm_names, phi_auto)

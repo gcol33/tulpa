@@ -482,16 +482,25 @@
 # is a tensor in some coordinates (`.hp_logchol_designs()` record of the fit):
 # the refinement runs on the grid in those coordinates (`.hp_design_view()`),
 # so a level is a level of the declared tensor, in its own measure.
-.joint_axis_refine_eligible <- function(axis, logchol = NULL) {
+#
+# `tag` is the coordinate the transform registry gives the axis for the block
+# that owns it (`.joint_axis_tags_raw()`), NA where it names none or the caller
+# has no block layout to read it from. An axis the registry gives a coordinate
+# is refinable whatever it is called: a tgmrf block's theta is the coordinate
+# its own prior is a density on, the identity, and its axes carry the names
+# the block chose.
+.joint_axis_refine_eligible <- function(axis, logchol = NULL,
+                                        tag = NA_character_) {
     if (.axis_has_block(axis)) {
         bare <- .axis_bare(axis)
         if (.hp_is_logchol_col(bare)) {
             d <- logchol[[.hp_logchol_key(.axis_label_prefix(axis))]]
             return(!is.null(d$design))
         }
-        return(bare %in% .JOINT_REFINABLE_BLOCK_AXES)
+        return(!is.na(tag) || bare %in% .JOINT_REFINABLE_BLOCK_AXES)
     }
-    axis %in% .JOINT_REFINABLE_BLOCK_AXES || .axis_is_dispersion(axis)
+    !is.na(tag) || axis %in% .JOINT_REFINABLE_BLOCK_AXES ||
+        .axis_is_dispersion(axis)
 }
 
 # One entry of the user-facing `phi_grid` argument, by arm name. The argument is
@@ -612,6 +621,18 @@
     }
     b <- .axis_block(axis)
     bare <- .axis_bare(axis)
+    # A non-copy block's axis that the registry binds to a grid field is held
+    # by the rule the placement pass reads (`.nl_slot_hold()`): its field's
+    # provenance, or the block's own statement of the span a matrix field
+    # holds (a tgmrf block's `grid_span`).
+    if (!b %in% copy_blocks) {
+        slot <- Find(function(s) s$block == b && identical(s$axis, bare),
+                     .nl_registry_axis_slots(prior))
+        if (!is.null(slot)) {
+            return(!is.null(.nl_slot_hold(prior, slot,
+                                          .nl_auto_fields_at(grid_auto, b))))
+        }
+    }
     if (identical(bare, "alpha")) {
         i <- .joint_copy_spec_for_block(copy, b)
         declared <- if (is.na(i)) NULL

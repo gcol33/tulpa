@@ -170,18 +170,23 @@ test_that("a tgmrf block with a stated grid span keeps it as declared", {
 test_that("a stated tgmrf grid span leaves the fit's other axes placeable", {
     # The span places the tgmrf block's nodes and says nothing about its
     # support, so its axis is an identity coordinate and the ICAR precision
-    # beside it is recentred while the tgmrf axis stays as declared.
+    # beside it is recentred while the tgmrf axis stays as declared. Each axis
+    # is placed when its own declared grid does not resolve its posterior, so
+    # the field is informative enough here (60 regions) that the default
+    # precision axis does not; an axis its declared grid resolves stays where
+    # it was declared, whatever the axes beside it do.
     skip_on_cran()
     set.seed(1)
-    K <- 12L
+    K <- 60L
+    n <- 10L * K
     W <- matrix(0, K, K)
     for (i in seq_len(K)) { j <- if (i < K) i + 1L else 1L; W[i, j] <- W[j, i] <- 1 }
-    d <- data.frame(region = rep(seq_len(K), each = 10L), x = stats::rnorm(120))
-    d$y <- stats::rpois(120, exp(0.5 + 0.4 * d$x + sin(2 * pi * d$region / K)))
-    blk <- tgmrf(Q = function(theta) Matrix::Diagonal(120, exp(theta[1])),
+    d <- data.frame(region = rep(seq_len(K), each = 10L), x = stats::rnorm(n))
+    d$y <- stats::rpois(n, exp(0.5 + 0.4 * d$x + 1.5 * sin(2 * pi * d$region / 12)))
+    blk <- tgmrf(Q = function(theta) Matrix::Diagonal(n, exp(theta[1])),
                  prior = function(theta) stats::dnorm(theta[1], 2, 1.5, log = TRUE),
                  init = c(log_tau = 2), grid_span = list(lower = -1, upper = 7),
-                 obs_idx = seq_len(120), name = "obs_iid")
+                 obs_idx = seq_len(n), name = "obs_iid")
     fit <- tulpa(y ~ x + spatial(region) + latent(blk), data = d,
                  family = "poisson", spatial = list(type = "icar", adjacency = W),
                  mode = "auto", control = list(progress = FALSE))
