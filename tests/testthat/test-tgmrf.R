@@ -187,6 +187,33 @@ test_that("tgmrf inner nested-Laplace solves run with progress off (#890)", {
   for (ctl in seen) expect_identical(ctl$progress, FALSE)
 })
 
+test_that("pilot_axis_points is the block's n_grid on the pilot block", {
+  # The nested-Laplace door lays the pilot grid from n_grid, as it lays the
+  # block's default grid, so an override changes the node count and nothing
+  # else about how the door treats the axes.
+  seen <- NULL
+  fake_nl <- function(..., prior, control = list()) {
+    seen <<- prior
+    list(log_marginal = 0, theta_grid = matrix(0, 1, 2))
+  }
+  testthat::local_mocked_bindings(tulpa_nested_laplace = fake_nl,
+                                  .package = "tulpa")
+  blk <- make_periodic_ar1(4)
+  blk$theta_grid_built <- matrix(0, 1, 2)
+  y <- c(0L, 1L, 2L, 1L)
+  X <- matrix(1, 4, 1)
+  .tgmrf_pilot(y, rep(1L, 4), X, blk, obs_idx = 1:4, family = "poisson")
+  expect_identical(seen$theta_grid_built, blk$theta_grid_built)
+  expect_null(seen$n_grid)
+  .tgmrf_pilot(y, rep(1L, 4), X, blk, obs_idx = 1:4, family = "poisson",
+               pilot_axis_points = 7)
+  expect_identical(seen$n_grid, c(7L, 7L))
+  expect_null(seen$theta_grid_built)
+  expect_error(.tgmrf_pilot(y, rep(1L, 4), X, blk, obs_idx = 1:4,
+                            family = "poisson", pilot_axis_points = 1),
+               "`pilot_axis_points` must be")
+})
+
 skip_on_cran_budget()
 
 test_that("tgmrf() builds the periodic AR1 worked example", {

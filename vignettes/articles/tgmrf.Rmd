@@ -96,8 +96,9 @@ how they explore `theta`.
 
 1. **Build the outer grid over `theta`.** If you supplied `bounds`, the
    driver lays a per-axis grid between `lower` and `upper`. The default
-   resolution is 5 points per axis; the IMH, VI, and NUTS adapters expose
-   this as `pilot_axis_points`. With $d$ hyperparameters the default grid
+   resolution is 5 points per axis; the block's `n_grid` sets it, and the
+   IMH, VI, and NUTS adapters override it with `pilot_axis_points`. With $d$
+   hyperparameters the default grid
    is $5^d$ cells, so a two-parameter block is a 25-cell grid. You can
    also hand the driver an explicit grid matrix.
 2. **For each grid point `theta_k`, run the inner Laplace solve.** The

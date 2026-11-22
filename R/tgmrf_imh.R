@@ -150,7 +150,7 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                             n_iter = 2000L, warmup = n_iter %/% 2L,
                             thin = 1L, scale = 1.0,
-                            pilot_axis_points = 5L,
+                            pilot_axis_points = NULL,
                             max_iter = 50L, tol = 1e-7,
                             n_threads = 1L,
                             verbose = FALSE) {

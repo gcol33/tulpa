@@ -55,7 +55,7 @@
                            n_draws = 1000L,
                            max_lbfgs = 100L,
                            lbfgs_tol = 1e-6,
-                           pilot_axis_points = 5L,
+                           pilot_axis_points = NULL,
                            max_iter = 50L, tol = 1e-7,
                            n_threads = 1L,
                            verbose = FALSE) {

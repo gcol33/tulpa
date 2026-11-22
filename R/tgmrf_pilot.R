@@ -24,10 +24,11 @@
 
 # The pilot grid Laplace the adapters warm-start from.
 #
-# `pilot_axis_points` other than the built-in 5 replaces the block's own grid
-# with an even `d`-dimensional tensor product; the per-axis span comes from
-# `block$bounds` when the block declares them and falls back to +/- 2 around
-# `block$init` when it does not.
+# `pilot_axis_points`, when supplied, is the per-axis node count of the pilot
+# grid: it stands in for the block's own `n_grid`, so the nested-Laplace door
+# lays that grid exactly as it lays the block's default one (over `bounds`, or
+# around `init`) and treats it the same way afterwards -- an unbounded block's
+# axes stay placeable at any node count. `NULL` keeps the block's own grid.
 #
 # Returns `list(fit, k_star, theta_init, block)`:
 #   * `fit`        the nested-Laplace result (callers reading `$modes` or
@@ -37,7 +38,7 @@
 #                  `block$theta_names`.
 #   * `block`      the pilot block actually fitted, obs_idx attached.
 .tgmrf_pilot <- function(y, n_trials, X, block, obs_idx,
-                         pilot_axis_points = 5L,
+                         pilot_axis_points = NULL,
                          re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                          family = "binomial", phi = 1.0,
                          max_iter = 50L, tol = 1e-7, n_threads = 1L) {
@@ -45,15 +46,10 @@
 
   pilot_block <- block
   pilot_block$obs_idx <- obs_idx
-  if (!is.null(pilot_axis_points) && pilot_axis_points != 5L) {
-    axes <- vector("list", d)
-    for (j in seq_len(d)) {
-      lo <- if (!is.null(block$bounds)) block$bounds$lower[j] else block$init[j] - 2
-      hi <- if (!is.null(block$bounds)) block$bounds$upper[j] else block$init[j] + 2
-      axes[[j]] <- seq(lo, hi, length.out = pilot_axis_points)
-    }
-    names(axes) <- block$theta_names
-    pilot_block$theta_grid_built <- as.matrix(do.call(expand.grid, axes))
+  if (!is.null(pilot_axis_points)) {
+    pilot_block$n_grid <- .tgmrf_check_n_grid(pilot_axis_points, d,
+                                              arg = "pilot_axis_points")
+    pilot_block$theta_grid_built <- NULL
   }
 
   fit <- tulpa_nested_laplace(
@@ -94,7 +90,11 @@
 # pilot's heaviest cell and searching a box padded past the pilot's span. The
 # block's `theta` is already the unconstrained coordinate its `prior()` is
 # written in, so every axis is searched on the identity and the density
-# maximised is `lm$eval`, the one the adapters sample.
+# maximised is `lm$eval`, the one the adapters sample. That holds with
+# `bounds` declared too: the adapters sample the support of `prior(theta)`,
+# and `bounds` only spans the pilot. The joint door's tagging
+# (`.joint_pareto_axis_tags()`) reads a bounded block's box as its support and
+# declines to place it, which is the nested grid's question, not this one.
 #
 # `pl` is `.tgmrf_pilot()`'s result, `lm` `.tgmrf_make_log_marginal()`'s.
 # Returns `list(mode, cov, status, evals)`: `mode` named by `block$theta_names`,

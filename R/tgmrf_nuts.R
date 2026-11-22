@@ -17,7 +17,7 @@
                              epsilon = NULL,
                              max_depth = 6L,
                              target_accept = 0.65,
-                             pilot_axis_points = 5L,
+                             pilot_axis_points = NULL,
                              fd_gradient_step = 0.02,
                              max_iter = 50L, tol = 1e-7,
                              n_threads = 1L,

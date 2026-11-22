@@ -261,11 +261,11 @@ tgmrf <- function(Q, prior, init,
 
 # The per-axis outer-grid node count of a tgmrf block: NULL (the engine
 # default) or integers >= 2, one per theta axis.
-.tgmrf_check_n_grid <- function(n_grid, theta_dim) {
+.tgmrf_check_n_grid <- function(n_grid, theta_dim, arg = "n_grid") {
   if (is.null(n_grid)) return(NULL)
   if (!is.numeric(n_grid) || anyNA(n_grid) || any(n_grid != round(n_grid)) ||
       any(n_grid < 2) || !length(n_grid) %in% c(1L, theta_dim)) {
-    stop("`n_grid` must be NULL or whole numbers >= 2, of length 1 or ",
+    stop("`", arg, "` must be NULL or whole numbers >= 2, of length 1 or ",
          "length(init) = ", theta_dim, ".", call. = FALSE)
   }
   rep_len(as.integer(n_grid), theta_dim)
