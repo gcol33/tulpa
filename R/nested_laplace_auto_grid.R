@@ -1327,16 +1327,22 @@ auto_grid_place <- function(x)
     if (!length(axes)) return(FALSE)
     cn <- colnames(res$theta_grid) %||% character(0)
     tags <- .joint_axis_tags_raw(res)
+    types <- .joint_axis_walk(res, function(type, axes, block)
+        rep(type, length(axes)), phi = "")
     for (a in intersect(axes, cn)) {
         # A free-covariance block's column is read in its block's CPC
-        # coordinates (`.joint_logchol_fires()`), a `rho` in the coordinate the
-        # registry tags it with for the block owning it (a BYM2 mixing weight on
-        # its logit, an AR(1) autocorrelation on its atanh), every other movable
-        # axis on log.
+        # coordinates (`.joint_logchol_fires()`); a `rho`, and every axis of a
+        # tgmrf block (its theta, the coordinate its own prior is a density on,
+        # whatever the axis is called), in the coordinate the registry tags it
+        # with for the block owning it (a BYM2 mixing weight on its logit, an
+        # AR(1) autocorrelation on its atanh); every other movable axis on log.
         bare <- .axis_bare(a)
-        tag <- if (!identical(bare, "rho")) "log"
+        j <- match(a, cn)
+        own <- identical(bare, "rho") ||
+            (!.k_is_decline(types) && identical(types[j], "tgmrf"))
+        tag <- if (!own) "log"
                else if (.k_is_decline(tags)) NA_character_
-               else tags[match(a, cn)]
+               else tags[j]
         if (is.na(tag)) next
         fires <- if (.hp_is_logchol_col(bare)) .joint_logchol_fires(res, a)
                  else .nl_axis_placement_fires(res, a, tag)
