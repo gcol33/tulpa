@@ -617,7 +617,11 @@
         fce     <- eval1(cands)
         f_cands <- as.numeric(fce)
         u_try <- u; f_try <- f_u; mode_try <- NULL
-        acc <- which(is.finite(f_cands) & f_cands >= f_u - 1e-8)
+        # Under a relative tolerance only a strict rise is a step: a search
+        # that accepted ties would walk the objective's noise floor until the
+        # round cap instead of stopping there.
+        acc <- which(is.finite(f_cands) &
+                     if (is.null(reltol)) f_cands >= f_u - 1e-8 else f_cands > f_u)
         if (length(acc)) {
             k        <- acc[1L]                 # t_steps is descending: largest step
             u_try    <- cands[k, ]
