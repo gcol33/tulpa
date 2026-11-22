@@ -430,6 +430,77 @@ test_that("a variance component pinned at the bracket is flagged, not reported",
   expect_gt(hi$map$sigma, 1e2)
 })
 
+test_that("a slope SD whose supremum is at zero is reported as a singular fit", {
+  skip_on_cran()
+  # A correlated (1 + x | g) block plus a scalar (1 | h) block, binomial. The
+  # profile of the outer objective in the slope's log-Cholesky diagonal L22
+  # (every other coordinate maximized) rises monotonically as L22 -> -Inf, with
+  # L21 -> 0 along it: the supremum is the slope SD 0 on the boundary. The
+  # search reaches the bracket and stops there within its round budget.
+  set.seed(21L)
+  G <- 40L; H <- 25L; npg <- 12L; N <- G * npg
+  g <- rep(seq_len(G), each = npg)
+  h <- sample.int(H, N, replace = TRUE)
+  x <- rnorm(N); X <- cbind(1, x); Zg <- cbind(1, x)
+  Sg <- matrix(c(0.8^2, 0.4 * 0.8 * 0.5, 0.4 * 0.8 * 0.5, 0.5^2), 2)
+  ug <- t(t(chol(Sg)) %*% matrix(rnorm(2 * G), 2))
+  uh <- rnorm(H, 0, 0.6)
+  eta <- as.numeric(X %*% c(-0.2, 0.6)) + rowSums(Zg * ug[g, ]) + uh[h]
+  y <- rbinom(N, 1L, plogis(eta))
+  re_terms <- list(
+    list(idx = g, n_groups = G, n_coefs = 2L, Z = Zg, correlated = TRUE,
+         label = "g"),
+    list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h"))
+
+  expect_warning(
+    core <- .re_cov_theta_fit(
+      y = y, n_trials = rep(1L, N), X = X, re_terms = re_terms,
+      family = "binomial", phi = 1, prior_sigma = NULL, eta = NULL,
+      log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
+      max_iter = 100L, tol = 1e-8, n_threads = 1L, caller = "test",
+      need_scale = FALSE, outer_maxit = 100L, offset = NULL),
+    "singular")
+  expect_identical(core$opt$convergence, 0L)
+  expect_lt(core$opt$counts[["rounds"]], 100L)
+  th <- core$theta_hat
+  sd_lo <- log(.re_cov_search("sd_range")[1L])
+  expect_equal(th[3L], sd_lo, tolerance = 1e-8)
+  # KKT on the box: the gradient along L22 points out of it.
+  expect_lt(core$exact_grad_at(th)[3L], 0)
+  expect_true(core$singular)
+  expect_identical(core$boundary$block, "g")
+  expect_identical(core$boundary$coef, 2L)
+  expect_identical(core$boundary$end, "lower")
+
+  obj <- function(t) {
+    core$inner_logmarg(.re_cov_theta_to_L_list(t, core$layout), 1) +
+      core$log_prior_theta(t)
+  }
+  at_l22 <- function(l22, l21 = 0) { t <- th; t[2L] <- l21; t[3L] <- l22; t }
+  f_hat <- obj(th)
+  # The profile rises toward the boundary and the reported point is above it.
+  expect_lt(obj(at_l22(-3)), obj(at_l22(-6)))
+  expect_lt(obj(at_l22(-6)), f_hat)
+  # Above the point a round-capped search stopped at.
+  expect_lt(obj(at_l22(-6.7195973, -1.2555424e-06)), f_hat)
+
+  warns <- character(0)
+  fit <- withCallingHandlers(
+    tulpa_eb(y, rep(1L, N), X, re_terms, family = "binomial",
+             control = list(outer_maxit = 100L)),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_length(warns, 1L)
+  expect_match(warns, "covariance of block 'g' is singular")
+  expect_false(any(grepl("did not converge", warns)))
+  expect_identical(fit$outer_convergence, 0L)
+  expect_true(fit$singular)
+  expect_lt(fit$map$g$sigma[2L], 2e-4)
+  expect_identical(fit$boundary$coef, 2L)
+})
+
 test_that("a well-identified variance component draws no boundary warning", {
   skip_on_cran()
   d <- sim_re_pois(27L, G = 40L, per = 10L, sigma = 0.7)

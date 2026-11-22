@@ -430,10 +430,29 @@
 # Negative-definite regularisation of a symmetric matrix: eigen-clip every
 # eigenvalue to <= -ridge so the log-posterior curvature gives an ascent
 # direction (and a usable Gaussian precision -H).
+#
+# The clip repairs an indefinite or flat curvature, and its floor is relative to
+# the largest eigenvalue. A curvature that is negative definite once each
+# coordinate is measured in its own scale (the eigenvalues of
+# `D^-1/2 H D^-1/2`, `D = |diag(H)|`, clear the same relative floor) is a valid
+# Newton system however far apart the coordinates' scales are, and is returned
+# as it is. Clipping it in the raw coordinates would floor the weak directions
+# at a millionth of the stiffest one: in the log-Cholesky funnel of a slope SD
+# running to zero, the curvature along the off-diagonal entry grows like
+# exp(-2 L_ii) while the one along L_ii shrinks like exp(L_ii), so the clipped
+# step along L_ii shrank by orders of magnitude each round.
 .joint_ccd_neg_def <- function(H, ridge_rel = 1e-6) {
     Hs <- 0.5 * (H + t(H))
     eg <- eigen(Hs, symmetric = TRUE)
     cap <- -ridge_rel * max(abs(eg$values), 1)
+    if (any(eg$values > cap)) {
+        dg <- sqrt(abs(diag(Hs)))
+        if (all(dg > 0) && all(is.finite(dg))) {
+            es <- eigen(Hs / outer(dg, dg), symmetric = TRUE,
+                        only.values = TRUE)$values
+            if (all(es <= -ridge_rel * max(abs(es), 1))) return(Hs)
+        }
+    }
     ev  <- pmin(eg$values, cap)
     eg$vectors %*% (ev * t(eg$vectors))
 }

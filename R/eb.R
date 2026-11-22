@@ -194,6 +194,16 @@
 #'   - `outer_convergence`: the code of the maximization over `Sigma`, `0` on
 #'     convergence and `1` where the `outer_maxit` round budget stopped it
 #'     (which also warns).
+#'   - `singular`: `TRUE` when the estimated covariance is singular, a boundary
+#'     fit in the sense of `lme4::isSingular()`: a standard deviation collapsed
+#'     to the lower end of its bracket, or a correlated block whose Cholesky
+#'     diagonal did, so that one coefficient's effect is a linear function of
+#'     the others (its SD zero or its multiple correlation one). The marginal
+#'     likelihood then has its supremum on the boundary of the covariance and
+#'     the search stops at the bracket, which also warns.
+#'   - `boundary`: one row per log-scale coordinate at either end of its
+#'     bracket (`block`, `coef`, `end` `"lower"` / `"upper"`, and `sigma`, that
+#'     coefficient's standard deviation); no rows when none is.
 #'   - With `marginal = TRUE` and a correction that formed: `cov_marginal` (the
 #'     widened fixed-effect covariance, which `vcov` / `summary` / `confint`
 #'     then report), `cov_conditional` (the `solve(H_beta)` they would otherwise
@@ -407,6 +417,8 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     # The outer maximization's code, for a programmatic check; a
     # non-zero value has already warned.
     outer_convergence = as.integer(core$opt$convergence),
+    singular     = core$singular,
+    boundary     = core$boundary,
     layout       = layout,
     n_blocks     = length(layout),
     n_coefs      = vapply(layout, `[[`, integer(1), "nc")

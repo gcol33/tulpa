@@ -14,6 +14,22 @@
   by where the grid stops, beside the default fit's `Inf` and an identical
   interval (#1294).
 
+* `tulpa_eb()` reports a singular random-effect covariance as a boundary fit,
+  as `lme4::isSingular()` does: `fit$singular` is `TRUE`, `fit$boundary`
+  names the block, coefficient and bracket end, and one warning says the
+  covariance is singular, with the coefficient's SD and its multiple
+  correlation with the coefficients before it. On a binomial
+  `(1 + x | g) + (1 | h)` fixture whose outer objective, profiled in the
+  slope's log-Cholesky diagonal, rises monotonically toward a slope SD of 0
+  (-307.6499 at L22 = -2, -307.5064 at -8, -307.5059 at -15), the search
+  stopped at its 500-round cap at L22 = -6.72 and warned non-convergence; it
+  now reaches the bracket (slope SD 1e-4) in 22 rounds at -307.5060. The
+  shared outer mode-find no longer eigen-clips a curvature that is negative
+  definite in its own diagonal scaling: the clip floored the funnel's weak
+  direction at a millionth of its stiffest one, which had cut the step along
+  L22 to 0.03 by round 15, where the profile's Newton step is about 1
+  (#1296).
+
 * WAIC, LOO, DIC and `posterior_predict()` on a zero-inflated fit through
   the joint nested-Laplace door draw the linear predictor from the grid's
   latent mixture: the count coefficients, the structural-zero coefficients and

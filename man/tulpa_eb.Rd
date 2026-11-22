@@ -171,6 +171,16 @@ of matrices for several).
 \item \code{outer_convergence}: the code of the maximization over \code{Sigma}, \code{0} on
 convergence and \code{1} where the \code{outer_maxit} round budget stopped it
 (which also warns).
+\item \code{singular}: \code{TRUE} when the estimated covariance is singular, a boundary
+fit in the sense of \code{lme4::isSingular()}: a standard deviation collapsed
+to the lower end of its bracket, or a correlated block whose Cholesky
+diagonal did, so that one coefficient's effect is a linear function of
+the others (its SD zero or its multiple correlation one). The marginal
+likelihood then has its supremum on the boundary of the covariance and
+the search stops at the bracket, which also warns.
+\item \code{boundary}: one row per log-scale coordinate at either end of its
+bracket (\code{block}, \code{coef}, \code{end} \code{"lower"} / \code{"upper"}, and \code{sigma}, that
+coefficient's standard deviation); no rows when none is.
 \item With \code{marginal = TRUE} and a correction that formed: \code{cov_marginal} (the
 widened fixed-effect covariance, which \code{vcov} / \code{summary} / \code{confint}
 then report), \code{cov_conditional} (the \code{solve(H_beta)} they would otherwise

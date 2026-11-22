@@ -1407,11 +1407,15 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   # bracket and log phi to its own; a strictly-lower log-Cholesky entry keeps
   # the whole line.
   reltol <- outer_reltol %||% 1e-10
-  log_scale_idx <- integer(0); log_sd_idx <- integer(0); pos <- 0L
-  for (bl in layout) {
+  # Each log-scale coordinate with the block and the coefficient it scales.
+  log_scale_idx <- integer(0); log_scale_blk <- integer(0)
+  log_scale_coef <- integer(0); pos <- 0L
+  for (m in seq_along(layout)) {
+    bl <- layout[[m]]
     at <- if (bl$full) pos + diag(.re_logchol_indices(bl$nc)) else pos + seq_len(bl$k)
-    log_scale_idx <- c(log_scale_idx, at)
-    if (!bl$full) log_sd_idx <- c(log_sd_idx, at)
+    log_scale_idx  <- c(log_scale_idx, at)
+    log_scale_blk  <- c(log_scale_blk, rep(m, length(at)))
+    log_scale_coef <- c(log_scale_coef, seq_along(at))
     pos <- pos + bl$k
   }
   sd_lo <- log(.re_cov_search("sd_range")[1L])
@@ -1512,11 +1516,45 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
         }), call. = FALSE)
     }
   }
-  for (j in log_sd_idx) {
+  # A log scale at the lower end is a SINGULAR covariance, the boundary fit
+  # glmer reports: a diagonal block's SD, or a full block's leading SD, has
+  # collapsed to zero, and a full block's later Cholesky diagonal L_ii at the
+  # floor leaves coefficient i's effect a linear function of the coefficients
+  # before it -- its SD zero, or its multiple correlation with them one. The
+  # outer objective's supremum then lies on the boundary of the covariance
+  # cone, and the box edge is where the search reports it. A log scale at the
+  # upper end is capped rather than fitted.
+  L_hat_b <- .re_cov_theta_to_L_list(theta_split(theta_hat)$re, layout)
+  boundary <- data.frame(block = character(0), coef = integer(0),
+                         end = character(0), sigma = numeric(0),
+                         stringsAsFactors = FALSE)
+  for (a in seq_along(log_scale_idx)) {
+    j <- log_scale_idx[a]
     if (!is.finite(theta_hat[j])) next
     at_lo <- theta_hat[j] <= sd_lo + 1e-6
     at_hi <- theta_hat[j] >= sd_hi - 1e-6
     if (!(at_lo || at_hi)) next
+    m <- log_scale_blk[a]; i <- log_scale_coef[a]; bl <- layout[[m]]
+    lab <- .re_cov_block_label(bl, m)
+    L <- L_hat_b[[m]]
+    sd_i <- sqrt(sum(L[i, ]^2))
+    boundary[nrow(boundary) + 1L, ] <- list(lab, i, if (at_lo) "lower" else "upper",
+                                            sd_i)
+    what <- if (bl$nc > 1L) sprintf("coefficient %d of block '%s'", i, lab) else
+      sprintf("block '%s'", lab)
+    if (at_lo && bl$full && i > 1L) {
+      mult_cor <- sqrt(max(0, 1 - (L[i, i] / sd_i)^2))
+      warning(sprintf(paste0(
+        "%s(): the random-effect covariance of block '%s' is singular (a ",
+        "boundary fit): the Cholesky diagonal of coefficient %d hit the lower ",
+        "end of the search bracket, so its effect is a linear function of the ",
+        "coefficients before it. Its standard deviation is %.3g and its ",
+        "multiple correlation with them %.6f. The supremum of the marginal ",
+        "likelihood lies on the boundary of the covariance; treat this as a ",
+        "boundary estimate, not a fitted value."),
+        caller, lab, i, sd_i, mult_cor), call. = FALSE)
+      next
+    }
     detail <- if (at_lo) {
       paste("The variance component has collapsed: the data carry no",
             "detectable between-group variation, or the hyperprior is not",
@@ -1526,10 +1564,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
             "is capped rather than fitted.")
     }
     warning(sprintf(paste0(
-      "%s(): the random-effect standard deviation hit the %s end of the ",
+      "%s(): the random-effect standard deviation of %s hit the %s end of the ",
       "search bracket (sigma = %.3g). %s Treat it as a boundary hit, not a ",
       "fitted value."),
-      caller, if (at_lo) "lower" else "upper", exp(theta_hat[j]), detail),
+      caller, what, if (at_lo) "lower" else "upper", sd_i, detail),
       call. = FALSE)
   }
 
@@ -1556,6 +1594,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
        re_conditional = !use_core,
        exact_grad_at = exact_grad_at,
        theta0 = theta0, theta_hat = sp_hat$re, opt = opt,
+       boundary = boundary, singular = any(boundary$end == "lower"),
        theta_hat_full = theta_hat,
        phi_hat = if (is.na(phi_idx)) NULL else sp_hat$phi,
        estimate_phi = isTRUE(estimate_phi))
