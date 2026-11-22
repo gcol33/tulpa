@@ -1420,7 +1420,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   lower[log_scale_idx] <- sd_lo; upper[log_scale_idx] <- sd_hi
   if (!is.na(phi_idx)) { lower[phi_idx] <- phi_lo; upper[phi_idx] <- phi_hi }
   box <- list(lower = lower, upper = upper, span = upper - lower,
-              trust = rep(Inf, n_theta))
+              trust = rep(.re_cov_search("trust"), n_theta))
   value_at <- if (use_exact_grad) function(th) -negg_exact(th) else
     function(th) -negg(th)
   eval1 <- function(U) {

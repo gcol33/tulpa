@@ -554,9 +554,23 @@
                         converged = FALSE, status = "ridge"))
         }
         H_reg <- .joint_ccd_neg_def(H)
-        step  <- tryCatch(as.numeric(-solve(H_reg, st$grad)),
-                          error = function(e) NULL)
-        if (is.null(step) || any(!is.finite(step))) return(fail(u, H, f_u))
+        # Under a relative tolerance the box is a constraint the mode may sit
+        # on: a coordinate at a bound whose gradient points out of the box is
+        # held there, and the Newton step and its predicted gain are those of
+        # the remaining coordinates (a projected Newton step).
+        free <- rep(TRUE, d)
+        if (!is.null(reltol)) {
+            free <- !((u <= lower & st$grad < 0) | (u >= upper & st$grad > 0))
+        }
+        step <- numeric(d)
+        if (any(free)) {
+            sf <- tryCatch(as.numeric(-solve(H_reg[free, free, drop = FALSE],
+                                             st$grad[free])),
+                           error = function(e) NULL)
+            if (is.null(sf)) return(fail(u, H, f_u))
+            step[free] <- sf
+        }
+        if (any(!is.finite(step))) return(fail(u, H, f_u))
         # Newton decrement: the full step's length in outer posterior SDs. Below
         # `stop_sd` the point is the mode to within that, and this round's
         # stencil (at `u`) is the closing curvature.
