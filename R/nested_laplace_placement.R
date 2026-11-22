@@ -25,14 +25,21 @@
 # tolerances. The curvature at the mode it reaches is the placement spread.
 #
 # The search runs in the coordinate each axis is laid in -- a positive scale in
-# log, a mixing weight in logit, the copy scale on its log continuum
-# (`.joint_ccd_coord_tags()`) -- and maximises the grid's own log-density, the
-# one the rail test reads (`.nl_axis_rail()`, `measure = "inner"`), carrying no
-# change-of-variables term. The axis a placement lays therefore contains the
-# mode that test looks for; with the logit Jacobian a mixing weight would be
-# centred on a different density and read as railed again at its refit. A copy
-# scale whose heaviest cell is its "no coupling" point mass is held there: the
-# continuum a Newton step moves along does not reach it.
+# log, a mixing weight or a correlation in logit or atanh, the copy scale on its
+# log continuum (`.joint_ccd_coord_tags()`) -- and maximises the posterior
+# density per unit of THAT coordinate: the grid's own log-density, which is per
+# unit of the coordinate the axis's cells are measured in, plus the transform
+# registry's log-Jacobian from that coordinate to the placement one
+# (`.joint_pareto_inv()`). The two coincide for a positive scale, measured and
+# laid in log. A correlation is measured on its natural scale and laid on its
+# logit or atanh; read without the Jacobian, the curvature there is that of the
+# density per unit correlation, which flattens where the posterior presses
+# towards an end of the interval. On a proper-CAR fit with rho's posterior
+# against 1 that put the mode at rho = 0.994 with an SD of 2.41 on the logit,
+# where the posterior on the logit has its mode at 2.95 and an SD of 1.31, and
+# the axis laid from it carried its weight on two nodes (gcol33/tulpa#1281). A
+# copy scale whose heaviest cell is its "no coupling" point mass is held there:
+# the continuum a Newton step moves along does not reach it.
 #
 # A free-covariance block's log-Cholesky columns are searched together, in its
 # marginal log SDs and atanh canonical partial correlations
@@ -133,10 +140,13 @@
         .ccd_meter_spend(meter, nrow(U))
         theta <- matrix(x0, nrow(U), d, byrow = TRUE,
                         dimnames = list(NULL, cn))
-        for (i in seq_along(vary)) {
-            theta[, vary[i]] <- .joint_pareto_inv(ptag[vary[i]], U[, i])$theta
-        }
         log_jac <- numeric(nrow(U))
+        for (i in seq_along(vary)) {
+            j <- vary[i]
+            inv <- .joint_pareto_inv(ptag[j], U[, i])
+            theta[, j] <- inv$theta
+            if (!j %in% cpc_cols) log_jac <- log_jac + inv$log_jac
+        }
         for (b in cpc) {
             M <- .hp_logchol_from_coords(theta[, b$cols, drop = FALSE], b$design)
             theta[, b$cols] <- M

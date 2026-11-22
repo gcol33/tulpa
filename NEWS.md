@@ -6,11 +6,26 @@
   Pareto-k is no longer declined on it. On a `fit_st_nested()` car_proper x
   AR(1) fit 92.8% of its posterior sat on the top declared node 0.95; it now
   spreads over the placed nodes with none on the top one. On a single-block
-  car_proper fit against a dense 70 x 90 tensor, the 97.5% end of `rho` reads
-  0.998 (dense 0.998, before 0.980) and of the precision 8.71 (dense 7.36,
-  before 5.58); the 2.5% end of `rho` reads 0.643 (dense 0.693, before
-  0.688) and its reported sd 0.025 (dense 0.085, before 0.075), read off a
-  grid whose `rho` marginal spreads over two nodes (#1275).
+  car_proper fit against a dense 70 x 90 tensor, `rho` reads 0.724 / 0.963 /
+  0.998 at its 2.5 / 50 / 97.5% points (dense 0.693 / 0.957 / 0.998, before
+  0.688 / 0.946 / 0.980) with sd 0.076 (dense 0.085), and the precision
+  0.786 / 2.39 / 7.55 (dense 0.751 / 2.30 / 7.36, before 0.769 / 2.22 / 5.58)
+  (#1275, #1281).
+
+* The placement mode-find searches each axis's posterior per unit of the
+  coordinate the axis is laid in: a correlation or mixing weight integrated on
+  its natural scale and laid on its logit or atanh now carries that map's
+  log-Jacobian. Without it the curvature was that of the density per unit
+  correlation, which flattens where the posterior presses against an end of
+  the interval: on a proper-CAR fit with rho against 1 the mode-find put the
+  mode at rho = 0.994 with an SD of 2.41 on the logit, where the posterior on
+  the logit has its mode at 2.95 and an SD of 1.31, and the axis laid from it
+  held its weight on two nodes. Positive scales, laid in the log they are
+  measured in, are unchanged. On a 100-region BYM2 fit whose mixing weight
+  presses towards 1, the default fit's `rho` reads 0.570 / 0.845 / 0.997
+  (dense 0.574 / 0.850 / 0.991, before 0.677 / 0.908 / 0.993) and its field
+  SD 0.410 / 0.480 / 0.567 (dense 0.396 / 0.476 / 0.576, before 0.439 /
+  0.480 / 0.555) (#1281).
 
 * A `latent()` block's axes are refined on the joint door as well as placed:
   refinement admits every axis the transform registry gives a coordinate,
