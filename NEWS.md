@@ -1,5 +1,19 @@
 # tulpa 0.8.0
 
+* The one-arm joint nested-Laplace door carries a zero-inflation formula. The
+  structural-zero logit is a second arm on the `ziformula` design, coupled row
+  by row to the response's arm through a built-in `"zero_inflated"` cell
+  coupling that evaluates the same mixture density and 2 x 2 curvature as the
+  conditional Laplace backend's two-process spec, and the formula's random
+  effects and fields enter the count predictor only. At one fixed
+  random-intercept scale the joint door and `tulpa_laplace()` agree on the log
+  marginal to 6e-13 relative and on the mode to 2e-16 for zero-inflated
+  Poisson and binomial fixtures on the dense inner Newton, and within 1e-6
+  on the sparse one.
+  `mode = "nested_laplace_joint"` now fits a `ziformula` call; observation
+  weights with a zero-inflation formula are refused there. The default mode
+  keeps its backend (#1287).
+
 * The one-arm joint nested-Laplace door carries observation `weights` and a
   second dispersion `phi2` (the Student-t degrees of freedom, the Tweedie
   power), read by the arm's built-in family response, so a weighted call or

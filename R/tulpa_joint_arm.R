@@ -35,14 +35,17 @@
 
 # Why the joint door cannot carry this call, or NULL when it can. Each entry
 # names a feature the one-arm joint fit has no channel for; a call carrying one
-# keeps the backend it selected.
+# keeps the backend it selected. A zero-inflation formula rides as a second arm
+# coupled row by row to the response (`.joint_arm_zi()`); the coupled mixture
+# reads the count arm's family, trials and dispersion, so a per-row weight has
+# no channel there.
 #' @keywords internal
 .joint_arm_unfit <- function(spatial_type = NULL, temporal_spec = NULL,
                              st_block = NULL, has_latent = FALSE,
-                             zi = FALSE) {
+                             zi = FALSE, weights = FALSE) {
   sp <- tolower(spatial_type %||% "")
   tt <- tolower(temporal_spec$type %||% "")
-  if (zi) return("a zero-inflation formula")
+  if (zi && weights) return("observation weights with a zero-inflation formula")
   if (nzchar(sp) && !sp %in% c(.NL_FRONTDOOR_AREAL, "nngp", "gp", "hsgp")) {
     return(sprintf("a '%s' spatial field", sp))
   }
@@ -137,7 +140,8 @@
 #' @keywords internal
 .joint_arm_args <- function(bundle, family, blocks, sigma_re, n_trials, phi,
                             phi_axis, beta_prior, hyperprior, control,
-                            weights = NULL, phi2 = NULL) {
+                            weights = NULL, phi2 = NULL,
+                            zi_prior_sd = .ZI_PRIOR_SD_DEFAULT) {
   N <- bundle$n_obs
   by_term <- .re_terms_to_nl_blocks(bundle$re_terms %||% list(), N, sigma_re)
   re_blocks <- unlist(by_term, recursive = FALSE)
@@ -155,8 +159,14 @@
     weights  = weights,
     phi2     = phi2
   ), .response_bound_arm_fields(bundle$response_bounds))
+  responses <- stats::setNames(list(arm), .JOINT_ARM_NAME)
+  if (!is.null(bundle$X_zi)) {
+    responses <- .joint_arm_zi(responses, bundle$X_zi, zi_prior_sd)
+    all_blocks <- lapply(all_blocks, .joint_block_widen_arms,
+                         n_arms = length(responses))
+  }
   out <- list(
-    responses  = stats::setNames(list(arm), .JOINT_ARM_NAME),
+    responses  = responses,
     prior      = all_blocks,
     phi_grid   = if (!is.null(phi_axis))
                    stats::setNames(list(phi_axis), .JOINT_ARM_NAME),
@@ -164,6 +174,7 @@
     control    = .control_subset(control, .CONTROL_KEYS$nested_laplace_joint,
                                  "nested_laplace_joint")
   )
+  if (!is.null(bundle$X_zi)) out$cell_coupling <- .JOINT_ZI_COUPLING
   out$control$progress <- out$control$progress %||% FALSE
   # With a block, the joint door keeps each cell's precision by default: the
   # per-group random effects are read off it (`.joint_arm_attach_re()`), and
@@ -174,6 +185,61 @@
     attr(out, "re_block_conditioned") <- !is.null(sigma_re)
   }
   out
+}
+
+# The registered cell-coupled likelihood that reads a zero-inflated response off
+# its two arms (src/cell_coupling_zero_inflated.h).
+.JOINT_ZI_COUPLING <- "zero_inflated"
+
+# The joint arms of a zero-inflated response: the response's own arm carries
+# the count predictor, and a second arm carries the logit of the structural-zero
+# probability on the ziformula's design, with the N(0, zi_prior_sd^2) prior every
+# other zero-inflation door puts on its coefficients. Row i of one arm is
+# coupled to row i of the other (one cell per row), where the mixture density
+# and its 2 x 2 curvature are evaluated. The zero arm sees no latent block
+# (`field_coef = 0`): the formula's fields and random effects enter the count
+# predictor only, as on the conditional Laplace door. Its own response is not
+# read by the mixture; it is the zero indicator, which carries the count
+# response's missing rows.
+#' @keywords internal
+.joint_arm_zi <- function(responses, X_zi, zi_prior_sd) {
+  arm <- responses[[1L]]
+  N <- length(arm$y)
+  cells <- seq_len(N)
+  p_zi <- ncol(X_zi)
+  arm$coupled <- TRUE
+  arm$cell_obs_map <- cells
+  zi <- list(
+    y               = as.numeric(arm$y == 0),
+    X               = X_zi,
+    family          = "binomial",
+    n_trials        = rep(1L, N),
+    coupled         = TRUE,
+    cell_obs_map    = cells,
+    field_coef      = 0,
+    beta_prior_mean = rep(0, p_zi),
+    beta_prior_prec = rep(if (is.finite(zi_prior_sd)) 1 / zi_prior_sd^2 else 0,
+                          p_zi)
+  )
+  responses[[1L]] <- arm
+  c(responses, list(zi = zi))
+}
+
+# A one-arm block spec stated for `n_arms` arms that read the same rows: every
+# per-arm field -- an index, a row weight, a basis, a projector, a mesh
+# projector -- carries the first arm's entry for each further arm. A plain
+# vector is already shared by every arm and is left as it is.
+#' @keywords internal
+.joint_block_widen_arms <- function(blk, n_arms) {
+  per_arm <- c("spatial_idx", "temporal_idx", "obs_idx", "svc_weight", "phi",
+               "projector", "A_x", "A_i", "A_p")
+  widen <- function(v) if (is.list(v)) rep_len(v[1L], n_arms) else v
+  for (f in intersect(per_arm, names(blk))) blk[[f]] <- widen(blk[[f]])
+  if (!is.null(blk$field_weight)) blk$field_weight <- lapply(blk$field_weight, widen)
+  if (!is.null(blk$n_obs_per_arm)) {
+    blk$n_obs_per_arm <- rep_len(as.integer(blk$n_obs_per_arm)[1L], n_arms)
+  }
+  blk
 }
 
 # Which blocks each random-effect term became when the terms' blocks

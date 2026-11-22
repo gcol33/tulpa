@@ -421,7 +421,11 @@ are offered by \code{\link[=tulpa]{tulpa()}}, \code{\link[=tulpa_eb]{tulpa_eb()}
 \item{cell_coupling}{Character scalar naming a per-cell coupled likelihood
 registered against tulpa's process-global registry (see
 \code{src/cell_coupling_registry.h}). Defaults to \code{"separable"}, the arm-
-separable per-obs sum every existing joint fit uses. Consumer packages
+separable per-obs sum every existing joint fit uses. \code{"zero_inflated"}
+is built in: arm 1 carries a discrete count response and arm 2 the logit
+of its structural-zero probability, both \code{coupled = TRUE} with one cell
+per row, and each cell reads the zero-inflated mixture of arm 1's family
+(how \code{tulpa(ziformula =)} reaches this door). Consumer packages
 (e.g. tulpaObs) compile a \code{tulpa::CellCouplingSpec} subclass in their
 own \verb{src/} and register it from \verb{R_init_<pkg>} via the
 \code{tulpa_register_cell_coupling} C callable; the R driver validates the

@@ -330,6 +330,9 @@ BACKEND_REGISTRY <- list(
     # The arm's built-in family response carries a per-row weight and a
     # second dispersion (BuiltinFamilyResponse), whatever blocks ride along.
     carries_weights = TRUE, phi2 = TRUE,
+    # A zero-inflation formula is a second arm coupled row by row to the
+    # response through the "zero_inflated" cell coupling (.joint_arm_zi()).
+    zi = TRUE,
     # A tulpa() formula is one response, so the front door reaches this
     # driver as a ONE-arm fit (R/tulpa_joint_arm.R): the door whose arm
     # carries a censored / truncated response's bounds and whose outer grid

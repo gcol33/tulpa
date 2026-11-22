@@ -8,6 +8,7 @@
 
 #include "cell_coupling_registry.h"
 #include "cell_coupling_separable.h"
+#include "cell_coupling_zero_inflated.h"
 #include "shim_guard.h"
 
 #include <Rcpp.h>
@@ -36,8 +37,9 @@ RegistryImpl& registry() {
     return r;
 }
 
-// Pre-register the canonical separable default under the name "separable"
-// the first time the registry is touched. Function-local static guards
+// Pre-register the built-in specs -- the separable default under "separable"
+// and the zero-inflated mixture under "zero_inflated" -- the first time the
+// registry is touched. Function-local static guards
 // against the registration racing a concurrent first lookup.
 void ensure_defaults_registered() {
     static const bool inited = []() {
@@ -45,6 +47,8 @@ void ensure_defaults_registered() {
         std::lock_guard<std::mutex> lock(r.mtx);
         r.specs.emplace(std::string("separable"),
                         make_separable_cell_coupling());
+        r.specs.emplace(std::string("zero_inflated"),
+                        make_zero_inflated_cell_coupling());
         return true;
     }();
     (void)inited;

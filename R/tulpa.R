@@ -1053,7 +1053,7 @@
       return(.joint_arm_args(bundle, family, all_blocks, sigma_re, n_trials,
                              phi, phi_axis, beta_prior %||% beta_prior_default,
                              hyperprior, control, weights = weights,
-                             phi2 = phi2))
+                             phi2 = phi2, zi_prior_sd = zi_prior_sd))
     }
     if (length(all_blocks) == 0L) {
       # An `iid` block for a `(1 | g)` term rides the multi-block driver only,
@@ -2816,7 +2816,7 @@ tulpa <- function(formula, data,
   joint_unfit <- .joint_arm_unfit(
     spatial_type = spatial_type, temporal_spec = temporal_spec,
     st_block = st_block, has_latent = has_latent,
-    zi = !is.null(bundle$X_zi))
+    zi = !is.null(bundle$X_zi), weights = !is.null(weights))
   joint_planned <- !is.null(bundle$response_bounds) ||
     (!is.null(phi_axis) && is.null(joint_unfit) &&
        (sel$requested %||% mode) %in% .JOINT_ARM_PHI_MODES)
@@ -3469,7 +3469,9 @@ tulpa <- function(formula, data,
       fit$re_block_index       <- attr(args, "re_block_index")
       fit$re_block_conditioned <- attr(args, "re_block_conditioned")
     }
-    fit$N           <- fit$N %||% bundle$n_obs
+    # A joint fit counts the rows of every arm; a zero-inflated response is
+    # two arms over the same rows.
+    fit$N           <- if (joint_arm) bundle$n_obs else fit$N %||% bundle$n_obs
     # Fixed-effect design for fitted()/predict(newdata = NULL), plus the pieces
     # posterior_predict() needs to rebuild the in-sample linear predictor and
     # push it through the family sampler: offset, response, trials, dispersion,

@@ -399,7 +399,11 @@
 #' @param cell_coupling Character scalar naming a per-cell coupled likelihood
 #'   registered against tulpa's process-global registry (see
 #'   `src/cell_coupling_registry.h`). Defaults to `"separable"`, the arm-
-#'   separable per-obs sum every existing joint fit uses. Consumer packages
+#'   separable per-obs sum every existing joint fit uses. `"zero_inflated"`
+#'   is built in: arm 1 carries a discrete count response and arm 2 the logit
+#'   of its structural-zero probability, both `coupled = TRUE` with one cell
+#'   per row, and each cell reads the zero-inflated mixture of arm 1's family
+#'   (how `tulpa(ziformula =)` reaches this door). Consumer packages
 #'   (e.g. tulpaObs) compile a `tulpa::CellCouplingSpec` subclass in their
 #'   own `src/` and register it from `R_init_<pkg>` via the
 #'   `tulpa_register_cell_coupling` C callable; the R driver validates the
