@@ -73,7 +73,7 @@ test_that("every family absent from the table is absent for a stated reason", {
     skip_on_cran_budget()
     ax <- .reg_axis_names()
     absent <- setdiff(names(.NL_REGISTRY), names(.NL_REGISTRY_AXIS_FIELD))
-    expect_setequal(absent, c("car_proper", "hsgp_mo", "mcar", "miid", "lf"))
+    expect_setequal(absent, c("hsgp_mo", "mcar", "miid", "lf"))
     for (fam in absent) {
         a <- ax[[fam]]
         n_field <- length(.NL_FAMILY_AXES[[fam]] %||% list())
@@ -89,7 +89,6 @@ test_that("every family absent from the table is absent for a stated reason", {
     }
     # The specific block each one carries, so a family moving between them is
     # visible rather than silently re-classified.
-    expect_true(anyNA(.joint_pareto_block_tags("car_proper", ax$car_proper)))
     expect_true(anyNA(.joint_pareto_block_tags("hsgp_mo", ax$hsgp_mo)))
     expect_false(anyNA(.joint_pareto_block_tags("mcar", ax$mcar)))
     expect_length(.NL_FAMILY_AXES$mcar, 1L)

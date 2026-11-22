@@ -100,7 +100,12 @@ test_that("fit_st_nested rw1 / rw2 carry no temporal rho axis", {
 test_that("an ar1 rho carries the atanh proposal coordinate and its Jacobian", {
   tags <- tulpa:::.joint_pareto_block_tags("ar1", c("tau", "rho"))
   expect_identical(unname(tags), c("log", "atanh"))
-  expect_true(is.na(tulpa:::.joint_pareto_block_tags("car_proper", "rho")))
+  # A proper-CAR rho takes the coordinate of the support its block declares:
+  # the logit on (0, 1), and none on an interval that is no domain.
+  expect_identical(unname(tulpa:::.joint_pareto_block_tags("car_proper", "rho")),
+                   "logit01")
+  expect_true(is.na(tulpa:::.joint_pareto_block_tags(
+    "car_proper", "rho", list(rho_bounds = c(-0.4, 1)))))
   u <- c(-8, -1.3, 0, 0.4, 2.2, 9)
   iv <- tulpa:::.joint_pareto_inv("atanh", u)
   expect_equal(iv$theta, tanh(u))

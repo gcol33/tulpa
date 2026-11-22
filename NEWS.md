@@ -1,5 +1,17 @@
 # tulpa 0.8.0
 
+* A proper-CAR block's correlation `rho` takes a proposal coordinate, the
+  logit of the (0, 1) support its block declares, so the joint door places,
+  refines and scores it like a BYM2 mixing weight, and the fit's outer
+  Pareto-k is no longer declined on it. On a `fit_st_nested()` car_proper x
+  AR(1) fit 92.8% of its posterior sat on the top declared node 0.95; it now
+  spreads over the placed nodes with none on the top one. On a single-block
+  car_proper fit against a dense 70 x 90 tensor, the 97.5% end of `rho` reads
+  0.998 (dense 0.998, before 0.980) and of the precision 8.71 (dense 7.36,
+  before 5.58); the 2.5% end of `rho` reads 0.643 (dense 0.693, before
+  0.688) and its reported sd 0.025 (dense 0.085, before 0.075), read off a
+  grid whose `rho` marginal spreads over two nodes (#1275).
+
 * A `latent()` block's axes are refined on the joint door as well as placed:
   refinement admits every axis the transform registry gives a coordinate,
   which for a tgmrf block's theta is the identity whatever the block calls it,

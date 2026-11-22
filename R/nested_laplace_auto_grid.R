@@ -1476,11 +1476,12 @@ auto_grid_place <- function(x)
 # absent below are absent for a stated reason, and each records it on the fit
 # rather than passing in silence:
 #
-#   * car_proper (`rho` on the adjacency eigenvalue interval) and hsgp_mo
-#     (`rho` a cross-output correlation on (-1, 1)) each carry ONE axis the
-#     transform registry declines, so their scale axes are blocked with it. The
-#     fit says `unguessable_axis: rho`, which is also what tells a caller that
-#     pinning that axis themselves unblocks the rest.
+#   * hsgp_mo (`rho` a cross-output correlation on (-1, 1)) carries ONE axis
+#     the transform registry declines, so its scale axes are blocked with it.
+#     The fit says `unguessable_axis: rho`, which is also what tells a caller
+#     that pinning that axis themselves unblocks the rest. A car_proper `rho`
+#     is laid on the logit of the (0, 1) support its block declares, so
+#     car_proper is listed.
 #   * mcar / miid hold their p(p+1)/2 log-Cholesky coordinates in a SINGLE
 #     matrix field (`logchol_grid`) whose columns are not named by the axes
 #     they carry, so the binding below cannot address one coordinate. Their
@@ -1504,6 +1505,7 @@ auto_grid_place <- function(x)
     rw1  = c(tau_grid = "tau"),
     rw2  = c(tau_grid = "tau"),
     ar1  = c(tau_grid = "tau", rho_grid = "rho"),
+    car_proper = c(tau_grid = "tau", rho_grid = "rho"),
     iid  = c(sigma_grid = "sigma"),
     st_interaction = c(tau_grid = "tau"),
     bym2 = c(sigma_grid = "sigma", rho_grid = "rho"),

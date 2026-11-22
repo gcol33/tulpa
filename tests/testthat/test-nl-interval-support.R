@@ -468,13 +468,11 @@ test_that("a BYM2 fit reports a mixing weight inside (0, 1)", {
     }
 })
 
-test_that("a family the placement rescue covers no axis of says which axis blocks it", {
+test_that("a proper-CAR fit is placed on both of its axes, rho inside (0, 1)", {
     skip_on_cran()
-    # proper CAR: `rho_car`'s support is the adjacency eigenvalue interval, which
-    # the transform registry will not guess, so no axis of the fit can be placed
-    # -- including `tau`, an ordinary positive scale. Before gcol33/tulpa#370 the
-    # rescue returned before stamping anything and the fit was indistinguishable
-    # from one the rescue never applied to.
+    # proper CAR: `rho` lives on the (0, 1) support its block declares, so the
+    # transform registry lays it on the logit and the placement pass moves it
+    # with the precision `tau` beside it.
     S <- 50L
     set.seed(707L + S + 5000L)
     eff <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4)), scale = FALSE))
@@ -491,10 +489,10 @@ test_that("a family the placement rescue covers no axis of says which axis block
         control = list(max_iter = 200L, tol = 1e-9, n_threads = 1L,
                        diagnose_k = FALSE, diagnose_skew = FALSE)))
 
-    expect_identical(fit$outer_grid_placement, "fixed")
-    expect_false(is.null(fit$outer_grid_recenter_declined))
-    # The rail REPORT needs neither curvature nor a scope entry, so it exists
-    # even here.
+    expect_identical(fit$outer_grid_placement, "auto_recentered")
+    expect_true("b1.rho" %in% fit$outer_grid_recenter_axes)
+    rho <- fit$theta_grid[, "b1.rho"]
+    expect_true(all(rho > 0 & rho < 1))
     expect_false(is.null(fit$outer_grid_railed_axes))
 })
 

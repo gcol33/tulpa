@@ -388,14 +388,18 @@
 
 
 # Per-axis transform tag for one block. `type` is the (lower-case) block type,
-# `axes` the bare axis names (block prefix already stripped). Returns one tag
-# per axis ("log" / "logit01" / "atanh" / "identity") or NULL to DECLINE the
-# whole fit when any axis has a support that cannot be safely transformed:
+# `axes` the bare axis names (block prefix already stripped), `block` the prior
+# block that owns them. Returns one tag per axis ("log" / "logit01" / "atanh" /
+# "identity"), NA for an axis whose support cannot be safely transformed:
 #   * `rho` is the BYM2 mixing weight in (0, 1) -> logit and an AR(1)
-#     autocorrelation in (-1, 1) -> atanh; for CAR_proper / multi-output HSGP
-#     the same name denotes an eigenvalue-bounded parameter; decline.
-#   * `rho_car` is the proper-CAR correlation on the adjacency eigenvalue
-#     interval; decline.
+#     autocorrelation in (-1, 1) -> atanh. On a proper-CAR block it is the
+#     correlation on the support the block declares (`.hp_axis_support()`),
+#     the positive part of the interval on which D - rho W is positive
+#     definite, which is (0, 1) for every graph (`compute_car_rho_bounds()`):
+#     logit there, and NA on a support the block states otherwise. A
+#     multi-output HSGP's cross-output `rho` declines.
+#   * `rho_car` is the proper-CAR correlation of the single-block and copy
+#     paths; decline.
 #   * `alpha` is the unbounded copy coefficient; identity.
 #   * `mcar` axes are the log-Cholesky coordinates of Sigma = L L' (log L_ii on
 #     the diagonal, raw strict-lower L_ij), already unconstrained on all of R,
@@ -406,15 +410,20 @@
 #     density on, and that prior is the block's only statement of support, so
 #     every axis is identity. Its `grid_span` places nodes and says nothing
 #     about the support.
-.joint_pareto_block_tags <- function(type, axes) {
+.joint_pareto_block_tags <- function(type, axes, block = list()) {
     # mcar / miid axes are the log-Cholesky coordinates of Sigma = L L' (log L_ii
     # on the diagonal, raw strict-lower L_ij), unconstrained on all of R, so
     # every axis is identity (zero Jacobian).
     if (type %in% c("mcar", "miid", "tgmrf")) return(rep("identity", length(axes)))
+    own_block <- if (is.list(block)) block else list()
+    own_block$type <- type
     tag_one <- function(a) {
         if (a == "alpha") return("identity")
         if (a == "rho") {
-            return(switch(type, bym2 = "logit01", ar1 = "atanh", NA_character_))
+            return(switch(type, bym2 = "logit01", ar1 = "atanh",
+                          car_proper = .joint_domain_tag(
+                              .hp_axis_support(a, own_block)),
+                          NA_character_))
         }
         if (a == "rho_car") return(NA_character_)
         if (a %in% .JOINT_POS_AXES || startsWith(a, "phi_")) return("log")
@@ -441,7 +450,7 @@
 # of them.
 .joint_axis_tags_raw <- function(res) {
     .joint_axis_walk(res, function(type, axes, block)
-        .joint_pareto_block_tags(type, axes), phi = "log")
+        .joint_pareto_block_tags(type, axes, block), phi = "log")
 }
 
 # The walk over a joint result's block layout that assigns each `theta_grid`
@@ -516,6 +525,14 @@
 # is withheld rather than guessed.
 .JOINT_AXIS_DOMAIN <- c(log = "positive", logit01 = "unit", atanh = "correlation",
                         identity = "unbounded")
+
+# The tag whose domain is the interval `bounds` (`.nl_domain_of_bounds()`), NA
+# for an interval that is none of them: the coordinate an axis takes when the
+# block that owns it is what declares its support.
+.joint_domain_tag <- function(bounds) {
+    names(.JOINT_AXIS_DOMAIN)[match(.nl_domain_of_bounds(bounds),
+                                    .JOINT_AXIS_DOMAIN)]
+}
 
 # The REPORTING geometry of every joint-grid axis: the domain its continuum is
 # partitioned on, and the coordinate of a declared point mass that is not part
