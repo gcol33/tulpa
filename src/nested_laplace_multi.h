@@ -1,106 +1,24 @@
 // nested_laplace_multi.h
-// Shared helpers for the multi-block nested-Laplace driver. Used by both
-// nested_laplace.cpp (single-block kernels routing through length-1
-// LatentBlock vectors) and nested_laplace_multi.cpp (genuine multi-block
-// dispatch from R).
-//
-// The driver assembles the inner solve at each outer-grid point k as:
-//
-//   eta_i  = X_i β + RE_g(i) + Σ_b d_fac_b(k) * x[start_b + idx_b(i) - 1]
-//   grad/H from the spec solver's observation scatter (β, RE), which carries
-//          the fixed-effect and RE-group priors itself
-//          + accumulate_latent_cross_terms (latent, latent x β, latent x RE)
-//          + Σ_b add_prior_b(k)
-//   center : each block's centerer applied to its sub-vector
-//   log_prior = Σ_b log_prior_b(k), the RE normalizer coming from the same
-//          spec solve
-//
-// Per-block prep is invoked once at grid point k before the inner solve; if
-// any block reports infeasible (e.g. proper CAR with rho outside the PD
-// interval), the inner solve short-circuits with log_marginal = -inf.
+// The single-response LatentBlock driver: every single-block nested kernel
+// (nested_laplace.cpp, via length-1 LatentBlock vectors) and the multi-block
+// dispatch (nested_laplace_multi.cpp) solve their outer grid as a one-arm fit
+// on the joint driver (nested_laplace_joint_multi.h).
 
 #ifndef TULPA_NESTED_LAPLACE_MULTI_H
 #define TULPA_NESTED_LAPLACE_MULTI_H
 
 #include "hard_constraints.h"             // collect_hard_constraints
 #include "tulpa_stop.h"
-#include "hessian_pattern_guard.h"        // HessianPatternGuard (see its placement rule)
-#include "laplace_builtin_family_spec.h"  // builtin_family_spec, BuiltinFamilyResponse
-#include "laplace_core.h"
-#include "laplace_family_link.h"
-#include "laplace_newton.h"
-#include "laplace_re_priors.h"
-#include "laplace_spec_solve.h"           // spec_inner_solve (the unified inner solve)
+#include "laplace_newton.h"               // SPARSE_THRESHOLD
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
 #include "nested_laplace_joint_core.h"     // make_single_arm
-#include "nested_laplace_joint_multi.h"    // the sparse joint driver
-#include "row_classes.h"                  // RowClasses, RowLoadings
-#include "sparse_cholesky.h"
+#include "nested_laplace_joint_multi.h"    // the joint driver
 #include <Rcpp.h>
 #include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <limits>
-#include <utility>
 #include <vector>
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
 namespace tulpa {
-
-// Per-observation contribution walk over the [beta (p) | RE (n_re_groups) |
-// blocks] latent layout: for every latent index observation i touches, call
-// sink(latent_index, weight). One definition behind the per-row predictive
-// variance vector a_i and the per-row fitted eta, which differ only in what
-// they accumulate into. A DENSE_BASIS block's weights are its basis row at
-// cell `k_grid`, so its prep(k_grid) must have run.
-template <typename Sink>
-inline void nl_multi_obs_contribs(
-    int i, int p, bool has_re, int n_re_groups,
-    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
-    const std::vector<LatentBlock>& blocks,
-    const std::vector<double>& d_fac,
-    int k_grid,
-    std::vector<std::pair<int,double>>& scratch,
-    std::vector<double>& basis_scratch,
-    Sink&& sink
-) {
-    for (int j = 0; j < p; j++) sink(j, X(i, j));
-    if (has_re) {
-        const int g = static_cast<int>(re_idx[i]) - 1;
-        if (g >= 0 && g < n_re_groups) sink(p + g, 1.0);
-    }
-    for (std::size_t b = 0; b < blocks.size(); b++) {
-        // The per-row weight rides the block amplitude on both kinds, as it
-        // does in the inner solve's own walk (laplace_spec.cpp).
-        const double d_b = d_fac[b] * block_row_weight(blocks[b], i, /*k_arm=*/0);
-        if (blocks[b].contrib_kind == BlockContribKind::INDEXED_MULTI) {
-            blocks[b].fill_obs_indices(i, /*k_arm=*/0, scratch);
-            for (const auto& nw : scratch) {
-                const int l = nw.first;
-                if (l > 0 && l <= blocks[b].size) {
-                    sink(blocks[b].start + l - 1, d_b * nw.second);
-                }
-            }
-        } else if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS) {
-            const int m = blocks[b].size;
-            if (static_cast<int>(basis_scratch.size()) < m)
-                basis_scratch.resize(m);
-            blocks[b].basis_eval(i, /*k_arm=*/0, k_grid, basis_scratch.data());
-            for (int j = 0; j < m; j++) {
-                sink(blocks[b].start + j, d_b * basis_scratch[j]);
-            }
-        } else {
-            const int l = blocks[b].idx(i, /*k_arm=*/0);
-            if (l > 0 && l <= blocks[b].size) {
-                sink(blocks[b].start + l - 1, d_b);
-            }
-        }
-    }
-}
 
 // Whether every row's loading vector is the same at every cell up to the
 // per-block scalars d_fac_b(k). A DENSE_BASIS block's weights are its basis
@@ -122,53 +40,6 @@ inline int nl_screen_iterations(const std::vector<LatentBlock>& blocks,
         ? requested : std::max(requested, max_iter);
 }
 
-// The design's rows grouped by loading vector (row_classes.h), at cell
-// `k_grid`.
-//
-// nl_multi_obs_contribs builds row i's loading vector a_i out of the p values
-// of X(i, .), the RE group re_idx[i], and, per block, the (index, weight) list
-// the block's obs_indices fills, the pair (idx(i, 0), row_weight(i, 0)), or the
-// basis row at the cell. When nl_loadings_cell_invariant() holds, none of those
-// move with the outer-grid cell: the only per-cell quantity in the walk is the
-// block scalar d_fac_b(k), which multiplies every entry block b contributes,
-// uniformly across rows, and the classes built at any cell serve every cell.
-//
-// The latent index ranges of beta, the RE block and each latent block are
-// disjoint, so a latent index identifies which d_fac scales it. Two rows whose
-// walks emit the same (index, weight) sequence at d_fac == 1 therefore emit
-// bit-identical a_i at EVERY cell, and share the variance a_i' H_k^{-1} a_i
-// exactly. One back-solve per class then serves every member of it, at every
-// cell, for one O(N * (p + n_blocks)) pass over the design.
-inline RowClasses nl_build_row_classes(
-    int N, int p, bool has_re, int n_re_groups,
-    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
-    const std::vector<LatentBlock>& blocks, int k_grid
-) {
-    if (N <= 0) return RowClasses{};
-    // The walk is driven at d_fac == 1 so the recorded weights carry no cell
-    // dependence. Running it through nl_multi_obs_contribs itself keeps the key
-    // and the loading vector one definition: a change to what a row reads
-    // changes both together.
-    const std::vector<double> unit_d_fac(blocks.size(), 1.0);
-    RowLoadings keys;
-    const std::size_t key_guess =
-        static_cast<std::size_t>(N) * (static_cast<std::size_t>(p) +
-                                       blocks.size() + 1);
-    keys.idx.reserve(key_guess);
-    keys.w.reserve(key_guess);
-    keys.off.reserve(static_cast<std::size_t>(N) + 1);
-    std::vector<std::pair<int, double>> scratch;
-    std::vector<double> basis_scratch;
-    for (int i = 0; i < N; i++) {
-        nl_multi_obs_contribs(
-            i, p, has_re, n_re_groups, X, re_idx, blocks, unit_d_fac, k_grid,
-            scratch, basis_scratch,
-            [&](int idx, double w) { keys.push(idx, w); });
-        keys.end_row();
-    }
-    return row_classes_from_loadings(keys);
-}
-
 // A single-response block fit as a one-arm fit on the joint driver. The latent
 // blocks own their observation maps, so the arm carries only the response, the
 // fixed-effect design and the RE block. `force_sparse` selects the joint sparse
@@ -177,8 +48,8 @@ inline RowClasses nl_build_row_classes(
 // Newton assembles the latent blocks on their structural pattern, folds an
 // intrinsic field's sum-to-zero pin at solve time and reaches a block's prior
 // through add_prior_sparse. A model-supplied likelihood rides the arm's spec;
-// the per-row predictor and its variance come back in the shape the dense
-// multi-block path reports.
+// the per-row predictor and its variance come back as `fitted_eta` /
+// `fitted_eta_var`, one row per cell.
 inline Rcpp::List run_single_arm_block_joint(
     int n_grid,
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
@@ -236,14 +107,7 @@ inline Rcpp::List run_single_arm_block_joint(
     return out;
 }
 
-// Generic outer-grid driver over a vector of LatentBlocks.
-//
-// `n_threads_outer` controls the outer-grid parallelism (1 = serial, the
-// pre-refactor default). `n_threads_inner` controls per-observation parallel
-// kernels (compute_eta, scatter, log-lik reduction) inside each cell. When
-// `n_threads_outer > 1`, the driver pre-allocates n_threads_outer worth of
-// NewtonScratch (one per OpenMP thread) and one SparseCholeskySolver per
-// thread, then parallelises the grid via run_nested_laplace_grid.
+// The outer grid over a vector of LatentBlocks for one response.
 inline Rcpp::List run_multi_block_nested_laplace(
     int n_grid,
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
@@ -307,464 +171,30 @@ inline Rcpp::List run_multi_block_nested_laplace(
     for (const auto& b : blocks) {
         n_x = std::max(n_x, b.start + b.size);
     }
-
-    // ---- Likelihood: built-in family or model-supplied spec -----------------
-    // Each single-block (and np==1 multi-block) nested kernel routes its inner
-    // Laplace solve through spec_inner_solve, which reads the per-observation
-    // score / Fisher weight / log-lik entirely from a single-process
-    // LikelihoodSpec; scatter_spec assembles the latent gradient + Hessian. The
-    // driver therefore carries no copy of the obs + latent-cross scatter.
-    //
-    // By default tulpa builds builtin_family_spec(family) over (y, n_trials,
-    // family, phi). A model package (tulpaObs occupancy, tulpaGlmm custom
-    // families) instead supplies its own spec + response via ext_spec /
-    // ext_response (passed from R as an XPtr<NestedLikelihood>); then `family` /
-    // `phi` / `y` / `n_trials` are unused here and the likelihood -- including any
-    // per-observation scaling, e.g. the marginalized occupancy state -- lives
-    // wholly in the model's spec. Built once; read-only inside the (possibly
-    // parallel) grid. sigma_beta = DEFAULT_SIGMA_BETA is the kernel's default
-    // prior, which a caller's `beta_prior` replaces per coefficient; the spec
-    // also folds the beta-prior log-density into the log-marginal.
     // n_re_groups > 0 with an re_idx of the wrong length is a caller error, not
     // a configuration: silently dropping the block would fit a model with no
-    // random effect and still return a log-marginal for it, and the per-row
-    // walks below read re_idx[i] for every i < N.
+    // random effect and still return a log-marginal for it.
     if (n_re_groups > 0 && (int) re_idx.size() != N) {
         tulpa::stop("length(re_idx) (%d) must equal n_obs (%d) when "
                    "n_re_groups (%d) is positive.",
                    {(int) re_idx.size(), N, n_re_groups});
     }
-    const bool has_re = (n_re_groups > 0);
-
-    // The dense inner solve below assembles an n_x x n_x Hessian and reaches a
-    // block's prior only through its dense add_prior. Past SPARSE_THRESHOLD
-    // latents, or with a block whose prior scatters only sparsely, the fit
-    // runs on the sparse joint Newton instead -- the threshold and the rule
-    // the joint driver applies to its own fits.
-    if (n_x >= SPARSE_THRESHOLD || blocks_have_sparse_only_prior(blocks)) {
-        Rcpp::Nullable<Rcpp::NumericVector> arm_offset = R_NilValue;
-        if (!offset.empty()) arm_offset = Rcpp::wrap(offset);
-        return run_single_arm_block_joint(
-            n_grid, y, n_trials, X, re_idx, N, p, n_re_groups, sigma_re,
-            blocks, family, phi, max_iter, tol, n_threads, store_modes,
-            x_init, store_Q, /*force_sparse=*/true, n_threads_outer,
-            prune_tol, ext_spec, ext_response, progress, ckpt, compute_skew,
-            skew_probe_idx, debias, cila, screen_iters, compute_fitted_var,
-            arm_offset, screen_log_offset, beta_prior);
+    if (!offset.empty() && (int) offset.size() != N) {
+        tulpa::stop("offset length (%d) must equal the number of "
+                   "observations (%d).", {(int) offset.size(), N});
     }
-
-    ProcessData proc;
-    proc.p = p;
-    proc.X_flat.resize((size_t)N * p);
-    for (int i = 0; i < N; i++)
-        for (int j = 0; j < p; j++)
-            proc.X_flat[(size_t)i * p + j] = X(i, j);
-    if (!offset.empty()) {
-        if ((int) offset.size() != N) {
-            tulpa::stop("offset length (%d) must equal the number of "
-                       "observations (%d).", {(int) offset.size(), N});
-        }
-        proc.offset = offset;
-    }
-
-    LikelihoodSpec builtin_spec;
-    std::vector<int> n_trials_vec;
-    BuiltinFamilyResponse resp;
-    const LikelihoodSpec* spec_ptr = ext_spec;
-    void*                 resp_ptr = ext_response;
-    if (!ext_spec) {
-        builtin_spec  = builtin_family_spec(family);
-        n_trials_vec.assign(n_trials.begin(), n_trials.end());
-        resp.y        = y.begin();
-        resp.n_trials = n_trials_vec.data();
-        resp.N        = N;
-        resp.family   = family;
-        resp.phi      = phi;
-        resp.prepare();
-        spec_ptr      = &builtin_spec;
-        resp_ptr      = &resp;
-    }
-
-    ModelData data;
-    data.n_processes         = 1;
-    data.processes.push_back(proc);
-    data.N                   = N;
-    data.sigma_beta          = DEFAULT_SIGMA_BETA;
-    data.likelihood_spec     = spec_ptr;
-    data.model_response_data = resp_ptr;
-    data.sharing.init(1);
-    std::vector<int> re_group_1based;
-    if (has_re) {
-        data.n_re_groups = n_re_groups;
-        re_group_1based.resize(N);
-        for (int i = 0; i < N; i++) re_group_1based[i] = static_cast<int>(re_idx[i]);
-        data.re_group = re_group_1based;
-    }
-
-    ParamLayout layout;
-    layout.process_beta_start.push_back(0);
-    layout.process_beta_count.push_back(p);
-    if (has_re) {
-        layout.has_re           = true;
-        layout.re_start         = p;
-        layout.re_end           = p + n_re_groups;
-        layout.log_sigma_re_idx = n_x;   // hyperparam slot AFTER all latent
-    }
-    const int total_params = n_x + (has_re ? 1 : 0);
-    layout.total_params = total_params;
-    if (has_re) tulpa::nl_check_positive("sigma_re", sigma_re);
-    const double log_sigma_re = has_re ? std::log(sigma_re) : 0.0;
-
-    // Per-outer-thread NewtonScratch. omp_get_thread_num() returns 0 outside
-    // parallel regions so the serial path correctly picks scratch_pool[0].
-    //
-    // The subspace sampler draws from R's RNG (rwmh.h), which is not reentrant
-    // and would make a run's draws a function of the thread schedule, so a
-    // debiased grid is integrated serially whatever the caller asked for.
-    const bool debias_active = (debias != nullptr) && (!debias->idx.empty() || debias->exact);
-    if (debias_active) n_threads_outer = 1;
-    int n_outer = std::max(1, n_threads_outer);
-    std::vector<NewtonScratch> scratch_pool(n_outer);
-    for (auto& s : scratch_pool) s.allocate(n_x, N);
-
-    // When the outer grid is parallel, force inner kernels to single-thread
-    // OpenMP (compute_eta / scatter / log-lik reduction). Nested OpenMP at
-    // this problem size is overhead-dominated.
-    int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
-
-    // Per-cell per-row predictive variance of the linear predictor,
-    // var(eta_i | theta_k) = a_i' H_k^{-1} a_i, where a_i is the row's loading
-    // vector (the same beta + RE + sum_b d_fac_b * e_{idx_b(i)} accumulation as
-    // compute_eta, but as coefficients rather than multiplied by the mode). It
-    // is read off the live Cholesky factor laplace_newton_solve leaves resident
-    // at the converged mode (the same factor inv_block_layout reuses for the RE
-    // posterior-covariance blocks), so there is no refactorization. Filled only
-    // on the full solves (not the max_iter=1 cheap screen), only when modes are
-    // stored, and only when the caller asked for it via compute_fitted_var;
-    // packed into `fitted_eta_var` [n_grid x N] below so callers can
-    // marginalise psi intervals over the hyperparameter grid. Buffer is
-    // k-sliced (disjoint per cell) so the outer-parallel writes do not race.
-    const bool want_fitted_var = store_modes && compute_fitted_var;
-    std::vector<double> fitted_var_buf(
-        want_fitted_var ? static_cast<std::size_t>(n_grid) * N : 0, 0.0);
-
-    // Rows sharing a loading vector share the variance at every cell, so the
-    // grid solves one representative per class. Built once from the design
-    // when the classes are cell-invariant, read-only inside the (possibly
-    // parallel) grid; otherwise built per cell inside the solve.
-    const bool loadings_invariant = nl_loadings_cell_invariant(blocks);
-    const RowClasses row_classes =
-        (want_fitted_var && loadings_invariant)
-            ? nl_build_row_classes(N, p, has_re, n_re_groups, X, re_idx,
-                                   blocks, /*k_grid=*/0)
-            : RowClasses{};
-
-    // Inner implementation: takes max_iter as a parameter so the cheap-pass
-    // path can call with max_iter=1 for a one-Newton-step screen. See the
-    // joint analogue in nested_laplace_joint_multi.h for the rationale.
-    auto solve_at_theta_impl = [&](int k,
-                                   const std::vector<double>& prev_mode,
-                                   SparseCholeskySolver* solver,
-                                   int max_iter_use,
-                                   NewtonScratch* scratch_override
-                                   = nullptr,
-                                   bool want_var = false,
-                                   bool allow_probe = false) -> LaplaceResult
-    {
-        {
-            TULPA_PROFILE_PHASE(PHASE_PREP);
-            for (const auto& b : blocks) {
-                if (b.prep && !b.prep(k)) {
-                    LaplaceResult bad;
-                    bad.mode = (static_cast<int>(prev_mode.size()) == n_x)
-                               ? prev_mode
-                               : std::vector<double>(n_x, 0.0);
-                    bad.log_marginal = -std::numeric_limits<double>::infinity();
-                    bad.n_iter = 0;
-                    bad.converged = false;
-                    bad.log_det_Q = 0.0;
-                    return bad;
-                }
-            }
-        }
-
-        std::vector<double> d_fac_cache(blocks.size());
-        for (size_t b = 0; b < blocks.size(); b++) {
-            d_fac_cache[b] = blocks[b].d_fac_at(k);
-        }
-
-        const int n_inner =
-            nl_cell_solve_threads(n_threads, n_threads_inner_eff);
-
-        int tid;
-        #ifdef _OPENMP
-        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
-        #else
-        tid = 0;
-        #endif
-
-        NewtonScratch& scratch = scratch_override ? *scratch_override
-                                                  : scratch_pool[tid];
-
-        // base_params: latent warm start in [0, n_x); log_sigma_re hyperparam
-        // after. spec_inner_solve builds the [beta | RE | blocks] layout,
-        // wraps the spec helpers as the shared Newton loop's closures, and leaves
-        // the live Cholesky factor resident in scratch/solver for the predictive-
-        // variance back-solves below.
-        std::vector<double> base_params(total_params, 0.0);
-        if (static_cast<int>(prev_mode.size()) == n_x)
-            std::copy(prev_mode.begin(), prev_mode.end(), base_params.begin());
-        if (has_re) base_params[layout.log_sigma_re_idx] = log_sigma_re;
-
-        LaplaceResult res = spec_inner_solve(
-            data, layout, &blocks, k, *spec_ptr, resp_ptr, re_group_1based,
-            max_iter_use, tol, n_inner, base_params,
-            scratch, solver, store_Q, /*inv_block_layout=*/nullptr,
-            beta_prior, /*sparse_override=*/0,
-            allow_probe && compute_skew, skew_probe_idx,
-            allow_probe ? debias : nullptr,
-            allow_probe ? cila : nullptr,
-            static_cast<std::uint64_t>(k) + 1ULL
-        );
-
-        // Per-row predictive variance, var(eta_i | theta_k) = a_i' H^{-1} a_i,
-        // read off the live Cholesky factor laplace_newton_solve left resident
-        // at the converged mode (sparse path solves the CHOLMOD factor in
-        // `solver`, dense path back-substitutes scratch.chol.L) -- one
-        // back-solve per DISTINCT loading vector, no refactorization. H is the
-        // spec's Fisher curvature at the mode; when
-        // the model spec already returns the marginal information (e.g. tulpaObs'
-        // occupancy q*sigma*(1-sigma)^2/(1-q*sigma)), no rescaling is needed --
-        // the calibrated variance falls out directly.
-        if (want_var && std::isfinite(res.log_marginal) &&
-            static_cast<std::size_t>(k + 1) * N <= fitted_var_buf.size()) {
-            const bool used_sparse_factor =
-                res.sparse_factor_live && solver != nullptr;
-            std::vector<double> a(n_x, 0.0), z(n_x, 0.0);
-            std::vector<std::pair<int,double>> a_multi;
-            std::vector<double> a_basis;
-            // CHOLMOD workspace for the back-solves, local to this cell: the
-            // outer grid runs cells on separate threads, each against its own
-            // solver, and a workspace holds handles owned by one solver's
-            // cholmod_common.
-            SparseCholeskySolver::SolveWorkspace ws;
-            RowClasses cell_classes;
-            if (!loadings_invariant) {
-                cell_classes = nl_build_row_classes(
-                    N, p, has_re, n_re_groups, X, re_idx, blocks, k);
-            }
-            const RowClasses& classes =
-                loadings_invariant ? row_classes : cell_classes;
-            const std::size_t n_class = classes.size();
-            const double failed = std::numeric_limits<double>::quiet_NaN();
-            std::vector<double> class_var(n_class, failed);
-            const std::size_t base = static_cast<std::size_t>(k) * N;
-            auto loading = [&](std::size_t c, double* dst) {
-                std::fill(dst, dst + n_x, 0.0);
-                nl_multi_obs_contribs(
-                    classes.class_rep[c], p, has_re, n_re_groups, X, re_idx,
-                    blocks, d_fac_cache, k, a_multi, a_basis,
-                    [&](int idx, double w) { dst[idx] += w; });
-            };
-            if (used_sparse_factor) {
-                for (std::size_t c = 0; c < n_class; c++) {
-                    loading(c, a.data());
-                    const bool ok = solver->solve(a.data(), z.data(), n_x, ws);
-                    double v = 0.0;
-                    if (ok) for (int j = 0; j < n_x; j++) v += a[j] * z[j];
-                    // H is positive definite, so a' H^-1 a is negative only
-                    // when the solve lost accuracy; reporting 0 there gives a
-                    // downstream interval zero width and no way to tell that
-                    // apart from a genuinely zero loading vector (which does
-                    // give exactly 0).
-                    class_var[c] = (ok && v >= 0.0) ? v : failed;
-                }
-            } else {
-                // Dense factor: a' H^-1 a = ||L^-1 a||^2 for a block of
-                // classes at a time, every column of L read once per block.
-                const std::size_t blk = 64;
-                std::vector<double> A_blk(static_cast<std::size_t>(n_x) * blk);
-                for (std::size_t c0 = 0; c0 < n_class; c0 += blk) {
-                    const std::size_t nb = std::min(blk, n_class - c0);
-                    for (std::size_t c = 0; c < nb; c++)
-                        loading(c0 + c, A_blk.data() + c * n_x);
-                    chol_inverse_quadforms(scratch.chol.L.data(), n_x,
-                                           A_blk.data(), static_cast<int>(nb),
-                                           class_var.data() + c0);
-                }
-            }
-            for (std::size_t c = 0; c < n_class; c++)
-                fitted_var_buf[base + classes.class_rep[c]] = class_var[c];
-            // The rows that are not their class representative read what that
-            // single back-solve produced, a failed solve's NaN included: their
-            // loading vector is bit-identical, so an individual solve would
-            // have failed the same way.
-            if (n_class < static_cast<std::size_t>(N)) {
-                for (int i = 0; i < N; i++) {
-                    const int c = classes.row_class[i];
-                    if (classes.class_rep[c] != i)
-                        fitted_var_buf[base + i] = class_var[c];
-                }
-            }
-        }
-
-        if (store_modes && std::isfinite(res.log_marginal)) {
-            res.eta_mean.assign(N, 0.0);
-            std::vector<std::pair<int, double>> e_multi;
-            std::vector<double> e_basis;
-            for (int i = 0; i < N; ++i) {
-                double e = 0.0;
-                nl_multi_obs_contribs(i, p, has_re, n_re_groups, X, re_idx,
-                    blocks, d_fac_cache, k, e_multi, e_basis,
-                    [&](int idx, double w) { e += w * res.mode[idx]; });
-                res.eta_mean[i] = offset.empty() ? e : e + offset[i];
-            }
-        }
-        return res;
-    };
-
-    // 3-arg adapter for run_nested_laplace_grid.
-    auto solve_at_theta = [&](int k,
-                              const std::vector<double>& prev_mode,
-                              SparseCholeskySolver* solver) -> LaplaceResult
-    {
-        return solve_at_theta_impl(k, prev_mode, solver, max_iter, nullptr,
-                                   /*want_var=*/want_fitted_var,
-                                   /*allow_probe=*/true);
-    };
-
-    // A checkpoint carries the `LaplaceResult`; the per-row predictive variance
-    // lives in this driver's own buffer, so a loaded cell never reaches the
-    // pass that fills it. NaN goes down first, because the buffer's initial 0
-    // is a silently-wrong "zero predictive variance" a grid mixture reads as a
-    // real number and understates the reported variance by, in proportion to
-    // the resumed mass -- the engine's convention everywhere else is that a
-    // decline returns NaN precisely so this cannot happen.
-    //
-    // The refill then re-solves at the restored mode with ZERO Newton steps.
-    // The loop cannot move the iterate, and the post-loop factorization every
-    // solve ends with still runs, so the factor the back-solves read is the one
-    // the original solve read at the same point: the refilled row is
-    // bit-identical to the uninterrupted fit's, which is what "a resumed fit
-    // equals the uninterrupted one" already promises for every other field.
-    auto resume_refill = [&](int k, const std::vector<double>& mode,
-                             SparseCholeskySolver* solver) {
-        if (!want_fitted_var ||
-            static_cast<std::size_t>(k + 1) * N > fitted_var_buf.size()) return;
-        const std::size_t base = static_cast<std::size_t>(k) * N;
-        std::fill(fitted_var_buf.begin() + base,
-                  fitted_var_buf.begin() + base + N,
-                  std::numeric_limits<double>::quiet_NaN());
-        if (static_cast<int>(mode.size()) != n_x) return;
-        solve_at_theta_impl(k, mode, solver, /*max_iter_use=*/0, nullptr,
-                            /*want_var=*/true, /*allow_probe=*/false);
-    };
-
-    // Cheap-pass screening: a short inner Newton run warm-started from the
-    // neighbour quasi-mode the driver chains across the lattice, returning
-    // the quasi-mode and the Laplace log-marginal at it. Calling
-    // solve_at_theta_impl with the driver-supplied `n_steps` reuses all the
-    // per-cell callbacks without duplicating scatter/eta logic. Dedicated
-    // thread-local solver + scratch keep cheap_eval independent of the
-    // parallel fan-out's pool.
-    // One cheap solver + scratch per outer worker slot: the cheap screen may
-    // run per-tile chains concurrently, and CHOLMOD's
-    // cholmod_common is not thread-safe, so each worker needs its own. This
-    // path passes no tile metadata, so the screen stays serial (worker 0), but
-    // the pool keeps the CheapEval contract uniform across call sites.
-    const int n_cheap_workers = std::max(1, n_outer);
-    std::vector<SparseCholeskySolver> cheap_solvers(n_cheap_workers);
-    std::vector<NewtonScratch> cheap_scratches(n_cheap_workers);
-    for (auto& cs : cheap_scratches) cs.allocate(n_x, N);
-    auto cheap_eval = [&](int k_grid,
-                          const std::vector<double>& warm,
-                          int n_steps, int worker) -> LaplaceResult {
-        return solve_at_theta_impl(
-            k_grid, warm, &cheap_solvers[worker], n_steps,
-            &cheap_scratches[worker]);
-    };
-
-    const HessianPatternGuard pattern_guard;
-    Rcpp::List out = run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
-        /*tile_ids=*/std::vector<int>(),
-        /*tile_pilot_cells=*/std::vector<int>(),
-        cheap_eval, prune_tol, progress, ckpt,
-        /*x_init_per_cell=*/std::vector<double>(), screen_iters,
-        resume_refill, screen_log_offset
-    );
-    pattern_guard.check("the single-block nested-Laplace outer grid");
-
-    // Every block's hard rows (an intrinsic block's level row among them), for
-    // conditioning the covariance read off the stored precisions.
-    {
-        Rcpp::List cc = write_constraint_rows(collect_hard_constraints(blocks));
-        if (cc.size() > 0) out["constraint_cols"] = cc;
-    }
-
-    // Solved cells retain eta while their loadings are live. Checkpoint-loaded
-    // cells reconstruct it from their modes and cell-specific block scales.
-    // The rows include held-out observations (n_trials = 0), so predictive
-    // mixtures use the same predictor as the likelihood.
-    if (store_modes && out.containsElementNamed("modes")) {
-        Rcpp::NumericMatrix modes = out["modes"];
-        int ng = modes.nrow();
-        const bool retained = out.containsElementNamed("fitted_eta");
-        Rcpp::NumericMatrix fitted_eta = retained
-            ? Rcpp::as<Rcpp::NumericMatrix>(out["fitted_eta"]) : Rcpp::NumericMatrix(ng, N);
-        std::vector<double> dfac(blocks.size());
-        std::vector<std::pair<int,double>> e_multi;
-        std::vector<double> e_basis;
-        for (int k = 0; k < ng; k++) {
-            bool ready = retained;
-            for (int i = 0; ready && i < N; ++i) ready = R_finite(fitted_eta(k, i));
-            if (ready) continue;
-
-            // A basis row is read off its block's per-cell state, which the
-            // grid's last prep has since replaced, so it is rebuilt for k.
-            bool cell_ok = true;
-            if (!loadings_invariant) {
-                for (const auto& b : blocks) {
-                    if (b.contrib_kind == BlockContribKind::DENSE_BASIS &&
-                        b.prep && !b.prep(k)) cell_ok = false;
-                }
-            }
-            if (!cell_ok) {
-                for (int i = 0; i < N; i++)
-                    fitted_eta(k, i) = std::numeric_limits<double>::quiet_NaN();
-                continue;
-            }
-            for (size_t b = 0; b < blocks.size(); b++) dfac[b] = blocks[b].d_fac_at(k);
-            for (int i = 0; i < N; i++) {
-                double e = 0.0;
-                nl_multi_obs_contribs(
-                    i, p, has_re, n_re_groups, X, re_idx, blocks,
-                    dfac, k, e_multi, e_basis,
-                    [&](int idx, double w) { e += w * modes(k, idx); });
-                fitted_eta(k, i) = offset.empty() ? e : e + offset[i];
-            }
-        }
-        out["fitted_eta"] = fitted_eta;
-
-        // Per-cell predictive variance of eta, var(eta_i | theta_k) = a_i'
-        // H_k^{-1} a_i, filled by the solves above (0 for pruned cells, which
-        // carry zero grid weight). Paired with `fitted_eta` so callers can
-        // marginalise the per-row eta posterior as a Gaussian mixture over the
-        // grid (mean fitted_eta[k,i], variance fitted_eta_var[k,i], weight w_k)
-        // and map monotone through plogis for calibrated psi intervals.
-        if (want_fitted_var &&
-            fitted_var_buf.size() == static_cast<std::size_t>(ng) * N) {
-            Rcpp::NumericMatrix fitted_eta_var(ng, N);
-            for (int k = 0; k < ng; k++) {
-                const std::size_t base = static_cast<std::size_t>(k) * N;
-                for (int i = 0; i < N; i++) {
-                    fitted_eta_var(k, i) = fitted_var_buf[base + i];
-                }
-            }
-            out["fitted_eta_var"] = fitted_eta_var;
-        }
-    }
-    return out;
+    Rcpp::Nullable<Rcpp::NumericVector> arm_offset = R_NilValue;
+    if (!offset.empty()) arm_offset = Rcpp::wrap(offset);
+    // The joint driver's sparse Newton past SPARSE_THRESHOLD latents or with a
+    // block whose prior scatters only sparsely; its dense Newton otherwise.
+    return run_single_arm_block_joint(
+        n_grid, y, n_trials, X, re_idx, N, p, n_re_groups, sigma_re,
+        blocks, family, phi, max_iter, tol, n_threads, store_modes,
+        x_init, store_Q,
+        n_x >= SPARSE_THRESHOLD || blocks_have_sparse_only_prior(blocks),
+        n_threads_outer, prune_tol, ext_spec, ext_response, progress, ckpt,
+        compute_skew, skew_probe_idx, debias, cila, screen_iters,
+        compute_fitted_var, arm_offset, screen_log_offset, beta_prior);
 }
 
 } // namespace tulpa

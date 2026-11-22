@@ -341,29 +341,28 @@ gcol33/tulpa#943). On the joint door a `phi_` axis is a per-arm dispersion only
 when it carries no block prefix (`.joint_axis_is_dispersion()`): `b1.phi_gp`
 is an NNGP block's lengthscale.
 
-**The single-arm multi-block driver hands a wide or sparse-only fit to the
-joint Newton** (gcol33/tulpa#944). Its own inner solve (`spec_inner_solve`)
-assembles a dense Hessian whenever a latent block is present (the structural
-sparse pattern covers `[beta | RE]` layouts only) and reaches a block's prior
-through `add_prior` alone. Past `SPARSE_THRESHOLD` latents, or with a block
-whose prior has only `add_prior_sparse` (`blocks_have_sparse_only_prior()`, an
-NNGP block), `run_multi_block_nested_laplace` returns
-`run_single_arm_block_joint(force_sparse = true)`: a one-arm fit on the joint
-driver, with a model-supplied likelihood on the arm's spec and `fitted_eta` /
-`fitted_eta_var` / `constraint_cols` in the dense path's shape. The
-spatio-temporal entries (`run_st_spatial_entry`) are the same one-arm fit
-through the same helper, passing R's `force_sparse` (a dense == sparse test
-knob; the driver's own rule still routes a wide or sparse-only fit). The joint
-sparse Newton is the one that folds an intrinsic field's sum-to-zero pin at
-solve time and reads `add_prior_pattern`. Every areal and temporal block fills
-all four prior callbacks from one setter -- `set_icar_block_priors`,
-`set_temporal_block_priors` (`field_block_priors.h`) and
-`set_car_proper_block_priors` -- at all three drivers, so a block cannot carry
-a dense scatter without its sparse twin. `test-multi-block-sparse-route.R` pins
-dense == sparse below the threshold and the routed fit to the joint door above
-it.
+**Every single-response block fit is a one-arm fit on the joint driver**
+(gcol33/tulpa#944, gcol33/tulpa#1195). `run_multi_block_nested_laplace`, which
+every single-block `cpp_nested_laplace_*` entry and the registry multi-block
+dispatch reach, is `run_single_arm_block_joint`: the response, the
+fixed-effect design and the RE block on one arm, a model-supplied likelihood
+on the arm's spec, and `fitted_eta` / `fitted_eta_var` / `constraint_cols`
+back per cell. The joint driver takes its sparse Newton past
+`SPARSE_THRESHOLD` latents or with a block whose prior has only
+`add_prior_sparse` (`blocks_have_sparse_only_prior()`, an NNGP block), and its
+dense Newton otherwise. The registry driver's own dense inner solve gave
+bit-identical grids, log marginals and coefficients on the cases it was
+checked against and was deleted. The spatio-temporal entries
+(`run_st_spatial_entry`) pass R's `force_sparse` (a dense == sparse test
+knob). The joint sparse Newton is the one that folds an intrinsic field's
+sum-to-zero pin at solve time and reads `add_prior_pattern`. Every areal and
+temporal block fills all four prior callbacks from one setter --
+`set_icar_block_priors`, `set_temporal_block_priors` (`field_block_priors.h`)
+and `set_car_proper_block_priors` -- so a block cannot carry a dense scatter
+without its sparse twin. `test-multi-block-sparse-route.R` pins dense ==
+sparse below the threshold and the registry fit to the joint door above it.
 An `hsgp` block rides the same driver as `DENSE_BASIS`: its loadings are the
-basis row at the cell, so `nl_build_row_classes` keys rows per cell when
+basis row at the cell, so the per-row variance pass keys rows per cell when
 `nl_loadings_cell_invariant()` is false, and the post-grid `fitted_eta` pass
 re-runs a basis block's `prep(k)`. `make_hsgp_block` reads `(sigma2,
 lengthscale)` on the declared (linear) scale at every door (gcol33/tulpa#946).
