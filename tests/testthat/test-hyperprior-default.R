@@ -370,7 +370,69 @@ test_that("hyperprior = \"flat\" keeps only a density the call states", {
   expect_error(tulpa:::.hp_choice("pc_lkj"), "hyperprior")
 })
 
+test_that("a precision's tail record follows the SD density applied, from either branch", {
+  skip_on_cran_budget()
+  tg <- cbind(b1.tau = exp(seq(log(0.1), log(1e4), length.out = 5)))
+  decl <- tulpa:::.hp_declare(tg)
+  blk <- list(list(type = "icar"))
+  want <- list(prior_power = 0.5, field = "icar", fixed = FALSE, scale_fixed = TRUE)
+  default <- tulpa:::.joint_hyperprior(tg, blk, declared = decl)
+  expect_identical(default$range_tail$b1.tau, want)
+  for (spec in list(list("pc.prec", c(U = 3, alpha = 0.01)), list("half_normal", 1))) {
+    fn <- tulpa:::.joint_parse_sigma_prior(spec, "prior_sigma")
+    for (hp in c("proper", "flat")) {
+      stated <- tulpa:::.joint_hyperprior(tg, blk, user = list(sigma = fn),
+                                          hyperprior = hp, declared = decl)
+      expect_identical(stated$range_tail$b1.tau, want, info = paste(spec[[1L]], hp))
+    }
+  }
+  # On an SD axis the same densities have an exponential upper tail.
+  tgs <- cbind(b1.sigma = c(0.1, 1, 10))
+  fn <- tulpa:::.joint_parse_sigma_prior(list("pc.prec", c(3, 0.01)), "prior_sigma")
+  expect_null(tulpa:::.joint_hyperprior(tgs, blk, user = list(sigma = fn),
+                                        declared = tulpa:::.hp_declare(tgs))$range_tail)
+})
+
 skip_on_cran()
+
+test_that("a precision's mean does not exist under the PC prior, stated or default", {
+  skip_on_cran()
+  # A 30-region binomial ICAR the data barely identify. The default PC prior on
+  # the field SD and the same prior stated as `prior_sigma` are one density, so
+  # they read one interval, and on the precision both fall as tau^(-3/2): its
+  # posterior mean is infinite under either.
+  set.seed(20260716)
+  S <- 30L
+  nbr <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+  nn <- lengths(nbr)
+  x <- seq_len(S) / 10 + rnorm(S, 0, 0.3)
+  y <- rbinom(S, 20, plogis(-0.4 + 0.5 * x))
+  resp <- list(a = list(y = y, n_trials = rep(20L, S), X = cbind(1, x),
+                        spatial_idx = seq_len(S), re_idx = rep(0, S),
+                        n_re_groups = 0L, sigma_re = 1, family = "binomial",
+                        phi = 1))
+  blk <- list(type = "icar", n_spatial_units = S,
+              adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+              adj_col_idx = as.integer(unlist(nbr)) - 1L,
+              n_neighbors = as.integer(nn), spatial_idx = list(seq_len(S)))
+  ctl <- list(progress = FALSE, diagnose_k = FALSE)
+  fits <- list(
+    default = suppressWarnings(tulpa_nested_laplace_joint(resp, list(blk),
+                                                          control = ctl)),
+    stated = suppressWarnings(tulpa_nested_laplace_joint(
+      resp, list(blk), control = ctl,
+      prior_sigma = list("pc.prec", c(U = 3, alpha = 0.01)))))
+  hp <- lapply(fits, function(f) {
+    h <- summary(f)$hyperparameters
+    h[h$parameter == "b1.tau", ]
+  })
+  for (nm in names(hp)) {
+    expect_identical(hp[[nm]]$mean, Inf, info = nm)
+    expect_identical(hp[[nm]]$sd, Inf, info = nm)
+  }
+  expect_equal(hp$stated$median, hp$default$median, tolerance = 1e-8)
+  expect_equal(hp$stated$ci_hi, hp$default$ci_hi, tolerance = 1e-8)
+})
 
 test_that("the LKJ normaliser makes the density integrate to one", {
   skip_on_cran()

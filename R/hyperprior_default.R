@@ -209,6 +209,19 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   if (is.null(b)) NULL else as.numeric(b)[1:2]
 }
 
+# The upper tail a density on a field SD takes on the axis `bare` it is carried
+# to, as the `tail` entry of a `.hp_axis_default()` record, read by the
+# moment-existence rule (`.hyper_moment_rule()`). Every SD density the engine
+# applies -- the default PC prior and the `prior_sigma` families, PC and
+# half-normal -- is positive and finite at sigma = 0, so carried to a precision
+# tau = sigma^-2 by |d sigma / d tau| = tau^(-3/2) / 2 it falls as
+# tau^(-1 - 1/2) whatever its anchor. On an SD, and on a variance under the PC
+# prior, the upper tail is exponential and every moment exists: no record.
+.hp_sd_density_tail <- function(bare, block = list()) {
+  if (!startsWith(bare, "tau")) return(NULL)
+  list(tail = list(prior_power = 0.5, field = tolower(block$type %||% "")))
+}
+
 # The default density of ONE axis. `bare` is the axis name without a block
 # prefix, `block` the prior block that owns it (its `type` and the fields a
 # density reads), `family` the arm family of a `phi_<arm>` dispersion axis.
@@ -222,16 +235,12 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
 .hp_axis_default <- function(bare, block = list(), family = NULL) {
   type <- tolower(block$type %||% "")
   # A block's `prior_sigma = c(U, alpha)` anchors the PC prior on its field SD,
-  # carried to whichever scale coordinate the axis is laid on.
-  # The PC prior is exponential in the SD, so carried to a precision
-  # tau = sigma^-2 its upper tail is tau^(-1 - 1/2): the record's `tail`, read
-  # by the moment-existence rule (`.hyper_moment_rule()`). On an SD or a
-  # variance the same prior has an exponential upper tail and every moment.
+  # carried to whichever scale coordinate the axis is laid on, with the tail
+  # that carry gives it (`.hp_sd_density_tail()`).
   scale <- function(kind, anchor = .hp_scale_anchor(block)) {
     force(kind); force(anchor)
     c(list(fn = function(x) .hp_log_scale_density(x, kind, anchor)),
-      if (identical(kind, "precision"))
-        list(tail = list(prior_power = 0.5, field = type)))
+      .hp_sd_density_tail(bare, block))
   }
   uniform <- function() {
     bounds <- .hp_axis_support(bare, block)
@@ -777,7 +786,8 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     if (!is.null(fn)) {
       log_scale <- isTRUE(.hyper_axis_scale(bare))
       is_alpha  <- identical(role, "alpha")
-      return(list(support = .hp_axis_support(bare, bo$block), fn = function(x) {
+      return(c(if (identical(role, "sigma")) .hp_sd_density_tail(bare, bo$block),
+               list(support = .hp_axis_support(bare, bo$block), fn = function(x) {
         lp <- .hyper_prior_carry(x, fn, log_scale, "natural")
         # The copy scale's zero is its declared point mass, which the density
         # does not describe (gcol33/tulpa#624, gcol33/tulpa#626).
@@ -786,7 +796,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
                                           log_scale = log_scale))] <- 0
         }
         lp
-      }))
+      })))
     }
     fam <- if (identical(role, "phi")) families[[sub("^phi_", "", bare)]] else NULL
     .hp_axis_prior(bare, bo$block, fam, hyperprior)
