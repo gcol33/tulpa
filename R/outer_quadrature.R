@@ -129,12 +129,7 @@
     out$refining_axis <- rep(integration, nrow(cells))
     out$weight_kind <- rep("importance", nrow(cells))
     out$theta_interval_read <- "sample"
-    fields <- c("outer_grid_placement", "outer_grid_axis_declined", "outer_grid_moved_axes",
-                "outer_grid_recenter_clamped", "outer_grid_recenter_declined",
-                "outer_mode_u", "outer_mode_cov_u", "outer_mode_axis_tags",
-                "outer_mode_axis_names", "outer_mode_status", "outer_mode_rounds",
-                "outer_mode_evals")
-    out[fields] <- res[fields]
+    out[.NL_PLACEMENT_FIELDS] <- res[.NL_PLACEMENT_FIELDS]
     .nl_attach_outer_integration(out, "outer quadrature")
 }
 
@@ -177,3 +172,113 @@
         n_evaluated = nrow(cells), weights = design$weights)
     .nl_outer_finish(out, res, cells, log(design$weights), "user")
 }
+
+# The outer-design settings a nested-Laplace door reads from `control`: the
+# caller's own design (`outer_design`), the importance quadrature's final node
+# budget and error target (`qmc_nodes`, `qmc_tol`), and the adaptive sparse
+# rule's configuration (`quad_*`, `.nl_aghq_config()`). Every value is checked
+# here whatever the integration the fit ends up taking, so a misspecified
+# setting is named where the caller wrote it.
+.nl_outer_design_control <- function(control) {
+    outer_design <- control$outer_design
+    if (!is.null(outer_design)) outer_design <- .nl_validate_outer_design(outer_design)
+    qmc_nodes <- control$qmc_nodes %||% .NL_QMC$nodes
+    qmc_tol <- control$qmc_tol %||% .NL_QMC$tol
+    if (!is.numeric(qmc_tol) || length(qmc_tol) != 1L ||
+        !is.finite(qmc_tol) || qmc_tol <= 0) {
+        stop("`control$qmc_tol` must be a positive finite number.", call. = FALSE)
+    }
+    if (!is.numeric(qmc_nodes) || length(qmc_nodes) != 1L || !is.finite(qmc_nodes) ||
+        qmc_nodes < 2L || qmc_nodes > .Machine$integer.max ||
+        qmc_nodes != floor(qmc_nodes)) {
+        stop("`control$qmc_nodes` must be an integer >= 2.", call. = FALSE)
+    }
+    list(outer_design = outer_design, qmc_nodes = qmc_nodes, qmc_tol = qmc_tol,
+         quad = .nl_aghq_config(control))
+}
+
+# The integrations that replace the outer grid by a design of their own.
+.NL_OUTER_DESIGNS <- c("qmc", "user", "aghq")
+
+# The integration a multi-block prior asks for: `requested` when the caller
+# named one, `"user"` when the caller supplied an outer design, else `default`.
+# An outer design and user integration go together, and the adaptive sparse
+# rule needs a local and a regional HSGP block with four free axes.
+.nl_outer_integration <- function(requested, cfg, prior, default, choices) {
+    integration <- match.arg(requested %||%
+        if (!is.null(cfg$outer_design)) "user" else default, choices)
+    if (identical(integration, "aghq") && is.null(.nl_aghq_blocks(prior))) {
+        stop("`control$integration = \"aghq\"` requires local and regional HSGP blocks ",
+             "with four free axes.", call. = FALSE)
+    }
+    if (identical(integration, "user") != !is.null(cfg$outer_design)) {
+        stop("`control$integration = \"user\"` requires `control$outer_design`; ",
+             "an outer design is used only with user integration.", call. = FALSE)
+    }
+    integration
+}
+
+# Integrate a solved outer grid's hyperparameters on an outer design: the
+# placed grid seeds the importance proposal (`"qmc"`), the caller's points are
+# solved as given (`"user"`), or the adaptive sparse rule is laid around the
+# grid's mode (`"aghq"`). `solve(cells, retain)` is the door's inner solve at
+# arbitrary hyperparameter cells, its hyperprior folded into the log marginals,
+# with the per-cell side data the fit keeps when `retain`. `tags` are the
+# axes' transform tags and `extend` flags the axes whose proposal support is
+# the whole real line rather than the span of their placed nodes.
+.nl_outer_design_integrate <- function(res, integration, solve, tags, extend,
+                                       prior, cfg) {
+    tg <- res$theta_grid
+    view <- .hp_design_view(tg, .hp_grid_designs(tg, res$refining_axis)$designs)
+    switch(integration,
+        qmc = .nl_qmc_integrate(res, solve, tags, n = cfg$qmc_nodes,
+            bounds = vapply(seq_len(ncol(tg)), function(j) {
+                if (isTRUE(extend[j])) c(-Inf, Inf)
+                else range(.joint_pareto_fwd(tags[j], view$grid[, j]))
+            }, numeric(2)),
+            view = view, tol = cfg$qmc_tol),
+        user = .nl_user_integrate(res, solve, cfg$outer_design, tags),
+        aghq = .nl_aghq_integrate(res, solve, prior, cfg$quad))
+}
+
+# The number of cells an outer design solves in full, which sizes the per-cell
+# side data a fit retains for them.
+.nl_outer_design_cells <- function(integration, cfg, n_axes) {
+    switch(integration, qmc = cfg$qmc_nodes,
+        user = nrow(cfg$outer_design$points),
+        aghq = prod(vapply(seq_len(n_axes), function(j)
+            length(.nl_sparse_rules(j > 2L)[[cfg$quad$max_level]]$x), integer(1))))
+}
+
+# The outer design a joint fit integrates on, NULL for a grid or CCD. A design
+# reads one multi-block prior's block axes: a copy block's scale and a per-arm
+# dispersion axis are not among the axes a design is laid over, and the
+# k_quality escalation refines a tensor grid a design does not keep.
+.nl_joint_outer_design <- function(requested, cfg, prior, copy, phi_grid,
+                                   k_quality = NULL) {
+    integration <- .nl_outer_integration(
+        requested, cfg, prior, "auto",
+        c("auto", "ccd", "grid", "grid_adaptive", .NL_OUTER_DESIGNS))
+    if (!integration %in% .NL_OUTER_DESIGNS) return(NULL)
+    if (!.is_multi_block_prior(prior) || !is.null(copy) ||
+        any(lengths(phi_grid %||% list()) > 1L)) {
+        stop("`control$integration = \"", integration, "\"` integrates the block ",
+             "axes of a multi-block `prior` without `copy` or a `phi_grid` axis.",
+             call. = FALSE)
+    }
+    if (isTRUE(k_quality %in% c("ok", "good"))) {
+        stop("`control$k_quality = \"", k_quality, "\"` refines a tensor grid; ",
+             "an outer design (`control$integration = \"", integration,
+             "\"`) does not keep one.", call. = FALSE)
+    }
+    integration
+}
+
+# The placement record a fit carries from the grid its axes were laid on to an
+# integration laid over that grid.
+.NL_PLACEMENT_FIELDS <- c(
+    "outer_grid_placement", "outer_grid_axis_declined", "outer_grid_moved_axes",
+    "outer_grid_recenter_clamped", "outer_grid_recenter_declined",
+    "outer_mode_u", "outer_mode_cov_u", "outer_mode_axis_tags",
+    "outer_mode_axis_names", "outer_mode_status", "outer_mode_rounds",
+    "outer_mode_evals")

@@ -620,6 +620,13 @@
 #'     `$integration`, alongside `$integration_requested` and
 #'     `$integration_declined` (see Value), so a fallback is on the fit itself
 #'     and not only in a verbose message.
+#'     `"qmc"`, `"user"` and `"aghq"` integrate a multi-block prior without
+#'     `copy` or a `phi_grid` axis on an outer design, as in
+#'     [tulpa_nested_laplace()] (see its `integration`, `qmc_nodes`, `qmc_tol`,
+#'     `outer_design` and `quad_*` entries): the grid is placed as a tensor
+#'     first, and the design is laid over the placed grid. Supplying
+#'     `outer_design` selects `"user"`. `k_quality = "ok"` or `"good"`, which
+#'     refines a tensor grid, is refused with a design.
 #'   * `ccd_budget` (`1`) -- ceiling on what PLACING a CCD may spend, as a
 #'     multiple of the tensor grid the design replaces. Every mode-find probe is
 #'     one full inner Newton solve, the same solve an outer grid cell costs, and
@@ -1498,6 +1505,13 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     auto_recenter <- !isFALSE(control$auto_recenter)
 
+    # An outer design (`integration = "qmc"`, `"user"` or `"aghq"`) integrates
+    # the PLACED grid: every detecting and placement fit below is a tensor
+    # grid, and the design is laid once, on the grid the placement leaves.
+    design_cfg <- .nl_outer_design_control(control)
+    design <- .nl_joint_outer_design(control$integration, design_cfg, prior,
+                                     copy, phi_grid, control$k_quality)
+
     # Outer-grid width, resolved ONCE for the fit: the driver clamps the request
     # to the team the OpenMP environment will hand out, and every kernel call
     # below goes through that clamp, so reporting it here says it once rather
@@ -1537,6 +1551,7 @@ tulpa_nested_laplace_joint <- function(responses,
     ckpt_loaded0 <- .nl_checkpoint_loaded()
 
     ctrl <- control
+    if (!is.null(design)) ctrl$integration <- "grid"
     fit_once <- function(prior_i, prior_sigma_i, ctrl_i = ctrl,
                          phi_grid_i = phi_grid, copy_i = copy,
                          responses_i = responses)
@@ -1687,6 +1702,16 @@ tulpa_nested_laplace_joint <- function(responses,
 
     res$k_quality_rounds     <- res$k_quality_rounds %||% 0L
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+    if (!is.null(design)) {
+        placed <- res
+        res <- local({
+            op <- options(tulpa.nl_outer_mode = .nl_fit_outer_mode(placed))
+            on.exit(options(op), add = TRUE)
+            fit_state(state, utils::modifyList(ctrl, list(integration = design)))
+        })
+        res[.NL_PLACEMENT_FIELDS] <- placed[.NL_PLACEMENT_FIELDS]
+        res$k_quality_rounds <- 0L
+    }
     res$k_quality_k_trace    <- res$pareto_k
 
     if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
@@ -2069,7 +2094,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # backends always use the tensor grid (CCD applies to the multi-block path).
     integration               <- match.arg(control$integration %||% "auto",
                                             c("auto", "ccd", "grid",
-                                              "grid_adaptive"))
+                                              "grid_adaptive",
+                                              .NL_OUTER_DESIGNS))
     # WITHIN-CELL construction for the reported per-axis hyperparameter
     # intervals. `integration` names how the grid was BUILT;
     # this names how each cell's mass is spread inside its own box when the
@@ -2257,6 +2283,7 @@ tulpa_nested_laplace_joint <- function(responses,
             cila = .cila_config(control$cila),
             inner_refresh = inner_refresh,
             integration = integration,
+            outer_design = .nl_outer_design_control(control),
             within_cell = within_cell,
             local_ccd = local_ccd,
             adaptive_cutoff = adaptive_cutoff,

@@ -31,6 +31,17 @@
   unpenalized, and reports where each block's coefficients start in `modes`
   (`block_latent_offsets`) (#1195).
 
+* `tulpa_nested_laplace_joint()` integrates a multi-block prior on an outer
+  design, `control$integration = "qmc"`, `"user"` or `"aghq"` with the
+  `qmc_*`, `outer_design` and `quad_*` keys of `tulpa_nested_laplace()`. The
+  grid is placed as a tensor first and the design laid over the placed grid,
+  and both doors run one implementation of it: a supplied design gives the
+  same log marginals, weights, evidence, hyperparameter summaries and
+  fixed-effect mixture through either door (to 1e-8 on a two-block binomial
+  fit), and the Gaussian fixture's evidence matches its closed form to 1e-7.
+  A prior with `copy` or a `phi_grid` axis, and `k_quality = "ok"` or
+  `"good"`, are refused with a design (#1195).
+
 * An unweighted ICAR block over a disconnected graph folds its global level
   into the intercept on the joint door, as it does on a connected graph and on
   every registry path; the component contrasts stay with the precision

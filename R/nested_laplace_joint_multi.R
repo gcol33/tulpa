@@ -1518,6 +1518,7 @@
                                   cila = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
+                                  outer_design = NULL,
                                   within_cell = NULL,
                                   local_ccd = NULL,
                                   adaptive_cutoff = 10,
@@ -1538,7 +1539,8 @@
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()
     integration <- match.arg(integration, c("auto", "ccd", "grid",
-                                             "grid_adaptive"))
+                                             "grid_adaptive", .NL_OUTER_DESIGNS))
+    use_design <- integration %in% .NL_OUTER_DESIGNS
     within_cell <- .nl_within_cell_mode(within_cell)
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
@@ -1643,13 +1645,13 @@
                          vapply(phi_axes, length, integer(1)) > 0L]))
     refine_eligible <- function(a)
         .joint_axis_refine_eligible(a, logchol = hp_declared$logchol)
+    axis_is_stated <- function(a) .joint_multi_axis_is_stated(
+        a, prior_list, grid_auto, copy, as.integer(cp$copy_blocks_zero) + 1L,
+        phi_grid, arm_names, phi_auto)
+    axis_refine_user <- .joint_check_axis_refine(axis_refine, refine_axes,
+                                                 eligible_fn = refine_eligible)
     axis_refine_modes <- .joint_axis_refine_modes_by(
-        refine_axes,
-        function(a) .joint_multi_axis_is_stated(
-            a, prior_list, grid_auto, copy, as.integer(cp$copy_blocks_zero) + 1L,
-            phi_grid, arm_names, phi_auto),
-        user = .joint_check_axis_refine(axis_refine, refine_axes,
-                                        eligible_fn = refine_eligible),
+        refine_axes, axis_is_stated, user = axis_refine_user,
         eligible = refine_eligible)
 
     # Node placement for the LATENT axes. CCD integrates on a
@@ -2053,7 +2055,7 @@
     lccd_lists <- c("cov_block_per_grid", "Q_csc_p_per_grid",
                     "Q_csc_i_per_grid", "Q_csc_x_per_grid",
                     "Q_soft_D_per_grid")
-    if (!is.null(local_ccd) && !use_ccd && !use_adaptive &&
+    if (!is.null(local_ccd) && !use_ccd && !use_adaptive && !use_design &&
         !has_phi && .joint_local_ccd_engage(d_axes)) {
         lc <- if (is.list(local_ccd)) local_ccd else list()
         lc_max_cells <- as.integer(lc$max_cells %||% 8L)
@@ -2120,7 +2122,8 @@
     # be inserted into, so they keep the nodes they were laid on.
     joint_grid_init <- joint_grid
     refining_axis   <- NULL
-    refine_on <- !use_ccd && !use_adaptive && is.null(local_ccd_info) &&
+    refine_on <- !use_ccd && !use_adaptive && !use_design &&
+        is.null(local_ccd_info) &&
         (isTRUE(adaptive_grid) || isTRUE(var_of_means_consistency))
     refine_hp_record <- function(cells)
         .joint_multi_hyperprior(
@@ -2234,7 +2237,44 @@
     # calibrated against the Gaussian each component was laid on
     # (`.ccd_log_measure()`) on the latent axes, and a crossed phi tensor its
     # own cell measure on top. A design whose nodes the box moved carries none.
-    if (is_ccd) {
+    # An outer design replaces the solved grid by its own cells, each solved
+    # with the hyperprior folded into its log marginal, and carries their
+    # weights, evidence and kind. The placed grid's integration weights seed it.
+    # An axis the engine placed is proposed over the whole real line; one the
+    # caller stated keeps the span of its nodes.
+    if (use_design) {
+        design_warm <- .joint_modal_mode(res)
+        solve_outer <- function(cells, retain) {
+            r <- .joint_with_quiet_opts(call_kernel(
+                cells, x_init = design_warm,
+                store_Q = isTRUE(retain) && isTRUE(store_Q),
+                fixed_block = isTRUE(retain),
+                n_threads_outer = n_threads_outer))
+            .nl_fold_hyperprior(r, list(.joint_multi_hyperprior(
+                cells, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
+                families = hp_families, copy_atom_mass = copy_atom_mass,
+                hyperprior = hyperprior, declared = hp_declared)))
+        }
+        design_axes <- colnames(joint_grid)
+        extend <- .joint_axis_refine_modes_by(
+            design_axes, axis_is_stated, user = axis_refine_user,
+            eligible = function(a) TRUE) == "extend"
+        placed_grid <- res
+        res <- .nl_outer_design_integrate(
+            res, integration, solve_outer,
+            .joint_axis_tags_raw(list(theta_grid = joint_grid,
+                                      axis_offsets = axis_offsets,
+                                      blocks = prepared)),
+            extend, prior_list, outer_design)
+        fit_fields <- c("hyperprior_axes", "integration_requested",
+                        "integration_declined", "var_of_means_consistency_info",
+                        "nonconverged_resolve", "outer_refine_deferred")
+        res[fit_fields] <- placed_grid[fit_fields]
+        res$axis_offsets <- axis_offsets
+        joint_grid       <- res$theta_grid
+        integration_used <- integration
+        weight_kind      <- res$weight_kind
+    } else if (is_ccd) {
         tg <- as.matrix(res$theta_grid)
         lq <- if (length(ccd_log_measure) == nrow(tg)) {
             phi_cols <- setdiff(colnames(tg), axis_names)
@@ -2294,7 +2334,7 @@
     # A refinement whose every candidate cell was put back as a mass atom
     # leaves a plain tensor grid, so it takes the density path
     # its cells carry rather than the design-weighted one it asked for.
-    is_design_weighted <- is_ccd || use_adaptive ||
+    is_design_weighted <- is_ccd || use_adaptive || use_design ||
         (!is.null(local_ccd_info) && local_ccd_info$n_design_nodes > 0L)
     # The median and interval per axis are read off whatever node set the
     # integrator left. The global CCD is a MOMENT RULE -- its nodes reproduce the

@@ -551,9 +551,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tulpa_check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
   .device_session <- .device_start(control)
   on.exit(cpp_device_end(.device_session), add = TRUE)
-  outer_design <- control$outer_design
-  if (!is.null(outer_design)) outer_design <- .nl_validate_outer_design(outer_design)
-  quad_config <- .nl_aghq_config(control)
+  design_cfg <- .nl_outer_design_control(control)
   # A typo is named here, against the family registry, rather than by the C++
   # family lookup, whose message names a header (gcol33/tulpa#886). A consumer
   # `likelihood` supplies its own density and bypasses the builtin family.
@@ -699,30 +697,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
           vapply(prior, function(p)
             if (tolower(p$type %||% "") %in% c("nngp", "hsgp"))
               p$name %||% "" else "", character(1)))
-  integration <- match.arg(control$integration %||%
-    if (!is.null(outer_design)) "user" else if (ms && .nl_aghq_supported(prior, control)) "aghq"
-    else if (ms) "qmc" else "grid", c("grid", "qmc", "user", "aghq"))
-  if (identical(integration, "aghq") && is.null(.nl_aghq_blocks(prior))) {
-    stop("`control$integration = \"aghq\"` requires local and regional HSGP blocks ",
-         "with four free axes.", call. = FALSE)
-  }
-  if (identical(integration, "user") != !is.null(outer_design)) {
-    stop("`control$integration = \"user\"` requires `control$outer_design`; ",
-         "an outer design is used only with user integration.", call. = FALSE)
-  }
-  qmc_nodes <- control$qmc_nodes %||% .NL_QMC$nodes
-  qmc_tol <- control$qmc_tol %||% .NL_QMC$tol
-  if (!is.numeric(qmc_tol) || length(qmc_tol) != 1L ||
-      !is.finite(qmc_tol) || qmc_tol <= 0) {
-    stop("`control$qmc_tol` must be a positive finite number.", call. = FALSE)
-  }
-  if (!is.numeric(qmc_nodes) || length(qmc_nodes) != 1L || !is.finite(qmc_nodes) ||
-      qmc_nodes < 2L || qmc_nodes > .Machine$integer.max ||
-      qmc_nodes != floor(qmc_nodes)) {
-    stop("`control$qmc_nodes` must be an integer >= 2.", call. = FALSE)
-  }
-  use_qmc <- identical(integration, "qmc")
-  use_design <- integration %in% c("qmc", "user", "aghq")
+  integration <- .nl_outer_integration(control$integration, design_cfg, prior,
+    if (ms && .nl_aghq_supported(prior, control)) "aghq" else if (ms) "qmc" else "grid",
+    c("grid", .NL_OUTER_DESIGNS))
+  use_design <- integration %in% .NL_OUTER_DESIGNS
   if (use_design && !.is_multi_block_prior(prior)) prior <- list(prior)
   .prov <- .nl_grid_provenance(prior)
   prior <- .prov$prior
@@ -732,8 +710,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   .op_axis <- .nl_publish_axis_dropped(
     .nl_check_axis_fields(prior, "registry", auto = .prov$auto))
   on.exit(options(.op_axis), add = TRUE)
-  if (!is.null(outer_design)) {
-    outer_design <- .nl_validate_outer_design_prior(outer_design, prior)
+  if (!is.null(design_cfg$outer_design)) {
+    design_cfg$outer_design <- .nl_validate_outer_design_prior(
+      design_cfg$outer_design, prior)
   }
   # A model-supplied `likelihood` is only honoured by the spec-driven multi-block
   # driver (run_multi_block_nested_laplace); the single-kernel path (.nl_dispatch)
@@ -875,22 +854,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     prior <- multi_rescue$prior
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
     if (use_design) {
-      tags <- .nl_registry_axis_tags(res, prior, TRUE)
-      qmc_view <- .hp_design_view(res$theta_grid,
-        .hp_grid_designs(res$theta_grid, res$refining_axis)$designs)
       modes <- .nl_registry_refine_modes(colnames(res$theta_grid),
         colnames(res$theta_grid), prior_declared, TRUE, .prov$auto,
         user = control$axis_refine)
-      bounds <- vapply(seq_len(ncol(res$theta_grid)), function(j) {
-        if (identical(unname(modes[j]), "extend")) c(-Inf, Inf)
-        else range(.joint_pareto_fwd(tags[j], qmc_view$grid[, j]))
-      }, numeric(2))
-      design_cells <- switch(integration, qmc = qmc_nodes,
-        user = nrow(outer_design$points),
-        aghq = prod(vapply(seq_len(ncol(res$theta_grid)), function(j) {
-          rules <- .nl_sparse_rules(j > 2L)
-          length(rules[[quad_config$max_level]]$x)
-        }, integer(1))))
+      design_cells <- .nl_outer_design_cells(integration, design_cfg,
+                                             ncol(res$theta_grid))
       solve_outer <- function(cells, retain) {
         r <- .nl_dispatch_multi(if (retain) cargs_no_ckpt else cargs_lm,
           prior, likelihood = likelihood, theta_grid_override = cells)
@@ -899,11 +867,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         }
         r
       }
-      res <- switch(integration,
-        qmc = .nl_qmc_integrate(res, solve_outer, tags, n = qmc_nodes,
-          bounds = bounds, view = qmc_view, tol = qmc_tol),
-        user = .nl_user_integrate(res, solve_outer, outer_design, tags),
-        aghq = .nl_aghq_integrate(res, solve_outer, prior, quad_config))
+      res <- .nl_outer_design_integrate(res, integration, solve_outer,
+        .nl_registry_axis_tags(res, prior, TRUE), unname(modes) == "extend",
+        prior, design_cfg)
       res <- .nl_registry_moments_multi(res, within_cell)
       if (keep_joint_prec) {
         k <- which.max(replace(res$log_marginal, !is.finite(res$log_marginal), -Inf))

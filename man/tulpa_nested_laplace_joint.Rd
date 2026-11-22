@@ -640,6 +640,13 @@ resolved integrator is also returned on the joint result as
 \verb{$integration}, alongside \verb{$integration_requested} and
 \verb{$integration_declined} (see Value), so a fallback is on the fit itself
 and not only in a verbose message.
+\code{"qmc"}, \code{"user"} and \code{"aghq"} integrate a multi-block prior without
+\code{copy} or a \code{phi_grid} axis on an outer design, as in
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} (see its \code{integration}, \code{qmc_nodes}, \code{qmc_tol},
+\code{outer_design} and \verb{quad_*} entries): the grid is placed as a tensor
+first, and the design is laid over the placed grid. Supplying
+\code{outer_design} selects \code{"user"}. \code{k_quality = "ok"} or \code{"good"}, which
+refines a tensor grid, is refused with a design.
 \item \code{ccd_budget} (\code{1}) -- ceiling on what PLACING a CCD may spend, as a
 multiple of the tensor grid the design replaces. Every mode-find probe is
 one full inner Newton solve, the same solve an outer grid cell costs, and

@@ -212,6 +212,8 @@ tulpa_check_control <- function(control, allowed, where) {
       "x_init", "verbose", "hessian", "store_Q", "keep_grid_hessians",
       "force_sparse", "inner_factorization",
       "inner_refresh", "integration", "local_ccd", "tile_warm",
+      "qmc_nodes", "qmc_tol", "outer_design", "quad_max_level",
+      "quad_read_nodes", "quad_read_max_nodes", "quad_tol", "quad_evidence_tol",
       "ccd_budget", "ccd_budget_floor",
       "prune", "prune_tol", "prune_log_gap", "screen_iters", "fitted_var",
       "adaptive_grid", "adaptive_grid_cutoff", "adaptive_grid_edge_thresh",
