@@ -1,5 +1,10 @@
 CXX_STD = CXX17
-PKG_CPPFLAGS = -I../inst/include
+# Eigen's own OpenMP split of a dense product is off: the engine runs its
+# parallelism over outer cells, draws and chains under the caller's thread
+# grant, and inside a serial fit Eigen would spread every small product
+# over all cores (a 160 x 160 weighted Gram took 4-5 ms on 32 threads
+# against 0.35 ms serial).
+PKG_CPPFLAGS = -I../inst/include -DEIGEN_DONT_PARALLELIZE
 PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS)
 PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
 

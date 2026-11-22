@@ -170,6 +170,18 @@
   fits) the time went from 145 s to 102 s with the same grid, weights and
   k-hat fields (#1277).
 
+* The package compiles Eigen with its own OpenMP parallelism off
+  (`EIGEN_DONT_PARALLELIZE`). In a serial fit Eigen had spread every dense
+  product over all cores: the 160 x 160 weighted Gram an HSGP block forms at
+  each Newton step took 4-5 ms on 32 threads against 0.35 ms on one, and a
+  166-latent HSGP joint solve spent about 10 ms per Newton iteration, 2.6 ms
+  now. A Poisson `fit_st_nested(spatial_type = "hsgp")` fit went from 95 s to
+  29 s, one at a fixed basis (m = 10) from 20 s to 9 s; an ICAR fit, with no
+  dense product, is unchanged. The engine's parallelism over outer cells, importance draws and chains
+  is unchanged. Grids, log marginals, modes and k-hats are bit-identical; a
+  post-fit HSGP field mean moves at rounding level (at most 7e-16), because a
+  threaded Eigen product blocks its inner sums differently (#1284).
+
 * `tgmrf()` and `tgmrf_cpp()` take `grid_span` where they took `bounds`: the
   box the outer theta grid and the samplers' pilot are laid over. The support
   of `theta` is that of `prior(theta)` alone, as the samplers already read it.

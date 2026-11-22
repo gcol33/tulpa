@@ -95,11 +95,6 @@ inline Plan plan(const std::vector<Term>& terms, int compiled) {
 struct Chunk { std::vector<int> index; std::vector<std::size_t> sizes; Eigen::MatrixXd values; };
 struct Group { std::vector<Axis> axes; Eigen::MatrixXd coefficients; };
 struct Spline { int d = 0, fields = 0, compiled = 0; double cells = 0; Eigen::VectorXd offset; std::vector<Group> groups; };
-struct SerialEigen {
-    int previous = Eigen::nbThreads();
-    SerialEigen() { Eigen::setNbThreads(1); }
-    ~SerialEigen() { Eigen::setNbThreads(previous); }
-};
 
 inline Group compile_group(const PlanGroup& group, const std::vector<Term>& terms,
     const Rcpp::NumericMatrix& values, const Eigen::VectorXd& center, int compiled) {
@@ -175,7 +170,6 @@ Rcpp::List cpp_outer_sparse_compile(Rcpp::List input, Rcpp::NumericMatrix values
     using namespace tulpa_outer_compile;
     if (!input.size() || !values.nrow() || n_query < 1)
         tulpa::stop("Sparse spline compilation requires terms, values and queries.");
-    SerialEigen serial;
     std::vector<Term> terms;
     for (int i = 0; i < input.size(); ++i) terms.emplace_back(Rcpp::List(input[i]));
     const int d = terms.front().axes.size();
