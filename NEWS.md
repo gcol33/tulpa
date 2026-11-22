@@ -10,6 +10,18 @@
   `structured` now has its residual variance integrated on that door rather
   than conditioned at 1 (#1269).
 
+* The cheap-pass screen's dropped-mass bound is one quantity on every door:
+  the lifted mass of the dropped cells as a share of the whole grid's,
+  `D / (K + D)`, which is the total-variation distance between the grid's
+  posterior and its restriction to the kept cells. The joint and registry
+  doors read it as a ratio to the kept cells, `D / K`, and
+  `tulpa_re_cov_nested()` ran its own screen loop with a per-round error;
+  both now read `.nl_prune_lifted()`, and the random-effect covariance door
+  repairs through the same rule as the refinement rounds. On eight baseline
+  fits Sigma summaries moved by at most 0.004 of their posterior SD, fixed
+  effects by at most 5e-5 of their standard error, and log evidence by at
+  most 4e-4 nats; the re_cov door solves 1-4% fewer cells (#1269).
+
 * A single-block `tulpa_nested_laplace_joint()` fit with a proper-CAR prior
   and no copy integrates the model it reports. Its outer grid is laid on the
   field SD, and the SD was handed to the kernel as the precision, so the fit

@@ -64,9 +64,17 @@
 # cell. `full` and `cheap` are each cell's full and screened log posterior under
 # one measure, `mask` the cells the screen dropped, `ref` the log mass of a grid
 # the cells joined (-Inf for none). Every dropped cell is lifted by the worst
-# screening error measured on a kept cell, `e_max = max(full - cheap)`: `lift`
-# is that lifted log mass per cell (-Inf on a cell not dropped), `log_den` the
-# log mass the bound is a share of, and `bound` the dropped cells' summed share.
+# screening error measured on a kept cell, `e_max = max(full - cheap)`, and the
+# bound is the lifted dropped mass D as a share of the whole grid's,
+#
+#   B = D / (R + K + D),   D = sum_{j dropped} exp(cheap_j + e_max),
+#
+# with K the kept cells' mass and R the joined grid's. Leaving the dropped
+# cells out replaces the grid's posterior by its restriction to the kept cells,
+# and the total-variation distance between the two is exactly the dropped
+# share; x / (K + x) increases in x, so B bounds it whenever D bounds the
+# dropped mass. `lift` is each cell's lifted log mass (-Inf on a cell not
+# dropped), `log_den` the log of R + K + D, `e_max` the error lifted by.
 # `bound` is `Inf` when no kept cell carries a screen to measure the error on,
 # 0 when nothing was dropped.
 .nl_prune_lifted <- function(full, cheap, mask, ref = -Inf) {
@@ -75,12 +83,26 @@
   seen <- kept & is.finite(cheap)
   drop <- mask & is.finite(cheap)
   lift <- rep(-Inf, n)
-  if (!any(seen)) return(list(bound = Inf, lift = lift, log_den = NA_real_))
-  top <- max(c(full[kept], ref))
-  log_den <- top + log(exp(ref - top) + sum(exp(full[kept] - top)))
-  if (!any(drop)) return(list(bound = 0, lift = lift, log_den = log_den))
-  lift[drop] <- cheap[drop] + max(full[seen] - cheap[seen])
-  list(bound = sum(exp(lift[drop] - log_den)), lift = lift, log_den = log_den)
+  if (!any(seen)) {
+    return(list(bound = Inf, lift = lift, log_den = NA_real_, e_max = NA_real_))
+  }
+  e_max <- max(full[seen] - cheap[seen])
+  lift[drop] <- cheap[drop] + e_max
+  log_den <- .tulpa_logsumexp(c(ref, full[kept], lift[drop]))
+  list(bound = if (any(drop)) sum(exp(lift[drop] - log_den)) else 0,
+       lift = lift, log_den = log_den, e_max = e_max)
+}
+
+# The dropped cells a repair solves in full when a screened grid's bound
+# (`.nl_prune_lifted()` result `pb`) is past `gate`: the heaviest lifted cells
+# first, as many as leave the lifted share of the rest under it, and at least
+# one. Every dropped cell when no kept cell measured the screen's error.
+.nl_prune_repair_take <- function(pb, gate) {
+  drop <- which(is.finite(pb$lift))
+  if (!is.finite(pb$bound)) return(drop)
+  o <- drop[order(pb$lift[drop], decreasing = TRUE)]
+  rest <- rev(cumsum(rev(exp(pb$lift[o] - pb$log_den))))
+  o[seq_len(max(1L, sum(rest > gate)))]
 }
 
 # The cheap-pass record of a grid whose cells were screened in more than one

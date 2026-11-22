@@ -1028,10 +1028,7 @@
   before <- pb$bound
   n_repaired <- 0L
   while (is.finite(pb$bound) && pb$bound > gate) {
-    drop <- which(is.finite(pb$lift))
-    o <- drop[order(pb$lift[drop], decreasing = TRUE)]
-    rest <- rev(cumsum(rev(exp(pb$lift[o] - pb$log_den))))
-    take <- o[seq_len(max(1L, sum(rest > gate)))]
+    take <- .nl_prune_repair_take(pb, gate)
     cells <- theta_grid[take, , drop = FALSE]
     solved <- which(is.finite(log_marginal) & !pruned)
     fallback <- extras[[solved[which.max(log_marginal[solved])]]]

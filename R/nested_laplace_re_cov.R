@@ -2354,22 +2354,24 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # scored by a `screen_iters`-step inner Newton from the centre cell's mode,
   # one compiled batch, and a cell scored below `prune_tol` of the grid's mass
   # is left out without its full solve. A cell whose cheap solve failed is
-  # solved, since nothing bounds it. The mass the left-out cells may carry is
-  # bounded by lifting each by the worst screening error measured on a solved
-  # cell (full log weight minus screened one); past `re_cov_gate_mass` of the
-  # grid, the cells carrying the bound are solved, largest first. Grid
-  # integration with the joint-field inner solve only: the CCD is a moment
-  # rule whose nodes all carry their design weight, and the AGHQ solve has no
-  # mode to start a short Newton from.
+  # solved, since nothing bounds it. The share of the grid the left-out cells
+  # may carry is the joint door's bound (`.nl_prune_lifted()`: each lifted by
+  # the worst screening error measured on a solved cell), read over the whole
+  # grid as it stands; past `re_cov_gate_mass` the cells carrying it are
+  # solved, heaviest first (`.nl_prune_repair_take()`). Grid integration with
+  # the joint-field inner solve only: the CCD is a moment rule whose nodes all
+  # carry their design weight, and the AGHQ solve has no mode to start a short
+  # Newton from.
   screen_on <- prune && identical(integration, "grid") && re_cond
+  gate     <- .nl_screen("re_cov_gate_mass")
   recs     <- vector("list", ng)
   solved   <- logical(ng)
   screened <- logical(ng)
-  lb_cell  <- rep(-Inf, ng)          # a screened cell's lifted log weight
-  screen_err <- 0
+  cheap    <- rep(NA_real_, ng)      # a screened candidate's cheap log weight
   screen_repaired <- 0L
   i_ctr <- which.min(rowSums(z^2))
   lw_full <- function() vapply(recs, rec_logm, numeric(1)) + node_log_jac
+  screen_bound <- function() .nl_prune_lifted(lw_full(), cheap, screened)
   solve_idx <- function(idx) {
     for (i in idx) recs[i] <<- list(solve_node(i, theta_grid[i, ]))
     solved[idx] <<- TRUE
@@ -2388,33 +2390,21 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                     n_threads_outer = n_threads,
                                     max_iter_ = screen_iters) +
       apply(th, 1L, log_prior_theta) + node_log_jac[cand]
+    cheap[cand] <<- lws
     lf <- lw_full()
     ref <- .tulpa_logsumexp(c(-Inf, lf[solved & is.finite(lf)],
                               lws[is.finite(lws)]))
     keep <- !is.finite(lws) | lws - ref >= log(prune_tol)
     solve_idx(cand[keep])
-    repeat {
-      lf <- lw_full()
-      pair <- keep & is.finite(lws) & is.finite(lf[cand])
-      err <- max(c(0, lf[cand][pair] - lws[pair]))
-      drop <- which(!keep)
-      if (!length(drop)) break
-      lb <- lws[drop] + err
-      tot <- .tulpa_logsumexp(c(-Inf, lf[solved & is.finite(lf)], lb,
-                                lb_cell[screened]))
-      left <- .tulpa_logsumexp(c(-Inf, lb, lb_cell[screened]))
-      if (exp(left - tot) <= .nl_screen("re_cov_gate_mass")) break
-      o <- drop[order(lws[drop], decreasing = TRUE)]
-      rest <- rev(cumsum(rev(exp(lws[o] + err - tot))))
-      n_take <- max(1L, sum(rest > .nl_screen("re_cov_gate_mass")))
-      take <- o[seq_len(n_take)]
-      keep[take] <- TRUE
-      solve_idx(cand[take])
-      screen_repaired <<- screen_repaired + n_take
-    }
-    screen_err <<- max(screen_err, err)
     screened[cand[!keep]] <<- TRUE
-    lb_cell[cand[!keep]] <<- lws[!keep] + err
+    repeat {
+      pb <- screen_bound()
+      if (!(pb$bound > gate)) break
+      take <- .nl_prune_repair_take(pb, gate)
+      screened[take] <<- FALSE
+      solve_idx(take)
+      screen_repaired <<- screen_repaired + length(take)
+    }
     invisible(NULL)
   }
   screen_round(seq_len(ng))
@@ -2425,14 +2415,15 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # on, so it keeps its nodes.
   extend_rounds <- 0L
   extend_capped <- FALSE
+  screen_sb <- NULL
   if (identical(integration, "grid")) {
     repeat {
       # A screened cell enters the growth rule at its bound: an end level made
       # of cells each below the screen's cut can still carry the tail mass that
       # grows the tensor, and reading them as massless would stop the growth
       # short of the tail.
-      lw_now <- vapply(recs, rec_logm, numeric(1)) + node_log_jac
-      lw_now[screened] <- lb_cell[screened]
+      lw_now <- lw_full()
+      if (any(screened)) lw_now[screened] <- screen_bound()$lift[screened]
       grown <- .nl_tensor_edge_cells(z, lw_now, tens$h)
       if (is.null(grown) || !any(grown$solve)) break
       if (extend_rounds >= .nl_diag("edge_extend_max")) {
@@ -2451,7 +2442,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       recs <- c(recs, vector("list", length(idx)))
       solved <- c(solved, logical(length(idx)))
       screened <- c(screened, logical(length(idx)))
-      lb_cell <- c(lb_cell, rep(-Inf, length(idx)))
+      cheap <- c(cheap, rep(NA_real_, length(idx)))
       ng <- nrow(theta_grid)
       screen_round(idx)
     }
@@ -2464,7 +2455,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     }
     # A screened cell stayed in the tensor's key set while it grew, so the
     # growth rule did not lay it again; it leaves the grid now, as a cell the
-    # growth rule leaves unsolved does.
+    # growth rule leaves unsolved does, after the bound it may carry is read.
+    if (screen_on) screen_sb <- screen_bound()
     if (any(screened)) {
       kp <- !screened
       z <- z[kp, , drop = FALSE]
@@ -2476,15 +2468,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     tens$z <- z
     dnode <- rep(1, ng)
   }
-  lf_final <- vapply(recs, rec_logm, numeric(1)) + node_log_jac
   screen_rec <- list(
     applied = screen_on, prune_tol = prune_tol, iters = screen_iters,
     dropped = sum(screened), repaired = screen_repaired,
-    max_error = screen_err,
-    bound = if (any(screened)) exp(
-      .tulpa_logsumexp(lb_cell[screened]) -
-      .tulpa_logsumexp(c(lf_final[is.finite(lf_final)], lb_cell[screened])))
-      else 0)
+    max_error = if (is.null(screen_sb)) 0 else screen_sb$e_max,
+    bound = if (is.null(screen_sb)) 0 else screen_sb$bound)
   # Each node's absolute measure in theta. The tensor's is its cell volume: the
   # whitened spacing to the k-th power, scaled by the whitening map's
   # determinant. The CCD's is its moment-rule weight calibrated against the

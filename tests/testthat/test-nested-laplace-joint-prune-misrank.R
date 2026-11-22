@@ -178,7 +178,9 @@ test_that("safety gate falls back when the screen dropped its own top cell", {
     expect_true(isTRUE(out$ITS_THE_FULL))
     expect_true(isTRUE(out$prune_fallback_triggered))
     expect_match(out$prune_fallback_reason, "posterior mass")
-    expect_gt(out$prune_dropped_mass_bound, 1)
+    # Most of the posterior: a share above one half (the dropped mass exceeds
+    # the kept).
+    expect_gt(out$prune_dropped_mass_bound, 0.5)
 })
 
 test_that("safety gate falls back when the kept cell was screened far too low", {
@@ -233,9 +235,9 @@ test_that("a re-ordering among near-equal kept cells is not a fallback", {
     # The bound lifts every dropped cell by the worst error measured on a kept
     # one: 0.6 nats here.
     top <- -0.8
+    D <- sum(exp(c(-40, -42) + 0.6 - top))
     expect_equal(out$prune_dropped_mass_bound,
-                 sum(exp(c(-40, -42) + 0.6 - top)) /
-                     sum(exp(c(-1.0, -0.8, -1.5) - top)))
+                 D / (sum(exp(c(-1.0, -0.8, -1.5) - top)) + D))
 })
 
 test_that("safety gate is a no-op when the ranking is trustworthy", {

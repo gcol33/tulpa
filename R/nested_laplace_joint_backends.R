@@ -405,10 +405,11 @@
 # e_max = max over kept cells the screen saw of (f - c), the worst error
 # measured,
 #
-#   B = sum_{j dropped} exp(c_j + e_max) / (R + sum_{k kept} exp(f_k)).
+#   B = D / (R + sum_{k kept} exp(f_k) + D),  D = sum_{j dropped} exp(c_j + e_max),
 #
-# A constant error cancels (B is then the screened share of the dropped cells,
-# which the tolerance already bounds); an error that varies across the kept
+# the share of the whole grid (`.nl_prune_lifted()`). A constant error cancels
+# (B is then the screened share of the dropped cells, which the tolerance
+# already bounds); an error that varies across the kept
 # cells lifts every dropped cell by the worst of it. A kept cell no screen saw
 # (a single-cell refinement call) is mass in the denominator with no error to
 # read. R is the mass of the grid a refinement call's cells joined

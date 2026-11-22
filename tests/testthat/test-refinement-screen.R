@@ -46,12 +46,14 @@ test_that("the dropped-mass bound counts every kept cell and the joined grid", {
                 prune_mask = c(FALSE, FALSE, TRUE, FALSE),
                 prune_cheap_log_marginal = c(-0.5, -1.5, -8, NA))
     # The cell no screen saw (NA cheap) is kept mass with no error to read.
+    # The bound is the lifted dropped mass as a share of the whole grid's.
     e <- 0.5
+    D <- exp(-8 + e)
     expect_equal(tulpa:::.nl_prune_dropped_mass(res),
-                 exp(-8 + e) / (exp(0) + exp(-1) + exp(-2)))
+                 D / (exp(0) + exp(-1) + exp(-2) + D))
     res$prune_screen_log_ref <- 1
     expect_equal(tulpa:::.nl_prune_dropped_mass(res),
-                 exp(-8 + e) / (exp(1) + exp(0) + exp(-1) + exp(-2)))
+                 D / (exp(1) + exp(0) + exp(-1) + exp(-2) + D))
 })
 
 skip_on_cran_budget()
