@@ -105,8 +105,7 @@ test_that("a block stated for one arm is widened to the zero arm", {
   expect_identical(wh$n_obs_per_arm, c(3L, 3L))
 })
 
-test_that("tulpa(): zi poisson with a random intercept recovers the truth on the joint door", {
-  skip_on_cran()
+.jz_recovery_data <- function() {
   set.seed(2026)
   G <- 40L; per <- 25L; n <- G * per
   g <- rep(seq_len(G), each = per); x <- rnorm(n); w <- rnorm(n)
@@ -115,16 +114,76 @@ test_that("tulpa(): zi poisson with a random intercept recovers the truth on the
   b <- rnorm(G, 0, sigma)
   eta <- truth[1] + truth[2] * x + b[g]
   struct0 <- runif(n) < plogis(truth[3] + truth[4] * w)
-  dat <- data.frame(y = ifelse(struct0, 0, rpois(n, exp(eta))), x = x, w = w,
-                    g = factor(g))
-  fit <- tulpa(y ~ x + (1 | g), dat, family = "poisson", ziformula = ~ w,
+  list(truth = truth, sigma = sigma,
+       dat = data.frame(y = ifelse(struct0, 0, rpois(n, exp(eta))), x = x,
+                        w = w, g = factor(g)))
+}
+
+test_that("tulpa(): zi poisson with a random intercept recovers the truth on the joint door", {
+  skip_on_cran()
+  rd <- .jz_recovery_data()
+  truth <- rd$truth
+  fit <- tulpa(y ~ x + (1 | g), rd$dat, family = "poisson", ziformula = ~ w,
                mode = "nested_laplace_joint")
   expect_identical(fit$backend, "nested_laplace_joint")
   ci <- confint(fit)
   expect_true(all(ci[names(truth), 1] < truth & truth < ci[names(truth), 2]))
   expect_lt(max(abs(coef(fit)[names(truth)] - truth)), 0.25)
   vc <- VarCorr(fit)
-  expect_lt(abs(vc$sd[1L] - sigma), 0.2)
+  expect_lt(abs(vc$sd[1L] - rd$sigma), 0.2)
+})
+
+# WAIC on the recovery fixture, both nested doors against NUTS on the same
+# model. Measured: NUTS elpd -1353.65 / -1353.54 / -1353.72 over three seeds
+# (4000 draws, p_waic 32.3-32.6); the joint door -1353.53 (sd 0.16 over six
+# draw seeds at 4000 draws, p_waic 31.8) and re_cov_nested -1353.76 (sd 0.22,
+# p_waic 31.9). A joint door holding every row's random effects at their point
+# value read -1327.9 with p_waic 8.5.
+.jz_waic <- function(fit, ndraws = NULL) {
+  e <- .tulpa_eta_draws(fit, ndraws = ndraws, synth_seed = 1L)
+  w <- suppressWarnings(loo::waic(.tulpa_eta_loglik(fit, e)))$estimates
+  c(elpd = w["elpd_waic", 1L], p = w["p_waic", 1L])
+}
+
+test_that("zi poisson (1 | g): the joint door's pointwise draws carry the random effects", {
+  skip_on_cran()
+  skip_if_not_installed("loo")
+  dat <- .jz_recovery_data()$dat
+  fj <- tulpa(y ~ x + (1 | g), dat, family = "poisson", ziformula = ~ w,
+              mode = "nested_laplace_joint")
+  fr <- tulpa(y ~ x + (1 | g), dat, family = "poisson", ziformula = ~ w)
+  expect_identical(fr$backend, "re_cov_nested")
+  e <- .tulpa_eta_draws(fj, ndraws = 200L, synth_seed = 1L)
+  expect_identical(dim(attr(e, "logit_zi")), dim(e))
+  expect_identical(ncol(e), nrow(dat))
+  # A row of group 1 against a row of group 2: the intercept cancels and what
+  # is left is b_1 - b_2 plus the slope's spread times the covariate gap, so
+  # the group effects' own posterior spread has to show.
+  i <- which(dat$g == "1")[1L]; j <- which(dat$g == "2")[1L]
+  d <- e[, i] - e[, j]
+  expect_gt(stats::sd(d), 2 * 0.04 * abs(dat$x[i] - dat$x[j]) + 0.1)
+  wj <- .jz_waic(fj, 4000L)
+  wr <- .jz_waic(fr)
+  expect_lt(abs(wj[["elpd"]] - wr[["elpd"]]), 1)
+  expect_lt(abs(wj[["p"]] - wr[["p"]]), 1.5)
+  expect_equal(as.numeric(fitted(fj)), as.numeric(fitted(fr)), tolerance = 1e-3)
+})
+
+test_that("zi poisson (1 | g): both nested doors' WAIC match NUTS", {
+  skip_if_not_slow()
+  skip_if_not_installed("loo")
+  dat <- .jz_recovery_data()$dat
+  fh <- tulpa(y ~ x + (1 | g), dat, family = "poisson", ziformula = ~ w,
+              mode = "hmc", control = list(seed = 1L))
+  ref <- .jz_waic(fh)
+  for (fit in list(
+    tulpa(y ~ x + (1 | g), dat, family = "poisson", ziformula = ~ w,
+          mode = "nested_laplace_joint"),
+    tulpa(y ~ x + (1 | g), dat, family = "poisson", ziformula = ~ w))) {
+    w <- .jz_waic(fit, if (fit$backend == "nested_laplace_joint") 4000L)
+    expect_lt(abs(w[["elpd"]] - ref[["elpd"]]), 1)
+    expect_lt(abs(w[["p"]] - ref[["p"]]), 1.5)
+  }
 })
 
 test_that("tulpa(): an uncorrelated slope term widens its row weight to the zero arm", {

@@ -1074,7 +1074,7 @@
     return(list(eta = .field_point_eta(object, .field_source(object), NULL,
                                        sel = .re_form_select(object, NULL),
                                        accessor = accessor),
-                logit_zi = NULL))
+                logit_zi = .tulpa_point_linpred(object, NULL, accessor)$logit_zi))
   }
   lp <- .tulpa_point_linpred(object, NULL, accessor)
   eta <- .tulpa_add_latent_eta(object, matrix(lp$eta, nrow = 1L), NULL,

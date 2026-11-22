@@ -443,9 +443,32 @@
       list(cols = p + seq_len(n_re), sd_per_cell = FALSE, scale = function(k) 1)
     }
   }
-  if (!length(fields)) return(NULL)
-  list(beta = seq_len(p), beta_names = object$fixed_names, fields = fields,
-       re = re, unmapped = unmapped)
+  fx <- .field_fixed_cols(object, p)
+  # A zero-inflated joint fit is two arms over the same rows and carries no
+  # per-cell `fitted_eta`, so its latent mixture is where the count predictor,
+  # the structural-zero logit and the random effects are drawn TOGETHER, each
+  # row from one cell's Gaussian, field or no field.
+  if (!length(fields) && !length(fx$zi)) return(NULL)
+  c(fx, list(fields = fields, re = re, unmapped = unmapped))
+}
+
+# The fixed-effect columns of a grid fit's latent vector: `beta` (the count
+# arm's, named `beta_names`) and, on a zero-inflated joint fit, `zi` (the zero
+# arm's, named `zi_names`), located by the fit's arm layout. The fixed names
+# list the count coefficients, then the zero-inflation ones.
+#' @keywords internal
+.field_fixed_cols <- function(object, p) {
+  nm <- object$fixed_names
+  al <- object$arm_layout
+  if (is.null(object$zi_model_matrix) || is.null(al) ||
+      !identical(as.integer(al$n_arms), 2L) || sum(al$p) != p) {
+    return(list(beta = seq_len(p), beta_names = nm))
+  }
+  pc <- as.integer(al$p[1L])
+  list(beta = as.integer(al$beta_start[1L]) + seq_len(pc),
+       beta_names = nm[seq_len(pc)],
+       zi = as.integer(al$beta_start[2L]) + seq_len(al$p[2L]),
+       zi_names = nm[pc + seq_len(al$p[2L])])
 }
 
 # The front-door spec block `k` of `blocks` is read at rows with: the fit's

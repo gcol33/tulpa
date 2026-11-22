@@ -1,5 +1,16 @@
 # tulpa 0.8.0
 
+* WAIC, LOO, DIC and `posterior_predict()` on a zero-inflated fit through
+  the joint nested-Laplace door draw the linear predictor from the grid's
+  latent mixture: the count coefficients, the structural-zero coefficients and
+  the random effects of each draw come from one cell's Gaussian. Before, the
+  fixed effects came from a Gaussian at `coef()` / `vcov()` and every random
+  effect was held at its point value on every draw, which on a zero-inflated
+  Poisson `(1 | g)` fixture (40 groups x 25 rows) read elpd_waic -1327.9 with
+  p_waic 8.5. It now reads -1353.5 (p_waic 31.8), against -1353.8 (31.9) on
+  `re_cov_nested` and -1353.5 to -1353.7 (32.3 to 32.6) from NUTS on the same
+  model (#1290).
+
 * The one-arm joint nested-Laplace door carries a zero-inflation formula. The
   structural-zero logit is a second arm on the `ziformula` design, coupled row
   by row to the response's arm through a built-in `"zero_inflated"` cell
