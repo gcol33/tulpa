@@ -172,38 +172,19 @@ prior_predict <- function(formula, family, data,
     stop("`n_draws` must be a positive integer", call. = FALSE)
   }
 
-  process_names <- family$process_names
-  n_processes <- length(process_names)
-  formulas <- normalize_formulas(formula, process_names)
-  data <- .fill_absent_response(formulas, data)
-
-  parsed <- lapply(formulas, tulpa_parse_formula)
-  built  <- lapply(parsed, tulpa_build_model_data, data = data)
-  for (b in built) .assert_complete_groups(b$re_terms, where = "prior_predict")
-  n_obs <- built[[1]]$n_obs
-
-  y_list      <- vector("list", n_draws)
-  theta_list  <- vector("list", n_draws)
-  linpred_list <- vector("list", n_draws)
-
-  for (d in seq_len(n_draws)) {
-    theta <- draw_theta_from_priors(built, priors, family)
-    eta <- build_eta(built, theta, family$link_inv, apply_link = FALSE)
-    sim_args <- c(list(eta = eta, params = theta$extras, n_obs = n_obs), list(...))
-    y_list[[d]] <- do.call(family$simulate_fn, sim_args)
-    theta_list[[d]] <- theta
-    linpred_list[[d]] <- eta
-  }
+  sims <- .simulate_draws(formula, family, data, n_draws, "prior_predict",
+                          function(s, built) draw_theta_from_priors(built, priors, family),
+                          ...)
 
   structure(
     list(
-      y = y_list,
-      theta = theta_list,
-      linpred = linpred_list,
+      y = sims$y,
+      theta = sims$theta,
+      linpred = sims$linpred,
       family = family,
       n_draws = n_draws,
-      n_obs = n_obs,
-      process_names = process_names
+      n_obs = sims$n_obs,
+      process_names = family$process_names
     ),
     class = "tulpa_prior_predict"
   )

@@ -71,50 +71,31 @@ tulpa_simulate <- function(formula, family, data,
     stop("`n_sims` must be a positive integer", call. = FALSE)
   }
 
-  process_names <- family$process_names
-  formulas <- normalize_formulas(formula, process_names)
-  data <- .fill_absent_response(formulas, data)
-  parsed <- lapply(formulas, tulpa_parse_formula)
-  built  <- lapply(parsed, tulpa_build_model_data, data = data)
-  for (b in built) .assert_complete_groups(b$re_terms, where = "tulpa_simulate")
-  n_obs <- built[[1]]$n_obs
-
-  # Resolve theta source
   theta_source <- classify_theta(theta)
-  fit_source <- if (identical(theta_source, "fit") &&
-                    !.sim_fit_is_named_list(theta)) {
-    .sim_fit_source(theta, built, n_sims)
-  }
-
-  y_list <- vector("list", n_sims)
-  theta_list <- vector("list", n_sims)
-  linpred_list <- vector("list", n_sims)
-
-  for (s in seq_len(n_sims)) {
-    th <- switch(theta_source,
-      "list" = validate_theta(theta, built, family),
-      "fit"  = theta_from_fit(theta, s, built, family, fit_source),
-      "null" = {
-        if (is.null(priors)) priors <- tulpa_priors()
-        draw_theta_from_priors(built, priors, family)
+  if (identical(theta_source, "null") && is.null(priors)) priors <- tulpa_priors()
+  fit_source <- NULL
+  sims <- .simulate_draws(formula, family, data, n_sims, "tulpa_simulate",
+    function(s, built) {
+      if (s == 1L && identical(theta_source, "fit") &&
+          !.sim_fit_is_named_list(theta)) {
+        fit_source <<- .sim_fit_source(theta, built, n_sims)
       }
-    )
-    eta <- build_eta(built, th, family$link_inv, apply_link = FALSE)
-    sim_args <- c(list(eta = eta, params = th$extras, n_obs = n_obs), list(...))
-    y_list[[s]] <- do.call(family$simulate_fn, sim_args)
-    theta_list[[s]] <- th
-    linpred_list[[s]] <- eta
-  }
+      switch(theta_source,
+        "list" = validate_theta(theta, built, family),
+        "fit"  = theta_from_fit(theta, s, built, family, fit_source),
+        "null" = draw_theta_from_priors(built, priors, family)
+      )
+    }, ...)
 
   structure(
     list(
-      y = y_list,
-      theta = theta_list,
-      linpred = linpred_list,
+      y = sims$y,
+      theta = sims$theta,
+      linpred = sims$linpred,
       family = family,
       n_sims = n_sims,
-      n_obs = n_obs,
-      process_names = process_names
+      n_obs = sims$n_obs,
+      process_names = family$process_names
     ),
     class = "tulpa_simulate"
   )
@@ -735,3 +716,26 @@ sim_spatial_effects <- function(adjacency, sigma = 0.5, type = "icar") {
   rnorm(n, 0, sigma)
 }
 
+# Draw `n` response vectors from the model `formula` / `family` at `data`:
+# the designs are built once, `theta_at(s, built)` gives draw s its
+# parameters, and the family's simulator turns the linear predictor into a
+# response. The one loop behind prior_predict() and tulpa_simulate(); `where`
+# names the caller in the incomplete-group error.
+.simulate_draws <- function(formula, family, data, n, where, theta_at, ...) {
+  formulas <- normalize_formulas(formula, family$process_names)
+  data <- .fill_absent_response(formulas, data)
+  parsed <- lapply(formulas, tulpa_parse_formula)
+  built  <- lapply(parsed, tulpa_build_model_data, data = data)
+  for (b in built) .assert_complete_groups(b$re_terms, where = where)
+  n_obs <- built[[1]]$n_obs
+  y <- theta <- linpred <- vector("list", n)
+  for (s in seq_len(n)) {
+    th <- theta_at(s, built)
+    eta <- build_eta(built, th, family$link_inv, apply_link = FALSE)
+    sim_args <- c(list(eta = eta, params = th$extras, n_obs = n_obs), list(...))
+    y[[s]] <- do.call(family$simulate_fn, sim_args)
+    theta[[s]] <- th
+    linpred[[s]] <- eta
+  }
+  list(y = y, theta = theta, linpred = linpred, n_obs = n_obs)
+}

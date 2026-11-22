@@ -1235,37 +1235,24 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
   nn_order_0 <- as.integer((ni$nn_order %||% seq_len(n_spatial)) - 1L)
 
   # iid RE block laid out between beta and the GP field (cpp_laplace_fit_gp's
-  # n_re_groups > 0 path). No RE -> zero dims, dummy re_idx.
-  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
-
-  result <- cpp_laplace_fit_gp(
-    y = as.numeric(y),
-    n = as.integer(n_trials %||% rep(1L, length(y))),
-    X = as.matrix(X),
-    re_idx = as.numeric(re_idx),
-    n_re_groups = as.integer(n_re_groups),
-    sigma_re = sigma_re,
-    coords = as.matrix(spatial$unique_coords),
-    nn_idx = as.matrix(ni$nn_idx),
-    nn_dist = as.matrix(ni$nn_dist),
-    nn_order = nn_order_0,
-    n_spatial = as.integer(n_spatial),
-    nn = as.integer(nn),
-    sigma2_gp = sigma2_gp,
-    phi_gp = phi_gp,
-    cov_type = cov_type,
-    family = family,
-    phi = .phi_to_kernel(family, phi),
-    max_iter = as.integer(max_iter),
-    tol = tol,
-    n_threads = as.integer(n_threads),
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
-    # Per-obs 1-based location index so repeated coordinates share one field
-    # node (n_spatial unique locations < N). NULL keeps the identity map.
-    obs_to_loc_nullable = if (is.null(spatial$obs_to_loc)) NULL else
-      as.integer(spatial$obs_to_loc),
-    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
-  )
+  # n_re_groups > 0 path). No RE -> zero dims.
+  result <- do.call(cpp_laplace_fit_gp, c(
+    .laplace_at_common(y, n_trials, X, re_idx, n_re_groups, sigma_re, family, phi,
+                       max_iter, tol, n_threads, offset, weights),
+    list(coords = as.matrix(spatial$unique_coords),
+         nn_idx = as.matrix(ni$nn_idx),
+         nn_dist = as.matrix(ni$nn_dist),
+         nn_order = nn_order_0,
+         n_spatial = as.integer(n_spatial),
+         nn = as.integer(nn),
+         sigma2_gp = sigma2_gp,
+         phi_gp = phi_gp,
+         cov_type = cov_type,
+         # Per-obs 1-based location index so repeated coordinates share one
+         # field node (n_spatial unique locations < N). NULL keeps the identity
+         # map.
+         obs_to_loc_nullable = if (is.null(spatial$obs_to_loc)) NULL else
+           as.integer(spatial$obs_to_loc))))
 
   result$sigma2_gp <- sigma2_gp
   result$phi_gp <- phi_gp
@@ -1297,22 +1284,17 @@ laplace_car_proper_at <- function(y, n_trials, X, spatial,
   # Exact extraction: `spatial$rho` would partial-match `rho_bounds` (length 2).
   if (is.null(tau)) tau <- spatial[["tau"]] %||% 1.0
   if (is.null(rho)) rho <- spatial[["rho"]] %||% mean(spatial[["rho_bounds"]] %||% c(0, 1))
-  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
 
-  result <- cpp_laplace_fit_car_proper(
-    y = as.numeric(y), n = as.integer(n_trials %||% rep(1L, length(y))),
-    X = as.matrix(X), re_idx = as.numeric(re_idx),
-    n_re_groups = as.integer(n_re_groups), sigma_re = sigma_re,
-    spatial_idx = as.integer(spatial$spatial_idx %||% seq_len(n_units)),
-    n_spatial_units = as.integer(n_units),
-    adj_row_ptr = as.integer(csr$row_ptr), adj_col_idx = as.integer(csr$col_idx),
-    n_neighbors = as.integer(csr$n_neighbors),
-    tau_spatial = as.numeric(tau), rho = as.numeric(rho),
-    family = family, phi = .phi_to_kernel(family, phi),
-    max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
-    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
-  )
+  result <- do.call(cpp_laplace_fit_car_proper, c(
+    .laplace_at_common(y, n_trials, X, re_idx, n_re_groups, sigma_re, family, phi,
+                       max_iter, tol, n_threads, offset, weights),
+    list(spatial_idx = as.integer(spatial$spatial_idx %||% seq_len(n_units)),
+         n_spatial_units = as.integer(n_units),
+         adj_row_ptr = as.integer(csr$row_ptr),
+         adj_col_idx = as.integer(csr$col_idx),
+         n_neighbors = as.integer(csr$n_neighbors),
+         tau_spatial = as.numeric(tau),
+         rho = as.numeric(rho))))
   result$tau <- tau
   result$rho <- rho
   result$spatial <- spatial
@@ -1346,20 +1328,15 @@ laplace_hsgp_at <- function(y, n_trials, X, spatial,
                              as.numeric(spatial[["c"]]))
   if (is.null(sigma2))      sigma2      <- spatial[["sigma2"]]      %||% 1.0
   if (is.null(lengthscale)) lengthscale <- spatial[["lengthscale"]] %||% 1.0
-  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
 
-  result <- cpp_laplace_fit_hsgp(
-    y = as.numeric(y), n = as.integer(n_trials %||% rep(1L, length(y))),
-    X = as.matrix(X), re_idx = as.numeric(re_idx),
-    n_re_groups = as.integer(n_re_groups), sigma_re = sigma_re,
-    phi_basis = basis$phi_basis, lambda_eig = basis$lambda_eig,
-    kernel = .hsgp_kernel_code(.hsgp_spec_kernel(spatial)),
-    sigma2 = as.numeric(sigma2), lengthscale = as.numeric(lengthscale),
-    family = family, phi = .phi_to_kernel(family, phi),
-    max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
-    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
-  )
+  result <- do.call(cpp_laplace_fit_hsgp, c(
+    .laplace_at_common(y, n_trials, X, re_idx, n_re_groups, sigma_re, family, phi,
+                       max_iter, tol, n_threads, offset, weights),
+    list(phi_basis = basis$phi_basis,
+         lambda_eig = basis$lambda_eig,
+         kernel = .hsgp_kernel_code(.hsgp_spec_kernel(spatial)),
+         sigma2 = as.numeric(sigma2),
+         lengthscale = as.numeric(lengthscale))))
   result$sigma2      <- sigma2
   result$lengthscale <- lengthscale
   result$phi_basis   <- basis$phi_basis
@@ -1385,4 +1362,22 @@ adjacency_to_csr_tulpa <- function(adj) {
     row_ptr[i + 1] <- row_ptr[i] + length(neighbors)
   }
   list(row_ptr = row_ptr, col_idx = col_idx, n_neighbors = n_neighbors)
+}
+
+# The arguments every compiled single-field Laplace entry takes the same way:
+# the response, design, random-effect block, family and solver settings. A
+# missing `re_idx` is no random-effect group on any row.
+.laplace_at_common <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re,
+                               family, phi, max_iter, tol, n_threads, offset,
+                               weights) {
+  list(
+    y = as.numeric(y), n = as.integer(n_trials %||% rep(1L, length(y))),
+    X = as.matrix(X),
+    re_idx = as.numeric(re_idx %||% rep(0L, length(y))),
+    n_re_groups = as.integer(n_re_groups), sigma_re = sigma_re,
+    family = family, phi = .phi_to_kernel(family, phi),
+    max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
+    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
+  )
 }
