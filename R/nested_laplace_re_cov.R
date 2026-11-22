@@ -948,7 +948,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 
   # Full inner solve at the integration nodes: the Laplace log-marginal plus the
   # fixed-effect mode and its MARGINAL covariance (solve(H_beta)). Paid O(n_grid)
-  # times, not per optim step.
+  # times, not per outer step.
   #
   # `re_cov = TRUE` additionally asks for the per-(term, group) marginal
   # covariance blocks Cov(b_g | y, Sigma). The nested driver requests them at its
@@ -1189,7 +1189,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   # Laplace (the AGHQ inner marginal at n_quad > 1 is a different objective, and
   # its Fisher-identity gradient is not this one) and the family has an exact
   # curvature derivative. `use_exact_grad` is resolved once here rather than per
-  # optim step so a family without one falls back cleanly instead of alternating
+  # outer step so a family without one falls back cleanly instead of alternating
   # between two objectives.
   use_exact_grad <- !use_core &&
     isTRUE(tryCatch(cpp_family_has_curvature_derivative(family),
@@ -1273,8 +1273,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   # one theta. Everything downstream -- the optimizer, the marginal correction's
   # curvature -- reads this, so there is one definition of what is being
   # differentiated and the prior term cannot be attached twice or dropped once.
-  # Cached because BFGS asks for value and gradient at the same theta and the
-  # inner solve is the entire cost.
+  # Cached because the mode-find asks for value, gradient and curvature at the
+  # same theta and the inner solve is the entire cost.
   grad_cache <- new.env(parent = emptyenv())
   eval_grad_at <- function(theta, want_jacobian = FALSE, want_hessian = FALSE) {
     want_list <- want_jacobian || want_hessian
@@ -1342,154 +1342,17 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
     -r$g
   }
 
-  # Nelder-Mead degenerates in one dimension (R warns as much), and k == 1 is the
-  # common case: a single scalar `(1 | g)` block, whose only coordinate is
-  # log(sigma). Brent bracketing over a wide log-SD interval is both the reliable
-  # and the cheaper option there; the simplex takes over from k >= 2. Brent is
-  # bracketed rather than iteration-limited, so `outer_maxit` applies to the
-  # simplex only. With the analytic gradient available, BFGS replaces both: it
-  # converges in far fewer inner solves and does not degrade with k.
-  brent_lo <- log(.re_cov_search("sd_range")[1L])
-  brent_hi <- log(.re_cov_search("sd_range")[2L])
-  # Brent is a ONE-dimensional method, so it applies only when the whole stacked
-  # theta is scalar -- which the appended dispersion coordinate makes false even
-  # for a single scalar covariance block.
   n_theta <- length(theta0)
 
   # The dispersion coordinate is bracketed, for the same reason sigma is. As phi
   # grows the objective FLATTENS rather than turning over -- a negative binomial
   # becomes a Poisson, a gamma becomes tight around its mean -- so an oversized
-  # early step lands in a region where the gradient is ~0 and unbounded BFGS
-  # reports convergence at a value with no support in the data. Measured on a
+  # early step lands in a region where the gradient is ~0 and an unbounded
+  # search reports convergence at a value with no support in the data: on a
   # 480-row negative binomial whose profile peaks cleanly at phi = 3, unbounded
-  # BFGS stopped at 3.5e15. Only this coordinate is bounded; the covariance
-  # coordinates keep the full line.
+  # BFGS stopped at 3.5e15.
   phi_lo <- log(1e-6)
   phi_hi <- log(1e6)
-
-  # Convergence tolerance on the outer objective. One value resolved here and
-  # handed to whichever method runs, rather than a literal repeated per branch
-  # where the four could drift apart. L-BFGS-B measures convergence as
-  # `factr * .Machine$double.eps` rather than as a relative tolerance, so the
-  # same request is converted for it instead of being passed through as a
-  # different number under the same name.
-  reltol_gr <- outer_reltol %||% 1e-10
-  reltol_nm <- outer_reltol %||% 1e-8
-  factr_lbfgs <- max(1, reltol_gr / .Machine$double.eps)
-  # One warning per fit rather than one per trial theta if the exact gradient is
-  # declined because an inner mode did not settle (.laplace_mode_settled).
-  # `unsettled$n` is live inside the block below, which is what lets the
-  # gradient-driven branch notice the refusal and hand over.
-  unsettled <- .new_unsettled_state()
-  opt <- .with_unsettled_report(if (use_exact_grad) {
-    o <- tryCatch(
-      if (is.na(phi_idx)) {
-        stats::optim(theta0, negg_exact, negg_gr, method = "BFGS",
-                     hessian = need_scale,
-                     control = list(maxit = as.integer(outer_maxit),
-                                    reltol = reltol_gr))
-      } else {
-        stats::optim(theta0, negg_exact, negg_gr, method = "L-BFGS-B",
-                     lower = c(rep(-Inf, k), phi_lo),
-                     upper = c(rep(Inf, k), phi_hi),
-                     hessian = need_scale,
-                     control = list(maxit = as.integer(outer_maxit),
-                                    factr = factr_lbfgs))
-      },
-      error = function(e) NULL
-    )
-    # A gradient-driven run that fails outright (a singular H at some trial
-    # theta, say) must not take the fit down with it; fall back to the
-    # derivative-free path rather than reporting a stop point as an estimate.
-    # A refusal from the settled-mode gate lands here for the same reason and is
-    # the more dangerous case: optim() receives a declined gradient as a vector
-    # of zeros, reads that as a stationary point, and can stop at theta0 and
-    # report the STARTING value as the estimate. Whatever it returned after
-    # walking blind is discarded.
-    if (is.null(o) || !all(is.finite(o$par)) || unsettled$n > 0L) {
-      if (n_theta == 1L) {
-        stats::optim(theta0, negg, method = "Brent",
-                     lower = brent_lo, upper = brent_hi, hessian = need_scale,
-                     control = list(reltol = reltol_gr))
-      } else {
-        stats::optim(theta0, negg, method = "Nelder-Mead",
-                     hessian = need_scale,
-                     control = list(maxit = as.integer(outer_maxit),
-                                    reltol = reltol_nm))
-      }
-    } else o
-  } else if (n_theta == 1L) {
-    stats::optim(theta0, negg, method = "Brent",
-                 lower = brent_lo, upper = brent_hi, hessian = need_scale,
-                 control = list(reltol = reltol_gr))
-  } else {
-    stats::optim(theta0, negg, method = "Nelder-Mead",
-                 hessian = need_scale,
-                 control = list(maxit = as.integer(outer_maxit), reltol = reltol_nm))
-  }, caller, unsettled)
-  theta_hat <- opt$par
-
-  # A non-zero optim code means the reported theta_hat is wherever the optimizer
-  # stopped, not a maximizer -- for EB that IS the estimate, and for the nested
-  # path it is the centre the integration nodes are placed around. Either way it
-  # was previously returned without a word.
-  if (!identical(as.integer(opt$convergence), 0L)) {
-    warning(caller, "(): the outer optimization over the random-effect ",
-            "covariance(s) did not converge (optim code ", opt$convergence,
-            "). The reported estimate is where it stopped. Consider a longer ",
-            "run, a different `re_prior` / `prior_sigma`, or more data per ",
-            "group.", call. = FALSE)
-  }
-
-  # Brent reports success at a bracket endpoint, so a variance component that
-  # wanted to run past the bracket is indistinguishable from a converged one by
-  # the code alone. The low end is the one that happens in practice -- the
-  # classic empirical-Bayes collapse to sigma = 0 -- and reporting it as an
-  # estimate rather than a boundary hit would misrepresent it as a fitted value.
-  # A dispersion pinned at its bracket is a finding, not an estimate: the data
-  # want it outside the box, which for the upper end means the extra-Poisson
-  # variation the parameter exists to carry is not there. Reported rather than
-  # returned silently, since the number itself looks like any other fit.
-  if (!is.na(phi_idx) && is.finite(theta_hat[[phi_idx]])) {
-    lp <- theta_hat[[phi_idx]]
-    if (lp <= phi_lo + 1e-6 || lp >= phi_hi - 1e-6) {
-      warning(sprintf(paste0(
-        "%s(): the estimated dispersion hit the %s end of its search bracket ",
-        "(phi = %.3g). %s Treat it as a boundary hit, not a fitted value."),
-        caller, if (lp <= phi_lo + 1e-6) "lower" else "upper", exp(lp),
-        if (lp >= phi_hi - 1e-6) {
-          paste("The data show no dispersion beyond what the mean-variance",
-                "relation and the random effects already explain; a family",
-                "without a free dispersion may be the better model.")
-        } else {
-          paste("The dispersion is collapsing, which usually means the",
-                "response is far more variable than the family allows.")
-        }), call. = FALSE)
-    }
-  }
-
-  # Keyed on the stacked length, not on k: the bracket only exists when Brent
-  # ran, and an appended dispersion coordinate takes that path away.
-  if (n_theta == 1L && is.finite(theta_hat[1L])) {
-    at_lo <- theta_hat[1L] <= brent_lo + 1e-6
-    at_hi <- theta_hat[1L] >= brent_hi - 1e-6
-    if (at_lo || at_hi) {
-      detail <- if (at_lo) {
-        paste("The variance component has collapsed: the data carry no",
-              "detectable between-group variation, or the hyperprior is not",
-              "holding it off the boundary.")
-      } else {
-        paste("The between-group variation exceeds the bracket, so the value",
-              "is capped rather than fitted.")
-      }
-      warning(sprintf(paste0(
-        "%s(): the random-effect standard deviation hit the %s end of the ",
-        "search bracket (sigma = %.3g). %s Treat it as a boundary hit, not a ",
-        "fitted value."),
-        caller, if (at_lo) "lower" else "upper", exp(theta_hat[1L]), detail),
-        call. = FALSE)
-    }
-  }
 
   # No `log_marginal` here on purpose: backing it out of opt$value would be a
   # second, differently-derived copy of a number both callers already read off an
@@ -1531,6 +1394,144 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
       }
       if (isTRUE(want_jacobian)) list(grad = r$g, J = r$J) else r$g
     }
+
+  # --- the mode: the shared outer mode-find ---------------------------------
+  # `.nl_mode_curvature()`, the search the joint door's placement runs, here on
+  # this objective, in these coordinates, at the relative tolerance `reltol` on
+  # the log posterior. Each round's local quadratic is the analytic gradient and
+  # outer Hessian where the family has both (`exact_grad_at`), the analytic
+  # gradient differenced where it has no second curvature derivative, and a
+  # finite-difference stencil of the objective where it has no exact gradient
+  # (the AGHQ inner marginal, or such a family). Every log scale -- a diagonal
+  # block's log SD, a full block's log L_ii -- is boxed to the random-effect SD
+  # bracket and log phi to its own; a strictly-lower log-Cholesky entry keeps
+  # the whole line.
+  reltol <- outer_reltol %||% 1e-10
+  log_scale_idx <- integer(0); log_sd_idx <- integer(0); pos <- 0L
+  for (bl in layout) {
+    at <- if (bl$full) pos + diag(.re_logchol_indices(bl$nc)) else pos + seq_len(bl$k)
+    log_scale_idx <- c(log_scale_idx, at)
+    if (!bl$full) log_sd_idx <- c(log_sd_idx, at)
+    pos <- pos + bl$k
+  }
+  sd_lo <- log(.re_cov_search("sd_range")[1L])
+  sd_hi <- log(.re_cov_search("sd_range")[2L])
+  lower <- rep(-Inf, n_theta); upper <- rep(Inf, n_theta)
+  lower[log_scale_idx] <- sd_lo; upper[log_scale_idx] <- sd_hi
+  if (!is.na(phi_idx)) { lower[phi_idx] <- phi_lo; upper[phi_idx] <- phi_hi }
+  box <- list(lower = lower, upper = upper, span = upper - lower,
+              trust = rep(Inf, n_theta))
+  value_at <- if (use_exact_grad) function(th) -negg_exact(th) else
+    function(th) -negg(th)
+  eval1 <- function(U) {
+    v <- apply(as.matrix(U), 1L, value_at)
+    v[!is.finite(v) | v <= -.Machine$double.xmax] <- -Inf
+    v
+  }
+  fd_step <- rep(1e-3, n_theta)
+  fd_stencil <- function(u) .joint_ccd_fd_stencil(u, eval1, fd_step)
+  exact_stencil <- function(u) {
+    r <- exact_grad_at(u, want_hessian = TRUE)
+    if (!is.null(r)) return(list(grad = r$grad, hess = -r$H))
+    g0 <- exact_grad_at(u)
+    if (is.null(g0)) return(NULL)
+    H <- vapply(seq_len(n_theta), function(j) {
+      up <- u; dn <- u
+      up[j] <- up[j] + fd_step[j]; dn[j] <- dn[j] - fd_step[j]
+      gu <- exact_grad_at(up); gd <- exact_grad_at(dn)
+      if (is.null(gu) || is.null(gd)) return(rep(NA_real_, n_theta))
+      (gu - gd) / (2 * fd_step[j])
+    }, numeric(n_theta))
+    list(grad = g0, hess = 0.5 * (H + t(H)))
+  }
+  find_mode <- function(stencil) .nl_mode_curvature(
+    pmin(pmax(theta0, lower), upper), eval1, box, stencil = stencil,
+    reltol = reltol, max_rounds = as.integer(outer_maxit),
+    max_halve = .re_cov_search("max_halve"))
+  # One warning per fit rather than one per trial theta if the exact gradient is
+  # declined because an inner mode did not settle (.laplace_mode_settled). A
+  # search that walked on a declined gradient is discarded and run again on the
+  # objective's own differences.
+  unsettled <- .new_unsettled_state()
+  mc <- .with_unsettled_report({
+    m <- if (use_exact_grad) find_mode(exact_stencil)
+    if (is.null(m) || !is.null(m$declined) || unsettled$n > 0L) {
+      m <- find_mode(fd_stencil)
+    }
+    m
+  }, caller, unsettled)
+  if (!is.null(mc$declined)) {
+    stop(caller, "(): the outer mode-find over the random-effect ",
+         "covariance(s) found no mode with a usable curvature from its start. ",
+         "Check the data, the hyperprior and `control$sigma_init`.",
+         call. = FALSE)
+  }
+  theta_hat <- mc$par
+  # `opt` keeps optim's record shape: 0 for a converged search, 1 for one the
+  # round cap (`outer_maxit`) stopped, and the outer curvature at the mode the
+  # placement's scale reads, from the gradient where there is one.
+  opt <- list(par = theta_hat, value = -mc$value,
+              convergence = if (identical(mc$status, "not_converged")) 1L else 0L,
+              counts = c(rounds = mc$rounds),
+              hessian = if (need_scale) {
+                if (use_exact_grad && unsettled$n == 0L)
+                  stats::optimHess(theta_hat, negg_exact, negg_gr)
+                else stats::optimHess(theta_hat, negg)
+              })
+
+  # A search the round cap stopped returns wherever it stood, not a maximizer --
+  # for EB that IS the estimate, and for the nested path it is the centre the
+  # integration nodes are placed around.
+  if (!identical(opt$convergence, 0L)) {
+    warning(caller, "(): the outer optimization over the random-effect ",
+            "covariance(s) did not converge in ", outer_maxit, " rounds. ",
+            "The reported estimate is where it stopped. Consider a longer ",
+            "run, a different `re_prior` / `prior_sigma`, or more data per ",
+            "group.", call. = FALSE)
+  }
+
+  # A coordinate pinned at its bracket is a finding, not an estimate. A
+  # dispersion at the upper end means the extra-Poisson variation the parameter
+  # exists to carry is not there; a variance component at the lower end is the
+  # classic empirical-Bayes collapse to sigma = 0. Reported rather than
+  # returned silently, since the number itself looks like any other fit.
+  if (!is.na(phi_idx) && is.finite(theta_hat[[phi_idx]])) {
+    lp <- theta_hat[[phi_idx]]
+    if (lp <= phi_lo + 1e-6 || lp >= phi_hi - 1e-6) {
+      warning(sprintf(paste0(
+        "%s(): the estimated dispersion hit the %s end of its search bracket ",
+        "(phi = %.3g). %s Treat it as a boundary hit, not a fitted value."),
+        caller, if (lp <= phi_lo + 1e-6) "lower" else "upper", exp(lp),
+        if (lp >= phi_hi - 1e-6) {
+          paste("The data show no dispersion beyond what the mean-variance",
+                "relation and the random effects already explain; a family",
+                "without a free dispersion may be the better model.")
+        } else {
+          paste("The dispersion is collapsing, which usually means the",
+                "response is far more variable than the family allows.")
+        }), call. = FALSE)
+    }
+  }
+  for (j in log_sd_idx) {
+    if (!is.finite(theta_hat[j])) next
+    at_lo <- theta_hat[j] <= sd_lo + 1e-6
+    at_hi <- theta_hat[j] >= sd_hi - 1e-6
+    if (!(at_lo || at_hi)) next
+    detail <- if (at_lo) {
+      paste("The variance component has collapsed: the data carry no",
+            "detectable between-group variation, or the hyperprior is not",
+            "holding it off the boundary.")
+    } else {
+      paste("The between-group variation exceeds the bracket, so the value",
+            "is capped rather than fitted.")
+    }
+    warning(sprintf(paste0(
+      "%s(): the random-effect standard deviation hit the %s end of the ",
+      "search bracket (sigma = %.3g). %s Treat it as a boundary hit, not a ",
+      "fitted value."),
+      caller, if (at_lo) "lower" else "upper", exp(theta_hat[j]), detail),
+      call. = FALSE)
+  }
 
   # The dispersion is reported separately from theta_hat's covariance half, and
   # `theta_hat` is trimmed to the covariance coordinates so every downstream
@@ -1993,10 +1994,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'     \item `max_iter`, `tol`, `n_threads`: inner-solve controls (see
 #'       [tulpa_laplace()]).
 #'     \item `outer_maxit`: iteration budget for the mode-finding step that
-#'       centres the integration grid (default 500). Applies to the Nelder-Mead
-#'       simplex used from two parameters up; the one-parameter case is bracketed
-#'       by Brent. Exhausting the budget warns, since the nodes are then centred
-#'       on wherever the optimizer stopped.
+#'       centres the integration grid, in rounds of the outer mode-find
+#'       (default 500). Exhausting the budget warns, since the nodes are then
+#'       centred on wherever the search stopped.
 #'     \item `checkpoint`: node checkpoint/resume spec `list(path = , resume = )`.
 #'       Each completed CCD / grid node (one inner Laplace solve) is cached to
 #'       `path`; a `resume = TRUE` run loads the finished nodes and re-solves

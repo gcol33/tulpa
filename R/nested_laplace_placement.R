@@ -188,15 +188,28 @@
 # Returns `list(par, cov, value, status, rounds, evals)`, `status` `"ok"`,
 # `"not_converged"` (the round cap came first) or `"boundary"` (the mode ran to
 # the box), or `list(declined = "no_usable_curvature")`.
+#
+# The objective, its coordinates and the box are the caller's. A caller whose
+# objective has an analytic gradient passes `stencil(u)`, returning `list(grad,
+# hess)` at one point (the Hessian analytic or a difference of the gradient),
+# and sets `reltol`, the relative tolerance on the log density the search stops
+# at, `max_rounds` and `max_halve`; the step calibration is then not run, since
+# it tunes the finite-difference step alone. Left at their defaults, these are
+# the placement's own search.
 .nl_mode_curvature <- function(u0, eval1, box, set_warm = NULL,
-                               meter = .ccd_meter_new(Inf, label = "outer placement")) {
+                               meter = .ccd_meter_new(Inf, label = "outer placement"),
+                               stencil = NULL, reltol = NULL,
+                               max_rounds = .ccd_placement("max_rounds"),
+                               max_halve = .ccd_placement("max_halve")) {
     find <- function(h) .joint_ccd_modefind(
         u0, eval1, box$lower, box$upper, h, trust = box$trust,
         on_accept = set_warm, meter = meter, ridge_check = FALSE,
-        max_rounds = .ccd_placement("max_rounds"),
-        max_halve = .ccd_placement("max_halve"))
+        max_rounds = max_rounds, max_halve = max_halve,
+        stencil = stencil, reltol = reltol,
+        tol = if (is.null(reltol)) 1e-3 else 0,
+        stop_sd = if (is.null(reltol)) .ccd_placement("stop_sd") else 0)
     mf <- find(rep(0.1, length(u0)))
-    if (!identical(mf$status, "ok")) {
+    if (is.null(stencil) && !identical(mf$status, "ok")) {
         h_cal <- .joint_ccd_calibrate_step(u0, eval1, box$span, meter = meter)
         mf <- find(h_cal)
     }
@@ -209,7 +222,8 @@
     if (is.null(cov) || any(!is.finite(cov))) {
         return(list(declined = "no_usable_curvature"))
     }
-    eps <- 1e-3 * pmax(box$upper - box$lower, 1)
+    width <- box$upper - box$lower
+    eps <- 1e-3 * pmax(ifelse(is.finite(width), width, 1), 1)
     at_box <- abs(mf$par - box$lower) < eps | abs(mf$par - box$upper) < eps
     status <- if (any(at_box)) "boundary" else
         if (isTRUE(mf$converged)) "ok" else "not_converged"

@@ -500,6 +500,14 @@
 # the Hessian is regularised negative-definite and the step trust-clamped and
 # backtracked -- so the search runs from there.
 #
+# Each round's local quadratic comes from `stencil(u)`, `list(grad, hess)` of
+# the log-posterior at `u`: by default the finite-difference stencil of `eval1`
+# at step `h`; a caller whose objective has an analytic gradient (and curvature)
+# supplies its own. The search stops when the Newton step is under `stop_sd`
+# posterior SDs, when an accepted step moves no coordinate by more than `tol`,
+# or, with `reltol` set, when the predicted gain `grad' H^-1 grad / 2` is under
+# `reltol * (|logpost| + reltol)`, the relative tolerance an optimizer reads.
+#
 # Returns list(par, hess, value, converged, status) with status in
 # {"ok", "ridge", "fail"}; only "ok" yields a usable CCD scale.
 .joint_ccd_modefind <- function(u0, eval1, lower, upper, h,
@@ -509,9 +517,11 @@
                                 trust = NULL,
                                 on_accept = NULL, meter = NULL,
                                 ridge_check = TRUE,
-                                stop_sd = .ccd_placement("stop_sd")) {
+                                stop_sd = .ccd_placement("stop_sd"),
+                                stencil = NULL, reltol = NULL) {
     d <- length(u0)
     if (is.null(trust)) trust <- rep(Inf, d)
+    if (is.null(stencil)) stencil <- function(u) .joint_ccd_fd_stencil(u, eval1, h)
     fail <- function(u, H, f) {
         .ccd_meter_beat(meter, "declined", "mode-find failed")
         list(par = u, hess = H, value = f, converged = FALSE, status = "fail")
@@ -530,8 +540,7 @@
     # stencil below would repeat it.
     hess_at_u <- FALSE
     for (iter in seq_len(max_rounds)) {
-        st <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h),
-                       error = .ccd_rethrow_budget)
+        st <- tryCatch(stencil(u), error = .ccd_rethrow_budget)
         if (is.null(st) || any(!is.finite(st$grad)) ||
             any(!is.finite(st$hess))) return(fail(u, H, f_u))
         H <- st$hess
@@ -552,6 +561,26 @@
         # `stop_sd` the point is the mode to within that, and this round's
         # stencil (at `u`) is the closing curvature.
         lambda2 <- sum(st$grad * step)
+        rel_done <- !is.null(reltol) && is.finite(lambda2) &&
+            0.5 * max(lambda2, 0) < reltol * (abs(f_u) + reltol)
+        if (rel_done) {
+            # The predicted gain is below the tolerance; the Newton step that
+            # predicts it is taken when it does not lower the log posterior,
+            # which leaves the point within the square of that step of the mode.
+            u_new <- pmin(pmax(u + step, lower), upper)
+            fne <- eval1(matrix(u_new, nrow = 1L))
+            if (is.finite(as.numeric(fne)) && as.numeric(fne) >= f_u) {
+                u <- u_new; f_u <- as.numeric(fne)
+                m_new <- .joint_ccd_eval_mode(fne)
+                if (!is.null(on_accept) && !is.null(m_new)) on_accept(m_new)
+                hess_at_u <- FALSE
+            } else {
+                hess_at_u <- TRUE
+            }
+            .ccd_meter_round(meter)
+            converged <- TRUE
+            break
+        }
         if (is.finite(lambda2) && sqrt(max(lambda2, 0)) < stop_sd) {
             .ccd_meter_round(meter)
             .ccd_meter_beat(meter,
@@ -601,7 +630,7 @@
         .ccd_meter_round(meter)
         .ccd_meter_beat(meter, sprintf("round %d/%d", iter, as.integer(max_rounds)),
                         sprintf("|step| %.3g | logpost %.7g", delta, f_u))
-        if (delta < tol) {
+        if (delta <= tol) {
             converged <- TRUE
             # No step taken: this round's stencil is already at `u`.
             hess_at_u <- delta == 0
@@ -612,8 +641,7 @@
     # stencil: this is the curvature the design is oriented by. A round whose
     # stencil was taken at the final point already measured it.
     if (!hess_at_u) {
-        st_fin <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h),
-                           error = .ccd_rethrow_budget)
+        st_fin <- tryCatch(stencil(u), error = .ccd_rethrow_budget)
         if (!is.null(st_fin) && all(is.finite(st_fin$hess))) H <- st_fin$hess
     }
     .ccd_meter_beat(meter, "mode-find done",

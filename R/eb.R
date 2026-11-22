@@ -105,7 +105,7 @@
 #'   with `fit$phi_estimated` distinguishing the two cases. `log(phi)` joins the
 #'   maximization as one further coordinate, carrying the exact derivative of
 #'   the Laplace log-marginal with respect to it, so the cost is one more
-#'   coordinate for BFGS and not a second optimization.
+#'   coordinate for the outer mode-find and not a second optimization.
 #'
 #'   The dispersion enters unpenalized -- the hyperprior covers the covariance
 #'   coordinates only -- so this is the ML-II estimate of `phi`, not a MAP under
@@ -158,13 +158,15 @@
 #'   marginal), integrate with [tulpa_re_cov_nested()] instead.
 #' @param control A named list of numerical knobs: `max_iter`, `tol`,
 #'   `n_threads` (inner-solve controls, see [tulpa_laplace()]), and
-#'   `outer_maxit` (iteration budget for the maximization over `Sigma`, default
-#'   500; applies to the Nelder-Mead simplex used from two parameters up, since
-#'   the one-parameter case is bracketed by Brent). Exhausting the budget warns.
-#'   `outer_reltol` sets that maximization's convergence tolerance (default
-#'   `1e-10` for the gradient-driven methods, `1e-8` for the simplex, which
-#'   cannot resolve as finely); it is converted to L-BFGS-B's `factr` on the
-#'   bounded path, so one request means the same thing whichever method runs.
+#'   `outer_maxit` (the round budget of the maximization over `Sigma`, default
+#'   500). The maximization is the outer mode-find the nested-Laplace doors
+#'   place their grids with: damped Newton rounds on the analytic gradient and
+#'   outer Hessian where the family has them, on finite differences of the
+#'   objective where it does not, every log scale boxed to `[1e-4, 1e3]`.
+#'   Exhausting the budget warns. `outer_reltol` sets its convergence tolerance
+#'   (default `1e-10`), relative to the log posterior: the search stops when
+#'   the gain its next Newton step predicts falls below it, after taking that
+#'   step.
 #'   `sigma_init` supplies the starting random-effect SD -- a scalar, or one
 #'   per coefficient across all blocks -- replacing the method-of-moments guess
 #'   taken from a pilot fit at `Sigma = I`. Worth setting when the true scale is
@@ -189,8 +191,9 @@
 #'     of matrices for several).
 #'   - `theta_hat`, `log_marginal`, `layout`, `n_blocks`, `n_coefs`.
 #'   - `converged`: whether the inner Newton solve at `theta_hat` converged.
-#'   - `outer_convergence`: `optim`'s code for the maximization over `Sigma`
-#'     (`0` on success). A non-zero value also warns.
+#'   - `outer_convergence`: the code of the maximization over `Sigma`, `0` on
+#'     convergence and `1` where the `outer_maxit` round budget stopped it
+#'     (which also warns).
 #'   - With `marginal = TRUE` and a correction that formed: `cov_marginal` (the
 #'     widened fixed-effect covariance, which `vcov` / `summary` / `confint`
 #'     then report), `cov_conditional` (the `solve(H_beta)` they would otherwise
@@ -276,8 +279,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   n_quad <- .check_n_quad(n_quad)
 
   # need_scale = FALSE: the numerical outer Hessian exists to place integration
-  # nodes. EB places none, and asking Nelder-Mead for it costs O(k^2) extra
-  # objective evaluations -- each one a full inner Laplace solve.
+  # nodes. EB places none, and forming it costs O(k^2) extra inner solves.
   core <- .re_cov_theta_fit(
     y = y, n_trials = n_trials, X = X, re_terms = re_terms,
     family = family, phi = phi, phi2 = phi2,
@@ -402,7 +404,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     # reporting `phi` alone would make the two indistinguishable.
     phi          = phi_fit,
     phi_estimated = isTRUE(core$estimate_phi),
-    # optim's code for the outer maximization, for a programmatic check; a
+    # The outer maximization's code, for a programmatic check; a
     # non-zero value has already warned.
     outer_convergence = as.integer(core$opt$convergence),
     layout       = layout,

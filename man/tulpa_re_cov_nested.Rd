@@ -165,10 +165,9 @@ body ratios enter the tail and bias the shape.
 \item \code{max_iter}, \code{tol}, \code{n_threads}: inner-solve controls (see
 \code{\link[=tulpa_laplace]{tulpa_laplace()}}).
 \item \code{outer_maxit}: iteration budget for the mode-finding step that
-centres the integration grid (default 500). Applies to the Nelder-Mead
-simplex used from two parameters up; the one-parameter case is bracketed
-by Brent. Exhausting the budget warns, since the nodes are then centred
-on wherever the optimizer stopped.
+centres the integration grid, in rounds of the outer mode-find
+(default 500). Exhausting the budget warns, since the nodes are then
+centred on wherever the search stopped.
 \item \code{checkpoint}: node checkpoint/resume spec \code{list(path = , resume = )}.
 Each completed CCD / grid node (one inner Laplace solve) is cached to
 \code{path}; a \code{resume = TRUE} run loads the finished nodes and re-solves

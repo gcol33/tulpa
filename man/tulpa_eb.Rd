@@ -94,7 +94,7 @@ the supplied \code{phi} is the starting value and \code{fit$phi} is the estimate
 with \code{fit$phi_estimated} distinguishing the two cases. \code{log(phi)} joins the
 maximization as one further coordinate, carrying the exact derivative of
 the Laplace log-marginal with respect to it, so the cost is one more
-coordinate for BFGS and not a second optimization.
+coordinate for the outer mode-find and not a second optimization.
 
 The dispersion enters unpenalized -- the hyperprior covers the covariance
 coordinates only -- so this is the ML-II estimate of \code{phi}, not a MAP under
@@ -133,13 +133,15 @@ Ignored when \code{X_zi} is \code{NULL}.}
 
 \item{control}{A named list of numerical knobs: \code{max_iter}, \code{tol},
 \code{n_threads} (inner-solve controls, see \code{\link[=tulpa_laplace]{tulpa_laplace()}}), and
-\code{outer_maxit} (iteration budget for the maximization over \code{Sigma}, default
-500; applies to the Nelder-Mead simplex used from two parameters up, since
-the one-parameter case is bracketed by Brent). Exhausting the budget warns.
-\code{outer_reltol} sets that maximization's convergence tolerance (default
-\code{1e-10} for the gradient-driven methods, \code{1e-8} for the simplex, which
-cannot resolve as finely); it is converted to L-BFGS-B's \code{factr} on the
-bounded path, so one request means the same thing whichever method runs.
+\code{outer_maxit} (the round budget of the maximization over \code{Sigma}, default
+500). The maximization is the outer mode-find the nested-Laplace doors
+place their grids with: damped Newton rounds on the analytic gradient and
+outer Hessian where the family has them, on finite differences of the
+objective where it does not, every log scale boxed to \verb{[1e-4, 1e3]}.
+Exhausting the budget warns. \code{outer_reltol} sets its convergence tolerance
+(default \code{1e-10}), relative to the log posterior: the search stops when
+the gain its next Newton step predicts falls below it, after taking that
+step.
 \code{sigma_init} supplies the starting random-effect SD -- a scalar, or one
 per coefficient across all blocks -- replacing the method-of-moments guess
 taken from a pilot fit at \code{Sigma = I}. Worth setting when the true scale is
@@ -166,8 +168,9 @@ for one block, a named list of them for several).
 of matrices for several).
 \item \code{theta_hat}, \code{log_marginal}, \code{layout}, \code{n_blocks}, \code{n_coefs}.
 \item \code{converged}: whether the inner Newton solve at \code{theta_hat} converged.
-\item \code{outer_convergence}: \code{optim}'s code for the maximization over \code{Sigma}
-(\code{0} on success). A non-zero value also warns.
+\item \code{outer_convergence}: the code of the maximization over \code{Sigma}, \code{0} on
+convergence and \code{1} where the \code{outer_maxit} round budget stopped it
+(which also warns).
 \item With \code{marginal = TRUE} and a correction that formed: \code{cov_marginal} (the
 widened fixed-effect covariance, which \code{vcov} / \code{summary} / \code{confint}
 then report), \code{cov_conditional} (the \code{solve(H_beta)} they would otherwise

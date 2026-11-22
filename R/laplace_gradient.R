@@ -373,11 +373,9 @@
 # user needs, and the first one carries the actionable numbers.
 #
 # `state` is an environment with `n` and `first`, created by the caller so it can
-# read the count DURING `expr`. That is what lets a gradient-driven optimizer
-# notice it was walking blind and restart derivative-free: a declined gradient
-# reaches optim() as zeros, which it cannot tell from a stationary point, so
-# without the check it can stop at its own starting value and report that as the
-# estimate.
+# read the count DURING `expr`. That is what lets the gradient-driven outer
+# mode-find notice it was walking on a declined gradient and search again on
+# finite differences of the objective.
 .new_unsettled_state <- function() {
   st <- new.env(parent = emptyenv())
   st$n <- 0L
@@ -397,8 +395,8 @@
   if (state$n > 0L) {
     warning(caller, "(): the exact outer gradient was declined at ",
             state$n, " inner solve", if (state$n > 1L) "s" else "",
-            " whose mode had not settled, so the outer fit fell back to the ",
-            "derivative-free optimizer. ", state$first, call. = FALSE)
+            " whose mode had not settled, so the outer fit fell back to finite ",
+            "differences of its objective. ", state$first, call. = FALSE)
   }
   out
 }

@@ -224,10 +224,9 @@ test_that("the exact gradient refuses a mode that stopped short of stationarity"
 
 test_that("the refusal count is readable while the wrapped expression runs", {
   skip_on_cran_budget()
-  # This is what lets the gradient-driven outer optimizer notice it was walking
-  # blind and hand over to the derivative-free path. optim() receives a declined
-  # gradient as zeros and cannot tell that from a stationary point, so without
-  # the live count it can stop at theta0 and report the start as the estimate.
+  # This is what lets the gradient-driven outer mode-find notice it was walking
+  # on a declined gradient and search again on finite differences of the
+  # objective.
   st <- .new_unsettled_state()
   expect_identical(st$n, 0L)
   seen <- NULL
@@ -238,7 +237,7 @@ test_that("the refusal count is readable while the wrapped expression runs", {
       seen <- st$n          # read DURING the expression
       NULL
     }, "caller_fn", st),
-    "fell back to the derivative-free optimizer")
+    "fell back to finite differences")
   expect_identical(seen, 1L)
 })
 
@@ -317,6 +316,6 @@ test_that("a refused gradient at a rejected line-search trial keeps the gradient
       seen <<- c(seen, conditionMessage(w))
       invokeRestart("muffleWarning")
     })
-  expect_false(any(grepl("derivative-free", seen)))
+  expect_false(any(grepl("fell back to finite differences", seen)))
   expect_equal(fit$theta_hat, -0.228, tolerance = 0.01)
 })

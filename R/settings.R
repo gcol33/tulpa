@@ -1802,16 +1802,18 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 
 # Where the random-effect covariance door searches its outer mode
 # (`tulpa_re_cov_nested()`, `tulpa_eb()`). `sd_range` brackets a random-effect
-# standard deviation: a one-coordinate mode-find is Brent over its log, and the
-# placement mode-find in the marginal-SD / partial-correlation coordinates
-# (`.re_cov_placement()`) is boxed to it on every log sigma. `pcor_max` bounds
-# the size of a canonical partial correlation there, on its atanh, and `trust`
-# is that search's per-round step radius in those coordinates: one e-fold of a
-# scale.
+# standard deviation: the outer mode-find over the covariance coordinates is
+# boxed to it on every log scale, and so is the placement mode-find in the
+# marginal-SD / partial-correlation coordinates (`.re_cov_placement()`).
+# `pcor_max` bounds the size of a canonical partial correlation there, on its
+# atanh, and `trust` is that search's per-round step radius in those
+# coordinates: one e-fold of a scale. `max_halve` is the number of step
+# halvings the outer mode-find's line search tries per round.
 .RE_COV_SEARCH <- list(
-    sd_range = c(1e-4, 1e3),
-    pcor_max = 1 - 1e-6,
-    trust    = 1
+    sd_range  = c(1e-4, 1e3),
+    pcor_max  = 1 - 1e-6,
+    trust     = 1,
+    max_halve = 10L
 )
 
 .re_cov_search <- function(par) .settings_get(.RE_COV_SEARCH, par, "re_cov search setting")
