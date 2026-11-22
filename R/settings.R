@@ -828,13 +828,9 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     # `tau`, 2.511 on the 100-region BYM2's `rho`).
     edge_mass_mult = 2,
 
-    # Recenter attempts. The joint paths take two (the second adds the light PC
-    # prior below, for a genuinely unidentified near-separation mode that keeps
-    # running); the standalone registry path takes one -- that pathology is
-    # specific to a donor/copy-coupled fit, and a single-response fit has no
-    # such coupling, so a geometry-only recenter is proportionate there.
+    # Recenter attempts. The second adds the light PC prior below, for a
+    # genuinely unidentified near-separation mode that keeps running.
     max_attempts_joint    = 2L,
-    max_attempts_registry = 1L,
 
     # The PC prior a second attempt engages when the user set no `prior_sigma`
     # of their own: the engine's default SD prior, so a fit that needed the

@@ -58,7 +58,7 @@ test_that("fit_spde() integrates (range, sigma) on the joint door", {
   fit <- .ccd_poisson_fit(k_samples = 150L)
   rec <- fit$nested
   expect_identical(rec$backend, "nested_laplace_joint")
-  expect_identical(tulpa:::.hyper_axis_bare(colnames(rec$theta_grid)),
+  expect_identical(tulpa:::.axis_bare(colnames(rec$theta_grid)),
                    c("range", "sigma"))
   expect_true(all(is.finite(rec$weights)))
   expect_equal(sum(rec$weights), 1, tolerance = 1e-8)

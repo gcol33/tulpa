@@ -27,7 +27,7 @@ test_that("tulpa_outer_grid() reads a fit_spde() fit's (range, sigma) grid", {
   skip_on_cran()
   fx <- .spde_record_fixture()
   g <- tulpa_outer_grid(fx$fit)
-  expect_equal(tulpa:::.hyper_axis_bare(colnames(g$nodes)), c("range", "sigma"))
+  expect_equal(tulpa:::.axis_bare(colnames(g$nodes)), c("range", "sigma"))
   expect_equal(unname(g$nodes[, 1L]), fx$fit$nested$range_grid)
   expect_equal(sum(g$weights), 1)
   expect_equal(nrow(g$modes), nrow(g$nodes))

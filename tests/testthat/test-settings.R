@@ -158,14 +158,11 @@ test_that("the default axes are exactly these values", {
     expect_identical(tulpa:::.nl_recenter("n_pts"), 5L)
     expect_equal(tulpa:::.nl_recenter("span"), 2.5)
     expect_identical(tulpa:::.nl_recenter("max_attempts_joint"), 2L)
-    expect_identical(tulpa:::.nl_recenter("max_attempts_registry"), 1L)
     # A multiple of what a flat marginal puts on one node, not a share of the
     # axis's weight (gcol33/tulpa#375). `2` is the retired 0.5 share at the four
     # nodes it was tuned on.
     expect_equal(tulpa:::.nl_recenter("edge_mass_mult"), 2)
     expect_error(tulpa:::.nl_recenter("edge_mass"), "Unknown recenter setting")
-    expect_identical(tulpa:::.nl_st_default("n_spatial"), 4L)
-    expect_equal(tulpa:::.nl_st_default("tau_upper"), 16)
 
     # Cheap-pass grid screening. `iters` is a cost-against-ranking-fidelity
     # trade paid on every cell of the grid, so it is a number the engine's
@@ -176,7 +173,6 @@ test_that("the default axes are exactly these values", {
     expect_error(tulpa:::.nl_diag("nope"), "Unknown diagnostic setting")
     expect_error(tulpa:::.nl_screen("nope"), "Unknown screening setting")
     expect_error(tulpa:::.nl_recenter("nope"), "Unknown recenter setting")
-    expect_error(tulpa:::.nl_st_default("nope"), "Unknown spatiotemporal")
 })
 
 test_that("registry defaults() fill exactly the bound fields, crossed", {

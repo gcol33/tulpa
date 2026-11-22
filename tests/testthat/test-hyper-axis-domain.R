@@ -56,11 +56,11 @@ skip_on_cran_budget()
 
 test_that("a domain is keyed on the axis name without its block prefix", {
     skip_on_cran_budget()
-    expect_identical(tulpa:::.hyper_axis_bare("b1.rho_car"), "rho_car")
-    expect_identical(tulpa:::.hyper_axis_bare("b12.rho"), "rho")
-    expect_identical(tulpa:::.hyper_axis_bare("rho_car"), "rho_car")
-    expect_identical(tulpa:::.hyper_axis_bare("phi_occ"), "phi_occ")
-    expect_identical(tulpa:::.hyper_axis_bare(NULL), "")
+    expect_identical(tulpa:::.axis_bare("b1.rho_car"), "rho_car")
+    expect_identical(tulpa:::.axis_bare("b12.rho"), "rho")
+    expect_identical(tulpa:::.axis_bare("rho_car"), "rho_car")
+    expect_identical(tulpa:::.axis_bare("phi_occ"), "phi_occ")
+    expect_identical(tulpa:::.axis_bare(NULL), "")
 
     g <- c(0.5, 0.8, 0.95, 0.99)
     plain  <- tulpa:::.hyper_axis_support(g, hyper_axis_spec("rho_car", g))
@@ -258,10 +258,10 @@ test_that("a BYM2 fit whose rho posterior reaches zero closes its lower edge", {
                  spatial = spatial_bym2(W, group_var = "region"),
                  mode = "nested_laplace",
                  control = list(n_threads = 2, progress = FALSE))
-    rho <- sort(unique(tulpa_theta_matrix(fit)[, "rho"]))
-    expect_equal(fit$log_hyperprior_support$rho, c(0, 1))
-    expect_gt(fit$axis_support$rho[1L], 0)
-    expect_lt(fit$axis_support$rho[2L], 1)
+    rho <- sort(unique(tulpa_theta_matrix(fit)[, "b1.rho"]))
+    expect_equal(fit$log_hyperprior_support[["b1.rho"]], c(0, 1))
+    expect_gt(fit$axis_support[["b1.rho"]][1L], 0)
+    expect_lt(fit$axis_support[["b1.rho"]][2L], 1)
     expect_gt(min(rho), 1e-4)
     expect_true(all(is.finite(coef(fit))))
 })
@@ -373,7 +373,7 @@ test_that("no bounded axis reports a support outside its domain", {
     )
     axes <- c("rho", "rho_car", "b1.rho", "b3.rho_car")
     for (axis in axes) {
-        dom <- tulpa:::.nl_axis_domain_entry(tulpa:::.hyper_axis_bare(axis))
+        dom <- tulpa:::.nl_axis_domain_entry(tulpa:::.axis_bare(axis))
         for (nm in names(node_sets)) {
             g <- node_sets[[nm]]
             lab <- paste(axis, nm)

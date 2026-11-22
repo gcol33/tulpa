@@ -89,7 +89,7 @@ test_that("direct SPDE integration retains range log moments on the fit", {
     control = list(progress = FALSE, diagnose_k = FALSE))
   expect_identical(fit$theta_log_mean, fit$nested$theta_log_mean)
   expect_identical(fit$theta_log_sd, fit$nested$theta_log_sd)
-  at <- match("range", tulpa:::.hyper_axis_bare(names(fit$theta_log_mean)))
+  at <- match("range", tulpa:::.axis_bare(names(fit$theta_log_mean)))
   expect_true(is.finite(fit$theta_log_mean[[at]]))
   expect_identical(fit$nested$range_sd, Inf)
 })
