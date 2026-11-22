@@ -316,23 +316,41 @@ inline bool nngp_conditional_moments(const double* C, const double* c_vec,
 // Vector operations (SIMD-friendly)
 // ============================================================================
 
-// Dot product with loop unrolling
-inline double dot_product(const double* x, const double* y, int n) {
+// Sum of term(i) over i < n, four terms at a time: each block adds
+// ((term(i) + term(i+1)) + term(i+2)) + term(i+3) to the running sum, then the
+// tail adds the remaining terms one by one. Every reduction below shares this
+// summation order, so they agree bit for bit with one another.
+template <typename Term>
+inline double unrolled_sum4(int n, Term term) {
   double sum = 0.0;
   int i = 0;
-
-  // Process 4 elements at a time (SIMD-friendly)
   for (; i + 3 < n; i += 4) {
-    sum += x[i] * y[i] + x[i+1] * y[i+1] +
-           x[i+2] * y[i+2] + x[i+3] * y[i+3];
+    sum += term(i) + term(i+1) + term(i+2) + term(i+3);
   }
-
-  // Handle remaining elements
   for (; i < n; i++) {
-    sum += x[i] * y[i];
+    sum += term(i);
   }
-
   return sum;
+}
+
+// Apply body(i) for every i < n, four indices per loop iteration.
+template <typename Body>
+inline void unrolled_for4(int n, Body body) {
+  int i = 0;
+  for (; i + 3 < n; i += 4) {
+    body(i);
+    body(i+1);
+    body(i+2);
+    body(i+3);
+  }
+  for (; i < n; i++) {
+    body(i);
+  }
+}
+
+// Dot product
+inline double dot_product(const double* x, const double* y, int n) {
+  return unrolled_sum4(n, [x, y](int i) { return x[i] * y[i]; });
 }
 
 // Dot product with stride
@@ -347,17 +365,7 @@ inline double dot_product_strided(const double* x, int stride_x,
 
 // Vector sum
 inline double vector_sum(const double* x, int n) {
-  double sum = 0.0;
-  int i = 0;
-
-  for (; i + 3 < n; i += 4) {
-    sum += x[i] + x[i+1] + x[i+2] + x[i+3];
-  }
-  for (; i < n; i++) {
-    sum += x[i];
-  }
-
-  return sum;
+  return unrolled_sum4(n, [x](int i) { return x[i]; });
 }
 
 // Vector L2 norm squared
@@ -367,60 +375,22 @@ inline double norm_squared(const double* x, int n) {
 
 // axpy: y = a*x + y
 inline void axpy(double a, const double* x, double* y, int n) {
-  int i = 0;
-  for (; i + 3 < n; i += 4) {
-    y[i] += a * x[i];
-    y[i+1] += a * x[i+1];
-    y[i+2] += a * x[i+2];
-    y[i+3] += a * x[i+3];
-  }
-  for (; i < n; i++) {
-    y[i] += a * x[i];
-  }
+  unrolled_for4(n, [a, x, y](int i) { y[i] += a * x[i]; });
 }
 
 // Scale vector: x = a*x
 inline void scale(double a, double* x, int n) {
-  int i = 0;
-  for (; i + 3 < n; i += 4) {
-    x[i] *= a;
-    x[i+1] *= a;
-    x[i+2] *= a;
-    x[i+3] *= a;
-  }
-  for (; i < n; i++) {
-    x[i] *= a;
-  }
+  unrolled_for4(n, [a, x](int i) { x[i] *= a; });
 }
 
 // Weighted axpy: y[i] += a * w[i] * x[i]  (mass-scaled momentum update)
 inline void axpy_weighted(double a, const double* w, const double* x, double* y, int n) {
-  int i = 0;
-  for (; i + 3 < n; i += 4) {
-    y[i]   += a * w[i]   * x[i];
-    y[i+1] += a * w[i+1] * x[i+1];
-    y[i+2] += a * w[i+2] * x[i+2];
-    y[i+3] += a * w[i+3] * x[i+3];
-  }
-  for (; i < n; i++) {
-    y[i] += a * w[i] * x[i];
-  }
+  unrolled_for4(n, [a, w, x, y](int i) { y[i] += a * w[i] * x[i]; });
 }
 
 // Weighted norm squared: sum(x[i]^2 * w[i])  (for kinetic energy)
 inline double weighted_norm_squared(const double* x, const double* w, int n) {
-  double sum = 0.0;
-  int i = 0;
-  for (; i + 3 < n; i += 4) {
-    sum += x[i]   * x[i]   * w[i]
-         + x[i+1] * x[i+1] * w[i+1]
-         + x[i+2] * x[i+2] * w[i+2]
-         + x[i+3] * x[i+3] * w[i+3];
-  }
-  for (; i < n; i++) {
-    sum += x[i] * x[i] * w[i];
-  }
-  return sum;
+  return unrolled_sum4(n, [x, w](int i) { return x[i] * x[i] * w[i]; });
 }
 
 // Copy n doubles from src to dst (thin wrapper over memcpy for clarity)

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "hmc_sampler_decls.h"  // GradientFn
+#include "linalg_fast.h"        // tulpa_linalg::dot_product
 
 namespace tulpa_hmc {
 
@@ -121,19 +122,8 @@ struct TreeStats {
 // Returns true if trajectory should CONTINUE (no U-turn detected)
 inline bool compute_criterion(const double* p_sharp_minus, const double* p_sharp_plus,
                               const double* rho, int n) {
-  double dot_fwd = 0.0, dot_bwd = 0.0;
-  int i = 0;
-  for (; i + 3 < n; i += 4) {
-    dot_fwd += p_sharp_plus[i]   * rho[i]   + p_sharp_plus[i+1] * rho[i+1]
-             + p_sharp_plus[i+2] * rho[i+2] + p_sharp_plus[i+3] * rho[i+3];
-    dot_bwd += p_sharp_minus[i]   * rho[i]   + p_sharp_minus[i+1] * rho[i+1]
-             + p_sharp_minus[i+2] * rho[i+2] + p_sharp_minus[i+3] * rho[i+3];
-  }
-  for (; i < n; i++) {
-    dot_fwd += p_sharp_plus[i] * rho[i];
-    dot_bwd += p_sharp_minus[i] * rho[i];
-  }
-  return (dot_fwd > 0.0) && (dot_bwd > 0.0);
+  return (tulpa_linalg::dot_product(p_sharp_plus, rho, n) > 0.0) &&
+         (tulpa_linalg::dot_product(p_sharp_minus, rho, n) > 0.0);
 }
 
 // Fused U-turn criterion: constructs rho = a + b and computes dot products in one O(n) pass.
