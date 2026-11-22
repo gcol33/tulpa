@@ -11,6 +11,19 @@
   `re_cov_nested` and -1353.5 to -1353.7 (32.3 to 32.6) from NUTS on the same
   model (#1290).
 
+* `tulpa_nested_laplace_joint()` takes `control$n_quad`: above 1, for a single
+  arm whose latent blocks are random effects over one grouping factor, each
+  cell's inner marginal integrates every group's random effects by adaptive
+  Gauss-Hermite quadrature and the fixed effects by a Laplace step, the inner
+  marginal of `tulpa_re_cov_nested(n_quad = )`, through the same compiled
+  GLMM oracle. At a fixed covariance the two doors' log marginals are
+  identical for a scalar, a diagonal and a correlated block. Such a fit keeps
+  no latent precision, runs no screen or skew correction, and reports why
+  `ranef()` has no per-group effects. A free-covariance (`mcar` / `miid`)
+  block also takes `logchol_prior`, a joint density over its log-Cholesky
+  coordinates that replaces the PC + LKJ default and is kept under
+  `hyperprior = "flat"` (#1288).
+
 * The one-arm joint nested-Laplace door carries a zero-inflation formula. The
   structural-zero logit is a second arm on the `ziformula` design, coupled row
   by row to the response's arm through a built-in `"zero_inflated"` cell
