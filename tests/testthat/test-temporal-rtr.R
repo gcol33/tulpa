@@ -192,8 +192,9 @@ test_that("temporal() summarizes a restricted field past the retained-covariance
               control = list(progress = FALSE))
   expect_null(fr$grid_field_cov)
   tp <- temporal(fr, summary = TRUE)
-  # Dense reference: each cell's precision written out, inverted, conditioned
-  # on the fit's sum-to-zero rows, mapped by P and mixed over the weights.
+  # Dense reference: each cell's precision written out with the soft
+  # sum-to-zero pins its solve folded in (Q_k + S' D_k S), inverted,
+  # conditioned on the hard rows, mapped by P and mixed over the weights.
   src <- tulpa:::.field_cells(fr)
   on <- which(fr$weights > 0)
   sol <- tulpa:::.field_cell_solve(fr, src, on)
@@ -201,15 +202,23 @@ test_that("temporal() summarizes a restricted field past the retained-covariance
   cols <- tulpa:::.nl_temporal_field_cols(fr)
   P <- fr$temporal$rtr_projection
   w <- fr$weights[on] / sum(fr$weights[on])
-  A <- if (length(sol$constraint_cols)) {
-    as.matrix(tulpa:::.constraint_rows_matrix(sol$constraint_cols, n_x))
+  cons <- sol$constraint
+  A <- if (length(cons$hard)) {
+    as.matrix(tulpa:::.constraint_rows_matrix(cons$hard, n_x))
   }
+  Sr <- if (!is.null(cons$soft_D)) {
+    as.matrix(tulpa:::.constraint_rows_matrix(cons$soft, n_x))
+  }
+  expect_false(is.null(Sr))
   mus <- vars <- NULL
   for (i in seq_along(on)) {
-    Q <- Matrix::sparseMatrix(i = sol$Q_i[[i]] + 1L, p = sol$Q_p[[i]],
-                              x = sol$Q_x[[i]], dims = c(n_x, n_x),
-                              symmetric = TRUE)
-    S <- as.matrix(solve(Q))
+    Q <- as.matrix(Matrix::sparseMatrix(i = sol$Q_i[[i]] + 1L,
+                                        p = sol$Q_p[[i]], x = sol$Q_x[[i]],
+                                        dims = c(n_x, n_x), symmetric = TRUE))
+    if (!is.null(Sr) && !is.null(cons$soft_D[[i]])) {
+      Q <- Q + Sr %*% cons$soft_D[[i]] %*% t(Sr)
+    }
+    S <- solve(Q)
     if (!is.null(A)) {
       SA <- S %*% A
       S <- S - SA %*% solve(t(A) %*% SA, t(SA))
@@ -219,6 +228,6 @@ test_that("temporal() summarizes a restricted field past the retained-covariance
   }
   m <- colSums(w * mus)
   ref_sd <- sqrt(colSums(w * (vars + mus^2)) - m^2)
-  expect_equal(tp$mean, m, tolerance = 1e-8)
-  expect_equal(tp$sd, ref_sd, tolerance = 1e-8)
+  expect_equal(tp$mean, m, tolerance = 1e-10)
+  expect_equal(tp$sd, ref_sd, tolerance = 1e-10)
 })
