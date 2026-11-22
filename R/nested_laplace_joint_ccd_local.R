@@ -1345,7 +1345,8 @@
 #   dnode        [n] current outer design weights, or NULL (uniform tensor base).
 #   latent_axes  character: the latent axis column names to refine over.
 #   tags         named character per latent axis ("log"/"logit01"/"identity"),
-#                or NULL to DECLINE (an unguessable-support axis, e.g. rho_car).
+#                or NULL to DECLINE (an unguessable-support axis, e.g. an hsgp_mo
+#                cross-output rho).
 #   eval_nodes   function(theta_mat, warm) -> list(log_marginal, modes,
 #                cell_lists): evaluate the inner marginal at new node rows
 #                (full-coordinate matrix, colnames = colnames(joint_grid)), warm-

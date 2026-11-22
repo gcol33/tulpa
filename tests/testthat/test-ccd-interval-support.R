@@ -122,8 +122,8 @@ test_that(".joint_axis_domains names each joint axis's coordinate", {
   expect_identical(
     .joint_axis_domains(mk("mcar", list(c("L11", "L21", "L22")))),
     rep("unbounded", 3L))
-  # car_proper's rho_car carries no proposal tag; it is partitioned on the
-  # support its block declares, the (0, 1) its uniform hyperprior covers.
+  # car_proper's rho_car is tagged on the (0, 1) support its block declares,
+  # the interval its uniform hyperprior covers.
   expect_identical(
     .joint_axis_domains(mk("car_proper", list(c("tau", "rho_car")))),
     c("positive", "unit"))
@@ -132,10 +132,11 @@ test_that(".joint_axis_domains names each joint axis's coordinate", {
 test_that(".joint_pareto_axis_tags still declines a fit carrying an unguessable axis", {
   skip_on_cran_budget()
   res <- list(
-    theta_grid = matrix(0, 1L, 2L,
-                        dimnames = list(NULL, c("b1.tau", "b1.rho_car"))),
-    axis_offsets = c(0L, 2L),
-    blocks = list(list(type = "car_proper")))
+    theta_grid = matrix(0, 1L, 4L,
+                        dimnames = list(NULL, c("b1.sigma_1", "b1.sigma_2",
+                                                "b1.rho", "b1.ell"))),
+    axis_offsets = c(0L, 4L),
+    blocks = list(list(type = "hsgp_mo")))
   tags <- .joint_pareto_axis_tags(res)
   expect_true(.k_is_decline(tags))
 })

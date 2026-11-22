@@ -630,7 +630,7 @@
 #                         threshold -- decided by .joint_ccd_engage(), so it is
 #                         stamped by the caller rather than here.
 #   "unguessable_axis"    an axis whose support the engine will not guess
-#                         (CAR_proper's rho_car, a non-BYM2 rho).
+#                         (an hsgp_mo cross-output rho).
 #   "degenerate_axis"     an axis carrying a single value, or a non-finite
 #                         u-space box: no curvature to orient a design across.
 #   "modefind_ridge"      the outer log-posterior is flat / ridged.

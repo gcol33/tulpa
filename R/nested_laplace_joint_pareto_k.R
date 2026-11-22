@@ -7,9 +7,9 @@
 # positive-scale axis on the log scale (see R/psis.R).
 # The joint backend's hyperparameter space is heterogeneous -- positive
 # scales (sigma, tau, phi_*, ...), a bounded BYM2 mixing weight (rho), an
-# unbounded copy coefficient (alpha), and a CAR_proper correlation
-# (rho_car) whose support is the adjacency's eigenvalue interval and is not
-# safely guessable. Each axis therefore carries its own unconstraining
+# unbounded copy coefficient (alpha), a CAR_proper correlation on the (0, 1)
+# support its block declares, and a multi-output HSGP's cross-output
+# correlation, which is not safely guessable. Each axis therefore carries its own unconstraining
 # transform + log-Jacobian; a fit carrying any axis whose support is not
 # safely known DECLINES to the quadrature-ESS fallback rather than apply a
 # guessed transform (never a wrong k-hat). This mirrors the generic path's
@@ -398,8 +398,8 @@
 #     definite, which is (0, 1) for every graph (`compute_car_rho_bounds()`):
 #     logit there, and NA on a support the block states otherwise. A
 #     multi-output HSGP's cross-output `rho` declines.
-#   * `rho_car` is the proper-CAR correlation of the single-block and copy
-#     paths; decline.
+#   * `rho_car` is the same proper-CAR correlation on the single-block and
+#     copy paths, tagged the same way.
 #   * `alpha` is the unbounded copy coefficient; identity.
 #   * `mcar` axes are the log-Cholesky coordinates of Sigma = L L' (log L_ii on
 #     the diagonal, raw strict-lower L_ij), already unconstrained on all of R,
@@ -425,7 +425,7 @@
                               .hp_axis_support(a, own_block)),
                           NA_character_))
         }
-        if (a == "rho_car") return(NA_character_)
+        if (a == "rho_car") return(.joint_domain_tag(.hp_axis_support(a, own_block)))
         if (a %in% .JOINT_POS_AXES || startsWith(a, "phi_")) return("log")
         NA_character_
     }
@@ -503,7 +503,7 @@
 }
 
 # Whole-fit view of the same walk: every axis must be transformable, so a fit
-# carrying an unguessable one (car_proper's `rho_car`, a non-BYM2 `rho`)
+# carrying an unguessable one (a multi-output HSGP's cross-output `rho`)
 # DECLINES, naming the axes that stopped it.
 .joint_pareto_axis_tags <- function(res) {
     tags <- .joint_axis_tags_raw(res)

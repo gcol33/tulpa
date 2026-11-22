@@ -1,5 +1,19 @@
 # tulpa 0.8.0
 
+* A proper-CAR correlation on the single-block joint backends and on a copied
+  block (`rho_car`) takes the logit of the (0, 1) support its block declares,
+  as the registry path's `rho` does, so the joint door places, refines and
+  scores it, and a CCD or outer k-hat is no longer declined on it. An axis the
+  placement pass lays on a copied field's SD, a BYM2 mixing weight or a
+  proper-CAR correlation is marked engine-placed, so refinement follows it
+  past its placed ends, as it follows every other placed axis. On a
+  single-block car_proper fit the field SD read 0.895 / 2.05 / 4.46 at its
+  2.5 / 50 / 97.5% points against a dense 1.07 / 1.93 / 3.25 and now reads
+  1.09 / 1.96 / 3.25, and `rho_car` 0.691 / 0.939 / 0.994 against 0.739 /
+  0.928 / 0.992, now 0.745 / 0.927 / 0.992. On a copied car_proper block every
+  end reads within 0.13 posterior SDs of its dense reference except the copy
+  scale's 97.5% point, 0.19 short (0.12 before) (#1282).
+
 * The joint placement pass writes a non-copy block's axes as the tensor of
   their levels. A block's (scale, correlation) grid is paired cells, and the
   pass wrote a placed scale or BYM2 mixing weight alone beside the other

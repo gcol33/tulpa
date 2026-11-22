@@ -495,7 +495,7 @@
 # An "na" layer is further split by WHY it was not assessed: a layer that
 # CANNOT be assessed for this model or family -- a coupled
 # multi-process likelihood has no per-observation term gamma_3 can score, and a
-# car_proper `rho_car` axis has no support the outer k-hat may guess -- will
+# multi-output HSGP's cross-output `rho` has no support the outer k-hat may guess -- will
 # never become assessable, so the verdict says so rather than implying a rerun
 # with the right knob would fill it in. The `"not assessed"` wording is kept in
 # every such verdict (a documented `grepl("not assessed", ...)` contract),

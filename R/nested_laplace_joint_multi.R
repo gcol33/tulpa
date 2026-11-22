@@ -2402,7 +2402,7 @@
     # Outer Pareto-k-hat: re-evaluate the inner joint marginal at sampled
     # hyperparameters via the shared cpp-grid / phi / hyperprior helpers and
     # PSIS-smooth. Declines (NA -> quad-ESS) when a block carries an axis with
-    # unguessable support (CAR_proper's rho_car, a non-BYM2 rho, ...).
+    # unguessable support (an hsgp_mo cross-output rho).
     # The diagnostic's importance batch runs across `pareto_k_threads` (resolved
     # by the top-level caller from control$k_threads; NULL only on a direct call,
     # where it follows this fit's own thread grant). A deferred fit leaves the

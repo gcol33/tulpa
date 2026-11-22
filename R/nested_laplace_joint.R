@@ -133,7 +133,7 @@
 #'   than one the user chose), or when its nodes are exactly
 #'   the engine's own default axis. Declines gracefully (keeps the fixed-grid
 #'   fit) when another axis in the same grid has unguessable support
-#'   (car_proper's `rho_car`); whichever way it declines,
+#'   (a multi-output HSGP's cross-output `rho`); whichever way it declines,
 #'   `outer_grid_recenter_declined` says which (see below).
 #'
 #'   On the list-of-blocks path an `icar`, `bym2`, `car_proper` or `nngp`
@@ -606,8 +606,8 @@
 #'     (kept region would rival the tensor) or a degenerate lattice, so it never
 #'     costs accuracy; tune it with `adaptive_grid_cutoff` / `adaptive_grid_stride`
 #'     / `adaptive_grid_max_frac`. The CCD auto-falls back to the tensor grid for
-#'     an axis whose support is not safely transformable (a CAR_proper `rho_car`
-#'     or a non-BYM2 `rho`), or a flat / ridged / degenerate outer mode-find or
+#'     an axis whose support is not safely transformable (a multi-output HSGP's
+#'     cross-output `rho`), or a flat / ridged / degenerate outer mode-find or
 #'     Hessian; an active `phi_grid` rides as a tensor axis crossed on top of the
 #'     CCD.
 #'     Single-block joint priors always use the tensor grid. The CCD mode-find
@@ -762,7 +762,7 @@
 #'     hold the fraction and get a strictly sharper estimate of the same number;
 #'     the `k_quality` escalation's draw rung does exactly that. The draws are
 #'     RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
-#'     axis whose support is not safely known (CAR_proper's `rho_car`) declines to
+#'     axis whose support is not safely known (an hsgp_mo cross-output `rho`) declines to
 #'     the quadrature-ESS fallback (`pareto_k = NA`). `FALSE` skips the diagnostic.
 #'     `"by_arm"` additionally computes a k-hat restricted to each arm's
 #'     hyperparameter axes (the other arms held at their posterior mean), reported
@@ -1030,7 +1030,7 @@
 #'   * `pareto_k_declined` -- when `pareto_k` is `NA`, WHY:
 #'      `"not_requested"` (`control$diagnose_k = FALSE`; nothing is wrong),
 #'      `"unguessable_axis: <axis>"` (a support the engine will not guess, e.g.
-#'      car_proper's `rho_car` -- a PERMANENT limitation of that family, so read
+#'      a multi-output HSGP's cross-output `rho` -- a PERMANENT limitation of that family, so read
 #'      the quadrature ESS instead), `"draws_too_few"`, `"grid_too_small"`,
 #'      `"no_varying_axis"`, `"degenerate_proposal"` (the outer mode curvature
 #'      came back non-finite -- a signal about the fit), `"not_applicable"`, or
@@ -1222,8 +1222,8 @@
 #'      received a density grid reads the reason here rather than inferring it.
 #'      `integration_declined` is `NA_character_` when nothing was declined, and
 #'      otherwise one of `"axis_count"` (fewer transformable latent axes than the
-#'      requested mode's threshold), `"unguessable_axis"` (a CAR_proper
-#'      `rho_car` or a non-BYM2 `rho`), `"degenerate_axis"` (a single-valued
+#'      requested mode's threshold), `"unguessable_axis"` (a multi-output
+#'      HSGP's cross-output `rho`), `"degenerate_axis"` (a single-valued
 #'      axis), `"modefind_ridge"` / `"modefind_boundary"` /
 #'      `"modefind_degenerate"` / `"modefind_failed"`, `"hessian_singular"`,
 #'      `"hessian_not_pd"`, `"copy_atom_components"` (more copy atoms than the
@@ -2096,7 +2096,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # reliably on it).
     # "ccd" lowers the threshold to >= 3 axes; "grid" always forces the tensor
     # product. The CCD auto-falls back to the tensor grid for an unguessable axis
-    # (CAR_proper rho_car / non-BYM2 rho), a flat / ridged outer posterior, or a
+    # (an hsgp_mo cross-output rho), a flat / ridged outer posterior, or a
     # degenerate mode-find; an active phi grid rides as a
     # tensor axis crossed on top of the CCD. Single-block joint
     # backends always use the tensor grid (CCD applies to the multi-block path).
@@ -2546,7 +2546,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # drawn from the integrator's Gaussian proposal (reusing the generic
     # `kernel_fn` + `hp_fn` so no kernel-call machinery is duplicated) and
     # PSIS-smooth. Declines (NA -> quad-ESS) when an axis has unguessable
-    # support (e.g. CAR_proper's rho_car). A deferred fit is replaced by the
+    # support (e.g. an hsgp_mo cross-output rho). A deferred fit is replaced by the
     # fit its placement lays, so it leaves the k-hat to that fit as it leaves
     # its refinement; the regime and the placement mode it is read for are
     # attached either way.

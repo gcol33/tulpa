@@ -107,19 +107,22 @@ skip_on_cran_budget()
 
 test_that(".joint_pareto_k declines a fit carrying an unguessable axis, and NAMES it", {
     skip_on_cran_budget()
-    # A car_proper-typed single block with a rho_car axis: the resolver must
-    # decline rather than guess the eigenvalue-bounded support -- and say which
-    # axis stopped it, since that decline is PERMANENT for this family
+    # A multi-output HSGP block's cross-output `rho`: the resolver must
+    # decline rather than guess a coordinate for it -- and say which axis
+    # stopped it, since that decline is PERMANENT for this family
     # (gcol33/tulpa#295).
-    res <- list(theta_grid = matrix(c(0.5, 1.0, 0.8, 0.9), ncol = 2,
-                                    dimnames = list(NULL, c("sigma", "rho_car"))),
-                weights = c(0.5, 0.5), prior = list(type = "car_proper"))
+    res <- list(theta_grid = matrix(c(0.5, 1.0, 0.6, 0.9, 0.1, 0.4, 0.3, 0.3),
+                                    ncol = 4L,
+                                    dimnames = list(NULL, c("b1.sigma_1", "b1.sigma_2",
+                                                            "b1.rho", "b1.ell"))),
+                weights = c(0.5, 0.5), axis_offsets = c(0L, 4L),
+                blocks = list(list(type = "hsgp_mo")))
     tags <- .joint_pareto_axis_tags(res)
     expect_true(tulpa:::.k_is_decline(tags))
-    expect_identical(tulpa:::.k_decline_label(tags), "unguessable_axis: rho_car")
+    expect_identical(tulpa:::.k_decline_label(tags), "unguessable_axis: b1.rho")
     kd <- .joint_pareto_k(res, function(tm) rep(0, nrow(tm)), n_samples = 200L)
     expect_true(is.na(kd$pareto_k))
-    expect_identical(kd$declined, "unguessable_axis: rho_car")
+    expect_identical(kd$declined, "unguessable_axis: b1.rho")
     expect_true(tulpa:::.k_decline_is_permanent(kd$declined))
 })
 
@@ -420,10 +423,10 @@ test_that("joint BYM2 copy fit reports a finite k-hat (log + logit + identity)",
 })
 
 # --------------------------------------------------------------------------- #
-# (3) Decline on CAR_proper's rho_car                                         #
+# (3) CAR_proper's rho_car is scored on its logit                             #
 # --------------------------------------------------------------------------- #
 
-test_that("joint CAR_proper copy fit declines k-hat to quad-ESS", {
+test_that("joint CAR_proper copy fit reports a finite outer k-hat", {
     skip_if_not_slow()
     sim <- .jpk_sim(seed = 31)
     adj <- .jpk_chain_adj(sim$n_s)
@@ -434,10 +437,10 @@ test_that("joint CAR_proper copy fit declines k-hat to quad-ESS", {
     fit <- tulpa_nested_laplace_joint(
         responses = .jpk_arms_alpha(sim, c(0.5, 1.0)), prior = prior,
         control = list(k_samples = 100L))
-    # rho_car support is the adjacency eigenvalue interval -> declined, not
-    # guessed. The quad-ESS fallback (weights) is still available downstream.
-    expect_true(is.na(fit$pareto_k))
-    expect_true(is.na(fit$pareto_k_is_ess))
+    # rho_car lives on the (0, 1) support its block declares and the proposal
+    # unconstrains it on the logit, so the k-hat is scored rather than declined.
+    expect_true(is.finite(fit$pareto_k))
+    expect_true(is.na(fit$pareto_k_declined %||% NA_character_))
     expect_gt(length(fit$weights), 1L)
 })
 

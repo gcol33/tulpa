@@ -132,7 +132,7 @@ engages when the field is left \code{NULL}, when it is marked with
 than one the user chose), or when its nodes are exactly
 the engine's own default axis. Declines gracefully (keeps the fixed-grid
 fit) when another axis in the same grid has unguessable support
-(car_proper's \code{rho_car}); whichever way it declines,
+(a multi-output HSGP's cross-output \code{rho}); whichever way it declines,
 \code{outer_grid_recenter_declined} says which (see below).
 
 On the list-of-blocks path an \code{icar}, \code{bym2}, \code{car_proper} or \code{nngp}
@@ -627,8 +627,8 @@ precision). It declines back to the dense tensor on a diffuse posterior
 (kept region would rival the tensor) or a degenerate lattice, so it never
 costs accuracy; tune it with \code{adaptive_grid_cutoff} / \code{adaptive_grid_stride}
 / \code{adaptive_grid_max_frac}. The CCD auto-falls back to the tensor grid for
-an axis whose support is not safely transformable (a CAR_proper \code{rho_car}
-or a non-BYM2 \code{rho}), or a flat / ridged / degenerate outer mode-find or
+an axis whose support is not safely transformable (a multi-output HSGP's
+cross-output \code{rho}), or a flat / ridged / degenerate outer mode-find or
 Hessian; an active \code{phi_grid} rides as a tensor axis crossed on top of the
 CCD.
 Single-block joint priors always use the tensor grid. The CCD mode-find
@@ -782,7 +782,7 @@ heavy-tailed outer target, 0.57 at 500 draws and 7.94 at 50000
 hold the fraction and get a strictly sharper estimate of the same number;
 the \code{k_quality} escalation's draw rung does exactly that. The draws are
 RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
-axis whose support is not safely known (CAR_proper's \code{rho_car}) declines to
+axis whose support is not safely known (an hsgp_mo cross-output \code{rho}) declines to
 the quadrature-ESS fallback (\code{pareto_k = NA}). \code{FALSE} skips the diagnostic.
 \code{"by_arm"} additionally computes a k-hat restricted to each arm's
 hyperparameter axes (the other arms held at their posterior mean), reported
@@ -1050,7 +1050,7 @@ the fit should escalate to an exact debias.
 \item \code{pareto_k_declined} -- when \code{pareto_k} is \code{NA}, WHY:
 \code{"not_requested"} (\code{control$diagnose_k = FALSE}; nothing is wrong),
 \code{"unguessable_axis: <axis>"} (a support the engine will not guess, e.g.
-car_proper's \code{rho_car} -- a PERMANENT limitation of that family, so read
+a multi-output HSGP's cross-output \code{rho} -- a PERMANENT limitation of that family, so read
 the quadrature ESS instead), \code{"draws_too_few"}, \code{"grid_too_small"},
 \code{"no_varying_axis"}, \code{"degenerate_proposal"} (the outer mode curvature
 came back non-finite -- a signal about the fit), \code{"not_applicable"}, or
@@ -1241,8 +1241,8 @@ construction off it, so a caller who asked for a moment rule and
 received a density grid reads the reason here rather than inferring it.
 \code{integration_declined} is \code{NA_character_} when nothing was declined, and
 otherwise one of \code{"axis_count"} (fewer transformable latent axes than the
-requested mode's threshold), \code{"unguessable_axis"} (a CAR_proper
-\code{rho_car} or a non-BYM2 \code{rho}), \code{"degenerate_axis"} (a single-valued
+requested mode's threshold), \code{"unguessable_axis"} (a multi-output
+HSGP's cross-output \code{rho}), \code{"degenerate_axis"} (a single-valued
 axis), \code{"modefind_ridge"} / \code{"modefind_boundary"} /
 \code{"modefind_degenerate"} / \code{"modefind_failed"}, \code{"hessian_singular"},
 \code{"hessian_not_pd"}, \code{"copy_atom_components"} (more copy atoms than the

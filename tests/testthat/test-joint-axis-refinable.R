@@ -376,7 +376,7 @@ test_that("a field SD's refinement mode follows who wrote its nodes", {
 
 test_that("control$axis_refine is validated against the fit's own axes", {
     skip_on_cran_budget()
-    axes <- c("sigma", "alpha", "phi_y", "rho_car")
+    axes <- c("sigma", "alpha", "phi_y", "b2.L21")
 
     expect_null(tulpa:::.joint_check_axis_refine(NULL, axes))
     expect_equal(tulpa:::.joint_check_axis_refine(c(alpha = "none"), axes),
@@ -395,10 +395,12 @@ test_that("control$axis_refine is validated against the fit's own axes", {
                  "does not have")
     # Asking for nodes on an axis this driver never places any on is an error,
     # not a silent no-op that leaves the caller believing it took effect.
-    expect_error(tulpa:::.joint_check_axis_refine(c(rho_car = "extend"), axes),
+    # A free-covariance block's log-Cholesky column takes levels only on a
+    # declared tensor design, which this fit carries none of.
+    expect_error(tulpa:::.joint_check_axis_refine(c(b2.L21 = "extend"), axes),
                  "only \"none\"")
-    expect_equal(tulpa:::.joint_check_axis_refine(c(rho_car = "none"), axes),
-                 c(rho_car = "none"))
+    expect_equal(tulpa:::.joint_check_axis_refine(c(b2.L21 = "none"), axes),
+                 c(b2.L21 = "none"))
     expect_equal(tulpa:::.joint_check_axis_refine(c(sigma = "densify"), axes),
                  c(sigma = "densify"))
     expect_error(tulpa:::.joint_check_axis_refine(c("none", "extend"), axes),
@@ -472,10 +474,12 @@ test_that("a multi-block axis is eligible by its bare name, a dispersion by its 
     expect_true(all(vapply(c("b1.phi_gp", "b1.sigma2", "b1.lengthscale",
                              "b1.range"), elig, logical(1))))
     expect_false(tulpa:::.axis_is_dispersion("b1.phi_gp"))
-    # A field's `rho` takes points on the coordinate its mode is tagged with; a
-    # proper-CAR `rho_car` has no such coordinate.
-    expect_true(all(vapply(c("b1.rho", "rho"), elig, logical(1))))
-    expect_false(elig("b2.rho_car"))
+    # A field's `rho` or proper-CAR `rho_car` takes points on the coordinate
+    # its mode is tagged with; a log-Cholesky column without a declared tensor
+    # design takes none.
+    expect_true(all(vapply(c("b1.rho", "rho", "b2.rho_car", "rho_car"), elig,
+                           logical(1))))
+    expect_false(elig("b2.L21"))
 })
 
 test_that("a multi-block axis's refinement mode follows who wrote its nodes", {

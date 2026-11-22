@@ -39,7 +39,7 @@
 #                          defined on (multi-block or multi-axis on the single
 #                          positive-scale-axis path, a bounded grid field).
 #   unguessable_axis       an axis whose support is not safely known
-#                          (car_proper's rho_car). A PERMANENT limitation of
+#                          (an hsgp_mo cross-output rho). A PERMANENT limitation of
 #                          that family: read the quadrature ESS instead.
 #   draws_too_few          the requested importance-draw budget is below the
 #                          GPD-fit floor (.PSIS_MIN_EVAL), or too few draws
@@ -77,7 +77,7 @@
 .k_is_decline <- function(x) inherits(x, "tulpa_k_decline")
 
 # Reason string for `res$pareto_k_declined`, with the detail appended when there
-# is one ("unguessable_axis: rho_car" names the axis that can never be scored).
+# is one ("unguessable_axis: b1.rho" names the axis that can never be scored).
 .k_decline_label <- function(x) {
     if (!.k_is_decline(x)) return(NA_character_)
     if (is.null(x$detail) || !length(x$detail)) return(x$declined)

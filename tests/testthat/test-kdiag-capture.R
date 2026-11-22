@@ -163,9 +163,12 @@ test_that("a declining joint fit publishes nothing rather than stale ratios", {
     skip_on_cran_budget()
     # An unguessable axis is a permanent decline: with no reported k-hat there
     # are no ratios to publish, and an empty aperture is the honest state.
-    res <- list(theta_grid = matrix(c(0.5, 1.0, 0.8, 0.9), ncol = 2,
-                                    dimnames = list(NULL, c("sigma", "rho_car"))),
-                weights = c(0.5, 0.5), prior = list(type = "car_proper"))
+    res <- list(theta_grid = matrix(c(0.5, 1.0, 0.6, 0.9, 0.1, 0.4, 0.3, 0.3),
+                                    ncol = 4L,
+                                    dimnames = list(NULL, c("b1.sigma_1", "b1.sigma_2",
+                                                            "b1.rho", "b1.ell"))),
+                weights = c(0.5, 0.5), axis_offsets = c(0L, 4L),
+                blocks = list(list(type = "hsgp_mo")))
     k <- .kcap_run(function()
         tulpa:::.joint_pareto_k(res, function(tm) rep(0, nrow(tm)), n_samples = 200L))
     expect_true(is.na(k$value$pareto_k))

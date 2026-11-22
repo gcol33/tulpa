@@ -356,8 +356,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # mixing weight whose top node is 0.95 got an upper edge of 1.0353 and the fit
 # reported a 97.5% bound ABOVE 1 for a quantity that lives in (0, 1) and is
 # singular at both ends. The guess is kept as the fallback for an axis whose
-# support the registry will not name (`car_proper`'s `rho_car` on the adjacency
-# eigenvalue interval): a guessed edge is what that case had, and inventing a
+# support the registry will not name (an hsgp_mo cross-output `rho`): a guessed edge is what that case had, and inventing a
 # support for it would be worse than the edge it has.
 #
 # A DECLARED SUPPORT IS NOT OVERRULED BY THE GUESS. The guess
@@ -412,8 +411,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # axis's real support would not have -- an undeclared all-positive axis whose log
 # mirror underflows to exactly 0 keeps that 0. That is the same boundary from
 # the other side: with no declaration there is no support to measure the edge
-# against, and inventing one is what the engine refuses to do for
-# `car_proper`'s `rho_car`.
+# against, and inventing one is what the engine refuses to do for an hsgp_mo
+# cross-output `rho`.
 #
 # The invariant that leaves is the one worth asserting: whenever every
 # coordinate is inside a declared domain, both edges are finite and inside it

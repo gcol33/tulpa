@@ -462,9 +462,10 @@
 # dispersion only when no block prefix is present: `b1.phi_gp` is a block's own
 # lengthscale. The field SD is `sigma` on a field-SD parameterisation and `tau`
 # on a precision one, and the two are one axis under `tau = 1 / sigma^2`. A
-# field's `rho` (a BYM2 mixing weight, an AR(1) autocorrelation) takes the
-# passes' points on the coordinate its mode is tagged with, logit or atanh,
-# which keeps every point inside its open interval.
+# field's `rho` (a BYM2 mixing weight, an AR(1) autocorrelation) or `rho_car`
+# (a proper-CAR correlation) takes the passes' points on the coordinate its
+# mode is tagged with, logit or atanh, which keeps every point inside its open
+# interval.
 .JOINT_FIELD_SD_AXES <- c("sigma", "tau")
 # Positive-scale axes integrated on the log scale (theta = exp(u), Jacobian
 # d theta / d u = theta, log-Jacobian u). Per-arm dispersion axes carry the
@@ -472,7 +473,7 @@
 .JOINT_POS_AXES <- c("sigma", "tau", "sigma2", "phi_gp", "ell", "lengthscale",
                      "range", "sigma_spatial", "sigma_occ", "sigma_pos",
                      "sigma_1", "sigma_2")
-.JOINT_REFINABLE_BLOCK_AXES <- c(.JOINT_POS_AXES, "alpha", "rho")
+.JOINT_REFINABLE_BLOCK_AXES <- c(.JOINT_POS_AXES, "alpha", "rho", "rho_car")
 
 #
 # The registry door refines its field SD axes only
@@ -537,8 +538,8 @@
                                       .nl_auto_fields_at(grid_auto),
                                       type = ".joint_areal")))
     }
-    if (identical(axis, "rho")) {
-        return(!is.null(.nl_axis_hold(prior, "rho_grid",
+    if (axis %in% c("rho", "rho_car")) {
+        return(!is.null(.nl_axis_hold(prior, paste0(axis, "_grid"),
                                       .nl_auto_fields_at(grid_auto),
                                       type = tolower(prior$type %||% ""))))
     }

@@ -204,7 +204,8 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     "car_proper:rho" = block$rho_bounds %||% .nl_grid_par("car_rho", "bounds"),
     "hsgp_mo:rho"    = c(-1, 1),
     "ar1:rho"        = c(-1, 1),
-    if (identical(bare, "rho_car")) .nl_grid_par("car_rho", "bounds"))
+    if (identical(bare, "rho_car"))
+      block$rho_bounds %||% .nl_grid_par("car_rho", "bounds"))
   if (is.null(b)) NULL else as.numeric(b)[1:2]
 }
 

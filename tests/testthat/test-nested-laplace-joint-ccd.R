@@ -162,7 +162,7 @@ test_that("CCD matches a fine tensor grid in the tighter-posterior regime", {
     expect_lt(rel("b1.rho"),   0.30)
 })
 
-test_that("CCD declines to the tensor grid on an unguessable axis (CAR_proper)", {
+test_that("a proper-CAR copy grid takes a CCD on its logit correlation", {
     skip_on_cran()
     sim <- .sim_joint_ccd(99L, N = 800L, n_s = 40L)
     sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
@@ -177,10 +177,11 @@ test_that("CCD declines to the tensor grid on an unguessable axis (CAR_proper)",
         copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
         control = list(integration = "ccd", diagnose_k = FALSE,
                        var_of_means_consistency = FALSE))
-    # rho_car support is the adjacency eigenvalue interval -> not safely
-    # transformable -> CCD declines, tensor grid runs (2 * 3 * 2 = 12 cells).
-    expect_identical(fit$integration, "grid")
-    expect_equal(length(fit$log_marginal), 12L)
+    # rho_car lives on the (0, 1) support its block declares and is laid on
+    # its logit, so a CCD the caller asked for is not declined on it.
+    expect_false(identical(fit$integration_declined, "unguessable_axis"))
+    rho <- fit$theta_grid[, "b1.rho_car"]
+    expect_true(all(rho > 0 & rho < 1))
 })
 
 test_that("CCD declines for <= 2 transformable axes (single ICAR copy)", {
@@ -332,29 +333,6 @@ test_that("a tensor grid nobody asked to replace records no decline", {
     expect_identical(fit$integration, "grid")
     expect_identical(fit$integration_requested, "grid")
     expect_true(is.na(fit$integration_declined))
-})
-
-test_that("an unguessable axis records why the CCD declined", {
-    skip_on_cran()
-    sim <- .sim_joint_ccd(99L, N = 800L, n_s = 40L)
-    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
-    car <- list(type = "car_proper", spatial_idx = sp,
-                n_spatial_units = sim$adj$n_spatial_units,
-                adj_row_ptr = sim$adj$adj_row_ptr,
-                adj_col_idx = sim$adj$adj_col_idx,
-                n_neighbors = sim$adj$n_neighbors,
-                sigma_grid = c(0.5, 1.0), rho_car_grid = c(0.5, 0.9))
-    fit <- tulpa_nested_laplace_joint(
-        sim$responses, list(car),
-        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
-        control = list(integration = "ccd", diagnose_k = FALSE,
-                       var_of_means_consistency = FALSE))
-    # The decline fired: 3 axes were requested as a CCD and a tensor grid ran.
-    expect_identical(fit$integration_requested, "ccd")
-    expect_false(identical(fit$integration, "ccd"))
-    # rho_car's support is the adjacency eigenvalue interval, the one axis the
-    # transform registry will not guess.
-    expect_identical(fit$integration_declined, "unguessable_axis")
 })
 
 test_that("a CCD below its axis threshold records the axis count", {

@@ -61,7 +61,7 @@
                               type = ".joint_areal"),
             fires = function(res, s) .nl_axis_railed(res, "sigma"),
             write = function(st, s, nodes) {
-                st$prior$sigma_grid <- nodes
+                st$prior$sigma_grid <- auto_grid(nodes)
                 st
             }),
         copy_sigma = field_sd(
@@ -80,7 +80,7 @@
                               .nl_auto_fields_at(auto, s$block), type = ".copy"),
             fires = function(res, s) .nl_axis_placement_fires(res, s$label, "log"),
             write = function(st, s, nodes) {
-                st$prior[[s$block]]$sigma_grid <- nodes
+                st$prior[[s$block]]$sigma_grid <- auto_grid(nodes)
                 st
             }),
         phi = list(
@@ -107,12 +107,12 @@
             slots = function(res, st) .joint_mixing_slots(res, st),
             hold = function(s, st)
                 .nl_axis_hold(if (is.null(s$block)) st$prior else st$prior[[s$block]],
-                              "rho_grid", .nl_auto_fields_at(auto, s$block),
-                              type = "bym2"),
-            fires = function(res, s) .nl_axis_placement_fires(res, s$label, "logit01"),
+                              s$field, .nl_auto_fields_at(auto, s$block),
+                              type = s$type),
+            fires = function(res, s) .nl_axis_placement_fires(res, s$label, s$tag),
             write = function(st, s, nodes) {
-                if (is.null(s$block)) st$prior$rho_grid <- nodes
-                else st$prior[[s$block]]$rho_grid <- nodes
+                if (is.null(s$block)) st$prior[[s$field]] <- auto_grid(nodes)
+                else st$prior[[s$block]][[s$field]] <- auto_grid(nodes)
                 st
             },
             together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
@@ -221,34 +221,38 @@
     st
 }
 
-# --- a BYM2 field's mixing weight --------------------------------------------
+# --- a field's correlation on (0, 1) -----------------------------------------
 #
-# The BYM2 mixing weight `rho` lives on (0, 1) and is placed on its logit, the
-# coordinate the mode-find tags it with (`logit01`), from the same outer mode as
-# the field's SD. A default rho axis is a fixed ladder graded towards 1, so a
-# posterior reaching below its lowest node is cut at that node's box edge until
-# the axis is laid where the mode-find found it. Single-block the axis is `rho`;
-# multi-block a copied BYM2 block's `b<k>.rho`, whose copy grid crosses each
-# axis it carries. A non-copy block's `b<k>.rho` is one of its registry axes,
-# paired with its SD, and the `field` family re-crosses the two.
+# A BYM2 mixing weight `rho` and a proper-CAR correlation `rho_car` live on
+# (0, 1) and are placed on their logit, the coordinate the transform registry
+# tags them with, from the same outer mode as the field's SD. A default axis is
+# a fixed ladder graded towards 1, so a posterior reaching below its lowest
+# node is cut at that node's box edge until the axis is laid where the
+# mode-find found it. Single-block the axis is the field's own; multi-block it
+# is a copied block's (`b<k>.rho`, `b<k>.rho_car`), whose copy grid crosses
+# each axis it carries. A non-copy block's correlation is one of its registry
+# axes, paired with its SD, and the `field` family re-crosses the two. A
+# correlation whose block declares a support the registry gives no coordinate
+# on is not placed.
+.JOINT_MIXING_AXES <- c(bym2 = "rho", car_proper = "rho_car")
+
 .joint_mixing_slots <- function(res, st) {
     cn <- colnames(res$theta_grid) %||% character(0)
+    slot <- function(blk, b, label) {
+        type <- tolower(blk$type %||% "")
+        axis <- .JOINT_MIXING_AXES[type]
+        if (is.na(axis) || !label(axis) %in% cn) return(NULL)
+        tag <- .joint_pareto_block_tags(type, axis, blk)
+        if (is.na(tag)) return(NULL)
+        list(label = label(axis), axis = unname(axis), block = b, type = type,
+             field = paste0(axis, "_grid"), tag = unname(tag),
+             ref = .joint_declared_axis_ref(label(axis)))
+    }
     if (!.is_multi_block_prior(st$prior)) {
-        if (!identical(tolower(st$prior$type %||% ""), "bym2") || !"rho" %in% cn) {
-            return(list())
-        }
-        return(list(list(label = "rho", axis = "rho", block = NULL,
-                         ref = .joint_declared_axis_ref("rho"))))
+        return(Filter(Negate(is.null), list(slot(st$prior, NULL, identity))))
     }
-    out <- list()
-    for (b in .joint_copied_blocks(st)) {
-        lbl <- .axis_label(b, "rho")
-        if (!identical(tolower(st$prior[[b]]$type %||% ""), "bym2") ||
-            !lbl %in% cn) next
-        out[[length(out) + 1L]] <- list(label = lbl, axis = "rho", block = b,
-                                        ref = .joint_declared_axis_ref(lbl))
-    }
-    out
+    Filter(Negate(is.null), lapply(.joint_copied_blocks(st), function(b)
+        slot(st$prior[[b]], b, function(a) .axis_label(b, a))))
 }
 
 # --- a block's registry field axes ------------------------------------------
@@ -506,21 +510,32 @@
     out
 }
 
-# The BYM2 mixing weights the pass may move (`.joint_mixing_slots()`), named as
-# the grid names them: `rho` on a single-block BYM2 prior, `b<k>.rho` for every
-# BYM2 block of a multi-block one, each unless the caller stated its nodes.
+# The (0, 1) correlations the pass may move, named as the grid names them: the
+# field's own (`rho` on a BYM2, `rho_car` on a proper-CAR single-block prior),
+# `b<k>.rho` for every BYM2 block of a multi-block one and `b<k>.rho_car` for a
+# copied proper-CAR block, each unless the caller stated its nodes.
 .joint_movable_mixing_axes <- function(st, auto = logical(0)) {
-    movable <- function(blk, b) {
-        identical(tolower(blk$type %||% ""), "bym2") &&
-            is.null(.nl_axis_hold(blk, "rho_grid", .nl_auto_fields_at(auto, b),
-                                  type = "bym2"))
+    axis_of <- function(blk, copied) {
+        type <- tolower(blk$type %||% "")
+        if (identical(type, "car_proper") && !copied) return(NA_character_)
+        unname(.JOINT_MIXING_AXES[type])
+    }
+    movable <- function(blk, b, a) {
+        !is.na(a) && is.null(.nl_axis_hold(blk, paste0(a, "_grid"),
+                                           .nl_auto_fields_at(auto, b),
+                                           type = tolower(blk$type)))
     }
     if (!.is_multi_block_prior(st$prior)) {
-        return(if (movable(st$prior, NULL)) "rho" else character(0))
+        a <- axis_of(st$prior, TRUE)
+        return(if (movable(st$prior, NULL, a)) a else character(0))
     }
-    b <- which(vapply(seq_along(st$prior), function(b)
-        movable(st$prior[[b]], b), logical(1)))
-    .axis_label(b, "rho")
+    copied <- .joint_copied_blocks(st)
+    out <- character(0)
+    for (b in seq_along(st$prior)) {
+        a <- axis_of(st$prior[[b]], b %in% copied)
+        if (movable(st$prior[[b]], b, a)) out <- c(out, .axis_label(b, a))
+    }
+    out
 }
 
 # --- the pass ----------------------------------------------------------------

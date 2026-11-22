@@ -211,6 +211,34 @@ test_that("hsgp_mo H pattern: M independent K x K precision blocks (K = 2)", {
 })
 
 # --------------------------------------------------------------------------- #
+# The cross-output correlation is an axis the transform registry declines     #
+# --------------------------------------------------------------------------- #
+
+test_that("an hsgp_mo cross-output rho declines the CCD and the outer k-hat", {
+    # `rho` here is the correlation of the two outputs' coefficients, which the
+    # registry gives no proposal coordinate, so a CCD the caller asked for
+    # falls back to the tensor and the k-hat is declined naming the axis.
+    sim <- .sim_two_arm_mo(seed = 31L, sigma_1 = 0.8, sigma_2 = 0.8,
+                            rho = 0.3, ell = 0.5)
+    gr <- expand.grid(s1 = c(0.5, 1.0), s2 = c(0.5, 1.0), rh = c(0.0, 0.4),
+                      ls = 0.4, KEEP.OUT.ATTRS = FALSE)
+    block <- .mo_block(sim, gr$s1, gr$s2, gr$rh, gr$ls)
+    expect_true(is.na(tulpa:::.joint_pareto_block_tags("hsgp_mo", "rho", block)))
+    fit <- tulpa_nested_laplace_joint(
+        responses = sim$responses, prior = list(block), copy = NULL,
+        control = list(integration = "ccd", max_iter = 40L, tol = 1e-7,
+                       n_threads = 1L, verbose = FALSE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit$integration_requested, "ccd")
+    expect_false(identical(fit$integration, "ccd"))
+    expect_identical(fit$integration_declined, "unguessable_axis")
+    expect_equal(length(fit$log_marginal), nrow(gr))
+    expect_true(is.na(fit$pareto_k))
+    expect_match(fit$pareto_k_declined, "^unguessable_axis: b1\\.rho")
+    expect_true(tulpa:::.k_decline_is_permanent(fit$pareto_k_declined))
+})
+
+# --------------------------------------------------------------------------- #
 # (3) Independence reduction: rho_grid = 0 sanity check                        #
 # --------------------------------------------------------------------------- #
 
