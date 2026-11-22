@@ -10,8 +10,8 @@
 # 1 + 2d + 2^d nodes around the joint hyperparameter posterior mode, oriented by
 # the Cholesky of its posterior covariance, and integrates with the corrected
 # R-INLA design weights -- the same ccd_grid() / ccd_weights() machinery the
-# SPDE (fit_spde_nested.R) and RE-covariance (nested_laplace_re_cov.R) paths
-# use, here generalised to the joint path's mixed-support axes via the per-axis
+# hyperparameter grid (hyper_ccd.R) and RE-covariance (nested_laplace_re_cov.R)
+# paths use, here generalised to the joint path's mixed-support axes via the per-axis
 # unconstraining transforms already defined for the outer Pareto-k diagnostic
 # (nested_laplace_joint_pareto_k.R). For d = 4 that is 25 nodes vs 81 tensor
 # cells; the gap widens with d.

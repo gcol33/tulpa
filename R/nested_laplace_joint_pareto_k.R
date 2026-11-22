@@ -3,8 +3,8 @@
 # Part of the joint nested-Laplace driver; the public entry point
 # tulpa_nested_laplace_joint() lives in nested_laplace_joint.R.
 #
-# The re-cov / generic-single-axis / SPDE paths importance-sample a single
-# positive-scale axis on the log scale (see R/psis.R, R/fit_spde_nested.R).
+# The re-cov and generic single-axis paths importance-sample a single
+# positive-scale axis on the log scale (see R/psis.R).
 # The joint backend's hyperparameter space is heterogeneous -- positive
 # scales (sigma, tau, phi_*, ...), a bounded BYM2 mixing weight (rho), an
 # unbounded copy coefficient (alpha), and a CAR_proper correlation
