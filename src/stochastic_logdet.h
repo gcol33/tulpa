@@ -13,6 +13,7 @@
 #define TULPA_STOCHASTIC_LOGDET_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -33,37 +34,37 @@ inline void validate_csc_lower(
     int n
 ) {
     if (n < 0) {
-        Rcpp::stop("stochastic_log_determinant: n (%d) must be non-negative.", n);
+        tulpa::stop("stochastic_log_determinant: n (%d) must be non-negative.", {n});
     }
     if (static_cast<int>(col_ptr.size()) != n + 1) {
-        Rcpp::stop("stochastic_log_determinant: length(Q_p) (%d) must be n + 1 "
-                   "(%d).", static_cast<int>(col_ptr.size()), n + 1);
+        tulpa::stop("stochastic_log_determinant: length(Q_p) (%d) must be n + 1 "
+                   "(%d).", {static_cast<int>(col_ptr.size()), n + 1});
     }
     if (row_idx.size() != values.size()) {
-        Rcpp::stop("stochastic_log_determinant: length(Q_i) (%d) must equal "
-                   "length(Q_x) (%d).", static_cast<int>(row_idx.size()),
-                   static_cast<int>(values.size()));
+        tulpa::stop("stochastic_log_determinant: length(Q_i) (%d) must equal "
+                   "length(Q_x) (%d).", {static_cast<int>(row_idx.size()),
+                   static_cast<int>(values.size())});
     }
     if (col_ptr[0] != 0) {
-        Rcpp::stop("stochastic_log_determinant: Q_p[0] (%d) must be 0.",
-                   col_ptr[0]);
+        tulpa::stop("stochastic_log_determinant: Q_p[0] (%d) must be 0.",
+                   {col_ptr[0]});
     }
     if (col_ptr[n] != static_cast<int>(values.size())) {
-        Rcpp::stop("stochastic_log_determinant: Q_p[n] (%d) must equal "
-                   "length(Q_x) (%d).", col_ptr[n],
-                   static_cast<int>(values.size()));
+        tulpa::stop("stochastic_log_determinant: Q_p[n] (%d) must equal "
+                   "length(Q_x) (%d).", {col_ptr[n],
+                   static_cast<int>(values.size())});
     }
     for (int col = 0; col < n; col++) {
         if (col_ptr[col + 1] < col_ptr[col]) {
-            Rcpp::stop("stochastic_log_determinant: Q_p is not non-decreasing "
-                       "at column %d (%d then %d).", col + 1, col_ptr[col],
-                       col_ptr[col + 1]);
+            tulpa::stop("stochastic_log_determinant: Q_p is not non-decreasing "
+                       "at column %d (%d then %d).", {col + 1, col_ptr[col],
+                       col_ptr[col + 1]});
         }
     }
     for (std::size_t k = 0; k < row_idx.size(); k++) {
         if (row_idx[k] < 0 || row_idx[k] >= n) {
-            Rcpp::stop("stochastic_log_determinant: Q_i[%d] (%d) is outside "
-                       "[0, %d).", static_cast<int>(k), row_idx[k], n);
+            tulpa::stop("stochastic_log_determinant: Q_i[%d] (%d) is outside "
+                       "[0, %d).", {static_cast<int>(k), row_idx[k], n});
         }
     }
 }
@@ -293,7 +294,7 @@ inline double stochastic_log_determinant(
         // is unit norm. The per-probe contribution to log|H| is n times this.
         std::vector<double> theta, first_comp;
         if (!tridiag_eig_first_component(alpha, beta, m_eff, theta, first_comp)) {
-            Rcpp::stop("stochastic_log_determinant: tridiagonal eigensolve failed to converge");
+            tulpa::stop("stochastic_log_determinant: tridiagonal eigensolve failed to converge");
         }
 
         double quad = 0.0;
@@ -305,7 +306,7 @@ inline double stochastic_log_determinant(
             // WEIGHTED non-positive one does.
             if (tau == 0.0) continue;
             if (lam <= 0.0) {
-                Rcpp::stop("stochastic_log_determinant: non-positive Ritz value; matrix is not positive definite");
+                tulpa::stop("stochastic_log_determinant: non-positive Ritz value; matrix is not positive definite");
             }
             quad += tau * std::log(lam);
         }

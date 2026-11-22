@@ -17,6 +17,7 @@
 #define TULPA_AGHQ_RE_CORE_H
 
 #include "tulpa/aghq_oracle.h"
+#include "tulpa_stop.h"
 #include "aghq_re_mode.h"
 #include "tulpa/gauss_hermite.h"
 #include "re_cov_chol.h"
@@ -75,15 +76,15 @@ inline std::vector<int> aghq_nq_per_axis(const std::vector<ReCovBlock>& blocks,
                                          const std::vector<int>& nq_block) {
     const bool broadcast = (nq_block.size() == 1);
     if (!broadcast && nq_block.size() != blocks.size())
-        Rcpp::stop("n_quad has length %d: it must be length 1 or one entry per "
+        tulpa::stop("n_quad has length %d: it must be length 1 or one entry per "
                    "covariance block (%d).",
-                   (int)nq_block.size(), (int)blocks.size());
+                   {(int)nq_block.size(), (int)blocks.size()});
     std::vector<int> per_axis;
     for (size_t mi = 0; mi < blocks.size(); ++mi) {
         const int q = broadcast ? nq_block[0] : nq_block[mi];
         if (q < 1)
-            Rcpp::stop("n_quad must be >= 1 on every covariance block; block %d "
-                       "requested %d.", (int)mi + 1, q);
+            tulpa::stop("n_quad must be >= 1 on every covariance block; block %d "
+                       "requested %d.", {(int)mi + 1, q});
         for (int c = 0; c < blocks[mi].nc; ++c) per_axis.push_back(q);
     }
     return per_axis;
@@ -110,10 +111,10 @@ inline AghqGrid aghq_build_grid(const std::vector<int>& nq_per_axis) {
             std::string counts;
             for (int j = 0; j < d; ++j)
                 counts += (j ? " x " : "") + std::to_string(nq_per_axis[j]);
-            Rcpp::stop("AGHQ tensor grid over %d axes (%s) exceeds the %s-node "
+            tulpa::stop("AGHQ tensor grid over %d axes (%s) exceeds the %s-node "
                        "limit. Lower n_quad, or split the covariance blocks.",
-                       d, counts.c_str(),
-                       std::to_string(AGHQ_MAX_GRID_NODES).c_str());
+                       {d, counts.c_str(),
+                       std::to_string(AGHQ_MAX_GRID_NODES).c_str()});
         }
         auto it = rules.find(nq);
         if (it == rules.end()) it = rules.emplace(nq, gauss_hermite_prob(nq)).first;

@@ -6,6 +6,7 @@
 #define TULPA_VI_TYPES_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <tulpa/vi_variant.h>
 #include <vector>
 #include <cmath>
@@ -72,10 +73,10 @@ struct VIConfig {
 // validates here so no path can substitute a value for a loop that never ran.
 inline void validate_vi_config(const VIConfig& config) {
   if (config.max_iter < 1) {
-    Rcpp::stop("VI max_iter must be at least 1 (got %d).", config.max_iter);
+    tulpa::stop("VI max_iter must be at least 1 (got %d).", {config.max_iter});
   }
   if (config.mc_samples < 1) {
-    Rcpp::stop("VI mc_samples must be at least 1 (got %d).", config.mc_samples);
+    tulpa::stop("VI mc_samples must be at least 1 (got %d).", {config.mc_samples});
   }
 }
 
@@ -161,8 +162,8 @@ inline VIVariant select_variant(int D, const VIConfig& config) {
 inline int select_rank(int D, const VIConfig& config) {
   if (config.rank > 0) {
     if (config.rank > D) {
-      Rcpp::stop("VI rank %d exceeds the parameter dimension %d; a low-rank "
-                 "factor needs at most D columns.", config.rank, D);
+      tulpa::stop("VI rank %d exceeds the parameter dimension %d; a low-rank "
+                 "factor needs at most D columns.", {config.rank, D});
     }
     return config.rank;
   }

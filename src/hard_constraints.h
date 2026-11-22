@@ -67,6 +67,7 @@
 #define TULPA_HARD_CONSTRAINTS_H
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "inv_block_extract.h"
 #include "latent_block.h"
 #include "laplace_newton_loop.h"   // finalize_log_marginal
@@ -247,7 +248,7 @@ struct HardConstraintState {
                        std::copy(in, in + static_cast<std::size_t>(nx) * ncol, out);
                    }, n_x);
         if (!gram.usable) {
-            Rcpp::stop("The hard linear constraints of the latent blocks are "
+            tulpa::stop("The hard linear constraints of the latent blocks are "
                        "linearly dependent (A A' is singular); each block has "
                        "to declare an independent set.");
         }

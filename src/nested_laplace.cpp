@@ -22,6 +22,7 @@
 // nested_laplace_grid.h.
 
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
+#include "tulpa_stop.h"
 #include "laplace_core.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
@@ -505,9 +506,9 @@ Rcpp::List cpp_nested_laplace_nngp(
     const int N = y.size();
     const int p = X.ncol();
     if (spatial_idx.size() != N)
-        Rcpp::stop("length(spatial_idx) must equal length(y)");
+        tulpa::stop("length(spatial_idx) must equal length(y)");
     if (coords.nrow() != n_spatial)
-        Rcpp::stop("nrow(coords) must equal n_spatial");
+        tulpa::stop("nrow(coords) must equal n_spatial");
 
     // ---- Single-arm joint setup ----
     // Layout: [beta (p), re (n_re_groups), w_nngp (n_spatial)]. NNGP is
@@ -598,9 +599,9 @@ Rcpp::List cpp_nested_laplace_hsgp(
     const int p = X.ncol();
     const int M = phi_basis.ncol();
     if (phi_basis.nrow() != N)
-        Rcpp::stop("phi_basis must have N rows (one per observation)");
+        tulpa::stop("phi_basis must have N rows (one per observation)");
     if (lambda_eig.size() != M)
-        Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
+        tulpa::stop("lambda_eig must have length ncol(phi_basis)");
 
     // ---- Single-arm joint setup ----
     // Layout: [beta (p), re (n_re_groups), beta_gp (M)]. The HSGP block is
@@ -673,9 +674,9 @@ Rcpp::List cpp_laplace_fit_hsgp(
     const int p = X.ncol();
     const int M = phi_basis.ncol();
     if (phi_basis.nrow() != N)
-        Rcpp::stop("phi_basis must have N rows (one per observation)");
+        tulpa::stop("phi_basis must have N rows (one per observation)");
     if (lambda_eig.size() != M)
-        Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
+        tulpa::stop("lambda_eig must have length ncol(phi_basis)");
     const bool has_re = n_re_groups > 0;
     std::vector<int> re_group =
         tulpa::as_re_group_vec(re_idx, n_re_groups, N);
@@ -775,7 +776,7 @@ inline tulpa::LatentBlock make_temporal_latent_block(
     // builds its block -- rather than at each of the six entries.
     tulpa::check_temporal_index(temporal_idx, n_obs, n_units, who);
     if (temporal_type == "ar1" && rho_grid.size() != tau_grid.size()) {
-        Rcpp::stop("ar1 temporal prior requires rho_temporal_grid of the "
+        tulpa::stop("ar1 temporal prior requires rho_temporal_grid of the "
                    "same length as tau_temporal_grid");
     }
     tulpa::LatentBlock block;
@@ -1210,9 +1211,9 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     int p = X.ncol();
     int M = phi_basis.ncol();
     if (phi_basis.nrow() != N)
-        Rcpp::stop("phi_basis must have N rows (one per observation)");
+        tulpa::stop("phi_basis must have N rows (one per observation)");
     if (lambda_eig.size() != M)
-        Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
+        tulpa::stop("lambda_eig must have length ncol(phi_basis)");
     int s_start = p + n_re_groups;
     // theta_grid for the HSGP block: (sigma2, lengthscale), matching the
     // pure-spatial HSGP entry.
@@ -1299,9 +1300,9 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     int N = y.size();
     int p = X.ncol();
     if (spatial_idx.size() != N)
-        Rcpp::stop("length(spatial_idx) must equal length(y)");
+        tulpa::stop("length(spatial_idx) must equal length(y)");
     if (coords.nrow() != n_spatial)
-        Rcpp::stop("nrow(coords) must equal n_spatial");
+        tulpa::stop("nrow(coords) must equal n_spatial");
     int s_start = p + n_re_groups;
     // theta_grid for the NNGP block: (sigma2, phi_gp), matching the pure-spatial
     // NNGP entry (linear, not log).

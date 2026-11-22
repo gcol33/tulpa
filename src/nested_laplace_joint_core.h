@@ -12,6 +12,7 @@
 #define TULPA_NESTED_LAPLACE_JOINT_CORE_H
 
 #include "laplace_core.h"
+#include "tulpa_stop.h"
 #include "laplace_newton_joint.h"
 #include "laplace_re_priors.h"
 #include "sparse_hessian.h"
@@ -68,7 +69,7 @@ inline int parse_joint_arms(
     std::vector<JointArm>&  arms_out
 ) {
     int n_arms = arms_list.size();
-    if (n_arms < 1) Rcpp::stop("arms_list must contain at least one arm.");
+    if (n_arms < 1) tulpa::stop("arms_list must contain at least one arm.");
 
     parsed_out.assign(n_arms, ParsedArm{});
     arms_out.assign(n_arms,   JointArm{});
@@ -99,14 +100,14 @@ inline int parse_joint_arms(
             pa.beta_prior_mean =
                 Rcpp::as<Rcpp::NumericVector>(a["beta_prior_mean"]);
             if ((int)pa.beta_prior_mean.size() != pa.p) {
-                Rcpp::stop("Arm %d: length(beta_prior_mean) (%d) != p (%d).",
-                           k + 1, (int)pa.beta_prior_mean.size(), pa.p);
+                tulpa::stop("Arm %d: length(beta_prior_mean) (%d) != p (%d).",
+                           {k + 1, (int)pa.beta_prior_mean.size(), pa.p});
             }
             for (int j = 0; j < pa.p; j++) {
                 if (!R_finite(pa.beta_prior_mean[j])) {
-                    Rcpp::stop("Arm %d: beta_prior_mean[%d] is %g; a prior mean "
+                    tulpa::stop("Arm %d: beta_prior_mean[%d] is %g; a prior mean "
                                "must be finite.",
-                               k + 1, j + 1, pa.beta_prior_mean[j]);
+                               {k + 1, j + 1, pa.beta_prior_mean[j]});
                 }
             }
         }
@@ -114,8 +115,8 @@ inline int parse_joint_arms(
             pa.beta_prior_prec =
                 Rcpp::as<Rcpp::NumericVector>(a["beta_prior_prec"]);
             if ((int)pa.beta_prior_prec.size() != pa.p) {
-                Rcpp::stop("Arm %d: length(beta_prior_prec) (%d) != p (%d).",
-                           k + 1, (int)pa.beta_prior_prec.size(), pa.p);
+                tulpa::stop("Arm %d: length(beta_prior_prec) (%d) != p (%d).",
+                           {k + 1, (int)pa.beta_prior_prec.size(), pa.p});
             }
             // A precision is finite and strictly positive. Zero reads as "no
             // prior on this coefficient" to the gradient and the Hessian (both
@@ -128,11 +129,11 @@ inline int parse_joint_arms(
             for (int j = 0; j < pa.p; j++) {
                 const double prec = pa.beta_prior_prec[j];
                 if (!R_finite(prec) || prec <= 0.0) {
-                    Rcpp::stop("Arm %d: beta_prior_prec[%d] is %g; every entry "
+                    tulpa::stop("Arm %d: beta_prior_prec[%d] is %g; every entry "
                                "must be finite and strictly positive. Omit "
                                "`beta_prior_prec` on this arm to leave its "
                                "coefficients on the weak default ridge.",
-                               k + 1, j + 1, prec);
+                               {k + 1, j + 1, prec});
                 }
             }
         }
@@ -150,20 +151,20 @@ inline int parse_joint_arms(
         arms_out[k].N        = (int)arms_out[k].y.size();
         // Raw grouped responses preserve the relative residuals.
         if (a.containsElementNamed("slog_y") || a.containsElementNamed("slog_1my"))
-            Rcpp::stop("Arm %d: grouped beta requires raw responses in beta_y.", k+1);
+            tulpa::stop("Arm %d: grouped beta requires raw responses in beta_y.", {k+1});
         if (a.containsElementNamed("beta_y") && !Rf_isNull(a["beta_y"])) {
             const auto groups = Rcpp::as<std::vector<std::vector<double>>>(a["beta_y"]);
             if ((int)groups.size() != arms_out[k].N)
-                Rcpp::stop("Arm %d: length(beta_y) must equal length(y).", k+1);
+                tulpa::stop("Arm %d: length(beta_y) must equal length(y).", {k+1});
             for (int i = 0; i < arms_out[k].N; ++i) {
                 const auto& ys = groups[i];
                 if ((int)ys.size() != arms_out[k].n_trials[i] || ys.empty())
-                    Rcpp::stop("Arm %d: beta_y group sizes must equal n_trials.", k+1);
+                    tulpa::stop("Arm %d: beta_y group sizes must equal n_trials.", {k+1});
                 std::vector<BetaObservation> cache;
                 cache.reserve(ys.size());
                 for (double y : ys) {
                     if (!(y > 0 && y < 1))
-                        Rcpp::stop("Arm %d: beta_y responses must be in (0, 1).", k+1);
+                        tulpa::stop("Arm %d: beta_y responses must be in (0, 1).", {k+1});
                     cache.emplace_back(y);
                 }
                 arms_out[k].beta_y.push_back(std::move(cache));
@@ -177,8 +178,8 @@ inline int parse_joint_arms(
             arms_out[k].upper = Rcpp::as<Rcpp::NumericVector>(a["upper"]);
             if ((int)arms_out[k].lower.size() != arms_out[k].N ||
                 (int)arms_out[k].upper.size() != arms_out[k].N) {
-                Rcpp::stop("Arm %d: length(lower)/length(upper) must equal "
-                           "length(y) (%d).", k + 1, arms_out[k].N);
+                tulpa::stop("Arm %d: length(lower)/length(upper) must equal "
+                           "length(y) (%d).", {k + 1, arms_out[k].N});
             }
         }
         // Optional truncation bounds (truncated_gaussian; e.g. a truncated
@@ -189,15 +190,15 @@ inline int parse_joint_arms(
             if (!a.containsElementNamed(nm) || Rf_isNull(a[nm])) continue;
             Rcpp::NumericVector v = Rcpp::as<Rcpp::NumericVector>(a[nm]);
             if ((int)v.size() != arms_out[k].N) {
-                Rcpp::stop("Arm %d: length(%s) must equal length(y) (%d).",
-                           k + 1, nm, arms_out[k].N);
+                tulpa::stop("Arm %d: length(%s) must equal length(y) (%d).",
+                           {k + 1, nm, arms_out[k].N});
             }
             if (std::string(nm) == "trunc_lower") arms_out[k].trunc_lower = v;
             else                                  arms_out[k].trunc_upper = v;
         }
         if (pa.offset.size() != 0 && (int)pa.offset.size() != arms_out[k].N) {
-            Rcpp::stop("Arm %d: length(offset) (%d) != N (%d).",
-                       k + 1, (int)pa.offset.size(), arms_out[k].N);
+            tulpa::stop("Arm %d: length(offset) (%d) != N (%d).",
+                       {k + 1, (int)pa.offset.size(), arms_out[k].N});
         }
         // Per-arm field coefficient (default 1.0). R side parses the user-
         // facing `field_coef` into the resolved scalar `field_coef_const`
@@ -216,8 +217,8 @@ inline int parse_joint_arms(
                               : false;
         if (arms_out[k].coupled) {
             if (!a.containsElementNamed("cell_obs_map")) {
-                Rcpp::stop("Arm %d: coupled = TRUE requires `cell_obs_map`.",
-                           k + 1);
+                tulpa::stop("Arm %d: coupled = TRUE requires `cell_obs_map`.",
+                           {k + 1});
             }
             arms_out[k].cell_obs_map =
                 Rcpp::as<Rcpp::IntegerVector>(a["cell_obs_map"]);
@@ -225,25 +226,25 @@ inline int parse_joint_arms(
 
         int N_k = arms_out[k].N;
         if ((int)pa.X.nrow() != N_k) {
-            Rcpp::stop("Arm %d: nrow(X) (%d) != length(y) (%d).",
-                       k + 1, (int)pa.X.nrow(), N_k);
+            tulpa::stop("Arm %d: nrow(X) (%d) != length(y) (%d).",
+                       {k + 1, (int)pa.X.nrow(), N_k});
         }
         if ((int)arms_out[k].n_trials.size() != N_k) {
-            Rcpp::stop("Arm %d: length(n_trials) (%d) != length(y) (%d).",
-                       k + 1, (int)arms_out[k].n_trials.size(), N_k);
+            tulpa::stop("Arm %d: length(n_trials) (%d) != length(y) (%d).",
+                       {k + 1, (int)arms_out[k].n_trials.size(), N_k});
         }
         if ((int)pa.re_idx.size() != N_k) {
-            Rcpp::stop("Arm %d: length(re_idx) (%d) != length(y) (%d).",
-                       k + 1, (int)pa.re_idx.size(), N_k);
+            tulpa::stop("Arm %d: length(re_idx) (%d) != length(y) (%d).",
+                       {k + 1, (int)pa.re_idx.size(), N_k});
         }
         if ((int)pa.spatial_idx.size() != N_k) {
-            Rcpp::stop("Arm %d: length(spatial_idx) (%d) != length(y) (%d).",
-                       k + 1, (int)pa.spatial_idx.size(), N_k);
+            tulpa::stop("Arm %d: length(spatial_idx) (%d) != length(y) (%d).",
+                       {k + 1, (int)pa.spatial_idx.size(), N_k});
         }
         if (arms_out[k].coupled &&
             (int)arms_out[k].cell_obs_map.size() != N_k) {
-            Rcpp::stop("Arm %d: length(cell_obs_map) (%d) != length(y) (%d).",
-                       k + 1, (int)arms_out[k].cell_obs_map.size(), N_k);
+            tulpa::stop("Arm %d: length(cell_obs_map) (%d) != length(y) (%d).",
+                       {k + 1, (int)arms_out[k].cell_obs_map.size(), N_k});
         }
     }
     // Second pass: REs come after all betas.
@@ -438,7 +439,7 @@ inline ArmGridTable parse_arm_grid_table(
     if (per_arm.isNull()) return out;
     Rcpp::List lst(per_arm);
     if (static_cast<int>(lst.size()) != n_arms) {
-        Rcpp::stop("%s must have length n_arms (%d).", arg_name, n_arms);
+        tulpa::stop("%s must have length n_arms (%d).", {arg_name, n_arms});
     }
     for (int k = 0; k < n_arms; k++) {
         if (Rf_isNull(lst[k])) continue;
@@ -448,9 +449,9 @@ inline ArmGridTable parse_arm_grid_table(
             ? (Rf_nrows(v) == n_grid && Rf_ncols(v) == n_cols)
             : (n_cols == 1 && static_cast<int>(v.size()) == n_grid);
         if (!dims_ok) {
-            Rcpp::stop("%s[[%d]] must have length 0 or be [n_grid x %d] with "
+            tulpa::stop("%s[[%d]] must have length 0 or be [n_grid x %d] with "
                        "n_grid = %d (the flat outer-grid size).",
-                       arg_name, k + 1, n_cols, n_grid);
+                       {arg_name, k + 1, n_cols, n_grid});
         }
         std::vector<double>& dst = out.values[k];
         dst.resize(static_cast<std::size_t>(n_grid) * n_cols);

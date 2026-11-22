@@ -51,6 +51,7 @@
 // offset.
 
 #include "areal_input_check.h"    // check_areal_adjacency
+#include "tulpa_stop.h"
 #include "block_projector.h"       // projected fields (RSR, RTR)
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "cell_coupling_registry.h"
@@ -109,7 +110,7 @@ tulpa::StepCurvature step_curvature_from_code(int code) {
     case 1: return tulpa::StepCurvature::Expected;
     case 2: return tulpa::StepCurvature::Auto;
     default:
-        Rcpp::stop("step_curvature_mode must be 0, 1 or 2 (got %d).", code);
+        tulpa::stop("step_curvature_mode must be 0, 1 or 2 (got %d).", {code});
     }
 }
 
@@ -196,9 +197,9 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
     int block_index, const std::vector<tulpa::JointArm>* arms_ptr
 ) {
     if (static_cast<int>(per_arm_idx_list.size()) != n_arms) {
-        Rcpp::stop("blocks_spec[[%d]]$%s must be a list of length n_arms (%d), got %d.",
-                   block_index + 1, field_name, n_arms,
-                   static_cast<int>(per_arm_idx_list.size()));
+        tulpa::stop("blocks_spec[[%d]]$%s must be a list of length n_arms (%d), got %d.",
+                   {block_index + 1, field_name, n_arms,
+                   static_cast<int>(per_arm_idx_list.size())});
     }
     std::vector<Rcpp::IntegerVector> cache;
     cache.reserve(n_arms);
@@ -211,10 +212,10 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
         // resting on the R producer alone.
         if (arms_ptr && k < static_cast<int>(arms_ptr->size()) &&
             cache[k].size() < (*arms_ptr)[k].N) {
-            Rcpp::stop("blocks_spec[[%d]]$%s[[%d]] holds %d entries but arm %d "
-                       "has %d observations.", block_index + 1, field_name,
+            tulpa::stop("blocks_spec[[%d]]$%s[[%d]] holds %d entries but arm %d "
+                       "has %d observations.", {block_index + 1, field_name,
                        k + 1, static_cast<int>(cache[k].size()), k + 1,
-                       (*arms_ptr)[k].N);
+                       (*arms_ptr)[k].N});
         }
     }
     return [cache](int i, int k_arm) -> int {
@@ -237,10 +238,10 @@ inline std::function<double(int, int)> make_per_arm_row_weight_fn(
     }
     Rcpp::List w_list = bs["svc_weight"];
     if (static_cast<int>(w_list.size()) != n_arms) {
-        Rcpp::stop("blocks_spec[[%d]]$svc_weight must be a list of length "
+        tulpa::stop("blocks_spec[[%d]]$svc_weight must be a list of length "
                    "n_arms (%d), got %d.",
-                   block_index + 1, n_arms,
-                   static_cast<int>(w_list.size()));
+                   {block_index + 1, n_arms,
+                   static_cast<int>(w_list.size())});
     }
     std::vector<Rcpp::NumericVector> cache;
     cache.reserve(n_arms);
@@ -249,10 +250,10 @@ inline std::function<double(int, int)> make_per_arm_row_weight_fn(
         // Same unchecked per-row read as make_per_arm_idx_fn.
         if (arms_ptr && k < static_cast<int>(arms_ptr->size()) &&
             cache[k].size() < (*arms_ptr)[k].N) {
-            Rcpp::stop("blocks_spec[[%d]]$svc_weight[[%d]] holds %d entries but "
-                       "arm %d has %d observations.", block_index + 1, k + 1,
+            tulpa::stop("blocks_spec[[%d]]$svc_weight[[%d]] holds %d entries but "
+                       "arm %d has %d observations.", {block_index + 1, k + 1,
                        static_cast<int>(cache[k].size()), k + 1,
-                       (*arms_ptr)[k].N);
+                       (*arms_ptr)[k].N});
         }
     }
     return [cache](int i, int k_arm) -> double {
@@ -340,14 +341,14 @@ inline void check_alias_column(
             const double wi  = weight_list ? w[i] : 1.0;
             const double xij = pa.X(i, beta_offset);
             if (std::abs(xij - wi) > tulpa::kAliasColumnTol * (1.0 + std::abs(wi))) {
-                Rcpp::stop("Block %d (%s): the centering constant folds into "
+                tulpa::stop("Block %d (%s): the centering constant folds into "
                            "coefficient %d, whose design column must carry the "
                            "field weight; arm %d obs %d has %g against %g. An "
                            "unweighted field folds into the all-ones intercept "
                            "and a weighted one into its covariate's own column, "
                            "so supply that column or pass -1 for no fold.",
-                           block_index + 1, what.c_str(), beta_offset, k + 1,
-                           i + 1, xij, wi);
+                           {block_index + 1, what.c_str(), beta_offset, k + 1,
+                           i + 1, xij, wi});
             }
         }
     }
@@ -363,8 +364,8 @@ inline std::shared_ptr<std::vector<tulpa::ARows>> read_joint_block_projector(
     if (!bs.containsElementNamed("projector") || Rf_isNull(bs["projector"]))
         return nullptr;
     if (!arms_ptr || static_cast<int>(arms_ptr->size()) != n_arms) {
-        Rcpp::stop("Block %d (type '%s'): a projector needs the arms' "
-                   "observation counts.", block_index + 1, type.c_str());
+        tulpa::stop("Block %d (type '%s'): a projector needs the arms' "
+                   "observation counts.", {block_index + 1, type.c_str()});
     }
     Rcpp::IntegerVector n_obs(n_arms);
     for (int k = 0; k < n_arms; k++) n_obs[k] = (*arms_ptr)[k].N;
@@ -524,10 +525,10 @@ int build_joint_blocks_from_spec(
 
     auto require_axes = [&](int needed) {
         if (axis_count != needed) {
-            Rcpp::stop("Block %d (type '%s'%s) expects %d axes, got %d",
-                       block_index + 1, type.c_str(),
+            tulpa::stop("Block %d (type '%s'%s) expects %d axes, got %d",
+                       {block_index + 1, type.c_str(),
                        is_copy_block ? ", copy" : "",
-                       needed, axis_count);
+                       needed, axis_count});
         }
     };
 
@@ -656,9 +657,9 @@ int build_joint_blocks_from_spec(
             !Rf_isNull(bs["field_beta_offset"])) {
             Rcpp::IntegerVector fbo = bs["field_beta_offset"];
             if ((int) fbo.size() != p)
-                Rcpp::stop("Block %d (type 'mcar'): field_beta_offset must have "
+                tulpa::stop("Block %d (type 'mcar'): field_beta_offset must have "
                            "length n_fields (%d), got %d.",
-                           block_index + 1, p, (int) fbo.size());
+                           {block_index + 1, p, (int) fbo.size()});
             field_beta_offset.assign(fbo.begin(), fbo.end());
             // Verify each declared column matches that field's weight, so a
             // wrong offset cannot silently shift eta.
@@ -1060,10 +1061,10 @@ int build_joint_blocks_from_spec(
 
     if (type == "tgmrf") {
         if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics for tgmrf blocks are not "
+            tulpa::stop("Block %d: copy semantics for tgmrf blocks are not "
                        "supported (spatial copy only on icar / "
                        "bym2 / car_proper).",
-                       block_index + 1);
+                       {block_index + 1});
         }
         // axis_count is allowed to vary; the C++ side never indexes
         // theta_grid for this block (Q_k is precomputed R-side).
@@ -1091,10 +1092,10 @@ int build_joint_blocks_from_spec(
 
     if (type == "nngp") {
         if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics for NNGP blocks are not "
+            tulpa::stop("Block %d: copy semantics for NNGP blocks are not "
                        "supported (spatial copy only on icar / "
                        "bym2 / car_proper).",
-                       block_index + 1);
+                       {block_index + 1});
         }
         require_axes(2);  // (sigma2, phi_gp)
         tulpa::nl_grid_axis_positive("nngp sigma2 axis", theta_grid, axis0);
@@ -1117,9 +1118,9 @@ int build_joint_blocks_from_spec(
         } else {
             Rcpp::List given = bs["spatial_idx"];
             if (static_cast<int>(given.size()) != n_arms) {
-                Rcpp::stop("blocks_spec[[%d]]$spatial_idx must be a list of "
-                           "length n_arms (%d), got %d.", block_index + 1,
-                           n_arms, static_cast<int>(given.size()));
+                tulpa::stop("blocks_spec[[%d]]$spatial_idx must be a list of "
+                           "length n_arms (%d), got %d.", {block_index + 1,
+                           n_arms, static_cast<int>(given.size())});
             }
             for (int k = 0; k < n_arms; k++) {
                 Rcpp::IntegerVector sidx = given[k];
@@ -1148,10 +1149,10 @@ int build_joint_blocks_from_spec(
 
     if (type == "hsgp") {
         if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics for HSGP blocks are not "
+            tulpa::stop("Block %d: copy semantics for HSGP blocks are not "
                        "supported (spatial copy only on icar / "
                        "bym2 / car_proper).",
-                       block_index + 1);
+                       {block_index + 1});
         }
         require_axes(2);  // (sigma2, lengthscale)
         tulpa::nl_grid_axis_positive("hsgp sigma2 axis", theta_grid, axis0);
@@ -1186,16 +1187,16 @@ int build_joint_blocks_from_spec(
         // all raw (no log transform). See src/hsgp_mo_block_factory.h
         // for the full design rationale.
         if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics are not supported for "
+            tulpa::stop("Block %d: copy semantics are not supported for "
                        "hsgp_mo blocks (the K cross-output fields are the "
                        "shared latent; per-arm scaling lives in Sigma).",
-                       block_index + 1);
+                       {block_index + 1});
         }
         require_axes(4);  // (sigma_1, sigma_2, rho, ell)
         if (n_arms != 2) {
-            Rcpp::stop("Block %d (type 'hsgp_mo'): requires "
+            tulpa::stop("Block %d (type 'hsgp_mo'): requires "
                        "n_arms == 2 (got %d).",
-                       block_index + 1, n_arms);
+                       {block_index + 1, n_arms});
         }
 
         int m_total = Rcpp::as<int>(bs["m_total"]);
@@ -1220,10 +1221,10 @@ int build_joint_blocks_from_spec(
 
     if (type == "spde") {
         if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics for SPDE blocks are not "
+            tulpa::stop("Block %d: copy semantics for SPDE blocks are not "
                        "supported (spatial copy only on icar / "
                        "bym2 / car_proper).",
-                       block_index + 1);
+                       {block_index + 1});
         }
         require_axes(2);  // (range, sigma)
 
@@ -1267,10 +1268,10 @@ int build_joint_blocks_from_spec(
         // lambda[k_arm]. Several factors are several blocks, factor f
         // starting at arm f (lower-triangular loadings).
         if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics are not supported for "
+            tulpa::stop("Block %d: copy semantics are not supported for "
                        "latent factor blocks (the factor field IS the "
                        "shared latent; per-arm scaling lives in `lambda`).",
-                       block_index + 1);
+                       {block_index + 1});
         }
         // No outer-grid axes: the scores are integrated by the inner
         // Laplace, the loadings are latent coordinates of the inner solve.
@@ -1294,8 +1295,8 @@ int build_joint_blocks_from_spec(
         return latent_offset + block.size;
     }
 
-    Rcpp::stop("Unknown block type '%s' in cpp_nested_laplace_joint_multi",
-               type.c_str());
+    tulpa::stop("Unknown block type '%s' in cpp_nested_laplace_joint_multi",
+               {type.c_str()});
     return latent_offset;
 }
 
@@ -1330,8 +1331,8 @@ inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
             req.extra_idx.reserve(ex.size());
             for (int e = 0; e < ex.size(); e++) {
                 if (ex[e] <= fixed_block_p) {
-                    Rcpp::stop("fixed_block_extra must index latent coordinates "
-                               "past the %d fixed effects.", fixed_block_p);
+                    tulpa::stop("fixed_block_extra must index latent coordinates "
+                               "past the %d fixed effects.", {fixed_block_p});
                 }
                 req.extra_idx.push_back(ex[e] - 1);
             }
@@ -1371,9 +1372,9 @@ inline std::vector<int> resolve_copy_arm_of_block(
     int n_blocks, int n_arms
 ) {
     if (copy_blocks.size() != copy_arms.size()) {
-        Rcpp::stop("copy_arms (%d) and copy_blocks (%d) must have equal length.",
-                   static_cast<int>(copy_arms.size()),
-                   static_cast<int>(copy_blocks.size()));
+        tulpa::stop("copy_arms (%d) and copy_blocks (%d) must have equal length.",
+                   {static_cast<int>(copy_arms.size()),
+                   static_cast<int>(copy_blocks.size())});
     }
     std::vector<int> copy_arm_of_block(n_blocks, -1);
     for (int c = 0; c < copy_blocks.size(); c++) {
@@ -1381,16 +1382,16 @@ inline std::vector<int> resolve_copy_arm_of_block(
         const int ca = copy_arms[c];
         if (cb < 0) continue;  // no-copy sentinel
         if (cb >= n_blocks) {
-            Rcpp::stop("copy_block index (%d) out of range for B (%d).",
-                       cb, n_blocks);
+            tulpa::stop("copy_block index (%d) out of range for B (%d).",
+                       {cb, n_blocks});
         }
         if (ca < 0 || ca >= n_arms) {
-            Rcpp::stop("copy_arm index (%d) out of range for n_arms (%d).",
-                       ca, n_arms);
+            tulpa::stop("copy_arm index (%d) out of range for n_arms (%d).",
+                       {ca, n_arms});
         }
         if (copy_arm_of_block[cb] >= 0) {
-            Rcpp::stop("block %d is marked as a copy block more than once.",
-                       cb + 1);
+            tulpa::stop("block %d is marked as a copy block more than once.",
+                       {cb + 1});
         }
         copy_arm_of_block[cb] = ca;
     }
@@ -1439,7 +1440,7 @@ static int build_joint_layout(
     for (int b = 0; b < B; b++) {
         if (std::find(hsgp_sum.begin(), hsgp_sum.end(), b) != hsgp_sum.end()) {
             if (copy_arm_of_block[b] >= 0)
-                Rcpp::stop("Copy semantics are not supported for HSGP blocks.");
+                tulpa::stop("Copy semantics are not supported for HSGP blocks.");
             if (b == hsgp_sum.front()) {
                 blocks.push_back(tulpa::make_hsgp_sum_block(latent_offset,
                     blocks_spec, hsgp_sum, axis_offsets, theta_grid, hsgp_n_obs));
@@ -1516,13 +1517,13 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
-        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
-                   static_cast<int>(axis_offsets.size()), B);
+        tulpa::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   {static_cast<int>(axis_offsets.size()), B});
     }
     int total_axes = axis_offsets[B];
     if (theta_grid.ncol() != total_axes) {
-        Rcpp::stop("theta_grid must have %d columns (sum of axes), got %d",
-                   total_axes, static_cast<int>(theta_grid.ncol()));
+        tulpa::stop("theta_grid must have %d columns (sum of axes), got %d",
+                   {total_axes, static_cast<int>(theta_grid.ncol())});
     }
     int n_grid = theta_grid.nrow();
 
@@ -1567,8 +1568,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         // run_nested_laplace_grid.
         if (iv.size() > 0) {
             if (iv.size() != n_grid) {
-                Rcpp::stop("tile_ids must have length n_grid (%d), got %d.",
-                           n_grid, static_cast<int>(iv.size()));
+                tulpa::stop("tile_ids must have length n_grid (%d), got %d.",
+                           {n_grid, static_cast<int>(iv.size())});
             }
             tile_ids_vec.assign(iv.begin(), iv.end());
         }
@@ -1580,8 +1581,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
             tile_pilot_cells_vec.assign(iv.begin(), iv.end());
             for (int k : tile_pilot_cells_vec) {
                 if (k < 0 || k >= n_grid) {
-                    Rcpp::stop("tile_pilot_cells entry %d out of range [0, %d).",
-                               k, n_grid);
+                    tulpa::stop("tile_pilot_cells entry %d out of range [0, %d).",
+                               {k, n_grid});
                 }
             }
         }
@@ -1593,8 +1594,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     std::shared_ptr<tulpa::CellCouplingSpec> cell_coupling_spec =
         tulpa::lookup_cell_coupling(cell_coupling_name);
     if (!cell_coupling_spec) {
-        Rcpp::stop("cell_coupling = \"%s\" is not registered.",
-                   cell_coupling_name.c_str());
+        tulpa::stop("cell_coupling = \"%s\" is not registered.",
+                   {cell_coupling_name.c_str()});
     }
 
     tulpa::JointPDMode pd_mode =
@@ -1787,10 +1788,10 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     int n_arms = arms_list.size();
     int Bspec  = blocks_spec.size();
     if (axis_offsets.size() != Bspec + 1)
-        Rcpp::stop("axis_offsets must have length B+1.");
+        tulpa::stop("axis_offsets must have length B+1.");
     int total_axes = axis_offsets[Bspec];
     if (theta_grid.ncol() != total_axes)
-        Rcpp::stop("theta_grid must have %d columns.", total_axes);
+        tulpa::stop("theta_grid must have %d columns.", {total_axes});
     int n_grid = theta_grid.nrow();
 
     std::vector<tulpa::ParsedArm> parsed;
@@ -1804,7 +1805,7 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     tulpa::BatchArmBuffers buf;
     buf.allocate(arms, n_batch);
     if ((int) phi_batch.nrow() != n_arms || (int) phi_batch.ncol() != n_batch)
-        Rcpp::stop("phi_batch must be [n_arms x n_batch].");
+        tulpa::stop("phi_batch must be [n_arms x n_batch].");
     for (int k = 0; k < n_arms; k++) {
         for (int s = 0; s < n_batch; s++)
             buf.phi[(std::size_t) k * n_batch + s] = phi_batch(k, s);
@@ -1812,7 +1813,7 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
         if (Rf_isNull(yk)) continue;  // no-data arm (psi)
         Rcpp::NumericMatrix ym(yk);
         if ((int) ym.nrow() != arms[k].N || (int) ym.ncol() != n_batch)
-            Rcpp::stop("y_batch[[%d]] must be [N_k x n_batch].", k + 1);
+            tulpa::stop("y_batch[[%d]] must be [N_k x n_batch].", {k + 1});
         buf.y[k].assign((std::size_t) arms[k].N * n_batch, 0.0);
         for (int s = 0; s < n_batch; s++)
             for (int i = 0; i < arms[k].N; i++)
@@ -1833,8 +1834,8 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     std::shared_ptr<tulpa::CellCouplingSpec> spec =
         tulpa::lookup_cell_coupling(cell_coupling_name);
     if (!spec)
-        Rcpp::stop("cell_coupling = \"%s\" not registered.",
-                   cell_coupling_name.c_str());
+        tulpa::stop("cell_coupling = \"%s\" not registered.",
+                   {cell_coupling_name.c_str()});
 
     Rcpp::List res = tulpa::run_multi_block_nested_laplace_joint_batch(
         n_grid, n_batch, arms, parsed, blocks, n_x_after_re, buf,
@@ -1896,10 +1897,10 @@ Rcpp::List cpp_joint_arm_loadings(
     const int n_arms = arms_list.size();
     const int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
-        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
-                   static_cast<int>(axis_offsets.size()), B);
+        tulpa::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   {static_cast<int>(axis_offsets.size()), B});
     }
-    if (arm < 0 || arm >= n_arms) Rcpp::stop("`arm` out of range.");
+    if (arm < 0 || arm >= n_arms) tulpa::stop("`arm` out of range.");
     std::vector<tulpa::ParsedArm>   parsed;
     std::vector<tulpa::JointArm>    arms;
     std::vector<tulpa::LatentBlock> blocks;
@@ -1921,10 +1922,10 @@ Rcpp::List cpp_joint_arm_loadings(
     Rcpp::List out(cells.size());
     for (int c = 0; c < cells.size(); c++) {
         const int k = cells[c];
-        if (k < 0 || k >= theta_grid.nrow()) Rcpp::stop("cell out of range.");
+        if (k < 0 || k >= theta_grid.nrow()) tulpa::stop("cell out of range.");
         for (int b = 0; b < Bn; b++) {
             if (blocks[b].prep && !blocks[b].prep(k)) {
-                Rcpp::stop("Block %d is infeasible at cell %d.", b + 1, k + 1);
+                tulpa::stop("Block %d is infeasible at cell %d.", {b + 1, k + 1});
             }
             const double s = blocks[b].arm_scale
                              ? blocks[b].arm_scale(arm, k) : 1.0;
@@ -1940,7 +1941,7 @@ Rcpp::List cpp_joint_arm_loadings(
                     ri.push_back(i + 1); ci.push_back(col + 1); vx.push_back(v);
                 },
                 [&](int, int, double) {
-                    Rcpp::stop("A latent-factor block enters the predictor "
+                    tulpa::stop("A latent-factor block enters the predictor "
                                "bilinearly and has no linear loading.");
                 });
         }
@@ -1972,8 +1973,8 @@ Rcpp::List cpp_test_joint_pattern(
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
-        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
-                   static_cast<int>(axis_offsets.size()), B);
+        tulpa::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   {static_cast<int>(axis_offsets.size()), B});
     }
     std::vector<tulpa::ParsedArm>   parsed;
     std::vector<tulpa::JointArm>    arms;
@@ -2041,12 +2042,12 @@ Rcpp::List cpp_test_joint_logpost_grad(
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
-        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
-                   static_cast<int>(axis_offsets.size()), B);
+        tulpa::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   {static_cast<int>(axis_offsets.size()), B});
     }
     if (k_grid < 0 || k_grid >= theta_grid.nrow()) {
-        Rcpp::stop("k_grid (%d) out of range for theta_grid rows (%d).",
-                   k_grid, static_cast<int>(theta_grid.nrow()));
+        tulpa::stop("k_grid (%d) out of range for theta_grid rows (%d).",
+                   {k_grid, static_cast<int>(theta_grid.nrow())});
     }
 
     std::vector<tulpa::ParsedArm>   parsed;
@@ -2058,8 +2059,8 @@ Rcpp::List cpp_test_joint_logpost_grad(
                                  B, n_arms, parsed, arms, blocks,
                                  n_x_after_re);
     if (x.size() != n_x) {
-        Rcpp::stop("x has length %d but the joint latent dimension is %d.",
-                   static_cast<int>(x.size()), n_x);
+        tulpa::stop("x has length %d but the joint latent dimension is %d.",
+                   {static_cast<int>(x.size()), n_x});
     }
 
     const int Bn = static_cast<int>(blocks.size());
@@ -2074,17 +2075,17 @@ Rcpp::List cpp_test_joint_logpost_grad(
         for (int b = 0; b < Bn; b++) {
             if (blocks[b].contrib_kind !=
                 tulpa::BlockContribKind::INDEXED_SINGLE) {
-                Rcpp::stop("Block %d is not INDEXED_SINGLE, and the dense joint "
+                tulpa::stop("Block %d is not INDEXED_SINGLE, and the dense joint "
                            "scatter cannot resolve it. Pass sparse = TRUE to "
                            "gate the scatter a fit carrying this block runs.",
-                           b + 1);
+                           {b + 1});
             }
         }
     }
 
     for (const auto& b : blocks) {
         if (b.prep && !b.prep(k_grid)) {
-            Rcpp::stop("block prep reported infeasible at k_grid=%d.", k_grid);
+            tulpa::stop("block prep reported infeasible at k_grid=%d.", {k_grid});
         }
     }
 
@@ -2205,7 +2206,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     bool                             screen_only) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
-        Rcpp::stop("parsed and arms vectors must have the same length.");
+        tulpa::stop("parsed and arms vectors must have the same length.");
     }
 
     // Cell-coupling setup. Resolve the spec's coupled-arm
@@ -2219,22 +2220,22 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     std::vector<bool> arm_is_coupled(n_arms, false);
     for (int k : coupled_arms) {
         if (k < 0 || k >= n_arms) {
-            Rcpp::stop("cell_coupling: arm_ids() entry %d out of range "
-                       "[0, %d).", k, n_arms);
+            tulpa::stop("cell_coupling: arm_ids() entry %d out of range "
+                       "[0, %d).", {k, n_arms});
         }
         if (!arms[k].coupled) {
-            Rcpp::stop("cell_coupling: spec lists arm %d but the arm "
-                       "has coupled = FALSE.", k + 1);
+            tulpa::stop("cell_coupling: spec lists arm %d but the arm "
+                       "has coupled = FALSE.", {k + 1});
         }
         arm_is_coupled[k] = true;
     }
     for (int k = 0; k < n_arms; k++) {
         if (arms[k].coupled && !arm_is_coupled[k]) {
-            Rcpp::stop("cell_coupling: arm %d has coupled = TRUE but the "
+            tulpa::stop("cell_coupling: arm %d has coupled = TRUE but the "
                        "registered spec's arm_ids() does not list it. "
                        "Register a spec whose arm_ids() includes this arm "
                        "(default \"separable\" does not couple any arm).",
-                       k + 1);
+                       {k + 1});
         }
     }
 
@@ -2594,7 +2595,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
         nl_screen_iterations(blocks, screen_iters, max_iter),
-        tulpa::NoResumeRefill{}, screen_log_offset,
+        tulpa::NlResumeRefill(), screen_log_offset,
         screen_only
     );
     pattern_guard.check("the joint nested-Laplace outer grid");
@@ -2868,19 +2869,19 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 if (k >= blocks[b].factor_first_arm) reached = true;
             if (!reached) continue;
             if (arm_is_coupled[k]) {
-                Rcpp::stop("Arm %d is cell-coupled and reads a latent-factor "
+                tulpa::stop("Arm %d is cell-coupled and reads a latent-factor "
                            "block; latent factors enter per-observation arms "
-                           "only.", k + 1);
+                           "only.", {k + 1});
             }
             if (!factor_l3_pool[0][k].scalar) {
-                Rcpp::stop("Arm %d reads a latent-factor block, whose scores "
+                tulpa::stop("Arm %d reads a latent-factor block, whose scores "
                            "are integrated by a Laplace approximation that "
                            "needs the third derivative of the arm's "
                            "log-likelihood in its linear predictor; the arm's "
-                           "likelihood provides none (%s).", k + 1,
+                           "likelihood provides none (%s).", {k + 1,
                            factor_l3_pool[0][k].declined.empty()
                                ? "multi-process likelihood"
-                               : factor_l3_pool[0][k].declined.c_str());
+                               : factor_l3_pool[0][k].declined.c_str()});
             }
         }
     }
@@ -3207,7 +3208,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
         nl_screen_iterations(blocks, screen_iters, max_iter),
-        tulpa::NoResumeRefill{}, screen_log_offset,
+        tulpa::NlResumeRefill(), screen_log_offset,
         screen_only
     );
     pattern_guard.check("the sparse joint nested-Laplace outer grid");

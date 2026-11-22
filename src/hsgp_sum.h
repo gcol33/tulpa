@@ -2,6 +2,7 @@
 #define TULPA_HSGP_SUM_H
 
 #include "hsgp_block_factory.h"
+#include "tulpa_stop.h"
 #include "hsgp_observation.h"
 #include "nested_laplace_grid.h"
 
@@ -26,7 +27,7 @@ inline std::vector<int> hsgp_sum_indices(const Rcpp::List& specs) {
         for (int k = 0; k < train.size(); ++k)
             n += Rcpp::as<Rcpp::NumericMatrix>(train[k]).nrow();
         if (!indices.empty() && n != rows)
-            Rcpp::stop("HSGP components must have the same pooled training rows.");
+            tulpa::stop("HSGP components must have the same pooled training rows.");
         rows = n;
         width += Rcpp::as<Rcpp::NumericMatrix>(phi[0]).ncol();
         indices.push_back(b);

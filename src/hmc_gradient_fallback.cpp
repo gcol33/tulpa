@@ -9,6 +9,7 @@
 // whichever of the three gradient sources is active.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -35,13 +36,13 @@ static void validate_initial_state(double log_density,
                                    const std::vector<double>& gradient,
                                    int chain_number) {
     if (!std::isfinite(log_density)) {
-        Rcpp::stop("non-finite log density at the initial position (chain %d)",
-                   chain_number);
+        tulpa::stop("non-finite log density at the initial position (chain %d)",
+                   {chain_number});
     }
     for (size_t j = 0; j < gradient.size(); ++j) {
         if (!std::isfinite(gradient[j])) {
-            Rcpp::stop("non-finite gradient at the initial position, coordinate %d "
-                       "(chain %d)", static_cast<int>(j + 1), chain_number);
+            tulpa::stop("non-finite gradient at the initial position, coordinate %d "
+                       "(chain %d)", {static_cast<int>(j + 1), chain_number});
         }
     }
 }

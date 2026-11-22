@@ -39,6 +39,7 @@
 #define TULPA_LATENT_FACTOR_BLOCK_FACTORY_H
 
 #include "latent_block.h"
+#include "tulpa_stop.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -66,17 +67,17 @@ inline LatentBlock make_latent_factor_block(
     int                                  block_index
 ) {
     if (n_latent < 2) {
-        Rcpp::stop("Block %d (type 'lf'): `n_latent` must be at least 2 "
-                   "(got %d).", block_index + 1, n_latent);
+        tulpa::stop("Block %d (type 'lf'): `n_latent` must be at least 2 "
+                   "(got %d).", {block_index + 1, n_latent});
     }
     if (first_arm < 0 || first_arm >= n_arms) {
-        Rcpp::stop("Block %d (type 'lf'): the factor's first arm must be one "
-                   "of the %d arms (got %d, 0-based).", block_index + 1,
-                   n_arms, first_arm);
+        tulpa::stop("Block %d (type 'lf'): the factor's first arm must be one "
+                   "of the %d arms (got %d, 0-based).", {block_index + 1,
+                   n_arms, first_arm});
     }
     if (!(sigma_lambda > 0.0)) {
-        Rcpp::stop("Block %d (type 'lf'): sigma_lambda must be positive "
-                   "(got %g).", block_index + 1, sigma_lambda);
+        tulpa::stop("Block %d (type 'lf'): sigma_lambda must be positive "
+                   "(got %g).", {block_index + 1, sigma_lambda});
     }
 
     const int u_start      = start;

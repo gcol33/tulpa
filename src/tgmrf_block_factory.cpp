@@ -2,6 +2,7 @@
 // Definition of make_tgmrf_block, declared in tgmrf_block_factory.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "tgmrf_block_factory.h"
 
 namespace tulpa {
@@ -22,19 +23,19 @@ LatentBlock make_tgmrf_block(
         Q_csc_x_per_grid.size() != n_grid_local ||
         logdet_Q_per_grid.size() != n_grid_local ||
         log_pi_theta_per_grid.size() != n_grid_local) {
-        Rcpp::stop("Block %d (type 'tgmrf'): per-grid arrays must all have "
-                   "length %d.", block_index + 1, n_grid_local);
+        tulpa::stop("Block %d (type 'tgmrf'): per-grid arrays must all have "
+                   "length %d.", {block_index + 1, n_grid_local});
     }
     // The length agreement above holds when every per-grid list is empty, and
     // the pattern callback below reads grid point 0 unconditionally.
     if (n_grid_local < 1) {
-        Rcpp::stop("Block %d (type 'tgmrf'): the per-grid arrays are empty; "
+        tulpa::stop("Block %d (type 'tgmrf'): the per-grid arrays are empty; "
                    "at least one outer-grid point is required.",
-                   block_index + 1);
+                   {block_index + 1});
     }
     if (size < 0) {
-        Rcpp::stop("Block %d (type 'tgmrf'): n_latent (%d) must be "
-                   "non-negative.", block_index + 1, size);
+        tulpa::stop("Block %d (type 'tgmrf'): n_latent (%d) must be "
+                   "non-negative.", {block_index + 1, size});
     }
 
     // Copy CSC triples into C++ vectors so the closures outlive the SEXPs.
@@ -49,10 +50,10 @@ LatentBlock make_tgmrf_block(
         Rcpp::IntegerVector i_k = Q_csc_i_per_grid[k];
         Rcpp::NumericVector x_k = Q_csc_x_per_grid[k];
         if (static_cast<int>(p_k.size()) != size + 1) {
-            Rcpp::stop("Block %d (type 'tgmrf'): Q_csc_p_per_grid[[%d]] has "
+            tulpa::stop("Block %d (type 'tgmrf'): Q_csc_p_per_grid[[%d]] has "
                        "length %d, expected %d.",
-                       block_index + 1, k + 1,
-                       static_cast<int>(p_k.size()), size + 1);
+                       {block_index + 1, k + 1,
+                       static_cast<int>(p_k.size()), size + 1});
         }
         // p_k[size] is the entry count CSC declares. Both prior scatters walk
         // i_k / x_k over [p_k[j], p_k[j+1]) and write H[start + i_loc][...] and
@@ -61,32 +62,32 @@ LatentBlock make_tgmrf_block(
         // frame here, where the grid point that is wrong can still be named.
         const int nnz = p_k[size];
         if (p_k[0] != 0 || nnz < 0) {
-            Rcpp::stop("Block %d (type 'tgmrf'): Q_csc_p_per_grid[[%d]] must "
+            tulpa::stop("Block %d (type 'tgmrf'): Q_csc_p_per_grid[[%d]] must "
                        "start at 0 and end at a non-negative entry count "
                        "(got %d and %d).",
-                       block_index + 1, k + 1, p_k[0], nnz);
+                       {block_index + 1, k + 1, p_k[0], nnz});
         }
         for (int j = 0; j < size; j++) {
             if (p_k[j + 1] < p_k[j]) {
-                Rcpp::stop("Block %d (type 'tgmrf'): Q_csc_p_per_grid[[%d]] is "
+                tulpa::stop("Block %d (type 'tgmrf'): Q_csc_p_per_grid[[%d]] is "
                            "not non-decreasing at column %d.",
-                           block_index + 1, k + 1, j + 1);
+                           {block_index + 1, k + 1, j + 1});
             }
         }
         if (static_cast<int>(i_k.size()) != nnz ||
             static_cast<int>(x_k.size()) != nnz) {
-            Rcpp::stop("Block %d (type 'tgmrf'): Q_csc_i_per_grid[[%d]] and "
+            tulpa::stop("Block %d (type 'tgmrf'): Q_csc_i_per_grid[[%d]] and "
                        "Q_csc_x_per_grid[[%d]] have lengths %d and %d; both "
                        "must equal p[n_latent] = %d.",
-                       block_index + 1, k + 1, k + 1,
+                       {block_index + 1, k + 1, k + 1,
                        static_cast<int>(i_k.size()),
-                       static_cast<int>(x_k.size()), nnz);
+                       static_cast<int>(x_k.size()), nnz});
         }
         for (int t = 0; t < nnz; t++) {
             if (i_k[t] == NA_INTEGER || i_k[t] < 0 || i_k[t] >= size) {
-                Rcpp::stop("Block %d (type 'tgmrf'): Q_csc_i_per_grid[[%d]][%d] "
+                tulpa::stop("Block %d (type 'tgmrf'): Q_csc_i_per_grid[[%d]][%d] "
                            "is %d; must be a 0-based row index in [0, %d).",
-                           block_index + 1, k + 1, t + 1, i_k[t], size);
+                           {block_index + 1, k + 1, t + 1, i_k[t], size});
             }
         }
         (*Q_p_vec)[k].assign(p_k.begin(), p_k.end());

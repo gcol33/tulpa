@@ -12,6 +12,7 @@
 // the would-be nested-Laplace grid over phi with a single MCMC pass.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "fixed_effect_prior.h"
 #include <vector>
 #include <cmath>
@@ -138,11 +139,11 @@ Rcpp::List cpp_tulpa_fit_beta_nuts(
     const int p = X_r.ncol();
 
     if (N == 0 || p == 0) {
-        Rcpp::stop("y and X must be non-empty");
+        tulpa::stop("y and X must be non-empty");
     }
     for (int i = 0; i < N; i++) {
         if (!R_finite(y_r[i]) || y_r[i] <= 0.0 || y_r[i] >= 1.0) {
-            Rcpp::stop("y must be strictly in (0, 1) for the beta likelihood");
+            tulpa::stop("y must be strictly in (0, 1) for the beta likelihood");
         }
     }
 

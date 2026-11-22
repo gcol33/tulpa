@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "test_prior_model.h"
 #include "ess_sampler.h"
 
@@ -20,7 +21,7 @@ Rcpp::NumericMatrix cpp_test_ess_correlated_reference() {
   tulpa_ess::ESSConfig config;
   config.n_iter=12000;config.n_warmup=2000;config.verbose=false;
   const auto result=tulpa_ess::run_ess_sampler(std::vector<double>(2,0),data,layout,config);
-  if(!result.success) Rcpp::stop(result.error_msg);
+  if(!result.success) tulpa::stop(result.error_msg);
   return Rcpp::wrap(result.samples);
 }
 // [[Rcpp::export]]

@@ -26,6 +26,7 @@
 #define TULPA_BUILTIN_FAMILY_LL_AD_H
 
 #include "tulpa/likelihood.h"
+#include "tulpa_stop.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "laplace_builtin_family_spec.h"  // BuiltinFamilyResponse
@@ -170,11 +171,11 @@ inline T builtin_family_base_ll_ad(
     default:
         break;
     }
-    Rcpp::stop("builtin_family_ll_ad: no AD likelihood for family '%s'. "
+    tulpa::stop("builtin_family_ll_ad: no AD likelihood for family '%s'. "
                "builtin_family_has_ad() gates which families reach here and "
                "prepare() resolves the branch, so either the two have fallen "
                "out of step or prepare() was not called.",
-               r->family.c_str());
+               {r->family.c_str()});
 }
 
 // LikelihoodFn<T>: per-obs log-likelihood for a built-in family, templated over

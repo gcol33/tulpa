@@ -1,4 +1,5 @@
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <R_ext/Rdynload.h>
 #include <algorithm>
 #include <cstddef>
@@ -59,7 +60,7 @@ static void fill_nuts_result_from_cpp(
     const size_t fields = static_cast<size_t>(ns) * out->n_spatial_fields;
     if (fields > 0) {
         if (spatial.size() < fields || (!hmc.bym2_theta_star_flat.empty() && hmc.bym2_theta_star_flat.size() < fields))
-            Rcpp::stop("Conditional spatial draw buffers must match the retained iterations");
+            tulpa::stop("Conditional spatial draw buffers must match the retained iterations");
         out->spatial_draws = new double[fields];
         std::copy_n(spatial.data(), fields, out->spatial_draws);
         if (!hmc.bym2_theta_star_flat.empty()) {
@@ -106,9 +107,9 @@ static void fill_nuts_result_from_cpp(
 
 static tulpa::SamplerControl sampler_control(const tulpa::SamplerControl* control) {
     const auto settings = control ? *control : tulpa::SamplerControl{};
-    if (settings.L < 0) Rcpp::stop("L must be nonnegative");
+    if (settings.L < 0) tulpa::stop("L must be nonnegative");
     if (settings.L > 0 && settings.walnuts)
-        Rcpp::stop("WALNUTS requires L = 0");
+        tulpa::stop("WALNUTS requires L = 0");
     return settings;
 }
 
@@ -220,8 +221,8 @@ static void tulpa_run_nuts_chains_impl(
     );
 
     if (static_cast<int>(chains.size()) != n_chains) {
-        Rcpp::stop("multi-chain run returned %d chains, expected %d",
-                   static_cast<int>(chains.size()), n_chains);
+        tulpa::stop("multi-chain run returned %d chains, expected %d",
+                   {static_cast<int>(chains.size()), n_chains});
     }
     for (int c = 0; c < n_chains; c++) {
         fill_nuts_result_from_cpp(&results_out[c], chains[c], n_params, *data, *layout);

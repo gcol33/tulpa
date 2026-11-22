@@ -5,6 +5,7 @@
 // the extent its tails reach -- and this tabulates it, once per row.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -131,14 +132,14 @@ Rcpp::List cpp_nl_lq_group_cdf(Rcpp::List piece, Rcpp::NumericVector x) {
     const int m = x.size();
     const int n = u.size();
     if (lg.size() != n || lo_b.size() != n || hi_b.size() != n) {
-        Rcpp::stop("cpp_nl_lq_group_cdf: u, lg, lo_b and hi_b must share a length.");
+        tulpa::stop("cpp_nl_lq_group_cdf: u, lg, lo_b and hi_b must share a length.");
     }
     if (is_lq && (n < 3 || d1.size() != n - 2 || d2.size() != n - 2 ||
                   lt.size() != n)) {
-        Rcpp::stop("cpp_nl_lq_group_cdf: a log-quadratic row needs n >= 3 nodes, "
+        tulpa::stop("cpp_nl_lq_group_cdf: a log-quadratic row needs n >= 3 nodes, "
                    "n - 2 quadratics and n slabs.");
     }
-    if (m < 2) Rcpp::stop("cpp_nl_lq_group_cdf: the grid needs two points.");
+    if (m < 2) tulpa::stop("cpp_nl_lq_group_cdf: the grid needs two points.");
 
     const double NEG_INF = -std::numeric_limits<double>::infinity();
     if (!is_lq) {
@@ -211,13 +212,13 @@ Rcpp::List cpp_nl_lq_mixture_cdf(Rcpp::List pieces, Rcpp::NumericVector mass,
                                 Rcpp::NumericVector x) {
     const int m = x.size(), n = pieces.size();
     if (m < 2 || mass.size() != n) {
-        Rcpp::stop("A CDF mixture needs two grid points and one mass per row.");
+        tulpa::stop("A CDF mixture needs two grid points and one mass per row.");
     }
     std::vector<long double> delta(m, 0.0L), integral(m, 0.0L);
     Rcpp::LogicalVector usable(n, false);
     for (int i = 0; i < n; ++i) {
         if (!std::isfinite(mass[i]) || mass[i] < 0) {
-            Rcpp::stop("CDF row masses must be finite and nonnegative.");
+            tulpa::stop("CDF row masses must be finite and nonnegative.");
         }
         if (mass[i] == 0) continue;
         Rcpp::List curve = cpp_nl_lq_group_cdf(Rcpp::as<Rcpp::List>(pieces[i]), x);
@@ -228,7 +229,7 @@ Rcpp::List cpp_nl_lq_mixture_cdf(Rcpp::List pieces, Rcpp::NumericVector mass,
         for (int j = 0; j + 1 < F.size(); ++j) {
             const int a = index[j] - 1, b = index[j + 1] - 1;
             if (a < 0 || b >= m || b <= a) {
-                Rcpp::stop("CDF knots must increase within the interpolation grid.");
+                tulpa::stop("CDF knots must increase within the interpolation grid.");
             }
             const long double slope = static_cast<long double>(mass[i]) *
                 (F[j + 1] - F[j]) / (b - a);

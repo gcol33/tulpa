@@ -3,6 +3,7 @@
 // binomial models.
 
 #include "pg_shared.h"
+#include "tulpa_stop.h"
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
@@ -73,13 +74,13 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
   C.require_intercept("multiscale NNGP spatial");
 
   if (N != n_spatial) {
-    Rcpp::stop("The multiscale NNGP Gibbs kernel maps observation i to "
+    tulpa::stop("The multiscale NNGP Gibbs kernel maps observation i to "
                "location i, so it needs one observation per location: got %d "
-               "observation(s) for %d location(s).", N, n_spatial);
+               "observation(s) for %d location(s).", {N, n_spatial});
   }
   if (coords.nrow() != n_spatial) {
-    Rcpp::stop("`coords` has %d row(s) but `n_spatial` is %d.",
-               static_cast<int>(coords.nrow()), n_spatial);
+    tulpa::stop("`coords` has %d row(s) but `n_spatial` is %d.",
+               {static_cast<int>(coords.nrow()), n_spatial});
   }
   tulpa::pg_check_pc_prior(prior_sigma_local_U, prior_sigma_local_alpha, "local");
   tulpa::pg_check_pc_prior(prior_sigma_regional_U, prior_sigma_regional_alpha,

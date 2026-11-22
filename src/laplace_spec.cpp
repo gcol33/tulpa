@@ -29,6 +29,7 @@
 // to the previous single-term code path.
 
 #include "tulpa/likelihood.h"
+#include "tulpa_stop.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "laplace_builtin_family_spec.h"
@@ -137,18 +138,18 @@ inline SpecLatentLayout build_latent_layout(
 ) {
     SpecLatentLayout L;
     if (layout.process_beta_start.empty()) {
-        Rcpp::stop("laplace_spec_dense: ParamLayout.process_beta_start is empty");
+        tulpa::stop("laplace_spec_dense: ParamLayout.process_beta_start is empty");
     }
     L.np = data.n_processes;
     if (L.np <= 0) {
-        Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)", L.np);
+        tulpa::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)", {L.np});
     }
     if ((int)layout.process_beta_start.size() < L.np ||
         (int)layout.process_beta_count.size() < L.np) {
-        Rcpp::stop("laplace_spec_dense: ParamLayout has %d/%d process_beta blocks "
+        tulpa::stop("laplace_spec_dense: ParamLayout has %d/%d process_beta blocks "
                    "but data.n_processes == %d",
-                   (int)layout.process_beta_start.size(),
-                   (int)layout.process_beta_count.size(), L.np);
+                   {(int)layout.process_beta_start.size(),
+                   (int)layout.process_beta_count.size(), L.np});
     }
     L.beta_start.assign(L.np, 0);
     L.beta_count.assign(L.np, 0);
@@ -240,10 +241,10 @@ inline SpecLatentLayout build_latent_layout(
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*blocks)[b];
             if (blk.start != running) {
-                Rcpp::stop("laplace_spec_dense: block %d start (%d) != computed "
+                tulpa::stop("laplace_spec_dense: block %d start (%d) != computed "
                            "compacted latent offset (%d). Blocks must follow "
                            "[beta | RE] contiguously in both the params and "
-                           "latent vectors.", b, blk.start, running);
+                           "latent vectors.", {b, blk.start, running});
             }
             L.block_latent_offset[b] = running;
             L.block_param_start[b]   = blk.start;
@@ -1697,24 +1698,24 @@ SpecLatentLayout spec_dense_checked_layout(
     const std::vector<LatentBlock>* blocks
 ) {
     if (data.n_processes < 1) {
-        Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
-                   data.n_processes);
+        tulpa::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
+                   {data.n_processes});
     }
     const LikelihoodSpec* spec =
         static_cast<const LikelihoodSpec*>(data.likelihood_spec);
     if (spec == nullptr) {
-        Rcpp::stop("laplace_spec_dense: data.likelihood_spec is null");
+        tulpa::stop("laplace_spec_dense: data.likelihood_spec is null");
     }
     if (spec->eta_weights_fn == nullptr) {
-        Rcpp::stop("laplace_spec_dense: LikelihoodSpec.eta_weights_fn is null "
+        tulpa::stop("laplace_spec_dense: LikelihoodSpec.eta_weights_fn is null "
                    "(required for spec-driven Laplace)");
     }
     if (spec->ll_double == nullptr) {
-        Rcpp::stop("laplace_spec_dense: LikelihoodSpec.ll_double is null");
+        tulpa::stop("laplace_spec_dense: LikelihoodSpec.ll_double is null");
     }
     if ((int)data.processes.size() != data.n_processes) {
-        Rcpp::stop("laplace_spec_dense: data.processes.size() (%d) != n_processes (%d)",
-                   (int)data.processes.size(), data.n_processes);
+        tulpa::stop("laplace_spec_dense: data.processes.size() (%d) != n_processes (%d)",
+                   {(int)data.processes.size(), data.n_processes});
     }
 
     SpecLatentLayout L = build_latent_layout(data, layout, blocks);
@@ -1722,14 +1723,14 @@ SpecLatentLayout spec_dense_checked_layout(
     for (int k = 0; k < np; k++) {
         const ProcessData& proc = data.processes[k];
         if (proc.p != L.beta_count[k]) {
-            Rcpp::stop("laplace_spec_dense: process[%d].p (%d) != "
+            tulpa::stop("laplace_spec_dense: process[%d].p (%d) != "
                        "ParamLayout.process_beta_count[%d] (%d)",
-                       k, proc.p, k, L.beta_count[k]);
+                       {k, proc.p, k, L.beta_count[k]});
         }
         if (proc.p > 0 && (int)proc.X_flat.size() != data.N * proc.p) {
-            Rcpp::stop("laplace_spec_dense: process[%d] design matrix shape "
+            tulpa::stop("laplace_spec_dense: process[%d] design matrix shape "
                        "(%d) inconsistent with N * p (%d * %d)",
-                       k, (int)proc.X_flat.size(), data.N, proc.p);
+                       {k, (int)proc.X_flat.size(), data.N, proc.p});
         }
     }
 
@@ -1737,9 +1738,9 @@ SpecLatentLayout spec_dense_checked_layout(
     // multi-process / joint blocks (arm_scale, per-arm sharing) are the L4 step
     // of the solver unification.
     if (L.n_blocks > 0 && np != 1) {
-        Rcpp::stop("laplace_spec_dense: GMRF latent blocks currently require "
+        tulpa::stop("laplace_spec_dense: GMRF latent blocks currently require "
                    "n_processes == 1 (got %d); joint/multi-arm blocks land at "
-                   "L4 of the solver unification.", np);
+                   "L4 of the solver unification.", {np});
     }
     return L;
 }
@@ -1828,19 +1829,19 @@ LaplaceResult laplace_mode_spec_dense_solve(
             }
             data_ptr = data_owned.get();
         } else if (n_terms_unified > 1) {
-            Rcpp::stop(
+            tulpa::stop(
                 "laplace_spec_dense: data.n_re_terms == %d but "
                 "data.re_group_multi_flat is empty. "
                 "Set data.re_group_multi_flat (length N * n_terms).",
-                data.n_re_terms);
+                {data.n_re_terms});
         } else if ((int)data.re_group.size() != data.N
                    && (int)re_group_1based.size() != data.N) {
-            Rcpp::stop(
+            tulpa::stop(
                 "laplace_spec_dense: layout.has_re but neither "
                 "data.re_group_multi_flat, data.re_group, nor the shim "
                 "re_group argument has length N (= %d). Got "
                 "re_group_1based size %d.",
-                data.N, (int)re_group_1based.size());
+                {data.N, (int)re_group_1based.size()});
         }
     }
     const ModelData& data_use = *data_ptr;

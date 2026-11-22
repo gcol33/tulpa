@@ -5,6 +5,7 @@
 #define TULPA_LAPLACE_RE_PRIORS_H
 
 #include "laplace_types.h"
+#include "tulpa_stop.h"
 #include "tulpa/model_data.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -50,15 +51,15 @@ inline BetaPrior read_beta_prior(Rcpp::Nullable<Rcpp::List> beta_prior, int p) {
     Rcpp::List l(beta_prior);
     Rcpp::NumericVector m = l["mean"], sd = l["sd"];
     if ((int) m.size() != p || (int) sd.size() != p) {
-        Rcpp::stop("beta_prior: `mean` and `sd` must each have length p = %d "
-                   "(got %d and %d).", p, (int) m.size(), (int) sd.size());
+        tulpa::stop("beta_prior: `mean` and `sd` must each have length p = %d "
+                   "(got %d and %d).", {p, (int) m.size(), (int) sd.size()});
     }
     bp.mean.resize(p);
     bp.tau.resize(p);
     for (int j = 0; j < p; j++) {
         if (!R_finite(m[j]) || ISNAN(sd[j]) || !(sd[j] > 0.0)) {
-            Rcpp::stop("beta_prior: coefficient %d needs a finite mean and a "
-                       "positive sd.", j + 1);
+            tulpa::stop("beta_prior: coefficient %d needs a finite mean and a "
+                       "positive sd.", {j + 1});
         }
         bp.mean[j] = m[j];
         bp.tau[j]  = R_finite(sd[j]) ? 1.0 / (sd[j] * sd[j]) : 0.0;

@@ -14,6 +14,7 @@
 // definitions of each and fails at link time.
 
 #include "shim_guard.h"
+#include "tulpa_stop.h"
 #include <climits>
 #include <vector>
 
@@ -49,9 +50,9 @@ inline void copy_nested_laplace_result(
     int n_grid = (int)lm.size();
 
     if ((int)ni.size() != n_grid) {
-        Rcpp::stop("nested-Laplace result malformed: length(n_iter) (%d) != "
+        tulpa::stop("nested-Laplace result malformed: length(n_iter) (%d) != "
                    "length(log_marginal) (%d).",
-                   (int)ni.size(), n_grid);
+                   {(int)ni.size(), n_grid});
     }
 
     result_out->n_grid = n_grid;
@@ -67,9 +68,9 @@ inline void copy_nested_laplace_result(
         Rcpp::NumericMatrix modes = out["modes"];
         int n_x = modes.ncol();
         if ((int)modes.nrow() != n_grid) {
-            Rcpp::stop("nested-Laplace result malformed: nrow(modes) (%d) != "
+            tulpa::stop("nested-Laplace result malformed: nrow(modes) (%d) != "
                        "length(log_marginal) (%d).",
-                       (int)modes.nrow(), n_grid);
+                       {(int)modes.nrow(), n_grid});
         }
         result_out->store_modes = 1;
         result_out->n_x = n_x;
@@ -100,10 +101,10 @@ inline void copy_nested_laplace_result(
 
         if ((int)Qp_list.size() != n_grid || (int)Qi_list.size() != n_grid ||
             (int)Qx_list.size() != n_grid) {
-            Rcpp::stop("store_Q result malformed: the per-grid CSC lists have "
+            tulpa::stop("store_Q result malformed: the per-grid CSC lists have "
                        "lengths (%d, %d, %d) against n_grid = %d.",
-                       (int)Qp_list.size(), (int)Qi_list.size(),
-                       (int)Qx_list.size(), n_grid);
+                       {(int)Qp_list.size(), (int)Qi_list.size(),
+                       (int)Qx_list.size(), n_grid});
         }
 
         // First pass: validate every block and size the offset tables. Nothing
@@ -129,23 +130,23 @@ inline void copy_nested_laplace_result(
             // empty block, reported to the caller as Q_grid_nnz[k] == 0 with a
             // zero column-pointer run, not a malformed one.
             if ((int)iv.size() != nnz_k) {
-                Rcpp::stop("store_Q block %d malformed: length(Q_csc_i) (%d) "
+                tulpa::stop("store_Q block %d malformed: length(Q_csc_i) (%d) "
                            "!= length(Q_csc_x) (%d).",
-                           k + 1, (int)iv.size(), nnz_k);
+                           {k + 1, (int)iv.size(), nnz_k});
             }
             if (nnz_k > 0 && (int)pv.size() != Q_n + 1) {
-                Rcpp::stop("store_Q block %d malformed: length(Q_csc_p) (%d) "
+                tulpa::stop("store_Q block %d malformed: length(Q_csc_p) (%d) "
                            "!= Q_csc_n + 1 (%d).",
-                           k + 1, (int)pv.size(), Q_n + 1);
+                           {k + 1, (int)pv.size(), Q_n + 1});
             }
             nnz[k] = nnz_k;
             long long p_off = (static_cast<long long>(k) + 1) *
                               (static_cast<long long>(Q_n) + 1);
             x_run += nnz_k;
             if (p_off > INT_MAX || x_run > INT_MAX) {
-                Rcpp::stop("store_Q grid too large: the flattened Q offsets "
+                tulpa::stop("store_Q grid too large: the flattened Q offsets "
                            "exceed INT_MAX (n_grid = %d, Q_n = %d).",
-                           n_grid, Q_n);
+                           {n_grid, Q_n});
             }
             p_offsets[k + 1] = static_cast<int>(p_off);
             x_offsets[k + 1] = static_cast<int>(x_run);

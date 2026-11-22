@@ -7,6 +7,7 @@
 // Eigen ops).
 
 #include "hmc_sampler.h"   // tulpa_hmc::ModelData / ParamLayout
+#include "tulpa_stop.h"
 #include "log_post_impl.h"
 
 namespace tulpa {
@@ -24,18 +25,18 @@ double compute_log_post_generic_spec_double(
     // chain loop wraps each chain in an exception barrier, so the raise
     // reaches the caller from any thread.
     if (data.n_processes <= 0 || data.likelihood_spec == nullptr) {
-        Rcpp::stop("tulpa: the log-posterior requires a generic LikelihoodSpec "
+        tulpa::stop("tulpa: the log-posterior requires a generic LikelihoodSpec "
                    "ModelData -- n_processes > 0 (got %d) and "
                    "data.likelihood_spec set (%s).",
-                   data.n_processes,
-                   data.likelihood_spec == nullptr ? "null" : "set");
+                   {data.n_processes,
+                   data.likelihood_spec == nullptr ? "null" : "set"});
     }
 
     const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
     if (spec->ll_double == nullptr) {
-        Rcpp::stop("tulpa: LikelihoodSpec '%s' ships no double-precision "
+        tulpa::stop("tulpa: LikelihoodSpec '%s' ships no double-precision "
                    "log-likelihood (ll_double), which the double log-posterior "
-                   "evaluator requires.", spec->name.c_str());
+                   "evaluator requires.", {spec->name.c_str()});
     }
 
     double log_post = compute_log_post_generic<double>(

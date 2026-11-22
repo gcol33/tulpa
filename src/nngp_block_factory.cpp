@@ -2,6 +2,7 @@
 // Definition of make_nngp_block, declared in nngp_block_factory.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "nngp_block_factory.h"
 
 namespace tulpa {
@@ -25,28 +26,28 @@ LatentBlock make_nngp_block(
 ) {
     if (static_cast<int>(spatial_idx_per_arm.size()) != n_arms ||
         n_obs_per_arm.size() != n_arms) {
-        Rcpp::stop("Block %d (type 'nngp'): spatial_idx_per_arm / "
+        tulpa::stop("Block %d (type 'nngp'): spatial_idx_per_arm / "
                    "n_obs_per_arm must each have length n_arms (%d).",
-                   block_index + 1, n_arms);
+                   {block_index + 1, n_arms});
     }
     if (coords.nrow() != n_spatial) {
-        Rcpp::stop("Block %d (type 'nngp'): nrow(coords) (%d) must equal "
+        tulpa::stop("Block %d (type 'nngp'): nrow(coords) (%d) must equal "
                    "n_spatial (%d).",
-                   block_index + 1, static_cast<int>(coords.nrow()),
-                   n_spatial);
+                   {block_index + 1, static_cast<int>(coords.nrow()),
+                   n_spatial});
     }
     if (nn_idx.nrow() != n_spatial || nn_idx.ncol() != nn) {
-        Rcpp::stop("Block %d (type 'nngp'): nn_idx must be n_spatial x nn "
+        tulpa::stop("Block %d (type 'nngp'): nn_idx must be n_spatial x nn "
                    "(%d x %d), got %d x %d.",
-                   block_index + 1, n_spatial, nn,
+                   {block_index + 1, n_spatial, nn,
                    static_cast<int>(nn_idx.nrow()),
-                   static_cast<int>(nn_idx.ncol()));
+                   static_cast<int>(nn_idx.ncol())});
     }
     if (nn_order.size() != n_spatial) {
-        Rcpp::stop("Block %d (type 'nngp'): length(nn_order) (%d) must equal "
+        tulpa::stop("Block %d (type 'nngp'): length(nn_order) (%d) must equal "
                    "n_spatial (%d).",
-                   block_index + 1, static_cast<int>(nn_order.size()),
-                   n_spatial);
+                   {block_index + 1, static_cast<int>(nn_order.size()),
+                   n_spatial});
     }
 
     // Materialize per-arm spatial_idx vectors at factory time.
@@ -56,26 +57,26 @@ LatentBlock make_nngp_block(
         Rcpp::IntegerVector sidx = spatial_idx_per_arm[k];
         int N_k = n_obs_per_arm[k];
         if (static_cast<int>(sidx.size()) != N_k) {
-            Rcpp::stop("Block %d (type 'nngp'): spatial_idx_per_arm[[%d]] "
+            tulpa::stop("Block %d (type 'nngp'): spatial_idx_per_arm[[%d]] "
                        "must have length n_obs_per_arm[%d] (expected %d, "
                        "got %d).",
-                       block_index + 1, k + 1, k + 1, N_k,
-                       static_cast<int>(sidx.size()));
+                       {block_index + 1, k + 1, k + 1, N_k,
+                       static_cast<int>(sidx.size())});
         }
         // Every consumer of block.idx tests the returned value against
         // blk.size, so an out-of-range entry drops that row from the field
         // silently in all of them. 0 is the "no field on this row" encoding.
         for (int i = 0; i < N_k; i++) {
             if (sidx[i] == NA_INTEGER || sidx[i] < 0 || sidx[i] > n_spatial) {
-                Rcpp::stop("Block %d (type 'nngp'): "
+                tulpa::stop("Block %d (type 'nngp'): "
                            "spatial_idx_per_arm[[%d]][%d] is %s; it must be 0 "
                            "(no field on this row) or a 1-based index in "
                            "[1, %d].",
-                           block_index + 1, k + 1, i + 1,
+                           {block_index + 1, k + 1, i + 1,
                            sidx[i] == NA_INTEGER
                                ? "NA"
                                : std::to_string(sidx[i]).c_str(),
-                           n_spatial);
+                           n_spatial});
             }
         }
         (*sidx_per_arm)[k] = sidx;

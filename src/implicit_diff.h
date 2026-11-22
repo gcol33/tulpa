@@ -29,6 +29,7 @@
 #define TULPA_IMPLICIT_DIFF_H
 
 #include "laplace_family_curvature.h"
+#include "tulpa_stop.h"
 #include "sparse_cholesky.h"
 #include "spde_logdet.h"
 #include "spde_qbuilder.h"
@@ -113,8 +114,8 @@ inline ImplicitDiffResult spde_implicit_gradient(
     // The dQ/dtheta closed forms below differentiate the alpha = 2 assembly
     // term by term, and read d(log_tau)/d(log_kappa) = -nu at nu = 1.
     if (std::abs(nu - 1.0) > 1e-10) {
-        Rcpp::stop("spde_implicit_gradient implements the alpha = 2 (nu = 1) "
-                   "operator; got nu = %g.", nu);
+        tulpa::stop("spde_implicit_gradient implements the alpha = 2 (nu = 1) "
+                   "operator; got nu = %g.", {nu});
     }
 
     // The mode term below differentiates the weight H is actually built from
@@ -124,9 +125,9 @@ inline ImplicitDiffResult spde_implicit_gradient(
     // gradient would need a second factorization of A' W_obs A + Q.
     if (!working_weight_is_observed(family) ||
         !has_curvature_derivative(family)) {
-        Rcpp::stop("spde_implicit_gradient needs a family whose Newton working "
+        tulpa::stop("spde_implicit_gradient needs a family whose Newton working "
                    "weight is the observed curvature and carries a closed-form "
-                   "eta-derivative; '%s' does not.", family.c_str());
+                   "eta-derivative; '%s' does not.", {family.c_str()});
     }
 
     double kappa, tau;

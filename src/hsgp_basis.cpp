@@ -16,6 +16,7 @@
 // [[Rcpp::depends(RcppEigen)]]
 
 #include "linalg_fast.h"  // require_coords_2col
+#include "tulpa_stop.h"
 #include "hmc_hsgp.h"   // tulpa_hsgp::setup_hsgp_2d, tulpa::HSGPData
 #include "hsgp_observation.h"
 #include "hsgp_spectral.h"
@@ -36,13 +37,13 @@
 Rcpp::List cpp_hsgp_basis_2d(const Rcpp::NumericMatrix& coords, int m, double c) {
     const int n_obs = coords.nrow();
     if (coords.ncol() != 2) {
-        Rcpp::stop("cpp_hsgp_basis_2d: coords must have exactly 2 columns (2D HSGP).");
+        tulpa::stop("cpp_hsgp_basis_2d: coords must have exactly 2 columns (2D HSGP).");
     }
     if (n_obs < 1) {
-        Rcpp::stop("cpp_hsgp_basis_2d: coords must have at least one row.");
+        tulpa::stop("cpp_hsgp_basis_2d: coords must have at least one row.");
     }
     if (m < 1) {
-        Rcpp::stop("cpp_hsgp_basis_2d: m (basis functions per dimension) must be >= 1.");
+        tulpa::stop("cpp_hsgp_basis_2d: m (basis functions per dimension) must be >= 1.");
     }
 
     tulpa_linalg::require_coords_2col(coords, "cpp_hsgp_basis_2d");
@@ -81,7 +82,7 @@ namespace {
 
 std::vector<double> hsgp_flat_coords(const Rcpp::NumericMatrix& coords,
                                      const char* what) {
-    if (coords.ncol() != 2) Rcpp::stop("%s: coords must have exactly 2 columns.", what);
+    if (coords.ncol() != 2) tulpa::stop("%s: coords must have exactly 2 columns.", {what});
     tulpa_linalg::require_coords_2col(coords, what);
     const int n = coords.nrow();
     std::vector<double> flat(2 * static_cast<std::size_t>(n));
@@ -103,8 +104,8 @@ std::vector<double> hsgp_flat_coords(const Rcpp::NumericMatrix& coords,
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_hsgp_domain_2d(const Rcpp::NumericMatrix& coords, double c,
                                      bool expanded = true) {
-    if (coords.nrow() < 1) Rcpp::stop("cpp_hsgp_domain_2d: coords must have at least one row.");
-    if (!(c >= 1.0)) Rcpp::stop("cpp_hsgp_domain_2d: the boundary factor c must be >= 1.");
+    if (coords.nrow() < 1) tulpa::stop("cpp_hsgp_domain_2d: coords must have at least one row.");
+    if (!(c >= 1.0)) tulpa::stop("cpp_hsgp_domain_2d: the boundary factor c must be >= 1.");
     const std::vector<double> flat = hsgp_flat_coords(coords, "cpp_hsgp_domain_2d");
     double xc, yc, L1, L2, S1, S2;
     tulpa_hsgp::hsgp_center_L_2d(flat, coords.nrow(), c, xc, yc, L1, L2, &S1, &S2);
@@ -117,9 +118,9 @@ Rcpp::NumericVector cpp_hsgp_domain_2d(const Rcpp::NumericMatrix& coords, double
 // [[Rcpp::export]]
 Rcpp::List cpp_hsgp_basis_2d_domain(const Rcpp::NumericMatrix& coords, int m,
                                     const Rcpp::NumericVector& domain) {
-    if (m < 1) Rcpp::stop("cpp_hsgp_basis_2d_domain: m must be >= 1.");
+    if (m < 1) tulpa::stop("cpp_hsgp_basis_2d_domain: m must be >= 1.");
     if (domain.size() != 4 || !(domain[2] > 0.0) || !(domain[3] > 0.0)) {
-        Rcpp::stop("cpp_hsgp_basis_2d_domain: domain must be c(x_center, "
+        tulpa::stop("cpp_hsgp_basis_2d_domain: domain must be c(x_center, "
                    "y_center, L1, L2) with positive half-widths.");
     }
     const int n = coords.nrow();
@@ -158,7 +159,7 @@ Rcpp::List cpp_hsgp_observation_projection(Rcpp::NumericMatrix training,
                                           Rcpp::NumericMatrix prediction,
                                           Rcpp::NumericVector spectral) {
     if (training.ncol() != spectral.size() || prediction.ncol() != spectral.size())
-        Rcpp::stop("HSGP basis and spectral widths differ.");
+        tulpa::stop("HSGP basis and spectral widths differ.");
     tulpa::HsgpObservation representation;
     Eigen::Map<const Eigen::MatrixXd> train(training.begin(), training.nrow(), training.ncol());
     Eigen::Map<const Eigen::MatrixXd> pred(prediction.begin(), prediction.nrow(), prediction.ncol());
@@ -175,7 +176,7 @@ Rcpp::List cpp_hsgp_sum_projection(Rcpp::List training, Rcpp::List prediction,
                                   Rcpp::List spectral) {
     const int count = training.size();
     if (count == 0 || prediction.size() != count || spectral.size() != count)
-        Rcpp::stop("HSGP projections require matching nonempty component lists.");
+        tulpa::stop("HSGP projections require matching nonempty component lists.");
     int width = 0;
     const int n = Rcpp::as<Rcpp::NumericMatrix>(training[0]).nrow();
     std::vector<Eigen::MatrixXd> pred;
@@ -184,7 +185,7 @@ Rcpp::List cpp_hsgp_sum_projection(Rcpp::List training, Rcpp::List prediction,
         Rcpp::NumericMatrix t = training[b], p = prediction[b];
         Rcpp::NumericVector s = spectral[b];
         if (t.nrow() != n || t.ncol() != s.size() || p.ncol() != s.size())
-            Rcpp::stop("HSGP component training rows or spectral widths differ.");
+            tulpa::stop("HSGP component training rows or spectral widths differ.");
         width += s.size();
         offsets.push_back(width);
         pred.emplace_back(Eigen::Map<const Eigen::MatrixXd>(p.begin(), p.nrow(), p.ncol()) *

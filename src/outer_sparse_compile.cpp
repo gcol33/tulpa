@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include <map>
 #include <limits>
 #include "outer_spline.h"
@@ -20,11 +21,11 @@ struct Term {
         Rcpp::List nodes = entry["nodes"];
         for (int j = 0; j < nodes.size(); ++j) axes.emplace_back(Rcpp::NumericVector(nodes[j]), true);
         if (index.size() != axes.size() || !std::isfinite(coefficient))
-            Rcpp::stop("Sparse spline terms have inconsistent dimensions.");
+            tulpa::stop("Sparse spline terms have inconsistent dimensions.");
         std::size_t size = 1;
         for (const auto& axis : axes) size *= axis.x.size();
         if (size != static_cast<std::size_t>(rows.size()))
-            Rcpp::stop("Sparse spline rows must cover their tensor.");
+            tulpa::stop("Sparse spline rows must cover their tensor.");
     }
 };
 
@@ -113,7 +114,7 @@ inline Group compile_group(const PlanGroup& group, const std::vector<Term>& term
         for (int f = 0; f < fields; ++f) for (int i = 0; i < term.rows.size(); ++i) {
             const int row = term.rows[i] - 1;
             if (row < 0 || row >= values.nrow() || !std::isfinite(values(row, f)))
-                Rcpp::stop("Sparse spline rows and values must be finite and valid.");
+                tulpa::stop("Sparse spline rows and values must be finite and valid.");
             chunk.values(i, f) = (values(row, f) - center[f]) * term.coefficient;
         }
         chunks.push_back(std::move(chunk));
@@ -173,14 +174,14 @@ Rcpp::List cpp_outer_sparse_compile(Rcpp::List input, Rcpp::NumericMatrix values
                                       int n_query, SEXP previous = R_NilValue) {
     using namespace tulpa_outer_compile;
     if (!input.size() || !values.nrow() || n_query < 1)
-        Rcpp::stop("Sparse spline compilation requires terms, values and queries.");
+        tulpa::stop("Sparse spline compilation requires terms, values and queries.");
     SerialEigen serial;
     std::vector<Term> terms;
     for (int i = 0; i < input.size(); ++i) terms.emplace_back(Rcpp::List(input[i]));
     const int d = terms.front().axes.size();
-    if (!d) Rcpp::stop("Sparse splines require at least one axis.");
+    if (!d) tulpa::stop("Sparse splines require at least one axis.");
     for (const auto& term : terms) if (term.axes.size() != static_cast<std::size_t>(d))
-        Rcpp::stop("Sparse spline terms have inconsistent dimensions.");
+        tulpa::stop("Sparse spline terms have inconsistent dimensions.");
     Plan selected = plan(terms, 0);
     const double budget = std::max(selected.cells, static_cast<double>(n_query) * terms.size());
     for (int k = 1; k <= d; ++k) {
@@ -193,7 +194,7 @@ Rcpp::List cpp_outer_sparse_compile(Rcpp::List input, Rcpp::NumericMatrix values
     spline->d = d; spline->fields = values.ncol(); spline->compiled = selected.compiled; spline->cells = selected.cells;
     Eigen::VectorXd center(values.ncol());
     const int center_row = terms.front().rows[0] - 1;
-    if (center_row < 0 || center_row >= values.nrow()) Rcpp::stop("Sparse spline rows must be valid.");
+    if (center_row < 0 || center_row >= values.nrow()) tulpa::stop("Sparse spline rows must be valid.");
     for (int f = 0; f < values.ncol(); ++f) center[f] = values(center_row, f);
     double coefficient_sum = 0;
     for (const auto& term : terms) coefficient_sum += term.coefficient;
@@ -208,7 +209,7 @@ Rcpp::List cpp_outer_sparse_compile(Rcpp::List input, Rcpp::NumericMatrix values
 // [[Rcpp::export]]
 Rcpp::NumericMatrix cpp_outer_sparse_evaluate(SEXP pointer, Rcpp::NumericMatrix query) {
     Rcpp::XPtr<tulpa_outer_compile::Spline> spline(pointer);
-    if (query.ncol() != spline->d) Rcpp::stop("Sparse spline query dimensions differ from its axes.");
+    if (query.ncol() != spline->d) tulpa::stop("Sparse spline query dimensions differ from its axes.");
     Rcpp::NumericMatrix output(query.nrow(), spline->fields);
     for (const auto& group : spline->groups)
         tulpa_outer_spline::accumulate(group.axes, group.coefficients, query, output);

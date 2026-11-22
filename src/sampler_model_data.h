@@ -22,6 +22,7 @@
 #define TULPA_SAMPLER_MODEL_DATA_H
 
 #include <cmath>
+#include "tulpa_stop.h"
 #include <limits>
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
@@ -64,10 +65,10 @@ inline void read_pc_anchors(const Rcpp::List& spec,
     if (spec.containsElementNamed(key_alpha))
         alpha = Rcpp::as<double>(spec[key_alpha]);
     if (!pc_anchors_valid(U, alpha)) {
-        Rcpp::stop("build_sampler_model_inputs: %s PC prior anchors must "
+        tulpa::stop("build_sampler_model_inputs: %s PC prior anchors must "
                    "satisfy `%s` > 0 and 0 < `%s` < 1 (got %g and %g). The "
                    "pair calibrates P(sigma > U) = alpha.",
-                   what, key_U, key_alpha, U, alpha);
+                   {what, key_U, key_alpha, U, alpha});
     }
 }
 
@@ -77,8 +78,8 @@ inline void require_pc_anchors(const Rcpp::List& spec,
                                double& U, double& alpha, const char* what) {
     if (!spec.containsElementNamed(key_U) ||
         !spec.containsElementNamed(key_alpha)) {
-        Rcpp::stop("build_sampler_model_inputs: the %s prior needs `%s` and "
-                   "`%s` on the spec.", what, key_U, key_alpha);
+        tulpa::stop("build_sampler_model_inputs: the %s prior needs `%s` and "
+                   "`%s` on the spec.", {what, key_U, key_alpha});
     }
     read_pc_anchors(spec, key_U, key_alpha, U, alpha, what);
 }
@@ -96,7 +97,7 @@ inline RangePrior read_range_prior(const Rcpp::List& sp) {
         prior.type = RangePriorType::LOGNORMAL;
         prior.meanlog = Rcpp::as<double>(p["meanlog"]);
         prior.sdlog = Rcpp::as<double>(p["sdlog"]);
-    } else if (type != "pc") Rcpp::stop("Unknown range prior: %s", type);
+    } else if (type != "pc") tulpa::stop("Unknown range prior: %s", {type});
     return prior;
 }
 
@@ -107,15 +108,15 @@ inline void check_obs_to_loc_0based(
     const Rcpp::IntegerVector& otl, int n_obs, int n_loc, const char* who
 ) {
     if (static_cast<int>(otl.size()) != n_obs) {
-        Rcpp::stop("%s: length(obs_to_loc) (%d) must equal the number of "
-                   "observations (%d).", who,
-                   static_cast<int>(otl.size()), n_obs);
+        tulpa::stop("%s: length(obs_to_loc) (%d) must equal the number of "
+                   "observations (%d).", {who,
+                   static_cast<int>(otl.size()), n_obs});
     }
     for (int i = 0; i < n_obs; i++) {
         if (otl[i] == NA_INTEGER || otl[i] < 0 || otl[i] >= n_loc) {
-            Rcpp::stop("%s: obs_to_loc[%d] (%d) is outside [0, %d). The "
-                       "sampler-side node map is 0-based.", who, i + 1,
-                       otl[i], n_loc);
+            tulpa::stop("%s: obs_to_loc[%d] (%d) is outside [0, %d). The "
+                       "sampler-side node map is 0-based.", {who, i + 1,
+                       otl[i], n_loc});
         }
     }
 }
@@ -132,17 +133,17 @@ inline void check_nn_tables(
     const char* idx_field = "nn_idx", const char* dist_field = "nn_dist"
 ) {
     if (nn < 0) {
-        Rcpp::stop("%s: nn (%d) must be non-negative.", who, nn);
+        tulpa::stop("%s: nn (%d) must be non-negative.", {who, nn});
     }
     if (idx.nrow() != n_loc || idx.ncol() != nn) {
-        Rcpp::stop("%s: %s is %d x %d; must be %d x %d.", who, idx_field,
+        tulpa::stop("%s: %s is %d x %d; must be %d x %d.", {who, idx_field,
                    static_cast<int>(idx.nrow()), static_cast<int>(idx.ncol()),
-                   n_loc, nn);
+                   n_loc, nn});
     }
     if (dist.nrow() != n_loc || dist.ncol() != nn) {
-        Rcpp::stop("%s: %s is %d x %d; must be %d x %d.", who, dist_field,
+        tulpa::stop("%s: %s is %d x %d; must be %d x %d.", {who, dist_field,
                    static_cast<int>(dist.nrow()), static_cast<int>(dist.ncol()),
-                   n_loc, nn);
+                   n_loc, nn});
     }
 }
 
@@ -153,8 +154,8 @@ inline void check_nn_tables(
 inline void check_vec_len(R_xlen_t got, R_xlen_t want,
                           const char* who, const char* field) {
     if (got != want) {
-        Rcpp::stop("%s: length(%s) is %d; must be %d.", who, field,
-                   static_cast<int>(got), static_cast<int>(want));
+        tulpa::stop("%s: length(%s) is %d; must be %d.", {who, field,
+                   static_cast<int>(got), static_cast<int>(want)});
     }
 }
 
@@ -165,8 +166,8 @@ inline void check_nn_order(const Rcpp::IntegerVector& ord, int n_loc,
     check_vec_len(ord.size(), n_loc, who, field);
     for (int i = 0; i < n_loc; i++) {
         if (ord[i] == NA_INTEGER || ord[i] < 0 || ord[i] >= n_loc) {
-            Rcpp::stop("%s: %s[%d] (%d) is outside [0, %d). The sampler-side "
-                       "ordering is 0-based.", who, field, i + 1, ord[i], n_loc);
+            tulpa::stop("%s: %s[%d] (%d) is outside [0, %d). The sampler-side "
+                       "ordering is 0-based.", {who, field, i + 1, ord[i], n_loc});
         }
     }
 }
@@ -203,12 +204,12 @@ inline TemporalGPKernel read_temporal_gp_kernel(const Rcpp::List& spec,
         std::abs(k.nu - 0.5) > 1e-12 &&
         std::abs(k.nu - 1.5) > 1e-12 &&
         std::abs(k.nu - 2.5) > 1e-12) {
-        Rcpp::stop("%s: Matern smoothness nu = %g has no closed form here; use "
-                   "0.5, 1.5 or 2.5.", who, k.nu);
+        tulpa::stop("%s: Matern smoothness nu = %g has no closed form here; use "
+                   "0.5, 1.5 or 2.5.", {who, k.nu});
     }
     if (k.cov_type == tulpa::TemporalCovType::PERIODIC && !(k.period > 0.0)) {
-        Rcpp::stop("%s: the periodic kernel's period must be positive (got %g).",
-                   who, k.period);
+        tulpa::stop("%s: the periodic kernel's period must be positive (got %g).",
+                   {who, k.period});
     }
     return k;
 }
@@ -224,8 +225,8 @@ inline void read_temporal_gp_phi_bounds(const Rcpp::List& spec, const char* who,
     if (spec.containsElementNamed("phi_prior_upper"))
         upper = Rcpp::as<double>(spec["phi_prior_upper"]);
     if (!(lower < upper)) {
-        Rcpp::stop("%s: lengthscale bounds must satisfy lower < upper "
-                   "(got %g, %g).", who, lower, upper);
+        tulpa::stop("%s: lengthscale bounds must satisfy lower < upper "
+                   "(got %g, %g).", {who, lower, upper});
     }
 }
 

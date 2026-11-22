@@ -8,6 +8,7 @@
 #define TULPA_LOG_POST_GENERIC_IMPL_H
 
 #include <Rcpp.h>  // Rcpp::stop for offset-length validation
+#include "tulpa_stop.h"
 #include <type_traits>
 
 // NOTE: this file is included from log_post_impl.h while
@@ -105,7 +106,7 @@ static inline void dispatch_nc_transform(
     } else if constexpr (std::is_same_v<T, arena::Var>) {
         on_arena(params, data, layout, out);
     } else {
-        Rcpp::stop("%s non-centered: AD type not supported.", block);
+        tulpa::stop("%s non-centered: AD type not supported.", {block});
     }
 }
 
@@ -443,9 +444,9 @@ static void precompute_generic_fixed_eta(
         // raises a deterministic error instead of overrunning eta_fixed.
         if (!proc.offset.empty()) {
             if ((int)proc.offset.size() != data.N) {
-                Rcpp::stop("ProcessData[%d]: offset length (%d) must equal "
+                tulpa::stop("ProcessData[%d]: offset length (%d) must equal "
                            "ModelData::N (%d)",
-                           k, (int)proc.offset.size(), data.N);
+                           {k, (int)proc.offset.size(), data.N});
             }
             for (int i = 0; i < data.N; i++) {
                 state.eta_fixed[k][i] = state.eta_fixed[k][i] + T(proc.offset[i]);
@@ -750,9 +751,9 @@ T compute_log_post_generic(
     // an improbable point: -Inf would reject every proposal, leaving a chain
     // that never moves and no diagnostic saying why.
     if (data.n_processes > MAX_PROCESSES) {
-        Rcpp::stop("tulpa: ModelData declares %d processes; the generic "
+        tulpa::stop("tulpa: ModelData declares %d processes; the generic "
                    "log-posterior evaluates at most MAX_PROCESSES = %d.",
-                   data.n_processes, MAX_PROCESSES);
+                   {data.n_processes, MAX_PROCESSES});
     }
 
     GenericLogPostState<T> state;

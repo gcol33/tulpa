@@ -2,6 +2,7 @@
 // Definition of make_hsgp_block, declared in hsgp_block_factory.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "hsgp_block_factory.h"
 #include "hsgp_observation.h"
 
@@ -65,16 +66,16 @@ LatentBlock make_hsgp_block(
     bool                           observation_space
 ) {
     if (eigenvalues.size() != m_total) {
-        Rcpp::stop("Block %d (type 'hsgp'): length(eigenvalues) must equal "
+        tulpa::stop("Block %d (type 'hsgp'): length(eigenvalues) must equal "
                    "m_total (%d), got %d.",
-                   block_index + 1, m_total,
-                   static_cast<int>(eigenvalues.size()));
+                   {block_index + 1, m_total,
+                   static_cast<int>(eigenvalues.size())});
     }
     if (static_cast<int>(phi_per_arm.size()) != n_arms ||
         n_obs_per_arm.size() != n_arms) {
-        Rcpp::stop("Block %d (type 'hsgp'): phi_per_arm / n_obs_per_arm "
+        tulpa::stop("Block %d (type 'hsgp'): phi_per_arm / n_obs_per_arm "
                    "must each have length n_arms (%d).",
-                   block_index + 1, n_arms);
+                   {block_index + 1, n_arms});
     }
 
     // Materialize per-arm phi row-major flat vectors at factory time.
@@ -84,11 +85,11 @@ LatentBlock make_hsgp_block(
         Rcpp::NumericMatrix phi_k = phi_per_arm[k];
         int N_k = n_obs_per_arm[k];
         if (phi_k.nrow() != N_k || phi_k.ncol() != m_total) {
-            Rcpp::stop("Block %d (type 'hsgp'): phi_per_arm[[%d]] must be "
+            tulpa::stop("Block %d (type 'hsgp'): phi_per_arm[[%d]] must be "
                        "n_obs_k x m_total (expected %d x %d, got %d x %d).",
-                       block_index + 1, k + 1, N_k, m_total,
+                       {block_index + 1, k + 1, N_k, m_total,
                        static_cast<int>(phi_k.nrow()),
-                       static_cast<int>(phi_k.ncol()));
+                       static_cast<int>(phi_k.ncol())});
         }
         auto& flat = (*phi_flat_per_arm)[k];
         flat.assign(static_cast<size_t>(N_k) * m_total, 0.0);

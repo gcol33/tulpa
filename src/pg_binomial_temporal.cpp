@@ -3,6 +3,7 @@
 // Trend (RW1) + seasonal (cyclic RW1) + short-term (AR1/IID).
 
 #include "pg_shared.h"
+#include "tulpa_stop.h"
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include "hmc_temporal.h"   // rw1_quadratic_form, rw1_rank, ar1_log_density
@@ -59,15 +60,15 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     const double prior_beta_sd_value =
         tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
   if (trend_type < 0 || trend_type > 1) {
-    Rcpp::stop("`trend_type` must be 0 (none) or 1 (RW1); got %d. The temporal "
-               "Gibbs kernel implements an RW1 trend only.", trend_type);
+    tulpa::stop("`trend_type` must be 0 (none) or 1 (RW1); got %d. The temporal "
+               "Gibbs kernel implements an RW1 trend only.", {trend_type});
   }
   if (short_type < 0 || short_type > 2) {
-    Rcpp::stop("`short_type` must be 0 (none), 1 (AR1) or 2 (IID); got %d.",
-               short_type);
+    tulpa::stop("`short_type` must be 0 (none), 1 (AR1) or 2 (IID); got %d.",
+               {short_type});
   }
   if (seasonal_period < 0) {
-    Rcpp::stop("`seasonal_period` must be >= 0; got %d.", seasonal_period);
+    tulpa::stop("`seasonal_period` must be >= 0; got %d.", {seasonal_period});
   }
 
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
@@ -75,7 +76,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
   tulpa::pg_check_pc_prior(prior_sigma_seasonal_U, prior_sigma_seasonal_alpha, "seasonal");
   tulpa::pg_check_pc_prior(prior_sigma_short_U, prior_sigma_short_alpha, "short");
   if (!(prior_rho_a > 0.0 && prior_rho_b > 0.0))
-    Rcpp::stop("AR1 Beta prior parameters must be positive.");
+    tulpa::stop("AR1 Beta prior parameters must be positive.");
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);
   const int N = C.N;

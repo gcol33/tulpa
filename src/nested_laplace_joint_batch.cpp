@@ -26,6 +26,7 @@
 // entry returns for its own responses.
 
 #include "nested_laplace_joint_batch.h"
+#include "tulpa_stop.h"
 #include "nested_laplace_grid.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
@@ -209,15 +210,15 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     std::vector<int> coupled_arms;
     if (spec) coupled_arms = spec->arm_ids();
     if (coupled_arms.empty()) {
-        Rcpp::stop("batched joint path requires a cell-coupling spec with "
+        tulpa::stop("batched joint path requires a cell-coupling spec with "
                    "coupled arms (occu_cover); none registered.");
     }
     for (int k = 0; k < n_arms; k++) {
         bool found = false;
         for (int c : coupled_arms) if (c == k) { found = true; break; }
         if (!found && arms[k].N > 0) {
-            Rcpp::stop("batched joint path requires every "
-                       "data arm to be cell-coupled; arm %d is not.", k + 1);
+            tulpa::stop("batched joint path requires every "
+                       "data arm to be cell-coupled; arm %d is not.", {k + 1});
         }
     }
 

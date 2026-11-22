@@ -19,6 +19,7 @@
 #define TULPA_ESS_SAMPLER_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <RcppEigen.h>
 #include <vector>
 #include <cmath>
@@ -278,7 +279,7 @@ inline std::vector<GaussianReference> build_gaussian_references(
         // Error rather than mis-sample, matching the structured-spatial block
         // below.
         if (layout.log_sigma_re_multi.size() > 1) {
-            Rcpp::stop("ESS prior builder: multiple random-effect terms with "
+            tulpa::stop("ESS prior builder: multiple random-effect terms with "
                        "distinct sigma are not supported -- the ESS Gaussian "
                        "prior block binds a single RE scale, so only the first "
                        "term's sigma would be applied. Use a per-term sampler "

@@ -22,6 +22,7 @@
 #define TULPA_INTRINSIC_LOG_PDET_H
 
 #include <Eigen/Dense>
+#include "tulpa_stop.h"
 #include <Eigen/Sparse>
 #include <Rcpp.h>
 #include <cmath>
@@ -64,7 +65,7 @@ inline double intrinsic_log_pdet(const Eigen::SparseMatrix<double>& Q,
     M.setFromTriplets(trip.begin(), trip.end());
     Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> llt(M);
     if (llt.info() != Eigen::Success) {
-        Rcpp::stop("intrinsic_log_pdet: the structure matrix with its null "
+        tulpa::stop("intrinsic_log_pdet: the structure matrix with its null "
                    "space removed is not positive definite.");
     }
     const Eigen::SparseMatrix<double> L = llt.matrixL();

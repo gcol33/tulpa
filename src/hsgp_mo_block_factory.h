@@ -66,6 +66,7 @@
 #define TULPA_HSGP_MO_BLOCK_FACTORY_H
 
 #include "latent_block.h"
+#include "tulpa_stop.h"
 #include "nl_cell_cache.h"
 #include "sparse_hessian.h"
 #include "hsgp_spectral.h"
@@ -98,23 +99,23 @@ inline LatentBlock make_hsgp_mo_block(
 ) {
     const int K = n_arms;
     if (K != 2) {
-        Rcpp::stop("Block %d (type 'hsgp_mo'): requires "
+        tulpa::stop("Block %d (type 'hsgp_mo'): requires "
                    "n_arms == 2 (got %d). Multi-output HSGP with K > 2 "
                    "needs an LKJ-cholesky correlation parameterization, "
                    "which is not supported.",
-                   block_index + 1, K);
+                   {block_index + 1, K});
     }
     if (eigenvalues.size() != m_total) {
-        Rcpp::stop("Block %d (type 'hsgp_mo'): length(eigenvalues) must "
+        tulpa::stop("Block %d (type 'hsgp_mo'): length(eigenvalues) must "
                    "equal m_total (%d), got %d.",
-                   block_index + 1, m_total,
-                   static_cast<int>(eigenvalues.size()));
+                   {block_index + 1, m_total,
+                   static_cast<int>(eigenvalues.size())});
     }
     if (static_cast<int>(phi_per_arm.size()) != K ||
         n_obs_per_arm.size() != K) {
-        Rcpp::stop("Block %d (type 'hsgp_mo'): phi_per_arm / n_obs_per_arm "
+        tulpa::stop("Block %d (type 'hsgp_mo'): phi_per_arm / n_obs_per_arm "
                    "must each have length n_arms (%d).",
-                   block_index + 1, K);
+                   {block_index + 1, K});
     }
 
     // Materialize per-arm phi row-major flat vectors at factory time.
@@ -124,11 +125,11 @@ inline LatentBlock make_hsgp_mo_block(
         Rcpp::NumericMatrix phi_k = phi_per_arm[k];
         int N_k = n_obs_per_arm[k];
         if (phi_k.nrow() != N_k || phi_k.ncol() != m_total) {
-            Rcpp::stop("Block %d (type 'hsgp_mo'): phi_per_arm[[%d]] must "
+            tulpa::stop("Block %d (type 'hsgp_mo'): phi_per_arm[[%d]] must "
                        "be n_obs_k x m_total (expected %d x %d, got %d x %d).",
-                       block_index + 1, k + 1, N_k, m_total,
+                       {block_index + 1, k + 1, N_k, m_total,
                        static_cast<int>(phi_k.nrow()),
-                       static_cast<int>(phi_k.ncol()));
+                       static_cast<int>(phi_k.ncol())});
         }
         auto& flat = (*phi_flat_per_arm)[k];
         flat.assign(static_cast<size_t>(N_k) * m_total, 0.0);

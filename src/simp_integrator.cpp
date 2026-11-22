@@ -4,6 +4,7 @@
 // by both leapfrog steppers; selecting an integrator swaps the scheme here.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <algorithm>
 #include <string>
 
@@ -39,10 +40,10 @@ void set_integrator_scheme(const std::string& name, int mts_substeps) {
   // unnamed branches resolve their scheme here too.
   if (name == "mts" &&
       (mts_substeps < 1 || mts_substeps > kMaxMtsSubsteps)) {
-    Rcpp::stop("tulpa_integrator: `mts_substeps` is %d; the RESPA inner "
+    tulpa::stop("tulpa_integrator: `mts_substeps` is %d; the RESPA inner "
                "substep count must lie in [1, %d]. Each substep is one extra "
                "prior gradient per trajectory step.",
-               mts_substeps, kMaxMtsSubsteps);
+               {mts_substeps, kMaxMtsSubsteps});
   }
   const bool named_scheme = (name != "adaptive2" && name != "adaptive3" &&
                              name != "mts");

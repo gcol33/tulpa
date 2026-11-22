@@ -17,6 +17,7 @@
 // Routed from dispatch_laplace_spatial / tulpa_laplace(spatial = spatial_gp()).
 
 #include "laplace_core.h"
+#include "tulpa_stop.h"
 #include "hessian_pattern_guard.h"          // HessianPatternGuard
 #include "laplace_spec_fit.h"               // as_offset_vec, unwrap_skew_idx
 #include "nested_laplace_grid.h"            // nl_grid_cell_to_result_list
@@ -52,8 +53,8 @@ Rcpp::List cpp_laplace_fit_gp(
     const int gp_start = p + n_re_groups;
 
     if (coords.nrow() != n_spatial) {
-        Rcpp::stop("nrow(coords) (%d) must equal n_spatial (%d).",
-                   static_cast<int>(coords.nrow()), n_spatial);
+        tulpa::stop("nrow(coords) (%d) must equal n_spatial (%d).",
+                   {static_cast<int>(coords.nrow()), n_spatial});
     }
 
     // Per-observation 1-based field-node index. A supplied obs_to_loc attaches
@@ -66,8 +67,8 @@ Rcpp::List cpp_laplace_fit_gp(
     if (obs_to_loc_nullable.isNotNull()) {
         Rcpp::IntegerVector otl(obs_to_loc_nullable);
         if (otl.size() != N) {
-            Rcpp::stop("length(obs_to_loc) (%d) must equal length(y) (%d).",
-                       static_cast<int>(otl.size()), N);
+            tulpa::stop("length(obs_to_loc) (%d) must equal length(y) (%d).",
+                       {static_cast<int>(otl.size()), N});
         }
         spatial_idx = otl;
     } else {

@@ -25,6 +25,7 @@
 #define TULPA_FIELD_BLOCK_PRIORS_H
 
 #include "intrinsic_log_pdet.h"   // rw_log_pdet
+#include "tulpa_stop.h"
 #include "latent_block.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
@@ -155,8 +156,8 @@ inline void set_temporal_block_priors(
             return lp;
         };
     } else {
-        Rcpp::stop("unknown temporal_type '%s' (expected 'rw1', 'rw2', or "
-                   "'ar1')", type.c_str());
+        tulpa::stop("unknown temporal_type '%s' (expected 'rw1', 'rw2', or "
+                   "'ar1')", {type.c_str()});
     }
     block.prior_kind = PriorFillKind::ADJACENCY;
 }

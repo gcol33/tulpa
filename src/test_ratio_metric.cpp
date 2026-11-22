@@ -1,5 +1,6 @@
 // [[Rcpp::depends(RcppEigen)]]
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "test_prior_model.h"
 
 #include <tulpa/walnuts.h>
@@ -151,7 +152,7 @@ Rcpp::List cpp_test_gradient_trajectory(std::string type, std::string block,
         tulpa::walnuts_detail::leapfrog(context,state,epsilon,1);
         q=state.theta; p=state.rho; g=state.grad; lp=state.logp_pos;
       } else {
-        Rcpp::stop("Unknown trajectory path");
+        tulpa::stop("Unknown trajectory path");
       }
     };
     for (int j=0;j<steps;++j) step();

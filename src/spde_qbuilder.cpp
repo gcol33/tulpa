@@ -2,6 +2,7 @@
 // Definitions of the SPDE precision builder declared in spde_qbuilder.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "spde_qbuilder.h"
 
 namespace tulpa {
@@ -10,8 +11,8 @@ void SpdeQBuilder::init(int n, const Rcpp::NumericVector& C0_diag,
                          const Rcpp::NumericVector& G1_x, const Rcpp::IntegerVector& G1_i,
                          const Rcpp::IntegerVector& G1_p, int alpha) {
     if (alpha < 1) {
-        Rcpp::stop("SPDE FEM assembly requires alpha >= 1 (nu >= 0); got %d.",
-                   alpha);
+        tulpa::stop("SPDE FEM assembly requires alpha >= 1 (nu >= 0); got %d.",
+                   {alpha});
     }
     n_mesh = n;
     alpha_order = alpha;
@@ -106,32 +107,32 @@ void spde_validate_csc(int n_col, const Rcpp::IntegerVector& p_vec,
                               const Rcpp::IntegerVector& i_vec, int nnz,
                               int n_row, const char* what) {
     if ((int) p_vec.size() != n_col + 1) {
-        Rcpp::stop("%s: column pointer vector must have length %d; got %d.",
-                   what, n_col + 1, (int) p_vec.size());
+        tulpa::stop("%s: column pointer vector must have length %d; got %d.",
+                   {what, n_col + 1, (int) p_vec.size()});
     }
     if ((int) i_vec.size() != nnz) {
-        Rcpp::stop("%s: row-index vector must have length %d; got %d.",
-                   what, nnz, (int) i_vec.size());
+        tulpa::stop("%s: row-index vector must have length %d; got %d.",
+                   {what, nnz, (int) i_vec.size()});
     }
     if (p_vec[0] != 0) {
-        Rcpp::stop("%s: column pointers must start at 0; got %d.",
-                   what, (int)p_vec[0]);
+        tulpa::stop("%s: column pointers must start at 0; got %d.",
+                   {what, (int)p_vec[0]});
     }
     for (int c = 0; c < n_col; c++) {
         if (p_vec[c + 1] < p_vec[c]) {
-            Rcpp::stop("%s: column pointers must be non-decreasing; entry %d "
+            tulpa::stop("%s: column pointers must be non-decreasing; entry %d "
                        "(%d) is below entry %d (%d).",
-                       what, c + 2, (int)p_vec[c + 1], c + 1, (int)p_vec[c]);
+                       {what, c + 2, (int)p_vec[c + 1], c + 1, (int)p_vec[c]});
         }
     }
     if (p_vec[n_col] != nnz) {
-        Rcpp::stop("%s: last column pointer (%d) must equal the number of "
-                   "stored values (%d).", what, (int)p_vec[n_col], nnz);
+        tulpa::stop("%s: last column pointer (%d) must equal the number of "
+                   "stored values (%d).", {what, (int)p_vec[n_col], nnz});
     }
     for (int e = 0; e < nnz; e++) {
         if (i_vec[e] < 0 || i_vec[e] >= n_row) {
-            Rcpp::stop("%s: row index %d at slot %d is outside [0, %d).",
-                       what, (int)i_vec[e], e + 1, n_row);
+            tulpa::stop("%s: row index %d at slot %d is outside [0, %d).",
+                       {what, (int)i_vec[e], e + 1, n_row});
         }
     }
 }

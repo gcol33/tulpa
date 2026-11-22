@@ -161,7 +161,7 @@ test_that("the two knobs state one cut, so setting both is refused", {
 
 test_that("the driver reports the cut and the surface it was applied to", {
   skip_on_cran_budget()
-  src <- test_path("..", "..", "src", "nested_laplace_grid.h")
+  src <- test_path("..", "..", "src", "nested_laplace_grid.cpp")
   skip_if_not(file.exists(src), "package sources not available")
   txt <- paste(readLines(src, warn = FALSE), collapse = "\n")
 

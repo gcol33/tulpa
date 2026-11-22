@@ -20,6 +20,7 @@
 // ----------------------------------------------------------------------------
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "fixed_effect_prior.h"
 #include "sampler_resume.h"
 #include <string>
@@ -134,7 +135,7 @@ Rcpp::NumericMatrix spatial_joint_draws(
         const size_t need = static_cast<size_t>(count) * units;
         if (units < 1 || fields.size() < need ||
             (layout.is_bym2 && chain.bym2_theta_star_flat.size() < need))
-            Rcpp::stop("Conditional spatial draws must match the retained outer rows");
+            tulpa::stop("Conditional spatial draws must match the retained outer rows");
         for (int s = 0; s < count; ++s, ++row) {
             for (int j = 0; j < layout.total_params; ++j)
                 draws(row, j < begin ? j : j + width) = outer.draws(row, j);
@@ -190,9 +191,9 @@ Rcpp::List cpp_vi_elbo_grad(
         tulpa::read_sigma_beta(sigma_beta);
     using namespace tulpa::vi;
 
-    if (mc_samples < 1) Rcpp::stop("mc_samples must be at least 1.");
+    if (mc_samples < 1) tulpa::stop("mc_samples must be at least 1.");
     if (variant < 0 || variant > 2) {
-        Rcpp::stop("variant must be 0 (meanfield), 1 (lowrank) or 2 (fullrank).");
+        tulpa::stop("variant must be 0 (meanfield), 1 (lowrank) or 2 (fullrank).");
     }
 
     const int N = y.size();
@@ -214,9 +215,9 @@ Rcpp::List cpp_vi_elbo_grad(
         if (x.isNotNull()) {
             Rcpp::NumericVector xv(x);
             if ((int)xv.size() != params.n_variational_params()) {
-                Rcpp::stop("x has length %d but the mean-field parameterization "
-                           "has %d entries.", (int)xv.size(),
-                           params.n_variational_params());
+                tulpa::stop("x has length %d but the mean-field parameterization "
+                           "has %d entries.", {(int)xv.size(),
+                           params.n_variational_params()});
             }
             params.unflatten(Eigen::Map<Eigen::VectorXd>(xv.begin(), xv.size()));
         }
@@ -231,14 +232,14 @@ Rcpp::List cpp_vi_elbo_grad(
         entropy = params.entropy();
         variant_name = "meanfield";
     } else if (variant == 1) {
-        if (rank < 1) Rcpp::stop("rank must be at least 1 for the low-rank variant.");
+        if (rank < 1) tulpa::stop("rank must be at least 1 for the low-rank variant.");
         LowRankParams params(D, rank, (unsigned int)seed);
         if (x.isNotNull()) {
             Rcpp::NumericVector xv(x);
             if ((int)xv.size() != params.n_variational_params()) {
-                Rcpp::stop("x has length %d but the low-rank parameterization "
-                           "has %d entries.", (int)xv.size(),
-                           params.n_variational_params());
+                tulpa::stop("x has length %d but the low-rank parameterization "
+                           "has %d entries.", {(int)xv.size(),
+                           params.n_variational_params()});
             }
             params.unflatten(Eigen::Map<Eigen::VectorXd>(xv.begin(), xv.size()));
         }
@@ -258,9 +259,9 @@ Rcpp::List cpp_vi_elbo_grad(
         if (x.isNotNull()) {
             Rcpp::NumericVector xv(x);
             if ((int)xv.size() != params.n_variational_params()) {
-                Rcpp::stop("x has length %d but the full-rank parameterization "
-                           "has %d entries.", (int)xv.size(),
-                           params.n_variational_params());
+                tulpa::stop("x has length %d but the full-rank parameterization "
+                           "has %d entries.", {(int)xv.size(),
+                           params.n_variational_params()});
             }
             params.unflatten(Eigen::Map<Eigen::VectorXd>(xv.begin(), xv.size()));
         }
@@ -391,35 +392,35 @@ Rcpp::List cpp_tulpa_sample_glmm(
     const bool collapsed = tulpa_hmc::has_collapsed_spatial(in.layout);
     tulpa_hmc::require_gaussian_spatial_marginal(in.data, in.layout);
     if (collapsed && !is_nuts)
-        Rcpp::stop("Collapsed Gaussian spatial inference is supported by NUTS/HMC. Use backend = 'hmc' or a full-field parameterization.");
+        tulpa::stop("Collapsed Gaussian spatial inference is supported by NUTS/HMC. Use backend = 'hmc' or a full-field parameterization.");
     // The metric is the NUTS/HMC kernel's own knob. Parsed for every backend so
     // an unrecognised name is rejected wherever it is written, and refused on
     // the backends that have no metric rather than accepted and ignored.
     const tulpa::MassMatrixType metric = tulpa_hmc::parse_metric_type(mass_matrix);
     if (!is_nuts && metric != tulpa::MassMatrixType::DIAG) {
-        Rcpp::stop("mass_matrix = '%s' is a NUTS/HMC knob; backend '%s' "
-                   "carries no mass matrix.", mass_matrix.c_str(),
-                   backend.c_str());
+        tulpa::stop("mass_matrix = '%s' is a NUTS/HMC knob; backend '%s' "
+                   "carries no mass matrix.", {mass_matrix.c_str(),
+                   backend.c_str()});
     }
     if (!is_nuts && (init_nullable.isNotNull() ||
                      inv_metric_diag_nullable.isNotNull() || epsilon_init.isNotNull())) {
-        Rcpp::stop("a warm start is only carried by the NUTS/HMC kernel; "
+        tulpa::stop("a warm start is only carried by the NUTS/HMC kernel; "
                    "backend '%s' takes neither an initial position nor an "
-                   "inverse-mass diagonal.", backend.c_str());
+                   "inverse-mass diagonal.", {backend.c_str()});
     }
     // Checkpoint/resume is per-chain (ChainCheckpoint, keyed on chain id), so it
     // is a NUTS/HMC-only knob like the warm start above: refuse rather than
     // silently drop it on a backend with no chain concept.
     if (!is_nuts && !checkpoint_path.empty()) {
-        Rcpp::stop("checkpoint/resume is only carried by the NUTS/HMC kernel; "
+        tulpa::stop("checkpoint/resume is only carried by the NUTS/HMC kernel; "
                    "backend '%s' has no per-chain state to checkpoint.",
-                   backend.c_str());
+                   {backend.c_str()});
     }
 
     Rcpp::List out;
 
     if (is_nuts) {
-        if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+        if (n_chains < 1) tulpa::stop("n_chains must be >= 1");
         std::vector<std::vector<double>> q_init(n_chains, init);
         const auto inv_metric = tulpa::read_inv_metric_init(inv_metric_diag_nullable, n_chains, D);
         const auto steps = tulpa::read_epsilon_init(epsilon_init, n_chains);
@@ -432,18 +433,18 @@ Rcpp::List cpp_tulpa_sample_glmm(
         if (init_nullable.isNotNull()) {
             Rcpp::NumericMatrix im(init_nullable);
             if (im.ncol() != D) {
-                Rcpp::stop("init has %d columns but the model lays out %d "
-                           "parameters.", (int)im.ncol(), D);
+                tulpa::stop("init has %d columns but the model lays out %d "
+                           "parameters.", {(int)im.ncol(), D});
             }
             if (im.nrow() != n_chains) {
-                Rcpp::stop("init has %d rows but n_chains is %d (one initial "
-                           "position per chain).", (int)im.nrow(), n_chains);
+                tulpa::stop("init has %d rows but n_chains is %d (one initial "
+                           "position per chain).", {(int)im.nrow(), n_chains});
             }
             for (int c = 0; c < n_chains; c++) {
                 for (int j = 0; j < D; j++) {
                     const double v = im(c, j);
                     if (!R_finite(v)) {
-                        Rcpp::stop("init[%d, %d] is not finite.", c + 1, j + 1);
+                        tulpa::stop("init[%d, %d] is not finite.", {c + 1, j + 1});
                     }
                     q_init[c][j] = v;
                 }
@@ -502,7 +503,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         cfg.verbose = verbose; cfg.print_every = 500;
         cfg.adapt_during_warmup = ess_adapt_during_warmup;
         if (ess_adapt_interval <= 0) {
-            Rcpp::stop("ess_adapt_interval must be positive (it is how many "
+            tulpa::stop("ess_adapt_interval must be positive (it is how many "
                        "sweeps sit between random-walk proposal-SD updates).");
         }
         cfg.adapt_interval = ess_adapt_interval;
@@ -514,11 +515,11 @@ Rcpp::List cpp_tulpa_sample_glmm(
         cfg.joint_sigma_re = (ess_joint_sigma_re < 0)
             ? in.layout.has_re : (ess_joint_sigma_re != 0);
         if (!(ess_joint_proposal_sd > 0.0)) {
-            Rcpp::stop("ess_joint_proposal_sd must be positive.");
+            tulpa::stop("ess_joint_proposal_sd must be positive.");
         }
         cfg.joint_sigma_proposal_sd = ess_joint_proposal_sd;
         tulpa_ess::ESSResult res = tulpa_ess::run_ess_sampler(init, in.data, in.layout, cfg);
-        if (!res.success) Rcpp::stop("ess sampler failed: %s", res.error_msg);
+        if (!res.success) tulpa::stop("ess sampler failed: %s", {res.error_msg});
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
         const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
@@ -550,7 +551,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         cfg.adapt_epsilon = !(epsilon > 0);
         cfg.epsilon = (epsilon > 0) ? epsilon : 0.01;
         tulpa_sghmc::SGHMCResult res = tulpa_sghmc::run_sghmc_sampler(init, in.data, in.layout, cfg);
-        if (!res.success) Rcpp::stop("sghmc sampler failed: %s", res.error_msg);
+        if (!res.success) tulpa::stop("sghmc sampler failed: %s", {res.error_msg});
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
         const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
@@ -576,7 +577,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         cfg.use_schedule = !(epsilon > 0);
         cfg.epsilon = (epsilon > 0) ? epsilon : 0.001;
         tulpa_sghmc::SGLDResult res = tulpa_sghmc::run_sgld_sampler(init, in.data, in.layout, cfg);
-        if (!res.success) Rcpp::stop("sgld sampler failed: %s", res.error_msg);
+        if (!res.success) tulpa::stop("sgld sampler failed: %s", {res.error_msg});
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
         const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
@@ -596,7 +597,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         cfg.adjusted = mclmc_adjusted;
         cfg.seed = (unsigned int)seed; cfg.verbose = verbose;
         tulpa_mclmc::MCLMCFitResult res = tulpa_mclmc::run_mclmc_sampler(init, in.data, in.layout, cfg);
-        if (!res.success) Rcpp::stop("mclmc sampler failed: %s", res.error_msg);
+        if (!res.success) tulpa::stop("mclmc sampler failed: %s", {res.error_msg});
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
         const Rcpp::NumericVector log_prob = tulpa::stored_draws(draws, in.data, in.layout);
         out = Rcpp::List::create(
@@ -618,7 +619,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         cfg.bridge_end = smc_bridge_end;
         tulpa::SMCDriverResult res = tulpa::run_smc_sampler(
             init, in.data, in.layout, cfg, nullptr, nullptr);
-        if (!res.success) Rcpp::stop("smc sampler failed: %s", res.error_msg);
+        if (!res.success) tulpa::stop("smc sampler failed: %s", {res.error_msg});
         auto to_draws = [D, &cn](const std::vector<std::vector<double>>& pop) {
             const int M = (int)pop.size();
             Rcpp::NumericMatrix m(M, D);
@@ -709,5 +710,5 @@ Rcpp::List cpp_tulpa_sample_glmm(
         return out;
     }
 
-    Rcpp::stop("Unknown backend '%s' for cpp_tulpa_sample_glmm.", backend);
+    tulpa::stop("Unknown backend '%s' for cpp_tulpa_sample_glmm.", {backend});
 }

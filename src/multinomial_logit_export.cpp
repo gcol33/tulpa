@@ -6,18 +6,19 @@
 // observed class, 1-based in 1..K.
 
 #include "multinomial_logit.h"
+#include "tulpa_stop.h"
 #include <Rcpp.h>
 
 // [[Rcpp::export]]
 Rcpp::List cpp_multinomial_logit_terms(Rcpp::NumericVector eta, int cls) {
     const int Km1 = eta.size();
     if (Km1 < 1) {
-        Rcpp::stop("cpp_multinomial_logit_terms: eta must hold the K-1 "
+        tulpa::stop("cpp_multinomial_logit_terms: eta must hold the K-1 "
                    "non-baseline predictors, so it needs at least one entry.");
     }
     if (!tulpa::multinomial_class_valid(Km1, cls)) {
-        Rcpp::stop("cpp_multinomial_logit_terms: cls is the observed class, "
-                   "1-based in 1..%d (got %d).", Km1 + 1, cls);
+        tulpa::stop("cpp_multinomial_logit_terms: cls is the observed class, "
+                   "1-based in 1..%d (got %d).", {Km1 + 1, cls});
     }
     Rcpp::NumericVector grad(Km1);
     Rcpp::NumericMatrix neg_hess(Km1, Km1);

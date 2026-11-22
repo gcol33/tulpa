@@ -7,6 +7,7 @@
 #define TULPA_SPDE_QBUILDER_H
 
 #include "laplace_core.h"
+#include "tulpa_stop.h"
 #include "laplace_family_link.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
@@ -132,9 +133,9 @@ struct SpdeQBuilder {
                           const std::vector<double>& poles,
                           const std::vector<double>& weights) {
         if (alpha_order < 2) {
-            Rcpp::stop("The rational assembly shifts the alpha = 2 stencil, so "
+            tulpa::stop("The rational assembly shifts the alpha = 2 stencil, so "
                        "the builder must be init()'d with alpha >= 2; got %d.",
-                       alpha_order);
+                       {alpha_order});
         }
         const std::vector<double>& c0  = c0_contrib();
         const std::vector<double>& g1  = g1_contrib();
@@ -196,9 +197,9 @@ inline ARows build_A_rows(int N, int n_mesh,
             // observation count. Dropping it would silently fit a model with
             // fewer design rows than the caller supplied.
             if (i < 0 || i >= N) {
-                Rcpp::stop("Projector A holds row index %d at column %d; "
+                tulpa::stop("Projector A holds row index %d at column %d; "
                            "it must lie in [0, n_obs) with n_obs = %d.",
-                           i, j + 1, N);
+                           {i, j + 1, N});
             }
             if (std::abs(A_x[idx]) > 1e-15) {
                 rows[i].push_back({j, A_x[idx]});
@@ -220,16 +221,16 @@ inline void spde_validate_fem(
     const Rcpp::IntegerVector& G1_p
 ) {
     if (n_mesh <= 0)
-        Rcpp::stop("n_mesh must be positive; got %d.", n_mesh);
+        tulpa::stop("n_mesh must be positive; got %d.", {n_mesh});
     if ((int) C0_diag.size() != n_mesh)
-        Rcpp::stop("length(C0_diag) (%d) must equal n_mesh (%d).",
-                   (int) C0_diag.size(), n_mesh);
+        tulpa::stop("length(C0_diag) (%d) must equal n_mesh (%d).",
+                   {(int) C0_diag.size(), n_mesh});
     if ((int) G1_p.size() != n_mesh + 1)
-        Rcpp::stop("length(G1_p) (%d) must equal n_mesh + 1 (%d).",
-                   (int) G1_p.size(), n_mesh + 1);
+        tulpa::stop("length(G1_p) (%d) must equal n_mesh + 1 (%d).",
+                   {(int) G1_p.size(), n_mesh + 1});
     if (G1_x.size() != G1_i.size())
-        Rcpp::stop("G1_x (%d) and G1_i (%d) must have the same length.",
-                   (int) G1_x.size(), (int) G1_i.size());
+        tulpa::stop("G1_x (%d) and G1_i (%d) must have the same length.",
+                   {(int) G1_x.size(), (int) G1_i.size()});
     spde_validate_csc(n_mesh, G1_p, G1_i, (int) G1_x.size(), n_mesh, "G1");
 }
 
@@ -241,13 +242,13 @@ inline void spde_validate_projector(
     const char* what = "A"
 ) {
     if (N <= 0)
-        Rcpp::stop("%s: n_obs must be positive; got %d.", what, N);
+        tulpa::stop("%s: n_obs must be positive; got %d.", {what, N});
     if ((int) A_p.size() != n_mesh + 1)
-        Rcpp::stop("%s: length(A_p) (%d) must equal n_mesh + 1 (%d).",
-                   what, (int) A_p.size(), n_mesh + 1);
+        tulpa::stop("%s: length(A_p) (%d) must equal n_mesh + 1 (%d).",
+                   {what, (int) A_p.size(), n_mesh + 1});
     if (A_x.size() != A_i.size())
-        Rcpp::stop("%s: A_x (%d) and A_i (%d) must have the same length.",
-                   what, (int) A_x.size(), (int) A_i.size());
+        tulpa::stop("%s: A_x (%d) and A_i (%d) must have the same length.",
+                   {what, (int) A_x.size(), (int) A_i.size()});
     spde_validate_csc(n_mesh, A_p, A_i, (int) A_x.size(), N, what);
 }
 
@@ -274,8 +275,8 @@ inline int spde_re_group(const Rcpp::NumericVector& re_idx, int i,
     if (n_re_groups <= 0) return -1;
     const int g = (int) re_idx[i] - 1;
     if (g < 0 || g >= n_re_groups) {
-        Rcpp::stop("re_idx[%d] = %g is outside the %d random-effect groups.",
-                   i + 1, (double) re_idx[i], n_re_groups);
+        tulpa::stop("re_idx[%d] = %g is outside the %d random-effect groups.",
+                   {i + 1, (double) re_idx[i], n_re_groups});
     }
     return g;
 }

@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "device_likelihood.h"
 #include "sampler_model_data.h"
 #include "log_post_impl.h"
@@ -114,11 +115,11 @@ Rcpp::List cpp_device_family(std::string family, Rcpp::NumericVector y,
     bool return_weights=true) {
     const int n=y.size(), p=X.ncol(), np=zi ? 2 : 1, chains=coefficients.ncol();
     if (n<1 || X.nrow()!=n || trials.size()!=n || offset.size()!=n || weights.size()!=n || groups.size()!=n || repetitions<1)
-        Rcpp::stop("invalid fused likelihood fixture dimensions");
+        tulpa::stop("invalid fused likelihood fixture dimensions");
     int ng=0;
-    for (int g : groups) { if (g<0 || g==NA_INTEGER) Rcpp::stop("invalid field group"); ng=std::max(ng,g); }
+    for (int g : groups) { if (g<0 || g==NA_INTEGER) tulpa::stop("invalid field group"); ng=std::max(ng,g); }
     const int width=p*np+ng;
-    if (coefficients.nrow()!=width || chains<1) Rcpp::stop("invalid fused coefficient dimensions");
+    if (coefficients.nrow()!=width || chains<1) tulpa::stop("invalid fused coefficient dimensions");
     tulpa::ModelData data; data.N=n; data.n_processes=np;
     data.zi_type=zi ? tulpa::ZIType::ZI : tulpa::ZIType::NONE;
     auto spec=tulpa::builtin_family_spec(family,zi);
@@ -147,12 +148,12 @@ Rcpp::List cpp_device_family(std::string family, Rcpp::NumericVector y,
         tulpa::device::Policy policy(tulpa::device::parse_choice(choice),tulpa::device::thresholds());
         tulpa::DeviceLikelihood kernel; tulpa::device::Status status;
         cuda=tulpa::device::select_likelihood(data,layout,kernel,policy,status,return_weights);
-        if (!status) Rcpp::stop(status.message);
+        if (!status) tulpa::stop(status.message);
         if (cuda) {
             spec.device_fn(data,layout,&response,true,kernel);
             workspace=std::make_unique<tulpa::device::LikelihoodWorkspace>(std::move(plan),std::move(kernel));
             status=workspace->evaluate(parameters,chains,batched,return_weights,result);
-            if (!status) Rcpp::stop(status.message);
+            if (!status) tulpa::stop(status.message);
         }
     }
     const double setup_seconds=fused_seconds(setup);
@@ -161,7 +162,7 @@ Rcpp::List cpp_device_family(std::string family, Rcpp::NumericVector y,
     for (int rep=0; rep<repetitions; ++rep) {
         if (cuda) {
             const auto status=workspace->evaluate(parameters,chains,batched,return_weights,result);
-            if (!status) Rcpp::stop(status.message);
+            if (!status) tulpa::stop(status.message);
         } else fused_cpu_evaluate(plan,spec,data,layout,response,parameters,chains,choice=="arena",return_weights,
                                   arena_nodes,arena_capacity,result);
     }
@@ -182,7 +183,7 @@ Rcpp::List cpp_device_model_gradient(Rcpp::NumericVector y, Rcpp::IntegerVector 
     Rcpp::Nullable<Rcpp::List> temporal=R_NilValue,
     Rcpp::Nullable<Rcpp::List> zi=R_NilValue, bool verify=true, int repetitions=1,
     bool device_slot=true, bool corrupt=false, bool consumer_extra=false) {
-    if (repetitions<1) Rcpp::stop("repetitions must be positive");
+    if (repetitions<1) tulpa::stop("repetitions must be positive");
     tulpa::SamplerModelInputs in;
     tulpa::build_sampler_model_inputs(in,y,trials,X,family,phi,NA_REAL,2.5,{},1,re,spatial,temporal,R_NilValue,R_NilValue,zi);
     if (!device_slot) in.spec.device_fn=nullptr;
@@ -200,7 +201,7 @@ Rcpp::List cpp_device_model_gradient(Rcpp::NumericVector y, Rcpp::IntegerVector 
     tulpa_hmc::GradientModeFitScope gradient_scope;
     std::vector<double> q(params.begin(),params.end());
     if (q.empty()) q.assign(in.layout.total_params,.1);
-    if (q.size()!=static_cast<std::size_t>(in.layout.total_params)) Rcpp::stop("parameter count mismatch");
+    if (q.size()!=static_cast<std::size_t>(in.layout.total_params)) tulpa::stop("parameter count mismatch");
     if (verify) tulpa_hmc::ensure_gradient_verified(q,in.data,in.layout);
     auto fn=tulpa_hmc::resolve_gradient_fn(tulpa_hmc::get_gradient_mode(),in.data,in.layout);
     std::vector<double> gradient(q.size()); double lp=0;

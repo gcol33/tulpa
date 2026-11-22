@@ -1,4 +1,5 @@
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <R_ext/Rdynload.h>
 #include <tulpa/model_point_api.h>
 #include "hmc_sampler.h"
@@ -12,11 +13,11 @@ void model_point(const tulpa::ModelData* data, const tulpa::ParamLayout* layout,
                  const tulpa::ModelPointRequest* request) {
     TULPA_SHIM_GUARD_BEGIN
     if (!data || !layout || !request)
-        Rcpp::stop("Model evaluation requires data, a layout and a request");
+        tulpa::stop("Model evaluation requires data, a layout and a request");
     if (request->n_params != layout->total_params)
-        Rcpp::stop("Model position length must equal the parameter layout");
+        tulpa::stop("Model position length must equal the parameter layout");
     const int n = request->n_params;
-    if (n && !request->position) Rcpp::stop("Model position is null");
+    if (n && !request->position) tulpa::stop("Model position is null");
     std::vector<double> q(n);
     if (n) std::copy_n(request->position, n, q.begin());
     tulpa_hmc::FieldCoordinates coordinates;

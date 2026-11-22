@@ -2,6 +2,7 @@
 // Definitions of the outer-grid result packers declared in nested_laplace_grid.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "nested_laplace_grid.h"
 #include "linear_constraint_rows.h"
 
@@ -293,8 +294,8 @@ Rcpp::List nl_pack_grid_results(
 Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
     Rcpp::NumericMatrix modes = grid["modes"];
     if (k < 0 || k >= modes.nrow()) {
-        Rcpp::stop("nl_grid_cell_to_result_list: cell %d out of range "
-                   "[0, %d).", k, static_cast<int>(modes.nrow()));
+        tulpa::stop("nl_grid_cell_to_result_list: cell %d out of range "
+                   "[0, %d).", {k, static_cast<int>(modes.nrow())});
     }
     const int n_x = modes.ncol();
     Rcpp::NumericVector mode(n_x);
@@ -354,6 +355,987 @@ Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
     for (const char* nm : {"inner_is_z", "inner_is_sigma", "inner_is_declined",
                            "inner_is_log_joint"}) {
         if (grid.containsElementNamed(nm)) out[nm] = grid[nm];
+    }
+    return out;
+}
+
+Rcpp::List run_nested_laplace_grid(
+    int n_grid, int n_x,
+    const NlCellSolve& solve_at_theta_fn,
+    Rcpp::NumericVector x_init,
+    bool store_modes,
+    int n_threads_outer,
+    const std::vector<int>& tile_ids,
+    const std::vector<int>& tile_pilot_cells,
+    const NlCheapEval& cheap_eval,
+    double prune_tol,
+    tulpa_progress::GridProgress* progress,
+    GridCheckpoint* ckpt,
+    const std::vector<double>& x_init_per_cell,
+    int screen_iters,
+    const NlResumeRefill& resume_refill,
+    const ScreenOffset& screen_log_offset,
+    bool screen_only
+) {
+    if (!screen_log_offset.empty() &&
+        static_cast<int>(screen_log_offset.size()) != n_grid) {
+        tulpa::stop("screen_log_offset has %d entries for a grid of %d cells.",
+                   {static_cast<int>(screen_log_offset.size()), n_grid});
+    }
+    const auto screen_off = [&](int k) -> double {
+        return screen_log_offset.empty() ? 0.0 : screen_log_offset[k];
+    };
+    // Every full cell solve below -- pilot, serial chain, parallel tiles --
+    // goes through this wrapper, so tulpa_profile() counts one outer_grid_cell
+    // per solved cell whichever branch ran it. The scope encloses the inner
+    // Newton phases the solve itself records, and runs on the worker thread
+    // around the whole solve rather than inside any worksharing loop.
+    device::BatchScope device_batch(tulpa_omp_team_size_req(n_threads_outer, std::max(1, n_grid)));
+    std::vector<unsigned char> cell_cpu_recovery(std::max(0, n_grid), 0);
+    auto solve_at_theta = [&solve_at_theta_fn, &device_batch, &cell_cpu_recovery](
+        int k, const std::vector<double>& warm, SparseCholeskySolver* solver) {
+        TULPA_PROFILE_PHASE(PHASE_OUTER_CELL);
+        auto result = device::run_cell(device_batch,
+            [&] { return solve_at_theta_fn(k, warm, solver); }, "outer_cell_cpu_recovery");
+        result.device_cpu_recovered = result.device_cpu_recovered || cell_cpu_recovery[k];
+        cell_cpu_recovery[k] = result.device_cpu_recovered;
+        return result;
+    };
+    auto cheap_at = [&](int k, const std::vector<double>& warm, int steps, int worker) {
+        auto result = device::run_cell(device_batch,
+            [&] { return cheap_eval(k, warm, steps, worker); }, "outer_screen_cpu_recovery");
+        cell_cpu_recovery[k] = cell_cpu_recovery[k] || result.device_cpu_recovered;
+        return result;
+    };
+    // At least one step: a zero-step screen would rank every cell at the
+    // warm-start it inherited rather than at its own quasi-mode.
+    const int screen_steps = std::max(1, screen_iters);
+    // Tile partition, validated once. A cell whose tile id falls outside
+    // [0, n_tiles) joins no tile: the cheap screen never reaches it, its
+    // cheap_lm stays -inf, and it is pruned out of the posterior with
+    // log_marginal = -Inf. The caller owns the partition, so an out-of-range
+    // id is its error and is reported instead of deleting the cell.
+    if (!tile_ids.empty() && !tile_pilot_cells.empty()) {
+        const int n_tiles_declared = static_cast<int>(tile_pilot_cells.size());
+        for (std::size_t k = 0; k < tile_ids.size(); k++) {
+            if (tile_ids[k] < 0 || tile_ids[k] >= n_tiles_declared) {
+                tulpa::stop("tile_ids[%d] = %d is outside the %d tiles declared "
+                           "by tile_pilot_cells.",
+                           {static_cast<int>(k) + 1, tile_ids[k],
+                           n_tiles_declared});
+            }
+        }
+    }
+
+    if (n_grid <= 0) {
+        return nl_pack_grid_results(std::vector<LaplaceResult>(), 0, n_x,
+                                    store_modes, -1);
+    }
+
+    // Clamp the outer width to the environment (OMP_NUM_THREADS via
+    // omp_get_max_threads(), OMP_THREAD_LIMIT) and the grid size before it is
+    // used. The per-cell block cache (NlCellCache) sizes its slot array from
+    // omp_get_max_threads(); a num_threads(n) clause is honored even when n
+    // exceeds that (e.g. OMP_NUM_THREADS=1 on a cluster with n_threads_outer >
+    // 1), which would map every excess worker onto slot 0 and corrupt the
+    // shared CHOLMOD factor. Clamping here keeps every thread id within the
+    // cache's slot count; the memory-budget clamp the caller applied still
+    // bounds it from above.
+    n_threads_outer = tulpa_omp_team_size_req(n_threads_outer, n_grid);
+
+    // The realised outer width is the driver's own property: every caller hands
+    // it the concurrency it will actually run at (n_outer, already clamped by
+    // the sparse path's memory budget). Stamp it on the reporter here, once, so
+    // the ETA projects over the parallel grid rather than the serial pilot rate
+    // and the console line shows the active outer-thread count.
+    if (progress) progress->set_width(n_threads_outer);
+    // The same number on the result, because the progress line is not a record:
+    // its thread suffix is printed only above one thread, so a request clamped
+    // to one and a serial run by design print the same line. A benchmark
+    // recording a per-cell time needs the width the grid actually ran at.
+    const int n_threads_outer_realised = n_threads_outer;
+
+    // Stage results in POD containers; merge to Rcpp slots after parallelism.
+    std::vector<LaplaceResult> cell_results(n_grid);
+
+    std::vector<double> x_init_vec;
+    if (x_init.size() == n_x) {
+        x_init_vec.assign(x_init.begin(), x_init.end());
+    }
+
+    // Optional PER-CELL warm start: a flat row-major
+    // n_grid x n_x matrix where row k warm-starts cell k's inner solve. When
+    // present it OVERRIDES the chained / pilot / tile warm start in every path,
+    // so each cell starts from its own near-mode (the outer Pareto-k diagnostic
+    // passes each importance draw the converged mode of its nearest integration
+    // cell -- a far better start than the single broadcast modal mode, and one
+    // the parallel pilot-mode path cannot otherwise exploit). Empty (default)
+    // reproduces the prior behaviour exactly. `pc_warm(k, fallback)` returns the
+    // per-cell row when present, else binds the contextual fallback with no copy.
+    const bool has_pc =
+        (static_cast<long long>(x_init_per_cell.size()) ==
+         static_cast<long long>(n_grid) * n_x);
+    auto pc_row = [&](int k) {
+        return std::vector<double>(
+            x_init_per_cell.begin() + static_cast<size_t>(k) * n_x,
+            x_init_per_cell.begin() + static_cast<size_t>(k + 1) * n_x);
+    };
+
+    // Checkpoint preload. A cell whose hyperparameter
+    // coordinate was completed in a prior pass / killed run is filled straight
+    // from disk and flagged done, so every solve site below skips it and the
+    // warm-start chain reads its stored mode. `record(k)` appends a freshly
+    // solved cell. Both are no-ops when `ckpt == nullptr`.
+    std::vector<unsigned char> ckpt_done(n_grid, 0);
+    int n_loaded = 0;
+    if (ckpt) {
+        for (int k = 0; k < n_grid; k++) {
+            if (ckpt->has(k)) {
+                cell_results[k] = ckpt->get(k);
+                ckpt_done[k] = 1;
+                n_loaded++;
+            }
+        }
+        // State the payload cannot carry is rebuilt here, after the whole
+        // preload so the hook sees a fully populated `cell_results`, and
+        // serially against one solver -- the same shape the serial solve path
+        // below takes. It costs one factorization at the restored mode per
+        // loaded cell, against the full solve resume exists to avoid.
+        nl_checkpoint_add_loaded(n_loaded);
+        if (n_loaded && resume_refill) {
+            SparseCholeskySolver refill_solver;
+            for (int k = 0; k < n_grid; k++) {
+                if (ckpt_done[k])
+                    resume_refill(k, cell_results[k].mode, &refill_solver);
+            }
+        }
+    }
+    auto record = [&](int k) {
+        if (ckpt && !ckpt_done[k]) ckpt->save(k, cell_results[k]);
+    };
+
+    // Exception barrier for the OpenMP cell loops below: an exception
+    // escaping a parallel-for body is undefined behaviour (std::terminate
+    // takes down the R session), so every worker body runs through
+    // guard_cell, which records the first failure message and stamps the
+    // cell infeasible; the main thread re-raises after each region.
+    std::atomic<bool> cell_failed{false};
+    std::string       cell_err;
+    auto stamp_failed_cell = [&](int k) {
+        LaplaceResult bad;
+        bad.log_marginal = -std::numeric_limits<double>::infinity();
+        bad.n_iter = 0;
+        bad.converged = false;
+        bad.log_det_Q = 0.0;
+        cell_results[k] = bad;
+    };
+    auto guard_cell = [&](int k, auto&& body) {
+        try {
+            body();
+        } catch (const std::exception& e) {
+            if (!cell_failed.exchange(true)) cell_err = e.what();
+            stamp_failed_cell(k);
+        } catch (...) {
+            cell_failed.exchange(true);
+            stamp_failed_cell(k);
+        }
+    };
+    auto raise_if_cell_failed = [&]() {
+        if (cell_failed.load()) {
+            tulpa::stop("nested-Laplace grid cell failed: %s",
+                       {cell_err.empty() ? "unknown error" : cell_err.c_str()});
+        }
+    };
+
+    // Determine whether we need an explicit pilot pass. Required either by
+    // outer parallelism (the parallel branches use the pilot mode as the
+    // warm-start for every other cell) or by cheap-pass pruning (the prune
+    // step needs the pilot mode to evaluate cheap log-marginals). A caller
+    // supplying every cell's own warm start (`x_init_per_cell`) leaves the
+    // parallel branch nothing to read off a pilot, so an unscreened batch of
+    // that kind fans out at once instead of solving one cell serially first
+    // (gcol33/tulpa#920). When the
+    // caller leaves cheap_eval empty, prune_tol is
+    // ignored — the no-op cheap_eval would prune everything otherwise.
+    const bool cheap_eval_supplied = static_cast<bool>(cheap_eval);
+    const bool prune_active =
+        cheap_eval_supplied && prune_tol > 0.0 && n_grid > 1;
+    const bool need_pilot =
+        prune_active || (n_threads_outer > 1 && !has_pc);
+    const int k_pilot = n_grid / 2;
+
+    // Output flags (filled below). pruned[k]: cheap-pass below threshold,
+    // skip full Newton. log_marginal[k] is forced to -inf for pruned cells.
+    // n_cells_pruned is reported back to the caller for the R-side toggle.
+    std::vector<unsigned char> pruned(n_grid, 0);
+    int n_cells_pruned = 0;
+    // Cells the kept-set floor put back after the tolerance dropped them.
+    int n_floor_restored = 0;
+    int n_min_keep = std::min(n_grid, CHEAP_SCREEN_MIN_KEEP);
+    // The screen's realised cut, in nats below the best cheap cell, and the
+    // spread of the whole screened surface. Both reported, so a caller reads
+    // what the tolerance meant on THIS grid instead of inferring it.
+    double prune_log_gap_cut = NA_REAL;
+    double prune_cheap_spread = NA_REAL;
+    std::vector<double> cheap_lm;  // size n_grid when prune_active
+    std::vector<double> cheap_dec; // the screen's Newton decrement per cell
+    int cheap_argmax = -1;          // cell with the largest cheap log-marginal
+
+    std::vector<double> pilot_mode;
+    if (need_pilot) {
+        // Tier-1 / global pilot. Always serial: any outer threads would
+        // contend on a single CHOLMOD solver and the pilot is one cell. A
+        // resumed pilot is read from the checkpoint instead of re-solved.
+        if (!ckpt_done[k_pilot]) {
+            SparseCholeskySolver pilot_solver;
+            std::vector<double> pilot_pc;
+            if (has_pc) pilot_pc = pc_row(k_pilot);
+            cell_results[k_pilot] =
+                solve_at_theta(k_pilot, has_pc ? pilot_pc : x_init_vec,
+                               &pilot_solver);
+            record(k_pilot);
+            if (progress) progress->tick();  // first solved cell
+        }
+        pilot_mode = cell_results[k_pilot].mode;
+        // If the pilot diverged (rare — e.g. proper-CAR with rho outside the
+        // PD interval at the centre cell), fall back to zero warm-start so
+        // downstream passes don't inherit garbage.
+        if (!std::isfinite(cell_results[k_pilot].log_marginal)) {
+            pilot_mode.assign(n_x, 0.0);
+        }
+
+        // Cheap-pass pruning: a chained sweep over the lattice that keeps
+        // every cheap mode near its cell's true mode. Each cell runs a short
+        // (screen_steps-step) inner Newton warm-started from the
+        // previous screened cell's quasi-mode — lattice-adjacent along the
+        // fastest axis of the Cartesian product — instead of one step from a
+        // fixed global pilot. The pilot mode seeds the sweep so cell 0 is not
+        // mode-starved. All cells use the same screening formula (Laplace
+        // log-marginal at the quasi-mode), so the softmax ranking is faithful
+        // to the full-solve ranking. The pilot is still never pruned (it is
+        // the reference cell, exempted from the threshold below).
+        if (prune_active) {
+            cheap_lm.assign(n_grid,
+                            -std::numeric_limits<double>::infinity());
+            cheap_dec.assign(n_grid, NA_REAL);
+            // Each cell is screened by exactly one thread, so the two writes
+            // below never race.
+            auto record_screen = [&](int k, const LaplaceResult& cr) {
+                cheap_lm[k]  = screen_log_marginal(cr);
+                cheap_dec[k] = cr.newton_decrement;
+            };
+
+            // A completed (checkpoint-loaded) cell needs no screening: its
+            // true log-marginal ranks it and its stored mode warms the chain,
+            // and it is never pruned (handled in the marking loop). Shared by
+            // both the serial and per-tile parallel sweeps.
+            auto use_loaded_for_chain = [&](int k, std::vector<double>& warm) {
+                cheap_lm[k] = cell_results[k].log_marginal;
+                if (std::isfinite(cell_results[k].log_marginal) &&
+                    static_cast<int>(cell_results[k].mode.size()) == n_x) {
+                    warm = cell_results[k].mode;
+                }
+            };
+
+            // Whether the cheap screen can parallelize: the same tile metadata
+            // the full parallel pass uses, plus more than one outer thread. A
+            // single global chain is load-bearing for rank faithfulness (a
+            // fixed-pilot one-step screen mis-ranks far cells by O(1e5)), so we
+            // parallelize only by splitting it into independent per-tile chains
+            // -- each tile groups cells whose donor-arm prior + design coincide
+            // (only the copy/alpha axis varies), so within-tile chaining is at
+            // least as near-neighbour as the global flat chain, while the tiles
+            // run concurrently on their own worker slots.
+            const bool cheap_use_tiles =
+                (n_threads_outer > 1) &&
+                (static_cast<int>(tile_ids.size()) == n_grid) &&
+                (!tile_pilot_cells.empty());
+
+            if (!cheap_use_tiles) {
+                // Serial chained sweep over the whole lattice in flat order
+                // (the historical behaviour; worker slot 0).
+                std::vector<double> warm = pilot_mode;
+                for (int k = 0; k < n_grid; k++) {
+                    if (ckpt_done[k]) { use_loaded_for_chain(k, warm); continue; }
+                    LaplaceResult cr =
+                        cheap_at(k, warm, screen_steps, /*worker=*/0);
+                    record_screen(k, cr);
+                    // Chain the warm-start only across feasible cells; an
+                    // infeasible cell (prep failed, log_marginal = -inf) leaves
+                    // `warm` at the last good quasi-mode so the next feasible
+                    // cell still starts from a near neighbour.
+                    if (std::isfinite(cr.log_marginal) &&
+                        static_cast<int>(cr.mode.size()) == n_x) {
+                        warm = cr.mode;
+                    }
+                }
+            } else {
+                // Parallel cheap screen with the same two-tier warm-start
+                // backbone the full parallel pass uses, so the screen ranking
+                // stays faithful to the serial chain while parallelizing:
+                //   Phase A (serial): chain the TILE PILOTS in tile order from
+                //     the global pilot. n_tiles short solves give every tile
+                //     root a near-neighbour-chained quasi-mode -- the coarse
+                //     backbone (mirrors the full pass's Tier-2 tile pilots).
+                //   Phase B (parallel over tiles): chain each tile's remaining
+                //     cells in flat order from ITS tile root's quasi-mode, on
+                //     the tile's own outer-worker slot. Tiles group cells whose
+                //     only differing axis is the copy alpha, so within-tile
+                //     chaining from the central tile pilot is a genuine
+                // near-neighbour warm-start.
+                // The tile partition (.joint_compute_tile_partition) covers
+                // every cell exactly once, so each cheap_lm[k] is written by a
+                // single thread (no race).
+                const int n_tiles = static_cast<int>(tile_pilot_cells.size());
+                std::vector<std::vector<int>> tile_cells(n_tiles);
+                for (int k = 0; k < n_grid; k++) {
+                    tile_cells[tile_ids[k]].push_back(k);
+                }
+
+                // Phase A: serial tile-pilot backbone (worker slot 0).
+                std::vector<std::vector<double>> tile_root_mode(n_tiles,
+                                                               pilot_mode);
+                {
+                    std::vector<double> warm = pilot_mode;
+                    for (int t = 0; t < n_tiles; t++) {
+                        int kp = tile_pilot_cells[t];
+                        if (kp < 0 || kp >= n_grid) {
+                            tile_root_mode[t] = warm;
+                            continue;
+                        }
+                        if (ckpt_done[kp]) {
+                            use_loaded_for_chain(kp, warm);
+                            tile_root_mode[t] = warm;
+                            continue;
+                        }
+                        LaplaceResult cr =
+                            cheap_at(kp, warm, screen_steps, /*worker=*/0);
+                        record_screen(kp, cr);
+                        if (std::isfinite(cr.log_marginal) &&
+                            static_cast<int>(cr.mode.size()) == n_x) {
+                            warm = cr.mode;
+                        }
+                        tile_root_mode[t] = warm;
+                    }
+                }
+
+                // Phase B: per-tile parallel chains hanging off each tile root.
+                #ifdef _OPENMP
+                #pragma omp parallel for schedule(dynamic, 1) \
+                    num_threads(n_threads_outer)
+                #endif
+                for (int t = 0; t < n_tiles; t++) {
+                    #ifdef _OPENMP
+                    int worker = omp_get_thread_num();
+                    #else
+                    int worker = 0;
+                    #endif
+                    int kp = tile_pilot_cells[t];
+                    int k_guard = (kp >= 0 && kp < n_grid)
+                                  ? kp
+                                  : (tile_cells[t].empty() ? 0
+                                                            : tile_cells[t][0]);
+                    guard_cell(k_guard, [&] {
+                        std::vector<double> warm = tile_root_mode[t];
+                        for (int k : tile_cells[t]) {
+                            if (k == kp) continue;  // root screened in Phase A
+                            if (ckpt_done[k]) {
+                                use_loaded_for_chain(k, warm);
+                                continue;
+                            }
+                            LaplaceResult cr =
+                                cheap_at(k, warm, screen_steps, worker);
+                            record_screen(k, cr);
+                            if (std::isfinite(cr.log_marginal) &&
+                                static_cast<int>(cr.mode.size()) == n_x) {
+                                warm = cr.mode;
+                            }
+                        }
+                    });
+                }
+                raise_if_cell_failed();
+            }
+
+            // The screened posterior: cheap log-marginal plus the cell's log
+            // hyperprior and log measure. A cell whose offset is -Inf carries
+            // no prior mass and is dropped with the infeasible ones.
+            std::vector<double> screen_lm(n_grid);
+            for (int k = 0; k < n_grid; k++) {
+                screen_lm[k] = cheap_lm[k] + screen_off(k);
+            }
+            // Softmax over finite entries. Cells with non-finite cheap log-
+            // marginal (block.prep returned infeasible) get weight 0 and are
+            // pruned automatically.
+            double m = -std::numeric_limits<double>::infinity();
+            for (int k = 0; k < n_grid; k++) {
+                if (std::isfinite(screen_lm[k]) && screen_lm[k] > m) {
+                    m = screen_lm[k];
+                    cheap_argmax = k;
+                }
+            }
+            // A call joining a solved grid normalises against that grid's mass
+            // as well (ScreenOffset::log_ref), so the cut is a share of the
+            // posterior the cells join rather than of the call alone.
+            const bool has_ref = screen_log_offset.has_ref();
+            if (has_ref && screen_log_offset.log_ref > m) {
+                m = screen_log_offset.log_ref;
+            }
+            double Z = 0.0;
+            if (std::isfinite(m)) {
+                for (double v : screen_lm) {
+                    if (std::isfinite(v)) Z += std::exp(v - m);
+                }
+                if (has_ref) Z += std::exp(screen_log_offset.log_ref - m);
+            }
+            // The tolerance is a normalised weight, so the gap in nats it
+            // actually cuts at is `-(log(prune_tol) + log(Z))`: a cell is
+            // dropped once it falls that far below the best cheap cell. On a
+            // log-marginal surface spanning thousands of nats that cut is a
+            // sliver, which is what makes the same kept set come back at every
+            // tolerance a caller would type. It is reported below so the cut is
+            // readable from the fit rather than inferred from the tolerance.
+            const double log_tol = std::log(prune_tol);
+            const double log_Z   = (Z > 0.0) ? std::log(Z)
+                                   : -std::numeric_limits<double>::infinity();
+            for (int k = 0; k < n_grid; k++) {
+                if (k == k_pilot) continue;
+                if (ckpt_done[k]) continue;  // completed cells are never pruned
+                double w = (std::isfinite(screen_lm[k]) && Z > 0.0)
+                           ? std::exp(screen_lm[k] - m) / Z
+                           : 0.0;
+                bool drop;
+                if (w > 0.0) {
+                    drop = (w < prune_tol);
+                } else if (std::isfinite(screen_lm[k]) && std::isfinite(m) &&
+                           Z > 0.0) {
+                    // exp(screen_lm[k] - m) underflowed to zero, which compares
+                    // below every positive tolerance and so flattens the knob
+                    // past a gap of ~745 nats. The same comparison in log space
+                    // is exact there, and agrees with the weight form wherever
+                    // the weight is representable, so a tolerance small enough
+                    // to reach such a cell reaches it.
+                    drop = ((screen_lm[k] - m) < (log_tol + log_Z));
+                } else {
+                    drop = true;   // infeasible cell: no cheap log-marginal
+                }
+                if (drop) {
+                    pruned[k] = 1;
+                    n_cells_pruned++;
+                    LaplaceResult r;
+                    r.mode = pilot_mode;
+                    r.log_marginal =
+                        -std::numeric_limits<double>::infinity();
+                    r.n_iter = 0;
+                    r.converged = false;
+                    r.log_det_Q = 0.0;
+                    cell_results[k] = r;
+                }
+            }
+
+            // Kept-set floor. Restore the highest-ranked dropped cells until
+            // `min_keep` cells will be solved in full, so the placement pass
+            // downstream has more than a point mass to read a curvature off and
+            // the full pass has more than the screen's own top cell to
+            // disagree with it on. A grid whose tolerance already keeps that
+            // many is untouched, so this is a no-op wherever the screen was not
+            // collapsing.
+            //
+            // Only a cell with a finite cheap log-marginal is restorable: an
+            // infeasible cell has no mode to solve at and would come back
+            // -Inf, so a grid holding too few feasible cells stays below the
+            // floor and reports how many it could restore.
+            // A call joining a solved grid adds to a surface the placement has
+            // already read, so it carries no floor.
+            const int min_keep = has_ref ? 0
+                                 : std::min(n_grid, CHEAP_SCREEN_MIN_KEEP);
+            n_min_keep = min_keep;
+            int n_kept_cells = n_grid - n_cells_pruned;
+            if (n_kept_cells < min_keep) {
+                std::vector<int> restorable;
+                for (int k = 0; k < n_grid; k++) {
+                    if (pruned[k] && std::isfinite(screen_lm[k])) {
+                        restorable.push_back(k);
+                    }
+                }
+                // Rank by the cheap log-marginal, ties by cell index, so the
+                // restored set is a function of the screen alone.
+                std::sort(restorable.begin(), restorable.end(),
+                          [&](int a, int b) {
+                              if (screen_lm[a] != screen_lm[b]) {
+                                  return screen_lm[a] > screen_lm[b];
+                              }
+                              return a < b;
+                          });
+                for (std::size_t i = 0;
+                     i < restorable.size() && n_kept_cells < min_keep; i++) {
+                    const int k = restorable[i];
+                    pruned[k] = 0;
+                    n_cells_pruned--;
+                    n_kept_cells++;
+                    n_floor_restored++;
+                }
+            }
+            prune_log_gap_cut = (std::isfinite(log_tol) && std::isfinite(log_Z))
+                                ? -(log_tol + log_Z)
+                                : NA_REAL;
+            // Spread of the WHOLE screened surface, the scale a cheap-vs-full
+            // mis-estimate has to be judged against: the spread of the cells
+            // the screen kept is a property of the set the gate is meant to
+            // validate, and cannot bound the error on the set it discarded.
+            {
+                double lo =  std::numeric_limits<double>::infinity();
+                double hi = -std::numeric_limits<double>::infinity();
+                for (double v : screen_lm) {
+                    if (!std::isfinite(v)) continue;
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                }
+                prune_cheap_spread = (hi >= lo) ? (hi - lo) : NA_REAL;
+            }
+        }
+        // Pruned and checkpoint-loaded cells get no full solve, so they are
+        // not part of the ETA denominator; revise it down to the survivors
+        // actually solved this run.
+        if (progress) progress->set_total(n_grid - n_cells_pruned - n_loaded);
+    }
+
+    // A screened read: the screen's own log-marginal for every cell it ranked,
+    // none pruned, no full solve, so the surface is one quantity throughout.
+    // The pilot keeps the mode of the full solve it already carries (the warm
+    // start a placement reads) but reports its screened log-marginal; a
+    // checkpoint-loaded cell keeps its full solve, which the screen ranked it
+    // by.
+    const bool screen_read = screen_only && prune_active;
+    if (screen_read) {
+        for (int k = 0; k < n_grid; k++) {
+            if (ckpt_done[k]) continue;
+            if (k == k_pilot) {
+                if (std::isfinite(cheap_lm[k]))
+                    cell_results[k].log_marginal = cheap_lm[k];
+                continue;
+            }
+            LaplaceResult r;
+            r.mode = pilot_mode;
+            r.log_marginal = cheap_lm[k];
+            r.n_iter = 0;
+            r.converged = false;
+            r.log_det_Q = 0.0;
+            cell_results[k] = r;
+            pruned[k] = 0;
+        }
+        n_cells_pruned = 0;
+    } else if (n_threads_outer <= 1) {
+        // Serial path. Two sub-cases:
+        //  - prune off, pilot off: classic mode-chained warm-start across
+        //    every cell.
+        //  - prune on (need_pilot): pilot already solved; loop over the
+        //    remaining cells warm-starting from the previous non-pruned
+        //    cell's mode (chained across survivors only).
+        SparseCholeskySolver solver;
+        if (!need_pilot) {
+            // No pilot was solved, so checkpoint-loaded cells were not yet
+            // discounted from the progress total; do it here.
+            if (progress && n_loaded) progress->set_total(n_grid - n_loaded);
+            std::vector<double> prev_mode = x_init_vec;
+            std::vector<double> warm_pc;
+            for (int k = 0; k < n_grid; k++) {
+                // A loaded cell is already in cell_results; chain its stored
+                // mode as the next warm-start and skip the solve.
+                if (ckpt_done[k]) {
+                    prev_mode = cell_results[k].mode;
+                    continue;
+                }
+                if (has_pc) warm_pc = pc_row(k);
+                cell_results[k] = solve_at_theta(
+                    k, has_pc ? warm_pc : prev_mode, &solver);
+                record(k);
+                if (!has_pc) prev_mode = cell_results[k].mode;
+                if (progress) progress->tick();
+            }
+        } else {
+            std::vector<double> prev_mode = pilot_mode;
+            std::vector<double> warm_pc;
+            // Iterate in original cell order, starting from cell 0; pilot,
+            // pruned, and loaded cells are skipped (already filled above).
+            for (int k = 0; k < n_grid; k++) {
+                if (k == k_pilot) {
+                    prev_mode = cell_results[k_pilot].mode;
+                    continue;
+                }
+                if (pruned[k]) continue;
+                if (ckpt_done[k]) {
+                    prev_mode = cell_results[k].mode;
+                    continue;
+                }
+                if (has_pc) warm_pc = pc_row(k);
+                cell_results[k] = solve_at_theta(
+                    k, has_pc ? warm_pc : prev_mode, &solver);
+                record(k);
+                if (!has_pc) prev_mode = cell_results[k].mode;
+                if (progress) progress->tick();
+            }
+        }
+    } else {
+        // Parallel path: the pilot, where one was needed, is solved above.
+        // One CHOLMOD solver per outer thread. CHOLMOD's cholmod_common is
+        // *not* thread-safe — each thread must own its own. We use
+        // unique_ptr so the solvers RAII-clean on scope exit even if a
+        // thread bails on an exception.
+        std::vector<std::unique_ptr<SparseCholeskySolver>> solver_pool(
+            n_threads_outer);
+        for (int t = 0; t < n_threads_outer; t++) {
+            solver_pool[t].reset(new SparseCholeskySolver());
+        }
+
+        // Decide whether tile metadata is usable. Need both vectors set
+        // and `tile_ids` of length n_grid; otherwise fall back to single-
+        // tier Phase 1 behaviour.
+        // The tiers exist to hand each cell a warm start; per-cell warm
+        // starts already give every cell its own.
+        const bool use_tiles = !has_pc &&
+            (static_cast<int>(tile_ids.size()) == n_grid) &&
+            (!tile_pilot_cells.empty());
+        if (!need_pilot && progress && n_loaded) {
+            progress->set_total(n_grid - n_loaded);
+        }
+
+        if (!use_tiles) {
+            // Phase 1 path: every cell warm-started from the global pilot.
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic, 1) \
+                num_threads(n_threads_outer)
+            #endif
+            for (int k = 0; k < n_grid; k++) {
+                if (need_pilot && k == k_pilot) continue;  // already solved
+                if (pruned[k]) continue;     // cheap-pass pruned
+                if (ckpt_done[k]) continue;  // checkpoint-loaded
+                #ifdef _OPENMP
+                int tid = omp_get_thread_num();
+                #else
+                int tid = 0;
+                #endif
+                SparseCholeskySolver* solver = solver_pool[tid].get();
+                guard_cell(k, [&] {
+                    std::vector<double> warm_pc;
+                    if (has_pc) warm_pc = pc_row(k);
+                    cell_results[k] = solve_at_theta(
+                        k, has_pc ? warm_pc : pilot_mode, solver);
+                    record(k);
+                });
+                if (progress) {
+                    #ifdef _OPENMP
+                    #pragma omp critical(nl_grid_progress)
+                    #endif
+                    progress->tick();
+                }
+            }
+        } else {
+            // Phase 2 path: Tier-2 tile pilots (one per tile, warm-started
+            // from the global pilot), then Tier-3 all remaining cells
+            // warm-started from their tile pilot.
+            const int n_tiles = static_cast<int>(tile_pilot_cells.size());
+
+            // Flag tile-pilot cells so Tier-3 can skip them. Also build a
+            // tile -> pilot-cell lookup that Tier-3 reads concurrently
+            // (read-only after Tier-2 completes).
+            std::vector<unsigned char> is_tile_pilot(n_grid, 0);
+            for (int t = 0; t < n_tiles; t++) {
+                int k = tile_pilot_cells[t];
+                if (k >= 0 && k < n_grid) is_tile_pilot[k] = 1;
+            }
+
+            std::vector<std::vector<double>> tile_modes(n_tiles);
+
+            // Tier 2: one warm solve per tile, parallel over tiles. Pruned
+            // tile-pilots are skipped; their tile_modes entry stays empty
+            // and Tier-3 falls back to the global pilot for cells in that
+            // tile.
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic, 1) \
+                num_threads(n_threads_outer)
+            #endif
+            for (int t = 0; t < n_tiles; t++) {
+                int k = tile_pilot_cells[t];
+                if (k < 0 || k >= n_grid) continue;
+                if (k == k_pilot) {
+                    // Global pilot also serves as this tile's pilot.
+                    tile_modes[t] = pilot_mode;
+                    continue;
+                }
+                if (pruned[k]) continue;
+                if (ckpt_done[k]) {
+                    // Loaded tile pilot: its stored mode still seeds Tier 3.
+                    tile_modes[t] = std::isfinite(cell_results[k].log_marginal)
+                                    ? cell_results[k].mode
+                                    : pilot_mode;
+                    continue;
+                }
+                #ifdef _OPENMP
+                int tid = omp_get_thread_num();
+                #else
+                int tid = 0;
+                #endif
+                SparseCholeskySolver* solver = solver_pool[tid].get();
+                guard_cell(k, [&] {
+                    std::vector<double> warm_pc;
+                    if (has_pc) warm_pc = pc_row(k);
+                    cell_results[k] = solve_at_theta(
+                        k, has_pc ? warm_pc : pilot_mode, solver);
+                    record(k);
+                });
+                // Tile-pilot mode is the Tier-3 warm-start; if the cell
+                // diverged, fall back to the global pilot mode so we don't
+                // propagate garbage to the rest of the tile.
+                tile_modes[t] = std::isfinite(cell_results[k].log_marginal)
+                                ? cell_results[k].mode
+                                : pilot_mode;
+                if (progress) {
+                    #ifdef _OPENMP
+                    #pragma omp critical(nl_grid_progress)
+                    #endif
+                    progress->tick();
+                }
+            }
+            raise_if_cell_failed();
+
+            // Tier 3: every non-pilot cell warm-started from its tile
+            // pilot (falling back to the global pilot when the tile pilot
+            // is pruned or out of range).
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic, 1) \
+                num_threads(n_threads_outer)
+            #endif
+            for (int k = 0; k < n_grid; k++) {
+                if (k == k_pilot) continue;       // global pilot, Tier 1
+                if (is_tile_pilot[k]) continue;   // tile pilot, Tier 2
+                if (pruned[k]) continue;          // cheap-pass pruned
+                if (ckpt_done[k]) continue;       // checkpoint-loaded
+                int t = tile_ids[k];
+                #ifdef _OPENMP
+                int tid = omp_get_thread_num();
+                #else
+                int tid = 0;
+                #endif
+                SparseCholeskySolver* solver = solver_pool[tid].get();
+                guard_cell(k, [&] {
+                    std::vector<double> warm_pc;
+                    if (has_pc) warm_pc = pc_row(k);
+                    const std::vector<double>& warm =
+                        has_pc ? warm_pc
+                        : ((t >= 0 && t < n_tiles && !tile_modes[t].empty())
+                           ? tile_modes[t]
+                           : pilot_mode);
+                    cell_results[k] = solve_at_theta(k, warm, solver);
+                    record(k);
+                });
+                if (progress) {
+                    #ifdef _OPENMP
+                    #pragma omp critical(nl_grid_progress)
+                    #endif
+                    progress->tick();
+                }
+            }
+        }
+        raise_if_cell_failed();
+    }
+
+    // Repair a prune whose dropped cells may carry more than
+    // CHEAP_SCREEN_GATE_MASS of the posterior. The kept cells' full solves say
+    // how far off the screen was; the dropped cells whose screened value, lifted
+    // by the worst of that, contributes most to the bound are solved in full,
+    // largest first, until what is left of it is half the gate, and the bound is
+    // read again off the enlarged kept set. A dropped cell far below the cut
+    // never reaches the list, so what the repair pays for is the handful of
+    // cells near the cut a large fit's screen was unsure about, where solving
+    // the whole grid over again would redo every kept cell as well.
+    double prune_mass_bound = NA_REAL;
+    int n_repaired = 0;
+    if (prune_active && !screen_read) {
+        auto kept_rank = [&](int k) {
+            return cell_results[k].log_marginal + screen_off(k);
+        };
+        for (;;) {
+            double e_max = -std::numeric_limits<double>::infinity();
+            double top   = -std::numeric_limits<double>::infinity();
+            for (int k = 0; k < n_grid; k++) {
+                if (pruned[k] || !std::isfinite(cell_results[k].log_marginal)) {
+                    continue;
+                }
+                top = std::max(top, kept_rank(k));
+                if (std::isfinite(cheap_lm[k])) {
+                    e_max = std::max(e_max,
+                                     cell_results[k].log_marginal - cheap_lm[k]);
+                }
+            }
+            if (!std::isfinite(top) || !std::isfinite(e_max)) break;
+            // The grid the call's cells join is kept mass too.
+            const double log_ref = screen_log_offset.log_ref;
+            if (screen_log_offset.has_ref() && log_ref > top) top = log_ref;
+            double den = screen_log_offset.has_ref() ? std::exp(log_ref - top)
+                                                     : 0.0;
+            for (int k = 0; k < n_grid; k++) {
+                if (!pruned[k] && std::isfinite(cell_results[k].log_marginal)) {
+                    den += std::exp(kept_rank(k) - top);
+                }
+            }
+            std::vector<std::pair<double, int>> contrib;
+            double num = 0.0;
+            for (int k = 0; k < n_grid; k++) {
+                if (!pruned[k] || !std::isfinite(cheap_lm[k])) continue;
+                const double c =
+                    std::exp(cheap_lm[k] + screen_off(k) + e_max - top);
+                if (c > 0.0) contrib.emplace_back(c, k);
+                num += c;
+            }
+            prune_mass_bound = (den > 0.0) ? num / den : NA_REAL;
+            if (!(den > 0.0) || prune_mass_bound <= CHEAP_SCREEN_GATE_MASS ||
+                contrib.empty()) {
+                break;
+            }
+            std::sort(contrib.begin(), contrib.end(),
+                      [](const std::pair<double, int>& a,
+                         const std::pair<double, int>& b) {
+                          if (a.first != b.first) return a.first > b.first;
+                          return a.second < b.second;
+                      });
+            const double target = 0.5 * CHEAP_SCREEN_GATE_MASS * den;
+            std::vector<int> fix;
+            double rest = num;
+            for (const auto& cj : contrib) {
+                if (rest <= target) break;
+                fix.push_back(cj.second);
+                rest -= cj.first;
+            }
+            for (int k : fix) {
+                pruned[k] = 0;
+                n_cells_pruned--;
+            }
+            n_repaired += static_cast<int>(fix.size());
+            if (progress) progress->set_total(n_grid - n_cells_pruned - n_loaded);
+            const int team =
+                tulpa_omp_team_size_req(n_threads_outer,
+                                        static_cast<int>(fix.size()));
+            std::vector<std::unique_ptr<SparseCholeskySolver>> repair_pool(
+                std::max(1, team));
+            for (auto& s : repair_pool) s.reset(new SparseCholeskySolver());
+            const int n_fix = static_cast<int>(fix.size());
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic, 1) num_threads(team) \
+                if (team > 1)
+            #endif
+            for (int i = 0; i < n_fix; i++) {
+                const int k = fix[i];
+                #ifdef _OPENMP
+                int tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+                #else
+                int tid = 0;
+                #endif
+                if (tid < 0 || tid >= static_cast<int>(repair_pool.size())) tid = 0;
+                guard_cell(k, [&] {
+                    std::vector<double> warm_pc;
+                    if (has_pc) warm_pc = pc_row(k);
+                    cell_results[k] = solve_at_theta(
+                        k, has_pc ? warm_pc : pilot_mode,
+                        repair_pool[tid].get());
+                    record(k);
+                });
+                if (progress) {
+                    #ifdef _OPENMP
+                    #pragma omp critical(nl_grid_progress)
+                    #endif
+                    progress->tick();
+                }
+            }
+            raise_if_cell_failed();
+        }
+    }
+
+    if (progress) progress->finish();
+
+    for (int k = 0; k < n_grid; ++k)
+        cell_results[k].device_cpu_recovered = cell_results[k].device_cpu_recovered || cell_cpu_recovery[k];
+    Rcpp::List out = nl_pack_grid_results(cell_results, n_grid, n_x,
+                                          store_modes,
+                                          n_threads_outer_realised);
+    Rcpp::NumericVector log_marginals = out["log_marginal"];
+
+    if (prune_active) {
+        Rcpp::NumericVector cheap_lm_out(n_grid);
+        Rcpp::LogicalVector pruned_out(n_grid);
+        for (int k = 0; k < n_grid; k++) {
+            cheap_lm_out[k] = cheap_lm[k];
+            pruned_out[k]   = (pruned[k] != 0);
+        }
+        out["prune_cheap_log_marginal"] = cheap_lm_out;
+        out["prune_screen_decrement"]   = Rcpp::wrap(cheap_dec);
+        out["prune_mask"]                = pruned_out;
+        out["prune_n_pruned"]           = n_cells_pruned;
+        out["prune_tol"]                = prune_tol;
+        out["prune_screen_iters"]       = screen_steps;
+        if (!screen_log_offset.empty()) {
+            out["prune_screen_log_offset"] = Rcpp::wrap(screen_log_offset.off);
+        }
+        if (screen_log_offset.has_ref()) {
+            out["prune_screen_log_ref"] = screen_log_offset.log_ref;
+        }
+        // What the tolerance cut at (nats below the best cheap cell), what the
+        // screened surface spans, the floor that was applied and how many cells
+        // it put back. The first two are the pair a caller reads to see whether
+        // the tolerance had any resolution on this grid at all.
+        out["prune_log_gap_cut"]        = prune_log_gap_cut;
+        out["prune_cheap_lm_spread"]    = prune_cheap_spread;
+        out["prune_min_keep"]           = n_min_keep;
+        out["prune_n_floor_restored"]   = n_floor_restored;
+        out["prune_screen_only"]        = screen_read;
+        // The dropped-mass bound the kept set closed at, how many dropped cells
+        // the repair solved to get it there, and the gate it was held to.
+        out["prune_dropped_mass_bound"] = prune_mass_bound;
+        out["prune_n_repaired"]         = n_repaired;
+        out["prune_gate_mass"]          = CHEAP_SCREEN_GATE_MASS;
+
+        // ---- Ranking diagnostics -----------------------------------------
+        // Reported beside the bound; the gate reads the bound alone. The full
+        // pass only ran on survivors, so the full-solve argmax is taken over
+        // kept cells, and the cheap-vs-full gap at it together with whether
+        // the screen's own top cell was dropped say how the screen ranked
+        // against the full solve.
+        int full_argmax = -1;
+        double full_max = -std::numeric_limits<double>::infinity();
+        double full_post_max = -std::numeric_limits<double>::infinity();
+        for (int k = 0; k < n_grid; k++) {
+            if (pruned[k]) continue;
+            double v = log_marginals[k] + screen_off(k);
+            if (std::isfinite(v) && v > full_post_max) {
+                full_post_max = v;
+                full_max = log_marginals[k];
+                full_argmax = k;
+            }
+        }
+        // Cheap-vs-full gap at the full argmax cell: how far the cheap screen
+        // mis-estimated the log-marginal of the cell the full solve favours.
+        double cheap_full_gap = NA_REAL;
+        if (full_argmax >= 0 &&
+            std::isfinite(full_max) &&
+            std::isfinite(cheap_lm[full_argmax])) {
+            cheap_full_gap = std::abs(full_max - cheap_lm[full_argmax]);
+        }
+        // Argmax disagreement: the cheap screen's top cell is not the full
+        // solve's top cell. A disagreement means the screen would have ranked
+        // a different cell first — exactly the failure that prunes the true
+        // mode. (cheap_argmax == full_argmax is the safe case.)
+        bool argmax_disagree =
+            (cheap_argmax >= 0 && full_argmax >= 0 &&
+             cheap_argmax != full_argmax);
+        // The cheap argmax being pruned is the sharpest tell: the screen's
+        // own top-ranked cell never got a full solve.
+        bool cheap_argmax_pruned =
+            (cheap_argmax >= 0 && pruned[cheap_argmax] != 0);
+
+        out["prune_cheap_argmax"]   = cheap_argmax + 1;   // 1-based for R
+        out["prune_full_argmax"]    = full_argmax + 1;    // 1-based for R
+        out["prune_cheap_full_gap"] = cheap_full_gap;
+        out["prune_argmax_disagree"] =
+            (argmax_disagree || cheap_argmax_pruned);
     }
     return out;
 }

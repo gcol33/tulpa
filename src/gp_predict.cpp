@@ -24,6 +24,7 @@
 // [[Rcpp::depends(RcppEigen)]]
 
 #include "hmc_svc.h"     // tulpa_svc::compute_cov, tulpa::CovType
+#include "tulpa_stop.h"
 #include "nngp_cond.h"   // tulpa_nngp::cond_weights, VarFloor
 #include "linalg_fast.h" // tulpa_linalg::coords_dist
 #include <Rcpp.h>
@@ -56,7 +57,7 @@ Rcpp::NumericMatrix cpp_gp_field_rows(
     const Rcpp::NumericMatrix& noise
 ) {
     if (new_coords.ncol() < 1 || new_coords.ncol() != unique_coords.ncol()) {
-        Rcpp::stop("cpp_gp_field_rows: prediction and fitted coordinates "
+        tulpa::stop("cpp_gp_field_rows: prediction and fitted coordinates "
                    "must have the same number of columns (>= 1).");
     }
     const int n_new = new_coords.nrow();
@@ -64,23 +65,23 @@ Rcpp::NumericMatrix cpp_gp_field_rows(
     const int R     = field_rows.nrow();
     const int K     = sigma2_cell.size();
     if (field_rows.ncol() != n_loc) {
-        Rcpp::stop("cpp_gp_field_rows: field_rows must have nrow(unique_coords) columns.");
+        tulpa::stop("cpp_gp_field_rows: field_rows must have nrow(unique_coords) columns.");
     }
     if (cell.size() != R || phi_cell.size() != K) {
-        Rcpp::stop("cpp_gp_field_rows: `cell` must have one entry per row and the "
+        tulpa::stop("cpp_gp_field_rows: `cell` must have one entry per row and the "
                    "cell vectors one entry per cell.");
     }
     if (noise.nrow() != R || noise.ncol() != n_new) {
-        Rcpp::stop("cpp_gp_field_rows: `noise` must be nrow(field_rows) x nrow(new_coords).");
+        tulpa::stop("cpp_gp_field_rows: `noise` must be nrow(field_rows) x nrow(new_coords).");
     }
     for (int r = 0; r < R; ++r) {
         if (cell[r] < 0 || cell[r] >= K) {
-            Rcpp::stop("cpp_gp_field_rows: cell index %d of row %d is outside [0, %d).",
-                       cell[r], r + 1, K);
+            tulpa::stop("cpp_gp_field_rows: cell index %d of row %d is outside [0, %d).",
+                       {cell[r], r + 1, K});
         }
     }
     const int m = std::min(nn, n_loc);
-    if (m < 1) Rcpp::stop("cpp_gp_field_rows: need at least one neighbour.");
+    if (m < 1) tulpa::stop("cpp_gp_field_rows: need at least one neighbour.");
     const tulpa::CovType ct = static_cast<tulpa::CovType>(cov_type);
     const double jitter    = tulpa_linalg::kNngpNugget;
     const double var_floor = tulpa_linalg::kNngpVarFloor;
@@ -126,9 +127,9 @@ Rcpp::NumericMatrix cpp_gp_field_rows(
                                                   var_floor,
                                                   tulpa_nngp::VarFloor::Clamp,
                                                   alpha, cv)) {
-                Rcpp::stop("cpp_gp_field_rows: the neighbour covariance of new "
+                tulpa::stop("cpp_gp_field_rows: the neighbour covariance of new "
                            "location %d is not positive definite at cell %d.",
-                           i + 1, k + 1);
+                           {i + 1, k + 1});
             }
             const double sd = std::sqrt(cv);
             for (int r : rows_of[k]) {

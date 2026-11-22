@@ -22,6 +22,7 @@
 #define TULPA_AREAL_INPUT_CHECK_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 
 namespace tulpa {
 
@@ -49,19 +50,19 @@ inline void check_latent_obs_index(
     const char* what
 ) {
     if (static_cast<int>(idx.size()) != n_obs) {
-        Rcpp::stop("%s: length(%s) (%d) must equal the number of "
-                   "observations (%d).", who, what,
-                   static_cast<int>(idx.size()), n_obs);
+        tulpa::stop("%s: length(%s) (%d) must equal the number of "
+                   "observations (%d).", {who, what,
+                   static_cast<int>(idx.size()), n_obs});
     }
     for (int i = 0; i < n_obs; i++) {
         if (Rcpp::IntegerVector::is_na(idx[i])) {
-            Rcpp::stop("%s: %s[%d] is NA. Every observation names a node.",
-                       who, what, i + 1);
+            tulpa::stop("%s: %s[%d] is NA. Every observation names a node.",
+                       {who, what, i + 1});
         }
         if (idx[i] < 1 || idx[i] > n_units) {
-            Rcpp::stop("%s: %s[%d] (%d) is outside [1, %d]. Node "
-                       "indices are 1-based.", who, what, i + 1, idx[i],
-                       n_units);
+            tulpa::stop("%s: %s[%d] (%d) is outside [1, %d]. Node "
+                       "indices are 1-based.", {who, what, i + 1, idx[i],
+                       n_units});
         }
     }
 }

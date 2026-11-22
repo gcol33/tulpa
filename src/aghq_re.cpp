@@ -11,6 +11,7 @@
 // the virtual interface declared in <tulpa/aghq_oracle.h>.
 
 #include "aghq_re_core.h"
+#include "tulpa_stop.h"
 #include "aghq_re_oracles.h"
 #include "aghq_re_profile.h"
 #include "glmm_oracle.h"
@@ -136,7 +137,7 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
     Eigen::MatrixXd Sig = recov_block_diag_sigma(Ls, d, &jitter_floored);
     const AghqSigmaFactor sf = aghq_sigma_factor(Sig, d);
     if (!sf.ok)
-        stop("cpp_aghq_blups: the covariance at the supplied parameter is not "
+        tulpa::stop("cpp_aghq_blups: the covariance at the supplied parameter is not "
              "positive definite (its Cholesky failed), so no BLUP can be "
              "extracted.");
     LogicalVector JIT(d);
@@ -218,11 +219,11 @@ List cpp_aghq_profile_batch(NumericMatrix eta_pts, SEXP oracle,
     const int S = eta_pts.nrow(), K = eta_pts.ncol();
     const int p = beta_init.size();
     if (K != recov_total_k(blocks))
-        stop("cpp_aghq_profile_batch: eta_pts has %d columns, the blocks carry %d "
-             "covariance coordinates.", K, recov_total_k(blocks));
+        tulpa::stop("cpp_aghq_profile_batch: eta_pts has %d columns, the blocks carry %d "
+             "covariance coordinates.", {K, recov_total_k(blocks)});
     if (p != orc->n_theta)
-        stop("cpp_aghq_profile_batch: beta_init has length %d, the oracle %d.",
-             p, orc->n_theta);
+        tulpa::stop("cpp_aghq_profile_batch: beta_init has length %d, the oracle %d.",
+             {p, orc->n_theta});
 
     AghqBetaPrior prior;
     if (prior_mean.isNotNull() && prior_sd.isNotNull()) {
@@ -230,9 +231,9 @@ List cpp_aghq_profile_batch(NumericMatrix eta_pts, SEXP oracle,
         prior.mean = as<Eigen::VectorXd>(NumericVector(prior_mean));
         prior.sd   = as<Eigen::VectorXd>(NumericVector(prior_sd));
         if (prior.mean.size() != p || prior.sd.size() != p)
-            stop("cpp_aghq_profile_batch: the fixed-effect prior has length %d / "
-                 "%d, expected %d.", (int)prior.mean.size(),
-                 (int)prior.sd.size(), p);
+            tulpa::stop("cpp_aghq_profile_batch: the fixed-effect prior has length %d / "
+                 "%d, expected %d.", {(int)prior.mean.size(),
+                 (int)prior.sd.size(), p});
     }
     const Eigen::VectorXd b0 = as<Eigen::VectorXd>(beta_init);
     std::vector<Eigen::VectorXd> etas(S, Eigen::VectorXd(K));

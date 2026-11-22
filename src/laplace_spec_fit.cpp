@@ -2,6 +2,7 @@
 // Definitions of the spec-fit input marshalling declared in laplace_spec_fit.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "laplace_spec_fit.h"
 
 namespace tulpa {
@@ -14,7 +15,7 @@ const SubspaceDebiasOptions* unwrap_debias(
     Rcpp::List spec(debias);
     if (spec.containsElementNamed("method")) {
         const std::string method = Rcpp::as<std::string>(spec["method"]);
-        if (method != "fast" && method != "exact") Rcpp::stop("Unknown debias method.");
+        if (method != "fast" && method != "exact") tulpa::stop("Unknown debias method.");
         storage.exact = method == "exact";
     }
     if (spec.containsElementNamed("importance")) storage.importance = spec["importance"];
@@ -24,10 +25,10 @@ const SubspaceDebiasOptions* unwrap_debias(
     storage.idx.resize(idx_r.size());
     for (int k = 0; k < idx_r.size(); k++) {
         if (idx_r[k] == NA_INTEGER || idx_r[k] < 1) {
-            Rcpp::stop("debias$idx[%d] is %s; latent indices are 1-based.",
-                       k + 1,
+            tulpa::stop("debias$idx[%d] is %s; latent indices are 1-based.",
+                       {k + 1,
                        idx_r[k] == NA_INTEGER ? "NA"
-                                              : std::to_string(idx_r[k]).c_str());
+                                              : std::to_string(idx_r[k]).c_str()});
         }
         storage.idx[k] = idx_r[k] - 1;
     }
@@ -55,14 +56,14 @@ void build_spec_family_inputs(
     // A mismatched grouping vector would otherwise drop the whole RE term and
     // return a converged fixed-effects fit for a model nobody asked for.
     if (n_re_groups > 0 && (int)re_group_1based.size() != N) {
-        Rcpp::stop("length(re_idx) (%d) must equal length(y) (%d) when "
+        tulpa::stop("length(re_idx) (%d) must equal length(y) (%d) when "
                    "n_re_groups (%d) is positive.",
-                   (int)re_group_1based.size(), N, n_re_groups);
+                   {(int)re_group_1based.size(), N, n_re_groups});
     }
     // Every caller writes log(sigma_re) into the params vector, so a
     // non-positive scale starts the solve from a non-finite point.
     if (n_re_groups > 0 && (!(sigma_re > 0.0) || !std::isfinite(sigma_re))) {
-        Rcpp::stop("sigma_re (%g) must be finite and positive.", sigma_re);
+        tulpa::stop("sigma_re (%g) must be finite and positive.", {sigma_re});
     }
     // The group index is 1-based with 0 meaning "no random effect on this row";
     // the RE scatter reads re_group[i] - 1 with only the lower bound tested.
@@ -70,8 +71,8 @@ void build_spec_family_inputs(
         for (int i = 0; i < N; i++) {
             const int g = re_group_1based[i];
             if (g < 0 || g > n_re_groups) {
-                Rcpp::stop("re_idx[%d] (%d) must be 0 (no random effect) or a "
-                           "1-based index in [1, %d].", i + 1, g, n_re_groups);
+                tulpa::stop("re_idx[%d] (%d) must be 0 (no random effect) or a "
+                           "1-based index in [1, %d].", {i + 1, g, n_re_groups});
             }
         }
     }

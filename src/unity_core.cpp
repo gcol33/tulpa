@@ -30,3 +30,4 @@
 #include "tgmrf_nuts.cpp"
 #include "tgmrf_registry.cpp"
 #include "tulpa_init.cpp"
+#include "tulpa_stop.cpp"

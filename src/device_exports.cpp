@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "device.h"
 #include "gpu_nngp_laplace.h"
 #include "sparse_cholesky.h"
@@ -11,7 +12,7 @@
 
 namespace {
 using tulpa::device::Status;
-void device_check(const Status& status) { if (!status) Rcpp::stop(status.message); }
+void device_check(const Status& status) { if (!status) tulpa::stop(status.message); }
 
 struct DeviceSession {
     std::shared_ptr<tulpa::device::Policy> policy, previous;
@@ -45,13 +46,13 @@ void device_sparse_inputs(const Rcpp::IntegerVector& p, const Rcpp::IntegerVecto
                           const Rcpp::NumericMatrix& values, const Rcpp::NumericMatrix& b) {
     const int n = p.size()-1;
     if (n <= 0 || b.nrow() != n || values.nrow() != i.size() || values.ncol() == 0 ||
-        p[0] != 0 || p[n] != i.size()) Rcpp::stop("invalid sparse fixture dimensions");
+        p[0] != 0 || p[n] != i.size()) tulpa::stop("invalid sparse fixture dimensions");
     for (int j = 0; j < n; ++j) {
         if (p[j] < 0 || p[j+1] <= p[j] || p[j+1] > i.size() || i[p[j]] != j)
-            Rcpp::stop("invalid sparse fixture pointers or diagonal");
+            tulpa::stop("invalid sparse fixture pointers or diagonal");
         for (int k = p[j]; k < p[j+1]; ++k)
             if (i[k] < j || i[k] >= n || (k > p[j] && i[k] <= i[k-1]))
-                Rcpp::stop("invalid sparse fixture indices");
+                tulpa::stop("invalid sparse fixture indices");
     }
 }
 
@@ -84,7 +85,7 @@ Rcpp::List cpp_device_scatter_batch(Rcpp::NumericMatrix design, Rcpp::NumericMat
         count < 1 || workers < 1 || workers > 32 ||
         scores.nrow() != rows || weights.nrow() != rows || weights.ncol() != count ||
         scales.nrow() != columns || scales.ncol() != count)
-        Rcpp::stop("invalid dense scatter dimensions");
+        tulpa::stop("invalid dense scatter dimensions");
     DeviceSession session(tulpa::device::parse_choice(choice));
     tulpa::device::BatchScope batch(batched ? workers : 1);
     struct Scratch { tulpa::device::DenseScatter scatter; std::vector<double> design; };
@@ -132,7 +133,7 @@ Rcpp::List cpp_device_laplace_batch(Rcpp::NumericMatrix matrices, Rcpp::NumericM
     const int count = matrices.nrow();
     if (n < 1 || workers < 1 || workers > 32 || count < 1 ||
         matrices.ncol() != static_cast<double>(n)*n || rhs.nrow() != count || rhs.ncol() != n)
-        Rcpp::stop("invalid Laplace batch dimensions");
+        tulpa::stop("invalid Laplace batch dimensions");
     DeviceSession session(tulpa::device::parse_choice(choice));
     tulpa::device::BatchScope batch(batched ? workers : 1);
     std::vector<tulpa::DenseMat> h(count, tulpa::DenseMat(n, tulpa::DenseVec(n, 0.0)));
@@ -171,7 +172,7 @@ Rcpp::List cpp_device_laplace_batch(Rcpp::NumericMatrix matrices, Rcpp::NumericM
 
 // [[Rcpp::export]]
 Rcpp::List cpp_device_sparse_state(std::string choice, int threads = 4, bool batched = false) {
-    if (threads < 1 || threads > 32) Rcpp::stop("invalid sparse worker count");
+    if (threads < 1 || threads > 32) tulpa::stop("invalid sparse worker count");
     DeviceSession session(tulpa::device::parse_choice(choice));
     tulpa::device::BatchScope batch(batched ? threads : 1);
     std::vector<int> success(threads), analyses(threads);
@@ -235,10 +236,10 @@ Rcpp::List cpp_device_sparse_batch(Rcpp::IntegerVector p, Rcpp::IntegerVector i,
     int workers = 4, bool batched = true, bool selected_inverse = false,
     bool per_cell_rhs = false) {
     device_sparse_inputs(p, i, values, b);
-    if (workers < 1 || workers > 32) Rcpp::stop("invalid sparse worker count");
+    if (workers < 1 || workers > 32) tulpa::stop("invalid sparse worker count");
     const int n = p.size()-1, count = values.ncol();
     if (per_cell_rhs && b.ncol()%count != 0)
-        Rcpp::stop("invalid sparse RHS batches");
+        tulpa::stop("invalid sparse RHS batches");
     const int columns = b.ncol()/(per_cell_rhs ? count : 1);
     DeviceSession session(tulpa::device::parse_choice(choice));
     tulpa::device::BatchScope batch(batched ? workers : 1);
@@ -287,7 +288,7 @@ Rcpp::List cpp_device_sparse(Rcpp::IntegerVector p, Rcpp::IntegerVector i,
                              int repetitions = 1) {
     const int n = p.size() - 1;
     device_sparse_inputs(p, i, values, b);
-    if (repetitions < 1) Rcpp::stop("invalid sparse repetition count");
+    if (repetitions < 1) tulpa::stop("invalid sparse repetition count");
     DeviceSession session(tulpa::device::parse_choice(choice));
     tulpa::SparseCholeskySolver solver;
     Rcpp::NumericMatrix x(n, b.ncol());
@@ -356,7 +357,7 @@ Rcpp::CharacterVector cpp_device_operations() {
 // [[Rcpp::export]]
 std::string cpp_device_validate(SEXP value) {
     if (TYPEOF(value) != STRSXP || Rf_xlength(value) != 1 || STRING_ELT(value, 0) == NA_STRING)
-        Rcpp::stop("control$device must be one of 'auto', 'cpu', 'cuda'");
+        tulpa::stop("control$device must be one of 'auto', 'cpu', 'cuda'");
     std::string name = Rcpp::as<std::string>(value);
     auto choice = tulpa::device::parse_choice(name);
     if (choice == tulpa::device::Choice::Cuda)
@@ -376,18 +377,18 @@ void cpp_device_replay_stages(Rcpp::DataFrame stages) {
     Rcpp::NumericVector work = stages.containsElementNamed("work") ?
         Rcpp::NumericVector(stages["work"]) : Rcpp::NumericVector(names.size());
     if (cpu.size() != names.size() || cuda.size() != names.size() || work.size() != names.size())
-        Rcpp::stop("device stage columns must have equal lengths");
+        tulpa::stop("device stage columns must have equal lengths");
     const double maximum = static_cast<double>(std::numeric_limits<std::size_t>::max());
     for (R_xlen_t i = 0; i < names.size(); ++i) {
         if (Rcpp::CharacterVector::is_na(names[i]) || Rcpp::as<std::string>(names[i]).empty())
-            Rcpp::stop("device stage names must be nonempty");
+            tulpa::stop("device stage names must be nonempty");
         for (double count : {cpu[i], cuda[i]})
             if (!std::isfinite(count) || count < 0 || count >= maximum || count != std::floor(count))
-                Rcpp::stop("device call counts must be non-negative integers");
+                tulpa::stop("device call counts must be non-negative integers");
         if (cpu[i] == 0 && cuda[i] == 0)
-            Rcpp::stop("device stages must include a call");
+            tulpa::stop("device stages must include a call");
         if (!std::isfinite(work[i]) || work[i] < 0)
-            Rcpp::stop("device stage work must be finite and non-negative");
+            tulpa::stop("device stage work must be finite and non-negative");
     }
     auto policy = tulpa::device::current_policy();
     for (R_xlen_t i = 0; i < names.size(); ++i) {
@@ -429,7 +430,7 @@ Rcpp::List cpp_device_snapshot() {
 // [[Rcpp::export]]
 Rcpp::List cpp_device_probe(std::string operation, double size, int variant,
                             std::string choice) {
-    if (!std::isfinite(size) || size < 0) Rcpp::stop("size must be finite and non-negative");
+    if (!std::isfinite(size) || size < 0) tulpa::stop("size must be finite and non-negative");
     tulpa::device::Policy policy(tulpa::device::parse_choice(choice), tulpa::device::thresholds());
     Status status;
     bool cuda = policy.select(operation, static_cast<std::size_t>(size), variant, status);
@@ -440,7 +441,7 @@ Rcpp::List cpp_device_probe(std::string operation, double size, int variant,
 // [[Rcpp::export]]
 Rcpp::List cpp_device_axpy(Rcpp::NumericVector x, Rcpp::NumericVector y,
                            double a, std::string choice, int repetitions = 1) {
-    if (repetitions <= 0) Rcpp::stop("repetitions must be positive");
+    if (repetitions <= 0) tulpa::stop("repetitions must be positive");
     std::vector<double> xv(x.begin(), x.end()), yv(y.begin(), y.end());
     tulpa::device::Policy policy(tulpa::device::parse_choice(choice), tulpa::device::thresholds());
     bool used = false;
@@ -458,7 +459,7 @@ Rcpp::List cpp_device_axpy(Rcpp::NumericVector x, Rcpp::NumericVector y,
 Rcpp::List cpp_device_cholesky(Rcpp::NumericMatrix matrices, int n,
                                std::string choice, int repetitions = 1) {
     if (n <= 0 || matrices.ncol() != static_cast<double>(n) * n || repetitions <= 0)
-        Rcpp::stop("invalid batch dimensions or repetition count");
+        tulpa::stop("invalid batch dimensions or repetition count");
     std::vector<std::vector<double>> original(matrices.nrow(), std::vector<double>(static_cast<std::size_t>(n) * n));
     for (int b = 0; b < matrices.nrow(); ++b) for (int j = 0; j < matrices.ncol(); ++j)
         original[b][j] = matrices(b, j);
@@ -482,7 +483,7 @@ Rcpp::List cpp_device_nngp(Rcpp::NumericVector w, Rcpp::NumericMatrix coords,
                           Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
                           Rcpp::IntegerVector nn_order, double sigma2, double phi,
                           int cov_type, std::string choice, int repetitions = 1) {
-    if (repetitions <= 0 || w.size() != coords.nrow()) Rcpp::stop("invalid NNGP input dimensions");
+    if (repetitions <= 0 || w.size() != coords.nrow()) tulpa::stop("invalid NNGP input dimensions");
     DeviceSession session(tulpa::device::parse_choice(choice));
     std::vector<double> field(w.begin(), w.end()), mean, variance, alpha;
     bool used = false;

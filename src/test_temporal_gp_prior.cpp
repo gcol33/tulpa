@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "test_prior_model.h"
 #include "sampler_field_store.h"
 #include "tulpa_priors_st.h"
@@ -17,7 +18,7 @@ void temporal_gp_probe_data(tulpa::ModelData& data,const Rcpp::List& p) {
   else if(cov=="matern") gp.cov_type=tulpa::TemporalCovType::MATERN;
   else if(cov=="gaussian") gp.cov_type=tulpa::TemporalCovType::GAUSSIAN;
   else if(cov=="periodic") gp.cov_type=tulpa::TemporalCovType::PERIODIC;
-  else Rcpp::stop("Unknown temporal covariance");
+  else tulpa::stop("Unknown temporal covariance");
   gp.nu=Rcpp::as<double>(p["nu"]);gp.period=Rcpp::as<double>(p["period"]);
   data.temporal_gp_relative_nugget=1e-6;
   data.temporal_gp_parameterization=Rcpp::as<std::string>(p["gp_parameterization"])=="centered" ? 0:1;
@@ -40,7 +41,7 @@ Rcpp::List cpp_temporal_gp_log_prior(Rcpp::NumericVector x,double log_sigma2,
   temporal_gp_probe_data(data,temporal_params);
   const auto layout=tulpa_hmc::compute_param_layout(data);
   if(x.size()!=layout.temporal_end-layout.temporal_start)
-    Rcpp::stop("Temporal field dimensions do not match its time grid");
+    tulpa::stop("Temporal field dimensions do not match its time grid");
   std::vector<double> q(layout.total_params,0),stored(layout.total_params);
   q[layout.log_sigma2_temporal_gp_idx]=log_sigma2;
   q[layout.logit_phi_temporal_gp_idx]=logit_phi;
@@ -58,7 +59,7 @@ Rcpp::NumericMatrix cpp_temporal_gp_field(const Rcpp::NumericMatrix& x,
     const Rcpp::NumericVector& log_sigma2,const Rcpp::NumericVector& logit_phi,
     const Rcpp::List& temporal_params) {
   if(log_sigma2.size()!=x.nrow() || logit_phi.size()!=x.nrow())
-    Rcpp::stop("One hyperparameter pair is required per draw");
+    tulpa::stop("One hyperparameter pair is required per draw");
   Rcpp::NumericMatrix out(x.nrow(),x.ncol());
   for(int i=0;i<x.nrow();++i) {
     auto result=cpp_temporal_gp_log_prior(x(i,Rcpp::_),log_sigma2[i],logit_phi[i],temporal_params);
@@ -75,7 +76,7 @@ Rcpp::NumericVector cpp_test_st_ar1_constrained_prior(double rho,int n_spatial,
   auto& st=data.spatiotemporal_data;
   if(type=="II") st.type=tulpa::STType::TYPE_II;
   else if(type=="IV") st.type=tulpa::STType::TYPE_IV;
-  else Rcpp::stop("Unknown interaction type");
+  else tulpa::stop("Unknown interaction type");
   st.temporal_type=tulpa::TemporalType::AR1;
   st.n_spatial=n_spatial;st.n_times=n_times;st.n_params=n_spatial*n_times;
   st.adj_row_ptr.push_back(0);

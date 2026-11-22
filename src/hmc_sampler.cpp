@@ -4,6 +4,7 @@
 // LikelihoodSpec supplies observations for joint and marginal field targets.
 
 #include "hmc_sampler.h"
+#include "tulpa_stop.h"
 #include "hmc_field_coordinates.h"
 #include "hmc_spatial_marginal.h"
 #include "log_post_impl.h"
@@ -42,7 +43,7 @@ double compute_log_post(
   }
   if (has_collapsed_spatial(layout)) return compute_collapsed_spatial(params, data, layout, skip_obs_loop);
   if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
-    Rcpp::stop("tulpa: compute_log_post requires a generic LikelihoodSpec "
+    tulpa::stop("tulpa: compute_log_post requires a generic LikelihoodSpec "
                "ModelData (n_processes > 0 and data.likelihood_spec set).");
   }
   return tulpa::compute_log_post_generic_spec_double(
@@ -71,7 +72,7 @@ double compute_log_lik_only(
   if (has_collapsed_spatial(layout)) return compute_collapsed_spatial(params, data, layout) -
       compute_collapsed_spatial(params, data, layout, true);
   if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
-    Rcpp::stop("tulpa: compute_log_lik_only requires a generic LikelihoodSpec "
+    tulpa::stop("tulpa: compute_log_lik_only requires a generic LikelihoodSpec "
                "ModelData (n_processes > 0 and data.likelihood_spec set).");
   }
   return tulpa::compute_log_post_generic_spec_double(

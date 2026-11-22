@@ -5,16 +5,17 @@
 // the port is pinned against.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "brasil.h"
 
 // [[Rcpp::export]]
 Rcpp::List cpp_spde_rational_roots(int order, double beta, double spectrum_ratio,
                                    double tol = 1e-7) {
   if (order < 1) {
-    Rcpp::stop("rational order must be >= 1.");
+    tulpa::stop("rational order must be >= 1.");
   }
   if (!(spectrum_ratio > 0.0 && spectrum_ratio < 1.0)) {
-    Rcpp::stop("spectrum_ratio must be in (0, 1).");
+    tulpa::stop("spectrum_ratio must be in (0, 1).");
   }
 
   const tulpa::brasil::RationalRoots rr =

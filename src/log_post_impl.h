@@ -9,6 +9,7 @@
 #define TULPA_LOG_POST_IMPL_H
 
 #include <type_traits>
+#include "tulpa_stop.h"
 #include <vector>
 
 #include "autodiff_utils.h"
@@ -57,7 +58,7 @@ T compute_log_post_impl(
         // through compute_gradient_generic_arena, which calls
         // compute_log_post_generic<Var>(...) directly, so an autodiff call
         // here is a caller error and not a point to reject.
-        Rcpp::stop("tulpa: compute_log_post_impl is the double-precision "
+        tulpa::stop("tulpa: compute_log_post_impl is the double-precision "
                    "log-posterior entry point; autodiff callers route through "
                    "compute_gradient_generic_arena.");
     }

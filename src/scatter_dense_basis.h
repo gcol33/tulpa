@@ -25,6 +25,7 @@
 #define TULPA_SCATTER_DENSE_BASIS_H
 
 #include "laplace_family_link.h"
+#include "tulpa_stop.h"
 #include "latent_block.h"
 #include "nested_laplace_joint_core.h"
 #include "sparse_hessian.h"
@@ -139,8 +140,8 @@ inline bool scatter_dense_basis_block(
 
     if (N_k == 0 || M == 0) return true;
     if (N_k != arm.N) {
-        Rcpp::stop("scatter_dense_basis_block: batch.N_k (%d) != arm.N (%d) "
-                   "for k_arm = %d.", N_k, arm.N, k_arm);
+        tulpa::stop("scatter_dense_basis_block: batch.N_k (%d) != arm.N (%d) "
+                   "for k_arm = %d.", {N_k, arm.N, k_arm});
     }
 
     // ---- Scatter index cache: build / refresh if stale ----
@@ -303,7 +304,7 @@ inline void scatter_dense_basis_cross(
     const auto bb = b.dense_basis_batch(k_arm, k_grid);
     if (!ba.data || !bb.data || ba.N_k == 0 || bb.N_k == 0) return;
     if (ba.N_k != bb.N_k) {
-        Rcpp::stop("Dense basis cross-product: observation counts differ.");
+        tulpa::stop("Dense basis cross-product: observation counts differ.");
     }
     const Eigen::MatrixXd cross = dense_basis_cross_products(sa, sb);
     const int off_a = a.start + ba.m_offset_in_block;

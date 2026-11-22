@@ -40,6 +40,7 @@
 #define TULPA_HSGP_SPECTRAL_H
 
 #include <cmath>
+#include "tulpa_stop.h"
 #include <Rcpp.h>
 #include "autodiff_utils.h"
 #include <tulpa/hsgp_spectral.h>
@@ -65,8 +66,8 @@ inline HsgpKernel hsgp_kernel_from_code(int code, const char* who) {
     case 1: return HsgpKernel::MATERN32;
     case 2: return HsgpKernel::MATERN52;
     default:
-        Rcpp::stop("%s: HSGP kernel code %d is not one of 0 (squared "
-                   "exponential), 1 (Matern 3/2), 2 (Matern 5/2).", who, code);
+        tulpa::stop("%s: HSGP kernel code %d is not one of 0 (squared "
+                   "exponential), 1 (Matern 3/2), 2 (Matern 5/2).", {who, code});
     }
     return HsgpKernel::SQUARED_EXPONENTIAL;
 }
@@ -76,7 +77,7 @@ inline HsgpKernel hsgp_kernel_from_code(int code, const char* who) {
 inline HsgpKernel hsgp_kernel_from_spec(const Rcpp::List& spec,
                                         const char* who) {
     if (!spec.containsElementNamed("kernel")) {
-        Rcpp::stop("%s: an HSGP block spec carries no `kernel` code.", who);
+        tulpa::stop("%s: an HSGP block spec carries no `kernel` code.", {who});
     }
     return hsgp_kernel_from_code(Rcpp::as<int>(spec["kernel"]), who);
 }

@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "device_dense.h"
 #include "dense_basis_apply.h"
 #include "temporal_gp_kernel.h"
@@ -15,7 +16,7 @@ struct Scope {
         previous = tulpa::device::exchange_policy(policy);
     }
     ~Scope() { tulpa::device::exchange_policy(previous); }
-    void check() const { const auto s = policy->failure(); if (!s) Rcpp::stop(s.message); }
+    void check() const { const auto s = policy->failure(); if (!s) tulpa::stop(s.message); }
 };
 
 template<class T>
@@ -63,7 +64,7 @@ T hsgp(const tulpa::HSGPData& basis, const std::vector<T>& params) {
 Rcpp::List cpp_device_dense(const Eigen::MatrixXd& matrix, const Eigen::MatrixXd& rhs,
     std::string operation, std::string choice, int repetitions = 1) {
     if (!matrix.rows() || matrix.rows() != matrix.cols() || rhs.rows() != matrix.rows() ||
-        rhs.cols() < 1 || repetitions < 1) Rcpp::stop("invalid dense fixture dimensions");
+        rhs.cols() < 1 || repetitions < 1) tulpa::stop("invalid dense fixture dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     tulpa::device::DenseFactor factor;
     Eigen::MatrixXd solution(rhs.rows(), rhs.cols());
@@ -72,13 +73,13 @@ Rcpp::List cpp_device_dense(const Eigen::MatrixXd& matrix, const Eigen::MatrixXd
     const auto evaluate = [&]() {
         const bool ok = factor.factorize(input.data(), matrix.rows(), true, operation);
         scope.check();
-        if (!ok) Rcpp::stop("dense fixture matrix is not positive definite");
+        if (!ok) tulpa::stop("dense fixture matrix is not positive definite");
         if ((operation == "dense_gp" || operation == "dense_spec") &&
                 !factor.lower(lower.data(), operation != "dense_spec")) {
-            scope.check(); Rcpp::stop("dense fixture lower download failed");
+            scope.check(); tulpa::stop("dense fixture lower download failed");
         }
         if (!factor.solve(rhs.data(), solution.data(), rhs.cols())) {
-            scope.check(); Rcpp::stop("dense fixture solve failed");
+            scope.check(); tulpa::stop("dense fixture solve failed");
         }
     };
     const auto first_start = std::chrono::steady_clock::now();
@@ -87,11 +88,11 @@ Rcpp::List cpp_device_dense(const Eigen::MatrixXd& matrix, const Eigen::MatrixXd
     const auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < repetitions; ++i) evaluate();
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
-    if (!factor.lower(lower.data(), true)) { scope.check(); Rcpp::stop("dense fixture lower download failed"); }
+    if (!factor.lower(lower.data(), true)) { scope.check(); tulpa::stop("dense fixture lower download failed"); }
     Eigen::VectorXd z(matrix.rows()), perturbation(matrix.rows());
     for (int i = 0; i < z.size(); ++i) z[i] = std::sin(0.31 * i);
     if (!factor.solve(z.data(), perturbation.data(), 1, tulpa::device::DenseSystem::LowerTranspose)) {
-        scope.check(); Rcpp::stop("dense fixture draw failed");
+        scope.check(); tulpa::stop("dense fixture draw failed");
     }
     scope.check();
     return Rcpp::List::create(Rcpp::_["lower"] = lower, Rcpp::_["solution"] = solution,
@@ -107,7 +108,7 @@ Rcpp::List cpp_device_temporal_dense(Rcpp::NumericVector times, Rcpp::NumericVec
     int kind, bool centered, double relative_nugget, bool tvc, std::string choice,
     int repetitions = 1) {
     if (times.size() < 1 || q.size() != times.size() + 2 || repetitions < 1 || kind < 1 || kind > 4)
-        Rcpp::stop("invalid temporal dense fixture dimensions");
+        tulpa::stop("invalid temporal dense fixture dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     const std::vector<double> t(times.begin(), times.end()), x(q.begin(), q.end());
     std::vector<double> gradient(q.size());
@@ -141,8 +142,8 @@ Rcpp::List cpp_device_hsgp_dense(const Eigen::MatrixXd& basis, const Eigen::Vect
     std::string action = "all") {
     if (!basis.rows() || !basis.cols() || weights.size() != basis.rows() ||
         scale.size() != basis.cols() || beta.size() != basis.cols() || repetitions < 1)
-        Rcpp::stop("invalid HSGP fixture dimensions");
-    if (action != "all" && action != "product" && action != "transpose" && action != "crossprod") Rcpp::stop("invalid HSGP fixture action");
+        tulpa::stop("invalid HSGP fixture dimensions");
+    if (action != "all" && action != "product" && action != "transpose" && action != "crossprod") tulpa::stop("invalid HSGP fixture action");
     tulpa_dense_fixture::Scope scope(choice);
     tulpa::device::DenseBasis workspace;
     const tulpa_coordinate_linalg::Matrix stored_basis = basis;
@@ -159,12 +160,12 @@ Rcpp::List cpp_device_hsgp_dense(const Eigen::MatrixXd& basis, const Eigen::Vect
         if (action == "all" || action == "crossprod") ok = workspace.gram(stored_basis.data(), basis.rows(), basis.cols(), true,
             weights.data(), scale.data(), gram.data());
         if (action == "all" || action == "product") ok = ok && workspace.apply(stored_basis.data(), basis.rows(), basis.cols(), true, scaled_beta.data(), field.data());
-        if (!ok) { scope.check(); Rcpp::stop("HSGP fixture product failed"); }
+        if (!ok) { scope.check(); tulpa::stop("HSGP fixture product failed"); }
         if (action == "all" || action == "transpose") {
             const Eigen::VectorXd score = action == "transpose" ? transpose_score :
                 Eigen::VectorXd((-weights.array() * field.array()).matrix());
             if (!workspace.apply(stored_basis.data(), basis.rows(), basis.cols(), true, score.data(), gradient.data(), true)) {
-                scope.check(); Rcpp::stop("HSGP fixture gradient failed");
+                scope.check(); tulpa::stop("HSGP fixture gradient failed");
             }
             gradient.array() *= scale.array();
         }
@@ -190,7 +191,7 @@ Rcpp::List cpp_device_hsgp_dense(const Eigen::MatrixXd& basis, const Eigen::Vect
 Rcpp::List cpp_device_dense_adjoint(const Eigen::MatrixXd& lower, const Eigen::MatrixXd& adjoint,
     std::string choice, int repetitions = 1) {
     if (!lower.rows() || lower.rows() != lower.cols() || adjoint.rows() != lower.rows() ||
-        adjoint.cols() != lower.cols() || repetitions < 1) Rcpp::stop("invalid dense adjoint dimensions");
+        adjoint.cols() != lower.cols() || repetitions < 1) tulpa::stop("invalid dense adjoint dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     using Matrix = tulpa_coordinate_linalg::Matrix;
     const Matrix l = lower, g = adjoint;
@@ -198,7 +199,7 @@ Rcpp::List cpp_device_dense_adjoint(const Eigen::MatrixXd& lower, const Eigen::M
     const auto start = std::chrono::steady_clock::now();
     for (int trial = 0; trial < repetitions; ++trial) {
         if (!tulpa::device::cholesky_adjoint(l.data(), g.data(), out.data(), l.rows())) {
-            scope.check(); Rcpp::stop("dense adjoint failed");
+            scope.check(); tulpa::stop("dense adjoint failed");
         }
     }
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
@@ -212,7 +213,7 @@ Rcpp::List cpp_device_projected_dense(const Eigen::MatrixXd& projector, const Ei
     std::string choice, int repetitions = 1, bool changing_prior = false) {
     const int n = projector.rows();
     if (n < 1 || projector.cols() != n || prior.rows() != n || prior.cols() != n ||
-        weights.size() != n || residual.size() != n || repetitions < 1) Rcpp::stop("invalid projected fixture dimensions");
+        weights.size() != n || residual.size() != n || repetitions < 1) tulpa::stop("invalid projected fixture dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     const tulpa_coordinate_linalg::Matrix p = projector;
     Eigen::MatrixXd precision(n, n);
@@ -227,7 +228,7 @@ Rcpp::List cpp_device_projected_dense(const Eigen::MatrixXd& projector, const Ei
                 1.0, 0.0, linear.data(), operation) ||
             !factor.solve(linear.data(), mean.data()) ||
             !factor.solve(z.data(), perturbation.data(), 1, tulpa::device::DenseSystem::LowerTranspose)) {
-            scope.check(); Rcpp::stop("projected factor or solve failed");
+            scope.check(); tulpa::stop("projected factor or solve failed");
         }
     };
     const auto first_start = std::chrono::steady_clock::now();
@@ -238,7 +239,7 @@ Rcpp::List cpp_device_projected_dense(const Eigen::MatrixXd& projector, const Ei
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
     scope.check();
     if (!tulpa::device::projected_precision(p.data(), n, weights.data(), residual.data(),
-            precision.data(), linear.data(), operation)) { scope.check(); Rcpp::stop("projected precision read failed"); }
+            precision.data(), linear.data(), operation)) { scope.check(); tulpa::stop("projected precision read failed"); }
     precision += current_prior;
     const Eigen::VectorXd draw = mean + perturbation;
     const Eigen::VectorXd gradient = linear - precision * draw;
@@ -254,7 +255,7 @@ Rcpp::List cpp_device_projected_dense(const Eigen::MatrixXd& projector, const Ei
 Rcpp::List cpp_device_hsgp_sampler(const Eigen::MatrixXd& basis, Rcpp::NumericVector eigenvalues,
     Rcpp::NumericVector parameters, int kernel, std::string choice) {
     if (!basis.rows() || !basis.cols() || eigenvalues.size() != basis.cols() ||
-        parameters.size() != basis.cols() + 2 || kernel < 0 || kernel > 2) Rcpp::stop("invalid HSGP sampler dimensions");
+        parameters.size() != basis.cols() + 2 || kernel < 0 || kernel > 2) tulpa::stop("invalid HSGP sampler dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     tulpa::HSGPData data;
     data.n_obs = basis.rows(); data.m_total = basis.cols(); data.kernel = kernel;
@@ -279,14 +280,14 @@ Rcpp::List cpp_device_hsgp_sampler(const Eigen::MatrixXd& basis, Rcpp::NumericVe
 Rcpp::List cpp_device_hsgp_cross(const Eigen::MatrixXd& left, const Eigen::MatrixXd& right,
     std::string choice, int repetitions = 1) {
     if (!left.rows() || !left.cols() || right.rows() != left.rows() || !right.cols() || repetitions < 1)
-        Rcpp::stop("invalid HSGP cross-product dimensions");
+        tulpa::stop("invalid HSGP cross-product dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     Eigen::MatrixXd out(left.cols(), right.cols());
     const auto start = std::chrono::steady_clock::now();
     for (int trial = 0; trial < repetitions; ++trial) {
         if (!tulpa::device::cross_product(left.data(), left.rows(), left.cols(), right.data(),
                                          right.cols(), out.data())) {
-            scope.check(); Rcpp::stop("HSGP cross-product failed");
+            scope.check(); tulpa::stop("HSGP cross-product failed");
         }
     }
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
@@ -301,7 +302,7 @@ Rcpp::List cpp_device_basis_moments(const Eigen::MatrixXd& basis, const Eigen::V
     std::string choice) {
     const int n = basis.rows(), m = basis.cols();
     if (n < 1 || m < 1 || weights.size() != n || score.size() != n || scale.size() != m || amplitude.size() != n)
-        Rcpp::stop("invalid basis moment dimensions");
+        tulpa::stop("invalid basis moment dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     const tulpa_coordinate_linalg::Matrix rows = basis;
     tulpa::LatentBlock::DenseBasisBatch batch;
@@ -316,7 +317,7 @@ Rcpp::List cpp_device_basis_moments(const Eigen::MatrixXd& basis, const Eigen::V
 
 // [[Rcpp::export]]
 Rcpp::NumericMatrix cpp_device_dense_threads(int n, int threads, std::string choice) {
-    if (n < 1 || threads < 1 || threads > 32) Rcpp::stop("invalid threaded dense dimensions");
+    if (n < 1 || threads < 1 || threads > 32) tulpa::stop("invalid threaded dense dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     std::vector<double> output(threads * 3);
     std::vector<int> ok(threads, 0);
@@ -340,6 +341,6 @@ Rcpp::NumericMatrix cpp_device_dense_threads(int n, int threads, std::string cho
     });
     for (auto& worker : workers) worker.join();
     scope.check();
-    if (std::find(ok.begin(), ok.end(), 0) != ok.end()) Rcpp::stop("threaded dense operation failed");
+    if (std::find(ok.begin(), ok.end(), 0) != ok.end()) tulpa::stop("threaded dense operation failed");
     return Rcpp::NumericMatrix(threads, 3, output.begin());
 }

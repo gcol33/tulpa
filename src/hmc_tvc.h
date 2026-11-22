@@ -6,6 +6,7 @@
 #define TULPA_HMC_TVC_H
 
 #include <cstddef>
+#include "tulpa_stop.h"
 #include <vector>
 #include <cmath>
 #include "hmc_temporal.h"  // Reuse RW1/RW2/AR1 implementations
@@ -148,33 +149,33 @@ inline void validate_tvc_data(const TVCData& tvc_data) {
   const int n_groups = tvc_data.n_groups;
 
   if (n_times < 1 || n_tvc < 1 || n_groups < 1) {
-    Rcpp::stop("tulpa: a TVC term needs n_times, n_tvc and n_groups >= 1; got "
-               "%d, %d, %d.", n_times, n_tvc, n_groups);
+    tulpa::stop("tulpa: a TVC term needs n_times, n_tvc and n_groups >= 1; got "
+               "%d, %d, %d.", {n_times, n_tvc, n_groups});
   }
   if ((int)tvc_data.time_index.size() != N) {
-    Rcpp::stop("tulpa: TVC `time_index` has length %d but must have one entry "
+    tulpa::stop("tulpa: TVC `time_index` has length %d but must have one entry "
                "per observation (%d).",
-               (int)tvc_data.time_index.size(), N);
+               {(int)tvc_data.time_index.size(), N});
   }
   if ((int)tvc_data.group_index.size() != N) {
-    Rcpp::stop("tulpa: TVC `group_index` has length %d but must have one entry "
+    tulpa::stop("tulpa: TVC `group_index` has length %d but must have one entry "
                "per observation (%d).",
-               (int)tvc_data.group_index.size(), N);
+               {(int)tvc_data.group_index.size(), N});
   }
   if (tvc_data.X_tvc.size() != (std::size_t)N * (std::size_t)n_tvc) {
-    Rcpp::stop("tulpa: TVC `X_tvc` holds %d values but must hold n_obs * n_tvc "
-               "= %d * %d.", (int)tvc_data.X_tvc.size(), N, n_tvc);
+    tulpa::stop("tulpa: TVC `X_tvc` holds %d values but must hold n_obs * n_tvc "
+               "= %d * %d.", {(int)tvc_data.X_tvc.size(), N, n_tvc});
   }
   for (int i = 0; i < N; i++) {
     const int t = tvc_data.time_index[i];
     if (t < 1 || t > n_times) {
-      Rcpp::stop("tulpa: TVC `time_index[%d]` is %d; must be a 1-based index "
-                 "in [1, %d].", i + 1, t, n_times);
+      tulpa::stop("tulpa: TVC `time_index[%d]` is %d; must be a 1-based index "
+                 "in [1, %d].", {i + 1, t, n_times});
     }
     const int g = tvc_data.group_index[i];
     if (g < 1 || g > n_groups) {
-      Rcpp::stop("tulpa: TVC `group_index[%d]` is %d; must be a 1-based index "
-                 "in [1, %d].", i + 1, g, n_groups);
+      tulpa::stop("tulpa: TVC `group_index[%d]` is %d; must be a 1-based index "
+                 "in [1, %d].", {i + 1, g, n_groups});
     }
   }
   // A GP coefficient is a continuous-time field over the distinct instants,
@@ -182,9 +183,9 @@ inline void validate_tvc_data(const TVCData& tvc_data) {
   // structure reads the index as a grid position and carries none.
   if (tvc_data.structure == TemporalType::GP &&
       (int)tvc_data.time_values.size() != n_times) {
-    Rcpp::stop("tulpa: a GP-evolving TVC needs one `time_values` entry per "
+    tulpa::stop("tulpa: a GP-evolving TVC needs one `time_values` entry per "
                "distinct time (%d); got %d.",
-               n_times, (int)tvc_data.time_values.size());
+               {n_times, (int)tvc_data.time_values.size()});
   }
 }
 

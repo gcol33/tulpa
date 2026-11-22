@@ -42,6 +42,7 @@
 // order afterwards, so the result does not depend on the thread count.
 
 #include "aghq_re_core.h"
+#include "tulpa_stop.h"
 #include "aghq_re_oracles.h"
 #include <tulpa/nested_progress.h>
 #include <tulpa/re_cov_update.h>
@@ -528,12 +529,12 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
         bl.d += nc[m];
     }
     const int d = bl.d;
-    if (d != orc->d) stop("cpp_re_em: the blocks span %d coordinates, the oracle %d.", d, orc->d);
-    if ((int)theta0.size() != nth) stop("cpp_re_em: theta0 has length %d, the oracle %d.",
-                                        (int)theta0.size(), nth);
+    if (d != orc->d) tulpa::stop("cpp_re_em: the blocks span %d coordinates, the oracle %d.", {d, orc->d});
+    if ((int)theta0.size() != nth) tulpa::stop("cpp_re_em: theta0 has length %d, the oracle %d.",
+                                        {(int)theta0.size(), nth});
     if ((int)theta_prior_prec.size() != nth)
-        stop("cpp_re_em: theta_prior_prec has length %d, theta %d.",
-             (int)theta_prior_prec.size(), nth);
+        tulpa::stop("cpp_re_em: theta_prior_prec has length %d, theta %d.",
+             {(int)theta_prior_prec.size(), nth});
     const bool latent = theta_mode == 1;
     {
         // An R-closure oracle learns which closures it carries when bound.
@@ -541,7 +542,7 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
         orc->rebind(t0.data());
     }
     if (latent && nth > 0 && !orc->has_theta_score())
-        stop("cpp_re_em: the latent theta update needs the oracle's theta score.");
+        tulpa::stop("cpp_re_em: the latent theta update needs the oracle's theta score.");
     std::vector<Eigen::MatrixXd> S(nc.size());
     for (int m = 0; m < nc.size(); ++m) {
         NumericMatrix Sm = Sigma0[m];
@@ -557,7 +558,7 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
     if (has_b0) {
         NumericMatrix B0(b0);
         if (B0.nrow() != ng || B0.ncol() != d)
-            stop("cpp_re_em: b0 is %d x %d, expected %d x %d.", B0.nrow(), B0.ncol(), ng, d);
+            tulpa::stop("cpp_re_em: b0 is %d x %d, expected %d x %d.", {B0.nrow(), B0.ncol(), ng, d});
         warm0.b.resize(ng); warm0.ok.assign(ng, 1);
         for (int g = 0; g < ng; ++g) {
             warm0.b[g].resize(d);
@@ -567,7 +568,7 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
 
     auto factor = [&]() { return aghq_sigma_factor(em_block_diag(S, bl), d); };
     AghqSigmaFactor sf = factor();
-    if (!sf.ok) stop("cpp_re_em: the starting covariance is not positive definite.");
+    if (!sf.ok) tulpa::stop("cpp_re_em: the starting covariance is not positive definite.");
     std::unique_ptr<tulpa_progress::GridProgress> prog = em_progress(progress, max_iter);
 
     std::vector<double> trace;
@@ -744,7 +745,7 @@ List cpp_re_em(SEXP oracle, NumericVector theta0, List Sigma0,
 // [[Rcpp::export]]
 NumericMatrix cpp_re_cov_update(NumericMatrix M, bool full, double floor_sd) {
     const int c = M.nrow();
-    if (M.ncol() != c) stop("cpp_re_cov_update: M must be square.");
+    if (M.ncol() != c) tulpa::stop("cpp_re_cov_update: M must be square.");
     const Eigen::MatrixXd S = re_cov_update(
         Eigen::Map<Eigen::MatrixXd>(REAL(M), c, c), full, floor_sd);
     NumericMatrix out(c, c);

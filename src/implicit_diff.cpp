@@ -3,6 +3,7 @@
 // Enables NUTS sampling over SPDE hyperparameters.
 
 #include "implicit_diff.h"
+#include "tulpa_stop.h"
 #include "spde_logdet.h"
 #include "spde_qbuilder.h"
 #include "sparse_hessian.h"
@@ -34,19 +35,19 @@ Rcpp::List cpp_spde_laplace_gradient(
     // The analytic dQ/dtheta kernel (implicit_diff.h) differentiates the
     // alpha = 2 assembly term by term, so this entry is the nu = 1 operator.
     if (std::abs(nu - 1.0) > 1e-10) {
-        Rcpp::stop("cpp_spde_laplace_gradient implements the alpha = 2 "
+        tulpa::stop("cpp_spde_laplace_gradient implements the alpha = 2 "
                    "(nu = 1) operator; got nu = %g. Its analytic dQ/dtheta is "
-                   "written for that assembly.", nu);
+                   "written for that assembly.", {nu});
     }
     tulpa::spde_validate_operators(n_mesh, N, C0_diag, G1_x, G1_i, G1_p,
                                    A_x, A_i, A_p);
     if ((int) y.size() != N)
-        Rcpp::stop("length(y) (%d) must equal n_obs (%d).", (int) y.size(), N);
+        tulpa::stop("length(y) (%d) must equal n_obs (%d).", {(int) y.size(), N});
     if ((int) n_trials.size() != N)
-        Rcpp::stop("length(n_trials) (%d) must equal n_obs (%d).",
-                   (int) n_trials.size(), N);
+        tulpa::stop("length(n_trials) (%d) must equal n_obs (%d).",
+                   {(int) n_trials.size(), N});
     if (X.nrow() != N)
-        Rcpp::stop("nrow(X) (%d) must equal n_obs (%d).", (int) X.nrow(), N);
+        tulpa::stop("nrow(X) (%d) must equal n_obs (%d).", {(int) X.nrow(), N});
 
     double range = std::exp(log_range);
     double sigma_spde = std::exp(log_sigma);
@@ -72,8 +73,8 @@ Rcpp::List cpp_spde_laplace_gradient(
     tulpa::SpdeQLogDet qld;
     double half_ldQ = 0.0;
     if (!qld.half_logdet(qb, half_ldQ)) {
-        Rcpp::stop("SPDE precision Q is not positive definite at range = %g, "
-                   "sigma = %g.", range, sigma_spde);
+        tulpa::stop("SPDE precision Q is not positive definite at range = %g, "
+                   "sigma = %g.", {range, sigma_spde});
     }
 
     // Run inner Laplace to find mode.

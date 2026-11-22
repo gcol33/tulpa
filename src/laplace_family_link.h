@@ -12,6 +12,7 @@
 #define TULPA_LAPLACE_FAMILY_LINK_H
 
 #include "laplace_likelihoods.h"
+#include "tulpa_stop.h"
 #include "linalg_fast.h"
 #include "omp_threads.h"          // tulpa_parallel_sum (serial route at one thread)
 #include "tulpa/portable_math.h"   // thread-safe digamma / trigamma
@@ -69,7 +70,7 @@ inline double student_t_df(double phi2) {
 // missing phi2 is an error rather than a substitution.
 inline double tweedie_power(double phi2) {
     if (std::isnan(phi2)) {
-        Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
+        tulpa::stop("family 'tweedie' needs phi2 (the variance power p).");
     }
     return phi2;
 }
@@ -390,10 +391,10 @@ inline double mu_eta4(double eta, const std::string& link) {
 // error the first time the family is exercised.
 [[noreturn]] inline void unknown_family_stop(const char* fn,
                                              const std::string& family) {
-    Rcpp::stop("%s: no compiled implementation for family '%s'. Families "
+    tulpa::stop("%s: no compiled implementation for family '%s'. Families "
                "defined in the R registry must be added to "
                "laplace_family_link.h before they can be fitted.",
-               fn, family.c_str());
+               {fn, family.c_str()});
 }
 
 // The families the mu-space ladders below implement. Every one of variance_fn,
@@ -1492,7 +1493,7 @@ inline double compute_total_log_lik(
     // tweedie (which requires the variance power) can never evaluate here; an
     // unregistered family would reach unknown_family_stop from log_lik_mu.
     if (family == "tweedie") {
-        Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
+        tulpa::stop("family 'tweedie' needs phi2 (the variance power p); "
                    "route it through the LikelihoodSpec path, which carries "
                    "phi2.");
     }
@@ -1522,7 +1523,7 @@ inline double compute_total_log_lik(
     // Raised on the calling thread, ahead of the parallel region: see the
     // entry above.
     if (fr.kind == FamilyKind::TWEEDIE) {
-        Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
+        tulpa::stop("family 'tweedie' needs phi2 (the variance power p); "
                    "route it through the LikelihoodSpec path, which carries "
                    "phi2.");
     }

@@ -23,6 +23,7 @@
 #define TULPA_NESTED_LAPLACE_MULTI_H
 
 #include "hard_constraints.h"             // collect_hard_constraints
+#include "tulpa_stop.h"
 #include "hessian_pattern_guard.h"        // HessianPatternGuard (see its placement rule)
 #include "laplace_builtin_family_spec.h"  // builtin_family_spec, BuiltinFamilyResponse
 #include "laplace_core.h"
@@ -329,9 +330,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // random effect and still return a log-marginal for it, and the per-row
     // walks below read re_idx[i] for every i < N.
     if (n_re_groups > 0 && (int) re_idx.size() != N) {
-        Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d) when "
+        tulpa::stop("length(re_idx) (%d) must equal n_obs (%d) when "
                    "n_re_groups (%d) is positive.",
-                   (int) re_idx.size(), N, n_re_groups);
+                   {(int) re_idx.size(), N, n_re_groups});
     }
     const bool has_re = (n_re_groups > 0);
 
@@ -360,8 +361,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
             proc.X_flat[(size_t)i * p + j] = X(i, j);
     if (!offset.empty()) {
         if ((int) offset.size() != N) {
-            Rcpp::stop("offset length (%d) must equal the number of "
-                       "observations (%d).", (int) offset.size(), N);
+            tulpa::stop("offset length (%d) must equal the number of "
+                       "observations (%d).", {(int) offset.size(), N});
         }
         proc.offset = offset;
     }

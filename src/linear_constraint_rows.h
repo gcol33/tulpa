@@ -12,6 +12,7 @@
 #define TULPA_LINEAR_CONSTRAINT_ROWS_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -76,9 +77,9 @@ inline std::vector<LinearConstraintRow> read_constraint_rows(
             cols = Rcpp::as<Rcpp::IntegerVector>(e["cols"]);
             w = Rcpp::as<Rcpp::NumericVector>(e["w"]);
             if (w.size() != cols.size())
-                Rcpp::stop("%s[[%d]]: `w` has length %d but `cols` has %d.",
-                           what, g + 1, static_cast<int>(w.size()),
-                           static_cast<int>(cols.size()));
+                tulpa::stop("%s[[%d]]: `w` has length %d but `cols` has %d.",
+                           {what, g + 1, static_cast<int>(w.size()),
+                           static_cast<int>(cols.size())});
             weighted = true;
         } else {
             cols = Rcpp::as<Rcpp::IntegerVector>(el);
@@ -89,8 +90,8 @@ inline std::vector<LinearConstraintRow> read_constraint_rows(
         for (int e = 0; e < cols.size(); e++) {
             const int v = cols[e];
             if (v == NA_INTEGER || v < 1 || (n_x > 0 && v > n_x))
-                Rcpp::stop("%s[[%d]][%d] is not a latent index in [1, %d].",
-                           what, g + 1, e + 1, n_x);
+                tulpa::stop("%s[[%d]][%d] is not a latent index in [1, %d].",
+                           {what, g + 1, e + 1, n_x});
             if (v > max_v) max_v = v;
         }
         if (weighted) {

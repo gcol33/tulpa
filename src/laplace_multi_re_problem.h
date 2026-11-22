@@ -16,6 +16,7 @@
 #define TULPA_LAPLACE_MULTI_RE_PROBLEM_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "laplace_core.h"
 #include "laplace_re_priors.h"
 #include "laplace_spec_fit.h"
@@ -72,17 +73,17 @@ public:
         if (X_zi.isNotNull()) {
             X_zi_mat = Rcpp::as<Rcpp::NumericMatrix>(X_zi);
             if (X_zi_mat.nrow() != N) {
-                Rcpp::stop("X_zi has %d rows but y has length %d.",
-                           (int)X_zi_mat.nrow(), N);
+                tulpa::stop("X_zi has %d rows but y has length %d.",
+                           {(int)X_zi_mat.nrow(), N});
             }
             p_zi = X_zi_mat.ncol();
         }
         const bool has_zi = (p_zi > 0);
         if (has_zi && !zi::compiled_zi_supported(family)) {
-            Rcpp::stop("family '%s' has no compiled zero-inflated kernel "
+            tulpa::stop("family '%s' has no compiled zero-inflated kernel "
                        "(supported: %s).",
-                       family.c_str(),
-                       zi::compiled_zi_supported_families().c_str());
+                       {family.c_str(),
+                       zi::compiled_zi_supported_families().c_str()});
         }
         p_total_ = p + p_zi;
 
@@ -91,13 +92,13 @@ public:
         if (beta_prior_sd.isNotNull()) {
             Rcpp::NumericVector sd = Rcpp::as<Rcpp::NumericVector>(beta_prior_sd);
             if ((int)sd.size() != p) {
-                Rcpp::stop("beta_prior_sd has length %d but X has %d columns.",
-                           (int)sd.size(), p);
+                tulpa::stop("beta_prior_sd has length %d but X has %d columns.",
+                           {(int)sd.size(), p});
             }
             bp_.tau.resize(p);
             for (int j = 0; j < p; j++) {
                 if (!(sd[j] > 0.0) || ISNAN(sd[j])) {
-                    Rcpp::stop("beta_prior_sd[%d] must be positive (Inf allowed = no penalty).", j + 1);
+                    tulpa::stop("beta_prior_sd[%d] must be positive (Inf allowed = no penalty).", {j + 1});
                 }
                 // sd = +Inf -> tau = 0 (no penalty); BetaPrior::tau_at returns
                 // it and the spec beta-prior treats tau = 0 as a no-op.
@@ -108,8 +109,8 @@ public:
         if (beta_prior_mean.isNotNull()) {
             Rcpp::NumericVector mn = Rcpp::as<Rcpp::NumericVector>(beta_prior_mean);
             if ((int)mn.size() != p) {
-                Rcpp::stop("beta_prior_mean has length %d but X has %d columns.",
-                           (int)mn.size(), p);
+                tulpa::stop("beta_prior_mean has length %d but X has %d columns.",
+                           {(int)mn.size(), p});
             }
             bp_.mean.assign(mn.begin(), mn.end());
             has_bp = true;
@@ -126,7 +127,7 @@ public:
         // fallback, which cannot represent two different precisions.
         if (has_zi) {
             if (!(zi_prior_sd > 0.0) || ISNAN(zi_prior_sd)) {
-                Rcpp::stop("zi_prior_sd must be positive (Inf allowed = no penalty).");
+                tulpa::stop("zi_prior_sd must be positive (Inf allowed = no penalty).");
             }
             const double tau_zi = R_finite(zi_prior_sd)
                 ? 1.0 / (zi_prior_sd * zi_prior_sd) : 0.0;
@@ -292,11 +293,11 @@ public:
                 ? (R_xlen_t)q * (q + 1) / 2
                 : (R_xlen_t)q;
             if (sig.size() != need) {
-                Rcpp::stop("re_sigma_list[[%d]] must have length %d for a %s "
+                tulpa::stop("re_sigma_list[[%d]] must have length %d for a %s "
                            "term with %d coefficient(s), got %d.",
-                           t + 1, (int)need,
+                           {t + 1, (int)need,
                            data_.re_correlated[t] ? "correlated" : "diagonal",
-                           q, (int)sig.size());
+                           q, (int)sig.size()});
             }
             const std::string label =
                 "re_sigma_list[[" + std::to_string(t + 1) + "]]";

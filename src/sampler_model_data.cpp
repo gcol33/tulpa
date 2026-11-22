@@ -3,6 +3,7 @@
 // sampler_model_data.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "sampler_model_data.h"
 #include "hsgp_spectral.h"
 #include <tulpa/field_setup_api.h>
@@ -59,9 +60,9 @@ static std::vector<double> rw_spectral_basis(int n, int k, bool cyclic,
     const Eigen::MatrixXd Qc = Q.rightCols(n - n_null);
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Qc.transpose() * R * Qc);
     if (es.info() != Eigen::Success || !(es.eigenvalues().minCoeff() > 0.0)) {
-        Rcpp::stop("build_sampler_model_inputs: the multiscale %s's "
+        tulpa::stop("build_sampler_model_inputs: the multiscale %s's "
                    "structure matrix has no positive spectrum on the "
-                   "complement of its null space (n = %d).", what, n);
+                   "complement of its null space (n = %d).", {what, n});
     }
     const Eigen::MatrixXd B = Qc * es.eigenvectors() *
         es.eigenvalues().cwiseSqrt().cwiseInverse().asDiagonal();
@@ -113,7 +114,7 @@ void prepare_field_impl(ModelData* data, FieldSetup setup) {
         data->spatiotemporal_data.n_params = data->st_hsgp_data.m_total *
             data->spatiotemporal_data.n_times;
     } else {
-        Rcpp::stop("Unknown field setup request");
+        tulpa::stop("Unknown field setup request");
     }
 }
 
@@ -191,8 +192,8 @@ void build_sampler_model_inputs(
         Rcpp::List zs = Rcpp::as<Rcpp::List>(zi_spec);
         Rcpp::NumericMatrix X_zi = Rcpp::as<Rcpp::NumericMatrix>(zs["X"]);
         if (X_zi.nrow() != N) {
-            Rcpp::stop("zi_spec$X has %d rows but y has length %d.",
-                       (int)X_zi.nrow(), N);
+            tulpa::stop("zi_spec$X has %d rows but y has length %d.",
+                       {(int)X_zi.nrow(), N});
         }
         const int p_zi = X_zi.ncol();
         if (p_zi > 0) {
@@ -376,7 +377,7 @@ void build_sampler_model_inputs(
             in.data.msgp_is_hsgp = true;
             Rcpp::NumericMatrix coords = sp["coords"];
             tulpa_linalg::require_coords_2col(coords, "multiscale HSGP");
-            if (coords.nrow() != N) Rcpp::stop("Multiscale HSGP requires N coordinate rows");
+            if (coords.nrow() != N) tulpa::stop("Multiscale HSGP requires N coordinate rows");
             std::vector<double> flat;
             for (int i = 0; i < N; ++i) {
                 flat.push_back(coords(i, 0)); flat.push_back(coords(i, 1));
@@ -570,10 +571,10 @@ void build_sampler_model_inputs(
                                "gp(approx = \"hsgp\") lengthscale");
             }
         } else {
-            Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
+            tulpa::stop("build_sampler_model_inputs: spatial type '%s' is not "
                        "supported on the sampler path (use 'icar'/'bym2'/"
                        "'car_proper'/'gp'/'nngp'/'hsgp'/'multiscale').",
-                       stype.c_str());
+                       {stype.c_str()});
         }
     }
 
@@ -594,17 +595,17 @@ void build_sampler_model_inputs(
         ms.n_obs   = static_cast<int>(tidx.size());
         ms.n_times = Rcpp::as<int>(tp["n_times"]);
         if (ms.n_times < 1) {
-            Rcpp::stop("build_sampler_model_inputs: multiscale n_times (%d) "
-                       "must be at least 1.", ms.n_times);
+            tulpa::stop("build_sampler_model_inputs: multiscale n_times (%d) "
+                       "must be at least 1.", {ms.n_times});
         }
         // gather_temporal_eta reads the field at time_index[i] - 1 and guards
         // each read, so an out-of-range entry would contribute zero
         // instead of erroring. It is rejected here, where the value came in.
         for (int i = 0; i < ms.n_obs; i++) {
             if (ms.time_index[i] < 1 || ms.time_index[i] > ms.n_times) {
-                Rcpp::stop("build_sampler_model_inputs: multiscale "
+                tulpa::stop("build_sampler_model_inputs: multiscale "
                            "time_index[%d] is %d; it must lie in [1, n_times] "
-                           "= [1, %d].", i + 1, ms.time_index[i], ms.n_times);
+                           "= [1, %d].", {i + 1, ms.time_index[i], ms.n_times});
             }
         }
         // The layout carries one walk per component and gather_temporal_eta
@@ -615,10 +616,10 @@ void build_sampler_model_inputs(
         if (ms.n_groups != 1 ||
             (tp.containsElementNamed("group_index") &&
              !Rf_isNull(tp["group_index"]))) {
-            Rcpp::stop("build_sampler_model_inputs: a multiscale temporal "
+            tulpa::stop("build_sampler_model_inputs: a multiscale temporal "
                        "field carries one walk per component for every "
                        "observation; n_groups must be 1 and group_index "
-                       "absent (got n_groups = %d).", ms.n_groups);
+                       "absent (got n_groups = %d).", {ms.n_groups});
         }
         ms.group_index.assign(ms.n_obs, 1);
 
@@ -626,8 +627,8 @@ void build_sampler_model_inputs(
         if      (trend == "rw1")  ms.trend_type = TemporalType::RW1;
         else if (trend == "rw2")  ms.trend_type = TemporalType::RW2;
         else if (trend == "none") ms.trend_type = TemporalType::NONE;
-        else Rcpp::stop("build_sampler_model_inputs: multiscale trend '%s' is "
-                        "not supported (use 'rw1'/'rw2'/'none').", trend.c_str());
+        else tulpa::stop("build_sampler_model_inputs: multiscale trend '%s' is "
+                        "not supported (use 'rw1'/'rw2'/'none').", {trend.c_str()});
 
         ms.seasonal_period =
             (tp.containsElementNamed("seasonal") && !Rf_isNull(tp["seasonal"]))
@@ -637,8 +638,8 @@ void build_sampler_model_inputs(
         if      (st == "ar1")  ms.short_term_type = TemporalType::AR1;
         else if (st == "iid")  ms.short_term_type = TemporalType::IID;
         else if (st == "none") ms.short_term_type = TemporalType::NONE;
-        else Rcpp::stop("build_sampler_model_inputs: multiscale short_term '%s' "
-                        "is not supported (use 'ar1'/'iid'/'none').", st.c_str());
+        else tulpa::stop("build_sampler_model_inputs: multiscale short_term '%s' "
+                        "is not supported (use 'ar1'/'iid'/'none').", {st.c_str()});
 
         // One parameterization for the trend, the seasonal and the
         // short-term arm.
@@ -656,7 +657,7 @@ void build_sampler_model_inputs(
 
         if (ms.trend_type == TemporalType::NONE && ms.seasonal_period == 0 &&
             ms.short_term_type == TemporalType::NONE)
-            Rcpp::stop("build_sampler_model_inputs: the multiscale temporal "
+            tulpa::stop("build_sampler_model_inputs: the multiscale temporal "
                        "spec has no active component.");
 
         ms.shared = !tp.containsElementNamed("shared") ||
@@ -730,9 +731,9 @@ void build_sampler_model_inputs(
             auto& gp = in.data.temporal_gp_data;
             Rcpp::NumericVector tv = Rcpp::as<Rcpp::NumericVector>(tp["time_values"]);
             if ((int)tv.size() != in.data.n_times) {
-                Rcpp::stop("build_sampler_model_inputs: temporal_spec$time_values "
+                tulpa::stop("build_sampler_model_inputs: temporal_spec$time_values "
                            "has length %d but n_times is %d.",
-                           (int)tv.size(), in.data.n_times);
+                           {(int)tv.size(), in.data.n_times});
             }
             gp.time_values.assign(tv.begin(), tv.end());
             gp.n_obs = in.data.n_times;
@@ -751,7 +752,7 @@ void build_sampler_model_inputs(
                 in.data.temporal_gp_relative_nugget = Rcpp::as<double>(tp["relative_nugget"]);
                 if (!(in.data.temporal_gp_relative_nugget >= 0) ||
                     !std::isfinite(in.data.temporal_gp_relative_nugget))
-                    Rcpp::stop("temporal GP relative nugget must be finite and nonnegative");
+                    tulpa::stop("temporal GP relative nugget must be finite and nonnegative");
             }
             read_pc_anchors(tp, "sigma2_prior_U", "sigma2_prior_alpha",
                             in.data.temporal_gp_sigma2_prior_U,
@@ -761,9 +762,9 @@ void build_sampler_model_inputs(
                                         in.data.temporal_gp_phi_prior_lower,
                                         in.data.temporal_gp_phi_prior_upper);
         }
-        else Rcpp::stop("build_sampler_model_inputs: temporal type '%s' is not "
+        else tulpa::stop("build_sampler_model_inputs: temporal type '%s' is not "
                         "supported on the sampler path (use 'rw1'/'rw2'/'ar1'/"
-                        "'gp').", ttype.c_str());
+                        "'gp').", {ttype.c_str()});
     }
 
     // --- Spatially-varying coefficients. compute_param_layout keys the SVC
@@ -782,7 +783,7 @@ void build_sampler_model_inputs(
             const std::string prior = Rcpp::as<std::string>(sv["range_prior"]);
             if (prior == "uniform") in.data.svc_range_prior = 1;
             else if (prior == "lognormal") in.data.svc_range_prior = 2;
-            else if (prior != "pc") Rcpp::stop("Unknown SVC range prior");
+            else if (prior != "pc") tulpa::stop("Unknown SVC range prior");
         }
         if (sv.containsElementNamed("range_lower")) in.data.svc_range_lower = Rcpp::as<double>(sv["range_lower"]);
         if (sv.containsElementNamed("range_upper")) in.data.svc_range_upper = Rcpp::as<double>(sv["range_upper"]);
@@ -792,7 +793,7 @@ void build_sampler_model_inputs(
         const int n_obs = coords.nrow();
         const int n_svc = Rcpp::as<int>(sv["n_svc"]);
         if (n_svc < 0) {
-            Rcpp::stop("%s: n_svc (%d) must be non-negative.", SVC_WHO, n_svc);
+            tulpa::stop("%s: n_svc (%d) must be non-negative.", {SVC_WHO, n_svc});
         }
         s.n_obs = n_obs;
         s.n_svc = n_svc;
@@ -811,15 +812,15 @@ void build_sampler_model_inputs(
             Rcpp::IntegerVector o2l = Rcpp::as<Rcpp::IntegerVector>(sv["obs_to_loc"]);
             for (R_xlen_t i = 0; i < o2l.size(); ++i) {
                 if (o2l[i] == NA_INTEGER || o2l[i] < 0 || o2l[i] >= n_obs) {
-                    Rcpp::stop("%s: obs_to_loc[%d] = %d is not a location in "
-                               "[0, %d).", SVC_WHO, (int)i + 1, o2l[i], n_obs);
+                    tulpa::stop("%s: obs_to_loc[%d] = %d is not a location in "
+                               "[0, %d).", {SVC_WHO, (int)i + 1, o2l[i], n_obs});
                 }
             }
             s.obs_to_loc.assign(o2l.begin(), o2l.end());
         }
         if (s.n_rows() != N) {
-            Rcpp::stop("%s: the field covers %d rows for %d observations.",
-                       SVC_WHO, s.n_rows(), N);
+            tulpa::stop("%s: the field covers %d rows for %d observations.",
+                       {SVC_WHO, s.n_rows(), N});
         }
         Rcpp::NumericVector xsvc = Rcpp::as<Rcpp::NumericVector>(sv["X_svc"]);
         check_vec_len(xsvc.size(), (R_xlen_t)s.n_rows() * n_svc, SVC_WHO, "X_svc");
@@ -830,8 +831,8 @@ void build_sampler_model_inputs(
             ? Rcpp::as<std::string>(sv["approx"]) : "nngp";
         if (svc_approx == "hsgp") {
             if (!s.obs_to_loc.empty()) {
-                Rcpp::stop("%s: an HSGP basis is evaluated at every row and "
-                           "takes no obs_to_loc.", SVC_WHO);
+                tulpa::stop("%s: an HSGP basis is evaluated at every row and "
+                           "takes no obs_to_loc.", {SVC_WHO});
             }
             // Hilbert-space GP: one shared Laplacian basis (all SVC terms sit
             // at the same coordinates; only each term's own sigma2/lengthscale
@@ -913,7 +914,7 @@ void build_sampler_model_inputs(
         t.n_groups = Rcpp::as<int>(tv["n_groups"]);
         static const char* const TVC_WHO = "temporal_tvc() under a sampler mode";
         if (t.n_tvc < 0) {
-            Rcpp::stop("%s: n_tvc (%d) must be non-negative.", TVC_WHO, t.n_tvc);
+            tulpa::stop("%s: n_tvc (%d) must be non-negative.", {TVC_WHO, t.n_tvc});
         }
         Rcpp::IntegerVector ti = Rcpp::as<Rcpp::IntegerVector>(tv["time_index"]);
         check_vec_len(ti.size(), N, TVC_WHO, "time_index");
@@ -954,8 +955,8 @@ void build_sampler_model_inputs(
                                         in.data.tvc_gp_phi_prior_lower,
                                         in.data.tvc_gp_phi_prior_upper);
         }
-        else Rcpp::stop("build_sampler_model_inputs: TVC structure '%s' is not "
-                        "supported (use 'rw1'/'rw2'/'ar1'/'gp').", st.c_str());
+        else tulpa::stop("build_sampler_model_inputs: TVC structure '%s' is not "
+                        "supported (use 'rw1'/'rw2'/'ar1'/'gp').", {st.c_str()});
         t.cyclic = tv.containsElementNamed("cyclic") && Rcpp::as<bool>(tv["cyclic"]);
         tulpa_tvc::validate_tvc_data(t);
         read_pc_anchors(tv, "sigma_prior_U", "sigma_prior_alpha",

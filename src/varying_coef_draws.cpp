@@ -43,6 +43,7 @@
 // ----------------------------------------------------------------------------
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "fixed_effect_prior.h"
 #include <algorithm>
 #include <cmath>
@@ -127,7 +128,7 @@ inline void svc_nngp_level_forms(const tulpa::SVCData& sv, const double* w,
                                           sv.marginal_nugget,
                                           sv.variance_floor,
                                           tulpa_svc::svc_floor_mode(sv), alpha, d, sv.neighbor_jitter)) {
-                Rcpp::stop("svc prediction: a fitted neighbour covariance is not "
+                tulpa::stop("svc prediction: a fitted neighbour covariance is not "
                            "positive definite at this draw.");
             }
             for (int k = 0; k < n_nb; k++) {
@@ -203,7 +204,7 @@ inline void svc_nngp_predict_row(const tulpa::SVCData& sv, const PredNeighbours&
                                           sv.marginal_nugget,
                                           sv.variance_floor,
                                           tulpa_svc::svc_floor_mode(sv), alpha, v, sv.neighbor_jitter)) {
-                Rcpp::stop("svc prediction: a prediction neighbour covariance is "
+                tulpa::stop("svc prediction: a prediction neighbour covariance is "
                            "not positive definite at this draw.");
             }
             double mean = 0.0;
@@ -232,11 +233,11 @@ inline tulpa::HSGPData svc_hsgp_basis_at(const ModelData& data,
         if (std::abs(nc(p, 0) - xc) > L1 || std::abs(nc(p, 1) - yc) > L2) n_out++;
     }
     if (n_out > 0) {
-        Rcpp::stop("svc prediction: %d of %d new coordinate(s) lie outside the HSGP "
+        tulpa::stop("svc prediction: %d of %d new coordinate(s) lie outside the HSGP "
                    "domain (the fitted extent widened by c_boundary = %g), where "
                    "the basis approximates no Gaussian process. Refit with a "
                    "larger `c_boundary` in spatial_svc(), or use approx = \"nngp\".",
-                   n_out, n_new, data.svc_hsgp_boundary_factor);
+                   {n_out, n_new, data.svc_hsgp_boundary_factor});
     }
     tulpa::HSGPData basis;
     tulpa_hsgp::hsgp_fill_basis_2d(flat, n_new, data.svc_hsgp_m_per_dim, xc, yc,
@@ -369,7 +370,7 @@ inline void temporal_gp_path_predict(const TemporalGpKernel& kg,
     } else {
         if (!tulpa_temporal_gp::temporal_cov_chol(tt, T, sigma2, phi, kg.cov_type,
                                                   kg.nu, kg.period, L)) {
-            Rcpp::stop("tvc prediction: the fitted GP covariance is not positive "
+            tulpa::stop("tvc prediction: the fitted GP covariance is not positive "
                        "definite at this draw.");
         }
         std::vector<double> ones(T, 1.0), y, wv(wc, wc + T);
@@ -410,7 +411,7 @@ inline void temporal_gp_path_predict(const TemporalGpKernel& kg,
             if (!tulpa_nngp::cond_weights(C, c_vec, m, sigma2,
                                           kTvcGpNugget, 0.0,
                                           tulpa_nngp::VarFloor::Clamp, alpha, v)) {
-                Rcpp::stop("tvc prediction: a bracketing GP covariance is not "
+                tulpa::stop("tvc prediction: a bracketing GP covariance is not "
                            "positive definite at this draw.");
             }
         } else {
@@ -473,8 +474,8 @@ Rcpp::List cpp_varying_coef_draws(
     const ParamLayout& layout = in.layout;
     const int D = layout.total_params;
     if (draws.ncol() != D) {
-        Rcpp::stop("cpp_varying_coef_draws: the draws carry %d columns but the "
-                   "model lays out %d parameters.", draws.ncol(), D);
+        tulpa::stop("cpp_varying_coef_draws: the draws carry %d columns but the "
+                   "model lays out %d parameters.", {draws.ncol(), D});
     }
     const int S = draws.nrow();
 
@@ -492,7 +493,7 @@ Rcpp::List cpp_varying_coef_draws(
     int n_svc_new = 0;
     if (svc_at_new) {
         nc = Rcpp::NumericMatrix(svc_coords_new.get());
-        if (nc.ncol() != 2) Rcpp::stop("svc prediction: coordinates need 2 columns.");
+        if (nc.ncol() != 2) tulpa::stop("svc prediction: coordinates need 2 columns.");
         n_svc_new = nc.nrow();
         if (data.svc_is_hsgp) new_basis = svc_hsgp_basis_at(data, nc);
         else pn = svc_pred_neighbours(sv, nc, svc_nn);
@@ -506,14 +507,14 @@ Rcpp::List cpp_varying_coef_draws(
         tq.pos = Rcpp::as<std::vector<double>>(tl["pos"]);
         tq.group = Rcpp::as<std::vector<int>>(tl["group"]);
         if (tq.pos.size() != tq.exact.size() || tq.group.size() != tq.exact.size()) {
-            Rcpp::stop("tvc prediction: exact, pos and group must have one entry "
+            tulpa::stop("tvc prediction: exact, pos and group must have one entry "
                        "per new row.");
         }
         for (std::size_t p = 0; p < tq.exact.size(); p++) {
             if (tq.group[p] < 0 || tq.group[p] >= tv.n_groups ||
                 tq.exact[p] >= tv.n_times) {
-                Rcpp::stop("tvc prediction: new row %d addresses no fitted block.",
-                           (int)p + 1);
+                tulpa::stop("tvc prediction: new row %d addresses no fitted block.",
+                           {(int)p + 1});
             }
         }
     }
@@ -537,8 +538,8 @@ Rcpp::List cpp_varying_coef_draws(
             row_svc.assign((std::size_t)sv.n_svc * svc_units, 0.0);
             if (!svc_at_new) {
                 if ((int)state.svc_w.size() != sv.n_svc * sv.n_obs) {
-                    Rcpp::stop("cpp_varying_coef_draws: the SVC field was not "
-                               "reconstructed at draw %d.", s + 1);
+                    tulpa::stop("cpp_varying_coef_draws: the SVC field was not "
+                               "reconstructed at draw %d.", {s + 1});
                 }
                 row_svc = state.svc_w;
             } else {
@@ -644,14 +645,14 @@ Rcpp::NumericMatrix cpp_temporal_field_rows(
     q.group = Rcpp::as<std::vector<int>>(query["group"]);
     const int R = field.nrow(), n_new = (int)q.exact.size();
     if (n_times < 1 || field.ncol() % n_times != 0) {
-        Rcpp::stop("cpp_temporal_field_rows: the field's %d columns are not "
-                   "whole groups of %d times.", field.ncol(), n_times);
+        tulpa::stop("cpp_temporal_field_rows: the field's %d columns are not "
+                   "whole groups of %d times.", {field.ncol(), n_times});
     }
     const int G = field.ncol() / n_times;
     for (int p = 0; p < n_new; p++) {
         if (q.group[p] < 0 || q.group[p] >= G || q.exact[p] >= n_times) {
-            Rcpp::stop("cpp_temporal_field_rows: new row %d addresses no "
-                       "fitted block.", p + 1);
+            tulpa::stop("cpp_temporal_field_rows: new row %d addresses no "
+                       "fitted block.", {p + 1});
         }
     }
     const bool gp = (structure == "gp");
@@ -659,18 +660,18 @@ Rcpp::NumericMatrix cpp_temporal_field_rows(
     if (structure == "rw2") st = TemporalType::RW2;
     else if (structure == "ar1") st = TemporalType::AR1;
     else if (!gp && structure != "rw1") {
-        Rcpp::stop("cpp_temporal_field_rows: unknown structure '%s'.",
-                   structure.c_str());
+        tulpa::stop("cpp_temporal_field_rows: unknown structure '%s'.",
+                   {structure.c_str()});
     }
     const int n_hyper = gp ? sigma2.size() : tau.size();
     if (n_hyper != R || (!gp && st == TemporalType::AR1 && rho.size() != R)) {
-        Rcpp::stop("cpp_temporal_field_rows: one hyperparameter value per row "
+        tulpa::stop("cpp_temporal_field_rows: one hyperparameter value per row "
                    "is needed.");
     }
     std::vector<double> tt(time_values.begin(), time_values.end());
     if (gp && (int)tt.size() != n_times) {
-        Rcpp::stop("cpp_temporal_field_rows: %d time values for %d times.",
-                   (int)tt.size(), n_times);
+        tulpa::stop("cpp_temporal_field_rows: %d time values for %d times.",
+                   {(int)tt.size(), n_times});
     }
     const TemporalGpKernel kg{&tt, n_times,
                               static_cast<tulpa::TemporalCovType>(cov_type),

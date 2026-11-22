@@ -8,6 +8,7 @@
 // (tulpa_shims_vi_ess.h) and the generic-layout LikelihoodSpec path.
 
 #include "hmc_sampler.h"
+#include "tulpa_stop.h"
 #include "vi_types.h"
 #include "vi_optimizer.h"
 #include "vi_meanfield.h"
@@ -79,7 +80,7 @@ VIResult fit_vi(
       return fit_fullrank(data, layout, D, config, init_mu, nullptr);
 
     default:
-      Rcpp::stop("Unknown VI variant");
+      tulpa::stop("Unknown VI variant");
   }
 
   return VIResult();  // Never reached

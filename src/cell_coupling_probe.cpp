@@ -23,6 +23,7 @@
 // shape it sees under the driver.
 
 #include "cell_coupling_registry.h"
+#include "tulpa_stop.h"
 #include "cell_curvature3.h"
 
 #include <Rcpp.h>
@@ -43,11 +44,11 @@ Rcpp::List cpp_cell_coupling_evaluate(std::string name,
                                       bool grad_only = false) {
     auto spec = tulpa::lookup_cell_coupling(name);
     if (!spec) {
-        Rcpp::stop("cell coupling spec '" + name + "' is not registered.");
+        tulpa::stop("cell coupling spec '" + name + "' is not registered.");
     }
     const int n_arms = eta.size();
     if (y.size() != n_arms || family.size() != n_arms || phi.size() != n_arms) {
-        Rcpp::stop("`eta`, `y`, `family` and `phi` must all have one entry "
+        tulpa::stop("`eta`, `y`, `family` and `phi` must all have one entry "
                    "per coupled arm.");
     }
 
@@ -63,7 +64,7 @@ Rcpp::List cpp_cell_coupling_evaluate(std::string name,
         Rcpp::NumericVector yk = y[k];
         const int rc = ek.size();
         if (yk.size() != rc) {
-            Rcpp::stop("arm " + std::to_string(k + 1) +
+            tulpa::stop("arm " + std::to_string(k + 1) +
                        ": length(y) must equal length(eta).");
         }
         eta_store[k].assign(ek.begin(), ek.end());
@@ -202,19 +203,19 @@ double cpp_cell_coupling_curvature3(std::string name,
                                     bool per_arm_step = true) {
     auto spec = tulpa::lookup_cell_coupling(name);
     if (!spec) {
-        Rcpp::stop("cell coupling spec '" + name + "' is not registered.");
+        tulpa::stop("cell coupling spec '" + name + "' is not registered.");
     }
     const int n_arms = eta.size();
     if (u.size() != n_arms || y.size() != n_arms || family.size() != n_arms ||
         phi.size() != n_arms) {
-        Rcpp::stop("`eta`, `u`, `y`, `family` and `phi` must all have one entry "
+        tulpa::stop("`eta`, `u`, `y`, `family` and `phi` must all have one entry "
                    "per coupled arm.");
     }
 
     // Cell `cell_idx` holds every supplied row and every earlier cell is empty,
     // so a spec that reads per-cell metadata sees the index it was asked for
     // while the empty cells contribute exactly nothing (their direction is zero).
-    if (cell_idx < 0) Rcpp::stop("cell_idx must be non-negative.");
+    if (cell_idx < 0) tulpa::stop("cell_idx must be non-negative.");
     std::vector<std::vector<std::vector<int>>> cell_rows(n_arms);
     std::vector<Rcpp::NumericVector> eta0(n_arms), eta1(n_arms);
     std::vector<std::vector<double>> y_store(n_arms);
@@ -234,7 +235,7 @@ double cpp_cell_coupling_curvature3(std::string name,
         Rcpp::NumericVector yk = y[k];
         const int rc = ek.size();
         if (uk.size() != rc || yk.size() != rc) {
-            Rcpp::stop("arm " + std::to_string(k + 1) +
+            tulpa::stop("arm " + std::to_string(k + 1) +
                        ": length(u) and length(y) must equal length(eta).");
         }
         eta0[k] = Rcpp::NumericVector(ek.begin(), ek.end());
@@ -253,6 +254,6 @@ double cpp_cell_coupling_curvature3(std::string name,
 
     const char* reason = "";
     tulpa::CellCubic3Fn fn = tulpa::build_cell_curvature3_tensor(in, &reason);
-    if (!fn) Rcpp::stop("cell curvature3 tensor declined: %s", reason);
+    if (!fn) tulpa::stop("cell curvature3 tensor declined: %s", {reason});
     return fn(eta0, eta1);
 }

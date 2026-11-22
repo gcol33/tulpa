@@ -18,6 +18,7 @@
 // inherits from the areal case.
 
 #include "pg_shared.h"
+#include "tulpa_stop.h"
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
@@ -91,16 +92,16 @@ Rcpp::List cpp_pg_binomial_gibbs_gp_rsr(
   const int p = C.p;
 
   if (N != n_spatial) {
-    Rcpp::stop("The NNGP Gibbs kernel maps observation i to location i, so it "
+    tulpa::stop("The NNGP Gibbs kernel maps observation i to location i, so it "
                "needs one observation per location: got %d observation(s) for "
-               "%d location(s).", N, n_spatial);
+               "%d location(s).", {N, n_spatial});
   }
   if (coords.nrow() != n_spatial) {
-    Rcpp::stop("`coords` has %d row(s) but `n_spatial` is %d.",
-               static_cast<int>(coords.nrow()), n_spatial);
+    tulpa::stop("`coords` has %d row(s) but `n_spatial` is %d.",
+               {static_cast<int>(coords.nrow()), n_spatial});
   }
   if (rsr_n != n_spatial) {
-    Rcpp::stop("`rsr_n` is %d but `n_spatial` is %d.", rsr_n, n_spatial);
+    tulpa::stop("`rsr_n` is %d but `n_spatial` is %d.", {rsr_n, n_spatial});
   }
   tulpa::pg_check_pc_prior(prior_sigma_gp_U, prior_sigma_gp_alpha, "gp");
   const Rcpp::List range_tail = Rcpp::List::create(Rcpp::Named("phi_gp") =

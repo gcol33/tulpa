@@ -14,6 +14,7 @@
 #define TULPA_LAPLACE_BUILTIN_FAMILY_SPEC_H
 
 #include "tulpa/likelihood.h"
+#include "tulpa_stop.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "device_likelihood.h"
@@ -114,7 +115,7 @@ struct BuiltinFamilyResponse {
         // solve, and is the first point that sees the family and phi2
         // together. Same hoist as the two compute_total_log_lik entries.
         if (family == "tweedie" && std::isnan(phi2)) {
-            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
+            tulpa::stop("family 'tweedie' needs phi2 (the variance power p); "
                        "the likelihood carries none.");
         }
         // Same hoist for the bound-reading families. Their closed forms are
@@ -129,11 +130,11 @@ struct BuiltinFamilyResponse {
                 ? (trunc_lower != nullptr || trunc_upper != nullptr)
                 : (lower != nullptr && upper != nullptr);
             if (!have) {
-                Rcpp::stop("family '%s' needs its per-observation bound(s) on "
+                tulpa::stop("family '%s' needs its per-observation bound(s) on "
                            "the response (`trunc_lower` / `trunc_upper` for "
                            "truncated_gaussian, `lower` / `upper` for "
                            "interval_gaussian); the likelihood carries none.",
-                           family.c_str());
+                           {family.c_str()});
             }
         }
         // Ahead of the early return: the AD ladder dispatches on ad_kind for

@@ -24,12 +24,10 @@ namespace tulpa {
 // is not thread-safe (run_nested_laplace_grid relies on this).
 struct LaplaceResult {
   bool device_cpu_recovered = false;
-  // Initialized in-class, not by each construction site: NoCheapEval
-  // (nested_laplace_grid.h) default-constructs one and sets log_marginal
-  // alone, leaving three fields read from indeterminate storage
-  // (gcol33/tulpa#705). Every other site sets all four, so the initializers
-  // change nothing there and remove the one case where a reader could not
-  // tell a written value from whatever the stack held.
+  // Initialized in-class, not by each construction site: a site that
+  // default-constructs one and sets log_marginal alone would otherwise leave
+  // three fields read from indeterminate storage (gcol33/tulpa#705). Every
+  // site that sets all four is unchanged by the initializers.
   std::vector<double> mode;         // Mode of latent field x*(theta)
   double log_det_Q = 0.0;           // Log determinant of posterior precision
   double log_marginal = -std::numeric_limits<double>::infinity();

@@ -9,6 +9,7 @@
 // calls this kernel.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <vector>
 #include <numeric>
 #include <algorithm>
@@ -134,8 +135,8 @@ inline void psis_logweights(const double* lr, int S, int tail_len,
 // off both ends. Enforced at every exported entry point.
 inline void check_tail_len(int tail_len, int S) {
   if (tail_len < 1 || tail_len >= S)
-    Rcpp::stop("tail_len (%d) must lie in [1, S) with S = %d draws.",
-               tail_len, S);
+    tulpa::stop("tail_len (%d) must lie in [1, S) with S = %d draws.",
+               {tail_len, S});
 }
 
 }  // namespace

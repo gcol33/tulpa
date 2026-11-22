@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include <algorithm>
 #include <array>
 #include <vector>
@@ -50,7 +51,7 @@ static inline Value evaluate(const Rcpp::NumericMatrix& mu,
 // [[Rcpp::export]]
 Rcpp::IntegerVector cpp_nl_axis_row_id(Rcpp::NumericMatrix points, int axis) {
     const int d = points.ncol();
-    if (axis < 1 || axis > d) Rcpp::stop("The conditional axis must name a matrix column.");
+    if (axis < 1 || axis > d) tulpa::stop("The conditional axis must name a matrix column.");
     struct Hash {
         std::size_t operator()(const std::vector<std::uint64_t>& key) const {
             std::size_t value = 0;
@@ -84,7 +85,7 @@ Rcpp::IntegerVector cpp_nl_axis_row_id(Rcpp::NumericMatrix points, int axis) {
 Rcpp::NumericVector cpp_nl_group_logsumexp(Rcpp::NumericVector values,
     Rcpp::IntegerVector groups, int n_groups) {
     if (values.size() != groups.size() || n_groups < 0)
-        Rcpp::stop("Log-sum-exp groups have inconsistent dimensions.");
+        tulpa::stop("Log-sum-exp groups have inconsistent dimensions.");
     const double negative_infinity = -std::numeric_limits<double>::infinity();
     Rcpp::NumericVector maximum(n_groups, negative_infinity);
     std::vector<bool> invalid(n_groups, false);
@@ -92,7 +93,7 @@ Rcpp::NumericVector cpp_nl_group_logsumexp(Rcpp::NumericVector values,
     for (R_xlen_t i = 0; i < values.size(); ++i) {
         const int label = groups[i];
         if (label == NA_INTEGER || label < 1 || label > n_groups)
-            Rcpp::stop("Log-sum-exp group indices must lie within their declared range.");
+            tulpa::stop("Log-sum-exp group indices must lie within their declared range.");
         const int group = label - 1;
         const double value = values[i];
         if (std::isnan(value) || value == std::numeric_limits<double>::infinity())
@@ -119,16 +120,16 @@ Rcpp::NumericMatrix cpp_nl_mixture_quantiles(Rcpp::NumericMatrix mu,
     const int n = mu.nrow(), p = mu.ncol();
     if (n < 1 || p < 1 || sd.nrow() != n || sd.ncol() != p || mass.size() != n ||
         center.size() != p || scale.size() != p || max_iter < 1)
-        Rcpp::stop("Gaussian mixture dimensions are inconsistent.");
+        tulpa::stop("Gaussian mixture dimensions are inconsistent.");
     Rcpp::NumericMatrix out(p, probability.size());
     for (double weight : mass) if (!std::isfinite(weight) || weight < 0)
-        Rcpp::stop("Gaussian mixture masses must be finite and nonnegative.");
+        tulpa::stop("Gaussian mixture masses must be finite and nonnegative.");
     const double epsilon = 8 * std::numeric_limits<double>::epsilon();
     for (int j = 0; j < p; ++j) {
         double lower = std::numeric_limits<double>::infinity(), upper = -lower;
         for (int i = 0; i < n; ++i) {
             if (!std::isfinite(mu(i, j)) || !std::isfinite(sd(i, j)) || sd(i, j) < 0)
-                Rcpp::stop("Gaussian mixture locations and scales must be finite, with nonnegative scales.");
+                tulpa::stop("Gaussian mixture locations and scales must be finite, with nonnegative scales.");
             lower = std::min(lower, mu(i, j) - 10 * sd(i, j));
             upper = std::max(upper, mu(i, j) + 10 * sd(i, j));
         }
@@ -172,7 +173,7 @@ Rcpp::NumericMatrix cpp_nl_mixture_quantiles(Rcpp::NumericMatrix mu,
 // [[Rcpp::export]]
 Rcpp::NumericMatrix cpp_outer_read_design(int n, int d, int shift_seed) {
     if (n < 1 || d < 1 || d > tulpa::SOBOL_MAX_DIM)
-        Rcpp::stop("Outer read-design dimensions are outside the Sobol table.");
+        tulpa::stop("Outer read-design dimensions are outside the Sobol table.");
     Rcpp::NumericMatrix out(n, d);
     tulpa::sobol_points(n, d, out.begin());
     std::mt19937 rng(static_cast<unsigned int>(shift_seed));
@@ -193,13 +194,13 @@ Eigen::SparseMatrix<double> cpp_outer_tensor_partition(Rcpp::List nodes,
     using tulpa_outer_spline::TensorCorners;
     const int d = nodes.size();
     if (query.ncol() != d || mass.size() != query.nrow() || d < 1)
-        Rcpp::stop("Outer partition dimensions are inconsistent.");
+        tulpa::stop("Outer partition dimensions are inconsistent.");
     std::vector<Axis> axes;
     int total = 1;
     for (int j = 0; j < d; ++j) {
         axes.emplace_back(Rcpp::as<Rcpp::NumericVector>(nodes[j]), false);
         if (axes.back().x.size() > static_cast<std::size_t>(std::numeric_limits<int>::max() / total))
-            Rcpp::stop("Outer partition exceeds sparse matrix index capacity.");
+            tulpa::stop("Outer partition exceeds sparse matrix index capacity.");
         total *= axes.back().x.size();
     }
     std::vector<Eigen::Triplet<double>> entries;
@@ -210,9 +211,9 @@ Eigen::SparseMatrix<double> cpp_outer_tensor_partition(Rcpp::List nodes,
     std::vector<std::array<double, 4>> weights(d);
     for (int i = 0; i < query.nrow(); ++i) {
         if (!std::isfinite(mass[i]) || mass[i] < 0)
-            Rcpp::stop("Outer partition masses must be finite and nonnegative.");
+            tulpa::stop("Outer partition masses must be finite and nonnegative.");
         for (int j = 0; j < d; ++j) {
-            if (!std::isfinite(query(i, j))) Rcpp::stop("Outer partition queries must be finite.");
+            if (!std::isfinite(query(i, j))) tulpa::stop("Outer partition queries must be finite.");
             first[j] = axes[j].basis(query(i, j), weights[j]);
         }
         std::size_t base = 0;
@@ -237,11 +238,11 @@ Eigen::SparseMatrix<double> cpp_outer_nearest_partition(Rcpp::NumericMatrix poin
     Rcpp::NumericMatrix query, Rcpp::NumericVector mass) {
     const int n = points.nrow(), d = points.ncol();
     if (n < 1 || d < 1 || query.ncol() != d || mass.size() != query.nrow())
-        Rcpp::stop("Outer partition dimensions are inconsistent.");
+        tulpa::stop("Outer partition dimensions are inconsistent.");
     for (double value : points) if (!std::isfinite(value))
-        Rcpp::stop("Outer partition points must be finite.");
+        tulpa::stop("Outer partition points must be finite.");
     for (double value : query) if (!std::isfinite(value))
-        Rcpp::stop("Outer partition queries must be finite.");
+        tulpa::stop("Outer partition queries must be finite.");
     struct Node { int point, left, right; };
     std::vector<Node> tree;
     tree.reserve(n);
@@ -280,7 +281,7 @@ Eigen::SparseMatrix<double> cpp_outer_nearest_partition(Rcpp::NumericMatrix poin
     entries.reserve(query.nrow());
     for (int i = 0; i < query.nrow(); ++i) {
         if (!std::isfinite(mass[i]) || mass[i] < 0)
-            Rcpp::stop("Outer partition masses must be finite and nonnegative.");
+            tulpa::stop("Outer partition masses must be finite and nonnegative.");
         int best = 0;
         double distance = std::numeric_limits<double>::infinity();
         auto box_distance = [&](int at) {
@@ -328,17 +329,17 @@ Rcpp::NumericMatrix cpp_outer_tensor_interpolate(Rcpp::List nodes,
     using tulpa_outer_spline::Axis;
     using tulpa_outer_spline::TensorCorners;
     const int d = nodes.size(), fields = values.ncol();
-    if (query.ncol() != d || d == 0) Rcpp::stop("Spline query dimensions differ from its axes.");
+    if (query.ncol() != d || d == 0) tulpa::stop("Spline query dimensions differ from its axes.");
     std::vector<Axis> axes;
     std::size_t total = 1;
     for (int j = 0; j < d; ++j) {
         axes.emplace_back(Rcpp::as<Rcpp::NumericVector>(nodes[j]), cubic);
         if (axes.back().x.size() > static_cast<std::size_t>(values.nrow()) / total)
-            Rcpp::stop("Spline values must cover the full tensor in axis order.");
+            tulpa::stop("Spline values must cover the full tensor in axis order.");
         total *= axes.back().x.size();
     }
     if (total != static_cast<std::size_t>(values.nrow()))
-        Rcpp::stop("Spline values must cover the full tensor in axis order.");
+        tulpa::stop("Spline values must cover the full tensor in axis order.");
     const Eigen::MatrixXd coefficients = tulpa_outer_spline::coefficients(axes, values);
     Rcpp::NumericMatrix out(query.nrow(), fields);
     tulpa_outer_spline::accumulate(axes, coefficients, query, out);

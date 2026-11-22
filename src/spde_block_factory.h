@@ -44,6 +44,7 @@
 #define TULPA_SPDE_BLOCK_FACTORY_H
 
 #include "block_projector.h"             // projector rows + obs_indices
+#include "tulpa_stop.h"
 #include "latent_block.h"
 #include "laplace_re_priors.h"           // center_effects
 #include "nl_cell_cache.h"
@@ -162,15 +163,15 @@ inline LatentBlock make_spde_block_precomputed(
         n_arms, n_mesh, block_index, "spde");
 
     if (Q_p.size() != n_mesh + 1) {
-        Rcpp::stop("Block %d (type 'spde', precomputed): length(Q_p) must be "
+        tulpa::stop("Block %d (type 'spde', precomputed): length(Q_p) must be "
                    "n_mesh + 1 (%d), got %d.",
-                   block_index + 1, n_mesh + 1, static_cast<int>(Q_p.size()));
+                   {block_index + 1, n_mesh + 1, static_cast<int>(Q_p.size())});
     }
     if (Q_i.size() != Q_x.size()) {
-        Rcpp::stop("Block %d (type 'spde', precomputed): Q_i (%d) and Q_x (%d) "
+        tulpa::stop("Block %d (type 'spde', precomputed): Q_i (%d) and Q_x (%d) "
                    "must have the same length.",
-                   block_index + 1, static_cast<int>(Q_i.size()),
-                   static_cast<int>(Q_x.size()));
+                   {block_index + 1, static_cast<int>(Q_i.size()),
+                   static_cast<int>(Q_x.size())});
     }
     // Both prior scatters walk this CSC and write grad[start + row] /
     // H[start + row][start + col], so a row index outside the block or a

@@ -4,6 +4,7 @@
 // See joint_inner_vcov.h.
 
 #include "joint_inner_vcov.h"
+#include "tulpa_stop.h"
 #include "inv_block_extract.h"  // InvBlockConstraint, extract_inv_diag_blocks
 #include "sparse_cholesky.h"
 #include "omp_threads.h"
@@ -479,20 +480,20 @@ VcovGridInputs read_vcov_grid_inputs(
     const int n_grid = in.n_grid, p = in.p;
 
     if (n_x <= 0)
-        Rcpp::stop("n_x (%d) must be positive.", n_x);
+        tulpa::stop("n_x (%d) must be positive.", {n_x});
     if (Q_i_per_grid.size() != (R_xlen_t)n_grid ||
         Q_x_per_grid.size() != (R_xlen_t)n_grid)
-        Rcpp::stop("Q_p_per_grid, Q_i_per_grid and Q_x_per_grid must have the "
+        tulpa::stop("Q_p_per_grid, Q_i_per_grid and Q_x_per_grid must have the "
                    "same length.");
     if (p > n_x)
-        Rcpp::stop("idx holds %d indices, more than the %d latent coordinates.",
-                   p, n_x);
+        tulpa::stop("idx holds %d indices, more than the %d latent coordinates.",
+                   {p, n_x});
 
     in.idx0.resize(p);
     for (int t = 0; t < p; t++) {
         const int v = idx[t];
         if (v == NA_INTEGER || v < 1 || v > n_x)
-            Rcpp::stop("idx[%d] is not a latent index in [1, %d].", t + 1, n_x);
+            tulpa::stop("idx[%d] is not a latent index in [1, %d].", {t + 1, n_x});
         in.idx0[t] = v - 1;
     }
     const std::vector<tulpa::LinearConstraintRow> hard =
@@ -507,8 +508,8 @@ VcovGridInputs read_vcov_grid_inputs(
     if (soft_D_per_grid.isNotNull()) {
         soft_D = Rcpp::List(soft_D_per_grid);
         if (soft_D.size() != (R_xlen_t)n_grid)
-            Rcpp::stop("soft_D_per_grid has %d entries, the grid has %d cells.",
-                       (int)soft_D.size(), n_grid);
+            tulpa::stop("soft_D_per_grid has %d entries, the grid has %d cells.",
+                       {(int)soft_D.size(), n_grid});
     }
     in.cons.resize(n_grid);
     for (int k = 0; k < n_grid; k++) {
@@ -517,7 +518,7 @@ VcovGridInputs read_vcov_grid_inputs(
         if (ns == 0 || soft_D.size() == 0 || Rf_isNull(soft_D[k])) continue;
         Rcpp::NumericMatrix Dk(soft_D[k]);
         if (Dk.nrow() != ns || Dk.ncol() != ns)
-            Rcpp::stop("soft_D_per_grid[[%d]] is not %d x %d.", k + 1, ns, ns);
+            tulpa::stop("soft_D_per_grid[[%d]] is not %d x %d.", {k + 1, ns, ns});
         c.soft = soft;
         c.soft_D.resize(static_cast<std::size_t>(ns) * ns);
         for (int i = 0; i < ns; i++)
@@ -602,7 +603,7 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     Rcpp::Nullable<Rcpp::List> soft_D_per_grid = R_NilValue,
     bool compact = false
 ) {
-    if (compact && !field_marginal) Rcpp::stop("compact extraction requires field_marginal = TRUE");
+    if (compact && !field_marginal) tulpa::stop("compact extraction requires field_marginal = TRUE");
     const VcovGridInputs in = read_vcov_grid_inputs(
         Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, A_cols_list,
         soft_cols_list, soft_D_per_grid);
@@ -687,17 +688,17 @@ Rcpp::NumericMatrix cpp_loading_marginal_var(
     const int n_e = load_idx.size();
     const int m = load_ptr.size() - 1;
     if (m < 0 || load_ptr[0] != 0 || load_ptr[m] != n_e)
-        Rcpp::stop("load_ptr must start at 0 and end at length(load_idx).");
+        tulpa::stop("load_ptr must start at 0 and end at length(load_idx).");
     for (int j = 0; j < m; j++)
         if (load_ptr[j] > load_ptr[j + 1])
-            Rcpp::stop("load_ptr must be non-decreasing.");
+            tulpa::stop("load_ptr must be non-decreasing.");
     if (load_w.nrow() != n_grid || load_w.ncol() != n_e)
-        Rcpp::stop("load_w must be n_grid x length(load_idx).");
+        tulpa::stop("load_w must be n_grid x length(load_idx).");
     std::vector<int> idx0(n_e), ptr(load_ptr.begin(), load_ptr.end());
     for (int e = 0; e < n_e; e++) {
         const int v = load_idx[e];
         if (v == NA_INTEGER || v < 1 || v > n_x)
-            Rcpp::stop("load_idx[%d] is not a latent index in [1, %d].", e + 1, n_x);
+            tulpa::stop("load_idx[%d] is not a latent index in [1, %d].", {e + 1, n_x});
         idx0[e] = v - 1;
     }
     std::vector<double> W(load_w.begin(), load_w.end());   // column-major
@@ -780,17 +781,17 @@ Rcpp::List cpp_joint_inner_vcov_mixture(
     const int s = tulpa::inner_vcov_strip_width(p, n_dense, field_marginal);
 
     if (weights.size() != (R_xlen_t)n_grid)
-        Rcpp::stop("weights has length %d, the grid has %d cells.",
-                   (int)weights.size(), n_grid);
+        tulpa::stop("weights has length %d, the grid has %d cells.",
+                   {(int)weights.size(), n_grid});
     double w_sum = 0.0;
     for (int k = 0; k < n_grid; k++) {
         const double wk = weights[k];
         if (!std::isfinite(wk) || wk < 0.0)
-            Rcpp::stop("weights[%d] is not a finite non-negative number.", k + 1);
+            tulpa::stop("weights[%d] is not a finite non-negative number.", {k + 1});
         w_sum += wk;
     }
     if (!(w_sum > 0.0))
-        Rcpp::stop("weights carry no mass.");
+        tulpa::stop("weights carry no mass.");
     std::vector<double> w(n_grid);
     for (int k = 0; k < n_grid; k++) w[k] = weights[k] / w_sum;
 
@@ -803,13 +804,13 @@ Rcpp::List cpp_joint_inner_vcov_mixture(
     if (have_modes) {
         M = Rcpp::NumericMatrix(modes);
         if (M.nrow() != n_grid || M.ncol() != p)
-            Rcpp::stop("modes is %d x %d; expected %d x %d (grid cells x idx).",
-                       M.nrow(), M.ncol(), n_grid, p);
+            tulpa::stop("modes is %d x %d; expected %d x %d (grid cells x idx).",
+                       {M.nrow(), M.ncol(), n_grid, p});
         for (int k : cells)
             for (int a = 0; a < p; a++)
                 if (!std::isfinite(M(k, a)))
-                    Rcpp::stop("modes[%d, %d] is not finite on a cell carrying "
-                               "weight.", k + 1, a + 1);
+                    tulpa::stop("modes[%d, %d] is not finite on a cell carrying "
+                               "weight.", {k + 1, a + 1});
     }
 
     const int nthr = tulpa_omp_team_size_req(n_threads, std::max(m, 1));
@@ -927,14 +928,14 @@ Rcpp::NumericMatrix cpp_constrained_cell_draw(
         Rcpp::List::create(Q_p), Rcpp::List::create(Q_i), Rcpp::List::create(Q_x),
         n_x, Rcpp::IntegerVector(0), A_cols_list, soft_cols_list, soft_D_list);
     if (!in.has_cell[0])
-        Rcpp::stop("cpp_constrained_cell_draw(): the cell precision is not a "
-                   "well-formed %d x %d lower-triangle CSC.", n_x, n_x);
+        tulpa::stop("cpp_constrained_cell_draw(): the cell precision is not a "
+                   "well-formed %d x %d lower-triangle CSC.", {n_x, n_x});
     if (eps.nrow() != n_x)
-        Rcpp::stop("cpp_constrained_cell_draw(): `eps` has %d rows, not n_x = %d.",
-                   static_cast<int>(eps.nrow()), n_x);
+        tulpa::stop("cpp_constrained_cell_draw(): `eps` has %d rows, not n_x = %d.",
+                   {static_cast<int>(eps.nrow()), n_x});
     if (soft_D.isNull() && soft_cols_list.isNotNull() &&
         Rcpp::List(soft_cols_list).size() > 0)
-        Rcpp::stop("cpp_constrained_cell_draw(): soft rows need `soft_D`.");
+        tulpa::stop("cpp_constrained_cell_draw(): soft rows need `soft_D`.");
     const int n_draws = eps.ncol();
     tulpa::SparseCholeskySolver solver;
     std::vector<double> draws;
@@ -943,7 +944,7 @@ Rcpp::NumericMatrix cpp_constrained_cell_draw(
                                       in.Qx[0].data(), n_x, in.nnz(0),
                                       in.cons[0], eps.begin(), n_draws, solver,
                                       draws, &why))
-        Rcpp::stop("cpp_constrained_cell_draw(): %s.", why);
+        tulpa::stop("cpp_constrained_cell_draw(): %s.", {why});
     Rcpp::NumericMatrix out(n_x, n_draws);
     std::copy(draws.begin(), draws.end(), out.begin());
     return out;

@@ -2,6 +2,7 @@
 #define TULPA_OUTER_SPLINE_H
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include <algorithm>
 #include <array>
 #include <vector>
@@ -17,9 +18,9 @@ struct Axis {
         degree(nodes.size() == 1 ? 0 : (cubic && nodes.size() >= 4 ? 3 : 1)) {
         if (x.empty() || !std::is_sorted(x.begin(), x.end()) ||
             std::adjacent_find(x.begin(), x.end()) != x.end())
-            Rcpp::stop("Spline axes require distinct increasing nodes.");
+            tulpa::stop("Spline axes require distinct increasing nodes.");
         for (double value : x) if (!std::isfinite(value))
-            Rcpp::stop("Spline axes must be finite.");
+            tulpa::stop("Spline axes must be finite.");
         knots.assign(degree + 1, x.front());
         if (degree == 3) {
             for (std::size_t j = 2; j + 2 < x.size(); ++j) knots.push_back(x[j]);
@@ -137,7 +138,7 @@ inline Eigen::MatrixXd transform_axis(const Eigen::MatrixXd& values,
 }
 
 inline Eigen::MatrixXd coefficients(const std::vector<Axis>& axes, Eigen::MatrixXd output) {
-    if (!output.allFinite()) Rcpp::stop("Spline values must be finite.");
+    if (!output.allFinite()) tulpa::stop("Spline values must be finite.");
     std::vector<std::size_t> sizes;
     for (const auto& axis : axes) sizes.push_back(axis.x.size());
     for (std::size_t j = 0; j < axes.size(); ++j) {
@@ -166,7 +167,7 @@ inline void accumulate(const std::vector<Axis>& axes, const Eigen::MatrixXd& coe
     for (int i = 0; i < query.nrow(); ++i) {
         if (i % 4096 == 0) Rcpp::checkUserInterrupt();
         for (int j = 0; j < d; ++j) {
-            if (!std::isfinite(query(i, j))) Rcpp::stop("Spline queries must be finite.");
+            if (!std::isfinite(query(i, j))) tulpa::stop("Spline queries must be finite.");
             first[j] = axes[j].basis(query(i, j), weights[j]);
         }
         std::size_t base = 0;

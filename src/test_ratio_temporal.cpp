@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "hmc_temporal_multiscale.h"
 #include "hmc_tvc.h"
 using namespace Rcpp;
@@ -8,7 +9,7 @@ static tulpa::TemporalType probe_temporal_type(const std::string& name) {
   if(name=="rw2") return tulpa::TemporalType::RW2;
   if(name=="ar1") return tulpa::TemporalType::AR1;
   if(name=="iid") return tulpa::TemporalType::IID;
-  Rcpp::stop("Unknown temporal structure '%s'",name.c_str());
+  tulpa::stop("Unknown temporal structure '%s'",{name.c_str()});
 }
 // [[Rcpp::export]]
 double cpp_test_rw1_quadratic_form(NumericVector phi, bool cyclic) {

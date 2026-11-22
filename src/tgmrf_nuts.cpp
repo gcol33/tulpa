@@ -67,6 +67,7 @@
 // joint NUTS path is the last one and intentionally compact.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <RcppEigen.h>
 #include <Eigen/SparseCore>
 #include <Eigen/SparseCholesky>
@@ -695,25 +696,25 @@ Rcpp::List cpp_tgmrf_nuts_joint(
     const tulpa::tgmrf_backend::TgmrfSpec* spec =
         tulpa::tgmrf_backend::lookup_spec(cpp_id);
     if (spec == nullptr) {
-        Rcpp::stop("cpp_tgmrf_nuts_joint: no tgmrf spec registered under id '%s'.",
-                   cpp_id.c_str());
+        tulpa::stop("cpp_tgmrf_nuts_joint: no tgmrf spec registered under id '%s'.",
+                   {cpp_id.c_str()});
     }
     if (spec->Q_double == nullptr || spec->log_prior_double == nullptr) {
-        Rcpp::stop("cpp_tgmrf_nuts_joint: tgmrf spec '%s' missing required kernels.",
-                   cpp_id.c_str());
+        tulpa::stop("cpp_tgmrf_nuts_joint: tgmrf spec '%s' missing required kernels.",
+                   {cpp_id.c_str()});
     }
 
     int N = y.size();
     int p = X.ncol();
     int D = p + n_latent + theta_dim;
 
-    if ((int)n_trials.size() != N) Rcpp::stop("n_trials length != N");
-    if (X.nrow() != N) Rcpp::stop("nrow(X) != N");
-    if ((int)obs_idx.size() != N) Rcpp::stop("obs_idx length != N");
-    if ((int)beta_init.size() != p)     Rcpp::stop("beta_init length != ncol(X)");
-    if ((int)z_init.size() != n_latent) Rcpp::stop("z_init length != n_latent");
-    if ((int)theta_init.size() != theta_dim) Rcpp::stop("theta_init length != theta_dim");
-    if ((int)M_inv_diag.size() != D) Rcpp::stop("M_inv_diag length != D");
+    if ((int)n_trials.size() != N) tulpa::stop("n_trials length != N");
+    if (X.nrow() != N) tulpa::stop("nrow(X) != N");
+    if ((int)obs_idx.size() != N) tulpa::stop("obs_idx length != N");
+    if ((int)beta_init.size() != p)     tulpa::stop("beta_init length != ncol(X)");
+    if ((int)z_init.size() != n_latent) tulpa::stop("z_init length != n_latent");
+    if ((int)theta_init.size() != theta_dim) tulpa::stop("theta_init length != theta_dim");
+    if ((int)M_inv_diag.size() != D) tulpa::stop("M_inv_diag length != D");
 
     // ---- Build state ---------------------------------------------------------
     JointState st;
@@ -727,7 +728,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
     for (int i = 0; i < N; ++i) {
         int oi = obs_idx[i] - 1;
         if (oi < 0 || oi >= n_latent) {
-            Rcpp::stop("obs_idx[%d] = %d outside [1, %d]", i + 1, obs_idx[i], n_latent);
+            tulpa::stop("obs_idx[%d] = %d outside [1, %d]", {i + 1, obs_idx[i], n_latent});
         }
         st.obs_idx_0[i] = oi;
     }
@@ -750,7 +751,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
     bool ok = true;
     double log_post = log_post_and_grad(st, q, true, &grad, ok);
     if (!ok || !std::isfinite(log_post)) {
-        Rcpp::stop("cpp_tgmrf_nuts_joint: initial (beta, z, theta) gave non-finite log-post.");
+        tulpa::stop("cpp_tgmrf_nuts_joint: initial (beta, z, theta) gave non-finite log-post.");
     }
 
     // ---- Optional gradient check: analytic vs central differences -------------
@@ -782,7 +783,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
             scale *= 0.5;
         }
         if (!ok_check) {
-            Rcpp::stop("cpp_tgmrf_nuts_joint: no point within 2^-10 mass-matrix SDs "
+            tulpa::stop("cpp_tgmrf_nuts_joint: no point within 2^-10 mass-matrix SDs "
                        "of the initial (beta, z, theta) gave a finite log-post for the "
                        "gradient check.");
         }
@@ -812,11 +813,11 @@ Rcpp::List cpp_tgmrf_nuts_joint(
             Rcpp::Named("step")          = fd_check_step,
             Rcpp::Named("displacement")  = scale);
         if (gradient_check_tol > 0.0 && gc.max_rel > gradient_check_tol) {
-            Rcpp::stop("cpp_tgmrf_nuts_joint: joint gradient disagrees with "
+            tulpa::stop("cpp_tgmrf_nuts_joint: joint gradient disagrees with "
                        "central differences: max relative error %g at index %d "
                        "of %d (tolerance %g, |grad|_max %g).",
-                       gc.max_rel, gc.worst_idx + 1, D, gradient_check_tol,
-                       gc.grad_scale);
+                       {gc.max_rel, gc.worst_idx + 1, D, gradient_check_tol,
+                       gc.grad_scale});
         }
     }
 

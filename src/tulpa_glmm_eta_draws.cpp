@@ -17,6 +17,7 @@
 // ----------------------------------------------------------------------------
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "fixed_effect_prior.h"
 #include <string>
 #include <vector>
@@ -63,13 +64,13 @@ Rcpp::NumericMatrix cpp_tulpa_glmm_eta_draws(
     const tulpa_hmc::ParamLayout& layout = in.layout;
     const int D = layout.total_params;
     if (draws.ncol() != D) {
-        Rcpp::stop("cpp_tulpa_glmm_eta_draws: the draws carry %d columns but the "
-                   "model lays out %d parameters.", draws.ncol(), D);
+        tulpa::stop("cpp_tulpa_glmm_eta_draws: the draws carry %d columns but the "
+                   "model lays out %d parameters.", {draws.ncol(), D});
     }
     if (data.n_processes != 1) {
-        Rcpp::stop("cpp_tulpa_glmm_eta_draws: a built-in family fit carries one "
+        tulpa::stop("cpp_tulpa_glmm_eta_draws: a built-in family fit carries one "
                    "linear predictor; this model declares %d.",
-                   data.n_processes);
+                   {data.n_processes});
     }
 
     const int S = draws.nrow();
@@ -180,8 +181,8 @@ Rcpp::List cpp_sampler_field_draws(
     const tulpa_hmc::ParamLayout& layout = in.layout;
     const int D = layout.total_params;
     if (draws.ncol() != D) {
-        Rcpp::stop("cpp_sampler_field_draws: the draws carry %d columns but "
-                   "the model lays out %d parameters.", draws.ncol(), D);
+        tulpa::stop("cpp_sampler_field_draws: the draws carry %d columns but "
+                   "the model lays out %d parameters.", {draws.ncol(), D});
     }
     const int S = draws.nrow();
 
@@ -235,8 +236,8 @@ Rcpp::List cpp_sampler_field_draws(
         }
         if (mst) {
             if ((int)state.ms_temporal_by_time.size() != n_mst) {
-                Rcpp::stop("cpp_sampler_field_draws: the multi-scale temporal "
-                           "field was not assembled at draw %d.", s + 1);
+                tulpa::stop("cpp_sampler_field_draws: the multi-scale temporal "
+                           "field was not assembled at draw %d.", {s + 1});
             }
             for (int t = 0; t < n_mst; t++) {
                 ms_temporal(s, t) = state.ms_temporal_by_time[t];
@@ -244,8 +245,8 @@ Rcpp::List cpp_sampler_field_draws(
         }
         if (gp) {
             if ((int)state.gp_w.size() < n_gp) {
-                Rcpp::stop("cpp_sampler_field_draws: the GP field was not "
-                           "reconstructed at draw %d.", s + 1);
+                tulpa::stop("cpp_sampler_field_draws: the GP field was not "
+                           "reconstructed at draw %d.", {s + 1});
             }
             for (int k = 0; k < n_gp; k++) gp_w(s, k) = state.gp_w[k];
             gp_s2[s] = tulpa::math::safe_exp(params[layout.log_sigma2_gp_idx]);
@@ -354,9 +355,9 @@ Rcpp::NumericMatrix cpp_test_sampler_log_post_paths(
         R_NilValue, R_NilValue);
     const int D = in.layout.total_params;
     if (draws.ncol() != D) {
-        Rcpp::stop("cpp_test_sampler_log_post_paths: the draws carry %d "
+        tulpa::stop("cpp_test_sampler_log_post_paths: the draws carry %d "
                    "columns but the model lays out %d parameters.",
-                   draws.ncol(), D);
+                   {draws.ncol(), D});
     }
     const int S = draws.nrow();
     Rcpp::NumericMatrix out(S, 2);

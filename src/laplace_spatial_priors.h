@@ -13,6 +13,7 @@
 #define TULPA_LAPLACE_SPATIAL_PRIORS_H
 
 #include "laplace_types.h"
+#include "tulpa_stop.h"
 #include "tulpa/graph_components.h"   // GraphPartition
 #include "intrinsic_log_pdet.h"         // icar_log_pdet
 #include <Rcpp.h>
@@ -147,14 +148,14 @@ inline std::vector<double> read_node_prec(SEXP x, int n_units, const char* who) 
     if (Rf_isNull(x)) return std::vector<double>();
     Rcpp::NumericVector v(x);
     if (v.size() != n_units) {
-        Rcpp::stop("%s: node_prec has length %d; expected n_spatial_units = %d.",
-                   who, (int) v.size(), n_units);
+        tulpa::stop("%s: node_prec has length %d; expected n_spatial_units = %d.",
+                   {who, (int) v.size(), n_units});
     }
     std::vector<double> out(v.begin(), v.end());
     for (int s = 0; s < n_units; s++) {
         if (!(out[s] > 0.0) || !std::isfinite(out[s])) {
-            Rcpp::stop("%s: node_prec[%d] (%g) must be finite and positive.",
-                       who, s + 1, out[s]);
+            tulpa::stop("%s: node_prec[%d] (%g) must be finite and positive.",
+                       {who, s + 1, out[s]});
         }
     }
     return out;

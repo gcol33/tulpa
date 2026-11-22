@@ -2,6 +2,7 @@
 // Definition of stack_hmc_chains, declared in hmc_chain_stack.h.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "hmc_chain_stack.h"
 
 namespace tulpa_hmc {
@@ -11,10 +12,10 @@ StackedChains stack_hmc_chains(
     int n_chains,
     int n_params
 ) {
-  if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+  if (n_chains < 1) tulpa::stop("n_chains must be >= 1");
   if (static_cast<int>(chains.size()) != n_chains) {
-    Rcpp::stop("multi-chain run returned %d chains, expected %d",
-               static_cast<int>(chains.size()), n_chains);
+    tulpa::stop("multi-chain run returned %d chains, expected %d",
+               {static_cast<int>(chains.size()), n_chains});
   }
 
   std::vector<int> ns(n_chains);

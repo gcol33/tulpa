@@ -13,6 +13,7 @@
 #define TULPA_SUBSPACE_DEBIAS_H
 
 #include "hard_constraints.h"
+#include "tulpa_stop.h"
 #include "inner_gaussian_draw.h"
 #include "inner_laplace_probe.h"
 #include "laplace_cholesky.h"
@@ -112,7 +113,7 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
   const int q = static_cast<int>(opts.idx.size());
   if (opts.n_iter < 1 || opts.n_warmup < 0 || opts.thin < 1 ||
       opts.n_iter >= std::numeric_limits<int>::max() - opts.n_warmup) {
-    Rcpp::stop("Invalid subspace iteration budget.");
+    tulpa::stop("Invalid subspace iteration budget.");
   }
   if (q == 0 && !opts.exact) { out.declined = "no_probe_indices"; return out; }
   if (opts.exact && hard && hard->active()) {
@@ -123,7 +124,7 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
   std::sort(sorted_idx.begin(), sorted_idx.end());
   if (std::adjacent_find(sorted_idx.begin(), sorted_idx.end()) != sorted_idx.end() ||
       (!sorted_idx.empty() && (sorted_idx.front() < 0 || sorted_idx.back() >= n_x))) {
-    Rcpp::stop("debias$idx must contain distinct indices within the latent vector.");
+    tulpa::stop("debias$idx must contain distinct indices within the latent vector.");
   }
 
   // --- the q conditional-mean columns V = Sigma E_S -------------------------
@@ -247,7 +248,7 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
       Rcpp::NumericMatrix delta(n_x, Z.ncol());
       if (!inner_gaussian_transform(n_x, Z.ncol(), chol, sparse_solver,
                                     use_sparse, Z.begin(), delta.begin())) {
-        Rcpp::stop("Exact subspace correction requires an LL' precision factor.");
+        tulpa::stop("Exact subspace correction requires an LL' precision factor.");
       }
       return delta;
     };

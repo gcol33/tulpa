@@ -16,6 +16,7 @@
 // ----------------------------------------------------------------------------
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "fixed_effect_prior.h"
 #include <string>
 #include <vector>
@@ -124,10 +125,10 @@ Rcpp::List cpp_tulpa_glmm_layout(
     // process on the Laplace path but a separate beta_zi block here).
     Rcpp::List beta_blocks;
     if (L.process_beta_count.size() != L.process_beta_start.size()) {
-        Rcpp::stop("ParamLayout malformed: process_beta_start has %d entries "
+        tulpa::stop("ParamLayout malformed: process_beta_start has %d entries "
                    "and process_beta_count has %d.",
-                   (int)L.process_beta_start.size(),
-                   (int)L.process_beta_count.size());
+                   {(int)L.process_beta_start.size(),
+                   (int)L.process_beta_count.size()});
     }
     for (size_t kp = 0; kp < L.process_beta_start.size(); kp++) {
         beta_blocks.push_back(span1(

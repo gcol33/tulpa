@@ -11,6 +11,7 @@
 // enough to exercise the slot arithmetic.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"
 #include "tulpa_priors_spde.h"
@@ -25,8 +26,8 @@ Rcpp::List cpp_spde_layout_probe(int n_mesh,
                                   int p,
                                   bool joint_hypers,
                                   int n_extra_params = 0) {
-    if (n_mesh <= 0)  Rcpp::stop("n_mesh must be positive");
-    if (p     <= 0)   Rcpp::stop("p must be positive");
+    if (n_mesh <= 0)  tulpa::stop("n_mesh must be positive");
+    if (p     <= 0)   tulpa::stop("p must be positive");
 
     ModelData data;
     data.N           = 1;             // unused by the allocator
@@ -86,7 +87,7 @@ Rcpp::List cpp_spde_prior_probe(Rcpp::NumericVector vals,
                                   double tau_spde = 1.0,
                                   int    alpha    = 2) {
     const int n_mesh = vals.size();
-    if (n_mesh <= 0) Rcpp::stop("vals must be non-empty");
+    if (n_mesh <= 0) tulpa::stop("vals must be non-empty");
 
     ModelData data;
     data.N           = 1;
@@ -109,7 +110,7 @@ Rcpp::List cpp_spde_prior_probe(Rcpp::NumericVector vals,
 
     if (!joint_hypers) {
         if (C0_diag.size() != n_mesh) {
-            Rcpp::stop("legacy mode requires C0_diag of length n_mesh");
+            tulpa::stop("legacy mode requires C0_diag of length n_mesh");
         }
         sm.C0_diag.assign(C0_diag.begin(), C0_diag.end());
         sm.G1_x.assign(G1_x.begin(), G1_x.end());
@@ -163,10 +164,10 @@ Rcpp::List cpp_spde_nc_apply_probe(Rcpp::NumericVector z,
                                     Rcpp::IntegerVector G1_i,
                                     Rcpp::IntegerVector G1_p) {
     const int n_mesh = z.size();
-    if (n_mesh <= 0) Rcpp::stop("z must be non-empty");
+    if (n_mesh <= 0) tulpa::stop("z must be non-empty");
     if (C0_diag.size() != n_mesh) {
-        Rcpp::stop("C0_diag length (%d) must equal n_mesh (%d)",
-                   (int)C0_diag.size(), n_mesh);
+        tulpa::stop("C0_diag length (%d) must equal n_mesh (%d)",
+                   {(int)C0_diag.size(), n_mesh});
     }
 
     ModelData data;
@@ -234,7 +235,7 @@ Rcpp::List cpp_spde_hyper_prior_probe(double log_kappa,
                                        double prior_sigma_0     = -1.0,
                                        double prior_sigma_alpha = -1.0,
                                        int    n_mesh            = 4) {
-    if (n_mesh <= 0) Rcpp::stop("n_mesh must be positive");
+    if (n_mesh <= 0) tulpa::stop("n_mesh must be positive");
 
     ModelData data;
     data.N           = 1;

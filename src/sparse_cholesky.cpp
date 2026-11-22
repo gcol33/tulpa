@@ -10,6 +10,7 @@
 // All CHOLMOD calls must use M_cholmod_* names (or R_MATRIX_CHOLMOD() macro).
 
 #include "sparse_cholesky.h"
+#include "tulpa_stop.h"
 #include "hessian_pattern_guard.h"
 #include "cholmod_view.h"
 
@@ -1067,34 +1068,34 @@ Rcpp::NumericVector cpp_selected_inversion_diagonal(
     // against n before anything is allocated or dereferenced.
     int nnz = (int)Q_x.size();
     if (n <= 0) {
-        Rcpp::stop("cpp_selected_inversion_diagonal: n (%d) must be positive.", n);
+        tulpa::stop("cpp_selected_inversion_diagonal: n (%d) must be positive.", {n});
     }
     if ((int)Q_p.size() != n + 1) {
-        Rcpp::stop("cpp_selected_inversion_diagonal: length(Q_p) (%d) != n + 1 (%d).",
-                   (int)Q_p.size(), n + 1);
+        tulpa::stop("cpp_selected_inversion_diagonal: length(Q_p) (%d) != n + 1 (%d).",
+                   {(int)Q_p.size(), n + 1});
     }
     if ((int)Q_i.size() != nnz) {
-        Rcpp::stop("cpp_selected_inversion_diagonal: length(Q_i) (%d) != "
+        tulpa::stop("cpp_selected_inversion_diagonal: length(Q_i) (%d) != "
                    "length(Q_x) (%d).",
-                   (int)Q_i.size(), nnz);
+                   {(int)Q_i.size(), nnz});
     }
     if (Q_p[0] != 0 || Q_p[n] != nnz) {
-        Rcpp::stop("cpp_selected_inversion_diagonal: Q_p must run 0 .. nnz "
+        tulpa::stop("cpp_selected_inversion_diagonal: Q_p must run 0 .. nnz "
                    "(got Q_p[0] = %d, Q_p[n] = %d, nnz = %d).",
-                   (int)Q_p[0], (int)Q_p[n], nnz);
+                   {(int)Q_p[0], (int)Q_p[n], nnz});
     }
     for (int j = 0; j < n; j++) {
         if (Q_p[j + 1] < Q_p[j]) {
-            Rcpp::stop("cpp_selected_inversion_diagonal: Q_p is not "
+            tulpa::stop("cpp_selected_inversion_diagonal: Q_p is not "
                        "non-decreasing at column %d (%d > %d).",
-                       j + 1, (int)Q_p[j], (int)Q_p[j + 1]);
+                       {j + 1, (int)Q_p[j], (int)Q_p[j + 1]});
         }
     }
     for (int e = 0; e < nnz; e++) {
         if (Q_i[e] < 0 || Q_i[e] >= n) {
-            Rcpp::stop("cpp_selected_inversion_diagonal: Q_i[%d] (%d) outside "
+            tulpa::stop("cpp_selected_inversion_diagonal: Q_i[%d] (%d) outside "
                        "[0, n) with n = %d.",
-                       e + 1, (int)Q_i[e], n);
+                       {e + 1, (int)Q_i[e], n});
         }
     }
 

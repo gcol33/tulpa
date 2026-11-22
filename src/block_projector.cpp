@@ -2,6 +2,7 @@
 // Definition of build_projector_rows_per_arm, declared in block_projector.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "block_projector.h"
 
 namespace tulpa {
@@ -20,9 +21,9 @@ std::shared_ptr<std::vector<ARows>> build_projector_rows_per_arm(
         static_cast<int>(A_i_per_arm.size()) != n_arms ||
         static_cast<int>(A_p_per_arm.size()) != n_arms ||
         n_obs_per_arm.size() != n_arms) {
-        Rcpp::stop("Block %d (type '%s'): A_x/A_i/A_p/n_obs_per_arm must "
+        tulpa::stop("Block %d (type '%s'): A_x/A_i/A_p/n_obs_per_arm must "
                    "each have length n_arms (%d).",
-                   block_index + 1, type, n_arms);
+                   {block_index + 1, type, n_arms});
     }
     auto rows = std::make_shared<std::vector<ARows>>(n_arms);
     for (int k = 0; k < n_arms; k++) {

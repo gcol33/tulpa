@@ -38,6 +38,7 @@
 #define TULPA_CONSTRAINED_STRUCTURE_BLOCK_H
 
 #include "latent_block.h"
+#include "tulpa_stop.h"
 #include "linear_constraint_rows.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
@@ -64,16 +65,16 @@ inline LatentBlock make_constrained_structure_block(
 ) {
     if (S_p.size() != size + 1 || S_i.size() != S_x.size() ||
         S_p[0] != 0 || S_p[size] != S_i.size()) {
-        Rcpp::stop("constrained structure block: the structure CSC is not a "
-                   "%d x %d matrix.", size, size);
+        tulpa::stop("constrained structure block: the structure CSC is not a "
+                   "%d x %d matrix.", {size, size});
     }
     auto p_v = std::make_shared<std::vector<int>>(S_p.begin(), S_p.end());
     auto i_v = std::make_shared<std::vector<int>>(S_i.begin(), S_i.end());
     auto x_v = std::make_shared<std::vector<double>>(S_x.begin(), S_x.end());
     for (int v : *i_v) {
         if (v < 0 || v >= size)
-            Rcpp::stop("constrained structure block: a structure row index "
-                       "lies outside [0, %d).", size);
+            tulpa::stop("constrained structure block: a structure row index "
+                       "lies outside [0, %d).", {size});
     }
 
     LatentBlock block;
@@ -131,7 +132,7 @@ inline LatentBlock make_constrained_structure_block(
         LinearConstraintRow g = r;
         for (int& c : g.cols) {
             if (c < 0 || c >= size)
-                Rcpp::stop("constrained structure block: a constraint index "
+                tulpa::stop("constrained structure block: a constraint index "
                            "lies outside the block.");
             c += start;
         }

@@ -8,6 +8,7 @@
 #define TULPA_PRIORS_MSGP_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <algorithm>
 #include <cstddef>
 #include <vector>
@@ -146,18 +147,18 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
             const std::vector<int>& obs_to_loc =
                 data.multiscale_gp_data.obs_to_loc;
             if ((int)obs_to_loc.size() < data.N) {
-                Rcpp::stop("Multiscale GP: obs_to_loc has %d entries but "
+                tulpa::stop("Multiscale GP: obs_to_loc has %d entries but "
                            "the model has %d observations.",
-                           (int)obs_to_loc.size(), data.N);
+                           {(int)obs_to_loc.size(), data.N});
             }
             const int n_field = (int)std::min(ms_gp_w_local.size(),
                                               ms_gp_w_regional.size());
             for (int ii = 0; ii < data.N; ii++) {
                 const int loc = obs_to_loc[ii];
                 if (loc < 0 || loc >= n_field) {
-                    Rcpp::stop("Multiscale GP: obs_to_loc[%d] is %d; it "
+                    tulpa::stop("Multiscale GP: obs_to_loc[%d] is %d; it "
                                "must lie in [0, %d).",
-                               ii + 1, loc, n_field);
+                               {ii + 1, loc, n_field});
                 }
             }
             ms_gp_effect.resize(data.N, T(0.0));

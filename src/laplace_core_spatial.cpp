@@ -5,6 +5,7 @@
 // laplace_core.cpp for the shared library context.
 
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
+#include "tulpa_stop.h"
 #include "laplace_core.h"
 #include "areal_input_check.h"
 #include "laplace_cholesky.h"
@@ -59,8 +60,8 @@ Rcpp::List cpp_laplace_fit_spatial(
                               spatial_idx, N, n_spatial_units,
                               "cpp_laplace_fit_spatial");
     if (!(tau_spatial > 0.0) || !std::isfinite(tau_spatial)) {
-        Rcpp::stop("cpp_laplace_fit_spatial: tau_spatial (%g) must be finite "
-                   "and positive.", tau_spatial);
+        tulpa::stop("cpp_laplace_fit_spatial: tau_spatial (%g) must be finite "
+                   "and positive.", {tau_spatial});
     }
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
@@ -158,12 +159,12 @@ Rcpp::List cpp_laplace_fit_bym2(
                               "cpp_laplace_fit_bym2");
     tulpa::nl_check_unit_interval("rho", rho);
     if (!(sigma_spatial > 0.0) || !std::isfinite(sigma_spatial)) {
-        Rcpp::stop("cpp_laplace_fit_bym2: sigma_spatial (%g) must be finite "
-                   "and positive.", sigma_spatial);
+        tulpa::stop("cpp_laplace_fit_bym2: sigma_spatial (%g) must be finite "
+                   "and positive.", {sigma_spatial});
     }
     if (!(scale_factor > 0.0) || !std::isfinite(scale_factor)) {
-        Rcpp::stop("cpp_laplace_fit_bym2: scale_factor (%g) must be finite "
-                   "and positive.", scale_factor);
+        tulpa::stop("cpp_laplace_fit_bym2: scale_factor (%g) must be finite "
+                   "and positive.", {scale_factor});
     }
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;

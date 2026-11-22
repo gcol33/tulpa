@@ -3,6 +3,7 @@
 // Demonstrates the tulpa multi-process interface end-to-end
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "fixed_effect_prior.h"
 #include <R_ext/Rdynload.h>
 #include <vector>
@@ -41,12 +42,12 @@ Rcpp::List cpp_test_temporal_coordinates(Rcpp::NumericVector z, int n_times,
     else if (structure == "rw2") data.temporal_type = tulpa::TemporalType::RW2;
     else if (structure == "ar1") data.temporal_type = tulpa::TemporalType::AR1;
     else if (structure == "iid") data.temporal_type = tulpa::TemporalType::IID;
-    else Rcpp::stop("Unknown temporal structure");
+    else tulpa::stop("Unknown temporal structure");
     tulpa::LikelihoodSpec spec;
     spec.n_processes = 1;
     data.likelihood_spec = &spec;
     const auto layout = tulpa_hmc::compute_param_layout(data);
-    if (z.size() != data.n_temporal_params) Rcpp::stop("z length must match temporal dimensions");
+    if (z.size() != data.n_temporal_params) tulpa::stop("z length must match temporal dimensions");
     std::vector<double> q(layout.total_params, 0.0);
     q[layout.log_tau_temporal_idx] = log_tau;
     if (layout.is_ar1) q[layout.logit_rho_ar1_idx] = logit_rho;
@@ -146,7 +147,7 @@ Rcpp::List cpp_test_field_coordinates(
     for (int i = 0; i < p; ++i) q[i] += shift * std::sin(i + 1.0);
     if (point.isNotNull()) {
         q = Rcpp::as<std::vector<double>>(point);
-        if (static_cast<int>(q.size()) != p) Rcpp::stop("point length must match the parameter layout");
+        if (static_cast<int>(q.size()) != p) tulpa::stop("point length must match the parameter layout");
     }
     tulpa_hmc::GradientModeFitScope gradient_scope;
     tulpa_hmc::g_gradient_mode = tulpa_hmc::GradientMode::AUTODIFF_ARENA;
@@ -318,7 +319,7 @@ Rcpp::List cpp_test_collapsed_spatial(Rcpp::NumericVector y, Rcpp::NumericMatrix
     in.data.model_response_data = &response;
     const auto layout = tulpa_hmc::compute_param_layout(in.data);
     if (!tulpa_hmc::has_collapsed_spatial(layout) || layout.total_params != static_cast<int>(q.size()))
-        Rcpp::stop("point must match a collapsed Gaussian spatial layout");
+        tulpa::stop("point must match a collapsed Gaussian spatial layout");
     tulpa_hmc::GradientModeFitScope scope;
     tulpa_hmc::g_gradient_mode = tulpa_hmc::GradientMode::AUTODIFF_ARENA;
     std::vector<double> gradient, numerical, prior_gradient, numerical_prior;
@@ -386,8 +387,8 @@ Rcpp::List cpp_test_sampler_controls(
     else if (metric == "dense") control.metric = tulpa::MassMatrixType::DENSE;
     else if (metric == "block_diag") control.metric = tulpa::MassMatrixType::BLOCK_DIAG;
     else if (metric == "auto") control.metric = tulpa::MassMatrixType::AUTO;
-    else Rcpp::stop("Unknown metric");
-    if (n_chains < 1) Rcpp::stop("n_chains must be positive");
+    else tulpa::stop("Unknown metric");
+    if (n_chains < 1) tulpa::stop("n_chains must be positive");
     std::vector<double> init(static_cast<size_t>(n_chains) * p, 0.0);
     std::vector<tulpa::NUTSResult> results(n_chains);
     if (n_chains == 1) {
@@ -572,7 +573,7 @@ Rcpp::List cpp_tulpa_fit_generic(
     if (init.isNotNull()) {
         Rcpp::NumericVector iv(init);
         if ((int)iv.size() != n_params) {
-            Rcpp::stop("init length %d != n_params %d", (int)iv.size(), n_params);
+            tulpa::stop("init length %d != n_params %d", {(int)iv.size(), n_params});
         }
         init_vec.assign(iv.begin(), iv.end());
     }
@@ -674,7 +675,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
 ) {
     const double sigma_beta_value =
         tulpa::read_sigma_beta(sigma_beta);
-    if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+    if (n_chains < 1) tulpa::stop("n_chains must be >= 1");
     const int p = X_r.ncol();
 
     GaussianData gd;
@@ -690,8 +691,8 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
     if (init.isNotNull()) {
         Rcpp::NumericMatrix im(init);
         if (im.nrow() != n_chains || im.ncol() != n_params) {
-            Rcpp::stop("init must be [n_chains x n_params] = [%d x %d]",
-                       n_chains, n_params);
+            tulpa::stop("init must be [n_chains x n_params] = [%d x %d]",
+                       {n_chains, n_params});
         }
         for (int c = 0; c < n_chains; c++) {
             for (int j = 0; j < n_params; j++) q_init_per_chain[c][j] = im(c, j);
@@ -778,7 +779,7 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
     if (init.isNotNull()) {
         Rcpp::NumericVector iv(init);
         if ((int)iv.size() != n_params) {
-            Rcpp::stop("init length %d != n_params %d", (int)iv.size(), n_params);
+            tulpa::stop("init length %d != n_params %d", {(int)iv.size(), n_params});
         }
         init_vec.assign(iv.begin(), iv.end());
     }
@@ -790,7 +791,7 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
     // get_nuts_fn() caches the lookup and runs the ABI-version check.
     tulpa::NUTSFn run_nuts = tulpa::get_nuts_fn();
     if (run_nuts == nullptr) {
-        Rcpp::stop("tulpa_run_nuts_generic is not registered");
+        tulpa::stop("tulpa_run_nuts_generic is not registered");
     }
 
     tulpa::NUTSResult result = {};
@@ -865,7 +866,7 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
     Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> epsilon_init = R_NilValue
 ) {
-    if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+    if (n_chains < 1) tulpa::stop("n_chains must be >= 1");
 
     GaussianData gd;
     tulpa::LikelihoodSpec spec;
@@ -880,8 +881,8 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
     if (init.isNotNull()) {
         Rcpp::NumericMatrix im(init);
         if (im.nrow() != n_chains || im.ncol() != n_params) {
-            Rcpp::stop("init must be [n_chains x n_params] = [%d x %d]",
-                       n_chains, n_params);
+            tulpa::stop("init must be [n_chains x n_params] = [%d x %d]",
+                       {n_chains, n_params});
         }
         for (int c = 0; c < n_chains; c++) {
             for (int j = 0; j < n_params; j++) {
@@ -907,7 +908,7 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
     // the lookup and runs the ABI-version check on first use.
     tulpa::NUTSChainsFn run_chains = tulpa::get_nuts_chains_fn();
     if (run_chains == nullptr) {
-        Rcpp::stop("tulpa_run_nuts_chains is not registered");
+        tulpa::stop("tulpa_run_nuts_chains is not registered");
     }
 
     std::vector<tulpa::NUTSResult> results(n_chains, tulpa::NUTSResult{});

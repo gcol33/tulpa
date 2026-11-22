@@ -5,6 +5,7 @@
 #define TULPA_FIXED_EFFECT_PRIOR_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "tulpa/model_data.h"
 
 namespace tulpa {
@@ -18,7 +19,7 @@ inline double read_sigma_beta(Rcpp::Nullable<Rcpp::NumericVector> sigma_beta,
     if (sigma_beta.isNull()) return DEFAULT_SIGMA_BETA;
     Rcpp::NumericVector s(sigma_beta);
     if (s.size() != 1 || ISNAN(s[0]) || !(s[0] > 0.0)) {
-        Rcpp::stop("`%s` must be NULL or one positive number.", arg);
+        tulpa::stop("`%s` must be NULL or one positive number.", {arg});
     }
     return s[0];
 }

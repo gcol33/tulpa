@@ -7,6 +7,7 @@
 // so the existing R_init_tulpa hook picks it up at DLL load.
 
 #include "tgmrf_registry.h"
+#include "tulpa_stop.h"
 #include "shim_guard.h"
 
 #include <Rcpp.h>
@@ -105,11 +106,11 @@ Rcpp::List cpp_tgmrf_eval(std::string id, Rcpp::NumericVector theta) {
     const tulpa::tgmrf_backend::TgmrfSpec* spec =
         tulpa::tgmrf_backend::lookup_spec(id);
     if (spec == nullptr) {
-        Rcpp::stop("tgmrf_cpp: no spec registered under id '%s'.", id.c_str());
+        tulpa::stop("tgmrf_cpp: no spec registered under id '%s'.", {id.c_str()});
     }
     if (spec->Q_double == nullptr) {
-        Rcpp::stop("tgmrf_cpp: spec '%s' has no double-precision Q kernel.",
-                   id.c_str());
+        tulpa::stop("tgmrf_cpp: spec '%s' has no double-precision Q kernel.",
+                   {id.c_str()});
     }
 
     Eigen::Map<const Eigen::VectorXd> th(theta.begin(), theta.size());
@@ -121,8 +122,8 @@ Rcpp::List cpp_tgmrf_eval(std::string id, Rcpp::NumericVector theta) {
 
     int n = Q.rows();
     if (Q.cols() != n) {
-        Rcpp::stop("tgmrf_cpp: spec '%s' returned a non-square Q (%dx%d).",
-                   id.c_str(), n, (int)Q.cols());
+        tulpa::stop("tgmrf_cpp: spec '%s' returned a non-square Q (%dx%d).",
+                   {id.c_str(), n, (int)Q.cols()});
     }
 
     int nnz = Q.nonZeros();
@@ -160,7 +161,7 @@ SEXP cpp_tgmrf_eval_mu(std::string id, Rcpp::NumericVector theta) {
     const tulpa::tgmrf_backend::TgmrfSpec* spec =
         tulpa::tgmrf_backend::lookup_spec(id);
     if (spec == nullptr) {
-        Rcpp::stop("tgmrf_cpp: no spec registered under id '%s'.", id.c_str());
+        tulpa::stop("tgmrf_cpp: no spec registered under id '%s'.", {id.c_str()});
     }
     if (spec->mu_double == nullptr) {
         return R_NilValue;

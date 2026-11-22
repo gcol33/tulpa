@@ -7,6 +7,7 @@
 // in R.
 
 #include "re_cov_gibbs_sweep.h"
+#include "tulpa_stop.h"
 #include <RcppEigen.h>
 #include <memory>
 #include <vector>
@@ -44,8 +45,8 @@ SEXP cpp_glmm_oracle_make(std::string family, double phi,
         fam, phi, Xe, Ze, ix, n_groups, ye, nt);
     if (offset.size() > 0) {
         if (offset.size() != Xe.rows()) {
-            stop("cpp_glmm_oracle_make: `offset` has length %d, expected %d "
-                 "(nrow(X)).", (int)offset.size(), (int)Xe.rows());
+            tulpa::stop("cpp_glmm_oracle_make: `offset` has length %d, expected %d "
+                 "(nrow(X)).", {(int)offset.size(), (int)Xe.rows()});
         }
         Eigen::VectorXd off = as<Eigen::VectorXd>(offset);
         orc->set_offset(off.data());
@@ -60,9 +61,9 @@ static void check_block_dims(int m, const char* field,
                              R_xlen_t rows, R_xlen_t cols,
                              int want_rows, int want_cols) {
     if ((int)rows != want_rows || (int)cols != want_cols) {
-        stop("cpp_re_cov_gibbs_sweep: block %d field `%s` is %d x %d, "
-             "expected %d x %d.", m + 1, field, (int)rows, (int)cols,
-             want_rows, want_cols);
+        tulpa::stop("cpp_re_cov_gibbs_sweep: block %d field `%s` is %d x %d, "
+             "expected %d x %d.", {m + 1, field, (int)rows, (int)cols,
+             want_rows, want_cols});
     }
 }
 
@@ -82,7 +83,7 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
 
     const GLMMFamily fam = glmm_family_from_string(family);
     const int M = blocks.size();
-    if (M < 1) stop("cpp_re_cov_gibbs_sweep: `blocks` must hold at least one block.");
+    if (M < 1) tulpa::stop("cpp_re_cov_gibbs_sweep: `blocks` must hold at least one block.");
     Eigen::MatrixXd Xe = as<Eigen::MatrixXd>(X);
     Eigen::VectorXd ye = as<Eigen::VectorXd>(y);
     Eigen::VectorXd nt = as<Eigen::VectorXd>(n_trials);
@@ -105,12 +106,12 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
         const int ng = as<int>(bm["n_groups"]);
 
         if (nc < 1) {
-            stop("cpp_re_cov_gibbs_sweep: block %d has nc = %d; it must be >= 1.",
-                 m + 1, nc);
+            tulpa::stop("cpp_re_cov_gibbs_sweep: block %d has nc = %d; it must be >= 1.",
+                 {m + 1, nc});
         }
         if (ng < 1) {
-            stop("cpp_re_cov_gibbs_sweep: block %d has n_groups = %d; it must be >= 1.",
-                 m + 1, ng);
+            tulpa::stop("cpp_re_cov_gibbs_sweep: block %d has n_groups = %d; it must be >= 1.",
+                 {m + 1, ng});
         }
         check_block_dims(m, "Z", Z.rows(), Z.cols(), n, nc);
 
@@ -136,8 +137,8 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
             check_block_dims(m, "alias", al.size(), 1, nc, 1);
             for (int c = 0; c < nc; ++c) {
                 if (al[c] != NA_INTEGER && al[c] >= p) {
-                    stop("cpp_re_cov_gibbs_sweep: block %d alias[%d] = %d, but "
-                         "X has %d columns.", m + 1, c + 1, al[c], p);
+                    tulpa::stop("cpp_re_cov_gibbs_sweep: block %d alias[%d] = %d, but "
+                         "X has %d columns.", {m + 1, c + 1, al[c], p});
                 }
                 cb[m].alias[c] = (al[c] == NA_INTEGER || al[c] < 0) ? -1 : al[c];
             }
@@ -149,8 +150,8 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
         check_block_dims(m, "Sigma0", Sigma0[m].rows(), Sigma0[m].cols(), nc, nc);
         List lg = bm["Lg0"];
         if (lg.size() != ng) {
-            stop("cpp_re_cov_gibbs_sweep: block %d Lg0 has %d entries, expected "
-                 "n_groups = %d.", m + 1, (int)lg.size(), ng);
+            tulpa::stop("cpp_re_cov_gibbs_sweep: block %d Lg0 has %d entries, expected "
+                 "n_groups = %d.", {m + 1, (int)lg.size(), ng});
         }
         Lg0[m].resize(lg.size());
         for (int g = 0; g < lg.size(); ++g) {
@@ -169,18 +170,18 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
     Eigen::MatrixXd Lb  = as<Eigen::MatrixXd>(L_beta);
 
     if ((int)b0v.size() != p) {
-        stop("cpp_re_cov_gibbs_sweep: beta0 has length %d, expected ncol(X) = %d.",
-             (int)b0v.size(), p);
+        tulpa::stop("cpp_re_cov_gibbs_sweep: beta0 has length %d, expected ncol(X) = %d.",
+             {(int)b0v.size(), p});
     }
     if (Lb.rows() != p || Lb.cols() != p) {
-        stop("cpp_re_cov_gibbs_sweep: L_beta is %d x %d, expected %d x %d.",
-             (int)Lb.rows(), (int)Lb.cols(), p, p);
+        tulpa::stop("cpp_re_cov_gibbs_sweep: L_beta is %d x %d, expected %d x %d.",
+             {(int)Lb.rows(), (int)Lb.cols(), p, p});
     }
     if ((int)cfg.beta_prior_mean.size() != p ||
         (int)cfg.beta_prior_sd.size() != p) {
-        stop("cpp_re_cov_gibbs_sweep: beta_prior_mean (%d) and beta_prior_sd (%d) "
+        tulpa::stop("cpp_re_cov_gibbs_sweep: beta_prior_mean (%d) and beta_prior_sd (%d) "
              "must both have length ncol(X) = %d.",
-             (int)cfg.beta_prior_mean.size(), (int)cfg.beta_prior_sd.size(), p);
+             {(int)cfg.beta_prior_mean.size(), (int)cfg.beta_prior_sd.size(), p});
     }
 
     GibbsOutput out = run_glmm_gibbs(oracles, cb, b0, Lg0, Sigma0, b0v, Lb, cfg);

@@ -3,6 +3,7 @@
 // Implements the sampler of Polson, Scott & Windle (2013) JASA.
 
 #include "pg_rng.h"
+#include "tulpa_stop.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <algorithm>
@@ -249,7 +250,7 @@ NumericVector rpg1_vec(NumericVector z) {
 NumericVector rpg_vec(IntegerVector b, NumericVector z) {
   int n = b.size();
   if (z.size() != n) {
-    stop("b and z must have the same length");
+    tulpa::stop("b and z must have the same length");
   }
 
   NumericVector out(n);
@@ -281,7 +282,7 @@ Rcpp::NumericVector cpp_rpg(Rcpp::IntegerVector b, Rcpp::NumericVector z) {
 Rcpp::NumericVector cpp_rpg_real(Rcpp::NumericVector b, Rcpp::NumericVector z) {
   int n = b.size();
   if (z.size() != n) {
-    Rcpp::stop("b and z must have the same length");
+    tulpa::stop("b and z must have the same length");
   }
   Rcpp::NumericVector out(n);
   for (int i = 0; i < n; i++) {

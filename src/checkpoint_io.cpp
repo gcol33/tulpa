@@ -1,6 +1,7 @@
 // checkpoint_io.cpp -- the payload-independent file layer of CheckpointLog.
 
 #include "checkpoint_io.h"
+#include "tulpa_stop.h"
 
 #include <cerrno>
 #ifdef _WIN32
@@ -48,25 +49,25 @@ std::vector<CheckpointFile::Record> CheckpointFile::read(
     header_bytes = 8 + sizeof(std::uint64_t);
     if (!exists) return records;
     if (!ok) {
-        Rcpp::stop("checkpoint: cannot read '%s' (%s).", path.c_str(),
-                   errno_message());
+        tulpa::stop("checkpoint: cannot read '%s' (%s).", {path.c_str(),
+                   errno_message()});
     }
 
     CkptReader rd(data.data(), data.size());
     if (data.size() < 8 || std::memcmp(data.data(), magic, 8) != 0) {
-        Rcpp::stop("checkpoint: '%s' is not a tulpa checkpoint file "
+        tulpa::stop("checkpoint: '%s' is not a tulpa checkpoint file "
                    "(bad magic). Point `checkpoint$path` at a fresh "
-                   "location or remove the file.", path.c_str());
+                   "location or remove the file.", {path.c_str()});
     }
     rd.p += 8;
     const std::uint64_t stored_fp = rd.get<std::uint64_t>();
-    if (!rd.ok) Rcpp::stop("checkpoint: '%s' header is truncated.", path.c_str());
+    if (!rd.ok) tulpa::stop("checkpoint: '%s' header is truncated.", {path.c_str()});
     if (stored_fp != fingerprint) {
-        Rcpp::stop("checkpoint: '%s' was written for different data or "
+        tulpa::stop("checkpoint: '%s' was written for different data or "
                    "solver settings (fingerprint mismatch). Resume needs "
                    "the same inputs + grid + control; use a fresh path "
                    "or set checkpoint$resume = FALSE to start over.",
-                   path.c_str());
+                   {path.c_str()});
     }
 
     while (rd.p < rd.end) {
@@ -100,8 +101,8 @@ void CheckpointFile::create(const std::string& path, const char* magic,
     if (!f_ || std::fwrite(magic, 1, 8, f_) != 8 ||
         std::fwrite(&fingerprint, sizeof(fingerprint), 1, f_) != 1 ||
         std::fflush(f_) != 0) {
-        Rcpp::stop("checkpoint: cannot open '%s' for writing (%s).",
-                   path.c_str(), errno_message());
+        tulpa::stop("checkpoint: cannot open '%s' for writing (%s).",
+                   {path.c_str(), errno_message()});
     }
 }
 
@@ -109,22 +110,22 @@ void CheckpointFile::reopen(const std::string& path, std::uint64_t keep_bytes) {
     path_ = path;
     f_ = std::fopen(path.c_str(), "r+b");
     if (!f_) {
-        Rcpp::stop("checkpoint: cannot open '%s' for writing (%s).",
-                   path.c_str(), errno_message());
+        tulpa::stop("checkpoint: cannot open '%s' for writing (%s).",
+                   {path.c_str(), errno_message()});
     }
     // A failed truncation would leave every record this run appends behind the
     // orphaned bytes, written but invisible to the next load.
     if (!truncate_file(f_, keep_bytes)) {
-        Rcpp::stop("checkpoint: cannot truncate the torn tail of '%s' "
+        tulpa::stop("checkpoint: cannot truncate the torn tail of '%s' "
                    "to %s bytes (%s). Every record appended after an "
                    "untruncated tail is invisible to the next resume; "
                    "remove the file or point `checkpoint$path` elsewhere.",
-                   path.c_str(), std::to_string(keep_bytes).c_str(),
-                   errno_message());
+                   {path.c_str(), std::to_string(keep_bytes).c_str(),
+                   errno_message()});
     }
     if (std::fseek(f_, 0, SEEK_END) != 0) {
-        Rcpp::stop("checkpoint: cannot seek in '%s' (%s).", path.c_str(),
-                   errno_message());
+        tulpa::stop("checkpoint: cannot seek in '%s' (%s).", {path.c_str(),
+                   errno_message()});
     }
 }
 

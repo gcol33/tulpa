@@ -48,8 +48,10 @@ unity_core.o: \
   tgmrf_nuts.cpp \
   tgmrf_registry.cpp \
   tulpa_init.cpp \
+  tulpa_stop.cpp \
   array_utils.h \
   checkpoint_io.h \
+  tulpa_stop.h \
   sparse_cholesky.h \
   cornish_fisher.h \
   crt_rng.h \
@@ -178,6 +180,7 @@ unity_exports.o: \
   tulpa_shims_laplace_spec.h \
   laplace_likelihoods.h \
   laplace_types.h \
+  tulpa_stop.h \
   rwmh.h \
   tulpa_priors_re.h \
   re_cov_gibbs_sweep.h \
@@ -257,6 +260,7 @@ unity_glmm.o: \
   tulpa_sample_glmm.cpp \
   varying_coef_draws.cpp \
   aghq_re_core.h \
+  tulpa_stop.h \
   aghq_re_oracles.h \
   aghq_re_profile.h \
   glmm_oracle.h \
@@ -418,6 +422,7 @@ unity_hmc.o: \
   hmc_sampler.h \
   ess_sampler.h \
   log_post_impl.h \
+  tulpa_stop.h \
   hmc_field_coordinates.h \
   hmc_gp.h \
   nngp_cond.h \
@@ -536,6 +541,7 @@ unity_laplace.o: \
   sparse_cholesky.cpp \
   stochastic_logdet.cpp \
   implicit_diff.h \
+  tulpa_stop.h \
   spde_logdet.h \
   spde_qbuilder.h \
   sparse_hessian.h \
@@ -693,6 +699,7 @@ unity_nl.o: \
   spde_block_factory.cpp \
   spde_qbuilder.cpp \
   tgmrf_block_factory.cpp \
+  tulpa_stop.h \
   areal_input_check.h \
   block_projector.h \
   gpu_nngp_laplace.h \
@@ -792,6 +799,7 @@ unity_nl_joint.o: \
   nested_laplace_joint_batch.cpp \
   nested_laplace_joint_multi.cpp \
   cell_coupling_registry.h \
+  tulpa_stop.h \
   cell_curvature3.h \
   cell_coupling_separable.h \
   shim_guard.h \
@@ -907,6 +915,7 @@ unity_pg.o: \
   linalg_fast.h \
   fixed_effect_prior.h \
   bym2_mixing.h \
+  tulpa_stop.h \
   laplace_spatial_priors.h \
   hmc_temporal.h \
   pg_negbin.h \
@@ -940,6 +949,7 @@ unity_samplers.o: \
   test_ratio_temporal.cpp \
   test_ratio_vi.cpp \
   test_temporal_gp_prior.cpp \
+  tulpa_stop.h \
   hmc_chain_stack.h \
   omp_threads.h \
   sampler_model_data.h \
@@ -1061,6 +1071,7 @@ unity_spatial.o: \
   svc_nc_apply.cpp \
   tulpa_spde_layout_probe.cpp \
   tulpa_spde_sampler.cpp \
+  tulpa_stop.h \
   brasil.h \
   gp_nc_apply.h \
   hmc_gp.h \

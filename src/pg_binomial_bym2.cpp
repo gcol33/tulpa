@@ -2,6 +2,7 @@
 // BYM2 spatial Gibbs sampler for Pólya-Gamma binomial models
 
 #include "bym2_mixing.h"
+#include "tulpa_stop.h"
 #include "laplace_spatial_priors.h"   // read_node_prec / node_prec_ptr
 #include "pg_shared.h"
 #include "pg_spatial.h"
@@ -54,7 +55,7 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
         tulpa::read_sigma_beta(prior_beta_sd, "prior_beta_sd");
   tulpa::pg_check_pc_prior(prior_sigma_spatial_U, prior_sigma_spatial_alpha, "spatial");
   if (!(prior_rho_alpha > 0.0 && prior_rho_beta > 0.0))
-    Rcpp::stop("BYM2 Beta prior parameters must be positive.");
+    tulpa::stop("BYM2 Beta prior parameters must be positive.");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
                          prior_sigma_re_scale, n_threads, store_eta);

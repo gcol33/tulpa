@@ -11,6 +11,7 @@
 // finished CSC.
 
 #include "hessian_pattern_guard.h"  // HessianPatternGuard
+#include "tulpa_stop.h"
 #include "laplace_spec_fit.h"       // unwrap_skew_idx
 #include "nested_laplace_grid.h"    // nl_grid_cell_to_result_list, checkpointing
 #include "latent_block.h"
@@ -92,8 +93,8 @@ Rcpp::List cpp_laplace_fit_spde(
     int n_x = p + n_re_groups + n_mesh;
     int mesh_start = p + n_re_groups;
     if (n_re_groups > 0 && (int)re_idx.size() != N)
-        Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d).",
-                   (int)re_idx.size(), N);
+        tulpa::stop("length(re_idx) (%d) must equal n_obs (%d).",
+                   {(int)re_idx.size(), N});
 
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull()) {
@@ -184,7 +185,7 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     int n_x = p + n_re_groups + n_mesh;
     int mesh_start = p + n_re_groups;
     if (n_re_groups > 0 && (int)re_idx.size() != N)
-        Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d).", (int)re_idx.size(), N);
+        tulpa::stop("length(re_idx) (%d) must equal n_obs (%d).", {(int)re_idx.size(), N});
 
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull())
@@ -270,9 +271,9 @@ Rcpp::List cpp_nested_laplace_spde(
     int n_grid = range_grid.size();
 
     if (sigma_grid.size() != n_grid)
-        Rcpp::stop("range_grid and sigma_grid must have the same length");
+        tulpa::stop("range_grid and sigma_grid must have the same length");
     if (re_idx.size() != N)
-        Rcpp::stop("length(re_idx) must equal n_obs");
+        tulpa::stop("length(re_idx) must equal n_obs");
     tulpa::spde_validate_operators(n_mesh, N, C0_diag, G1_x, G1_i, G1_p,
                                    A_x, A_i, A_p);
 
@@ -303,8 +304,8 @@ Rcpp::List cpp_nested_laplace_spde(
         if (offset_nullable.isNotNull()) {
             Rcpp::NumericVector off(offset_nullable);
             if ((int)off.size() != N)
-                Rcpp::stop("length(offset) (%d) must equal n_obs (%d).",
-                           (int)off.size(), N);
+                tulpa::stop("length(offset) (%d) must equal n_obs (%d).",
+                           {(int)off.size(), N});
             pa.offset = off;
         }
     }

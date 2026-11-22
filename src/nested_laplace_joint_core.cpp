@@ -2,6 +2,7 @@
 // Definition of make_single_arm, declared in nested_laplace_joint_core.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "nested_laplace_joint_core.h"
 
 namespace tulpa {
@@ -19,24 +20,24 @@ void make_single_arm(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable,
     Rcpp::Nullable<Rcpp::NumericVector> weights_nullable) {
     if ((int)X.nrow() != N) {
-        Rcpp::stop("nrow(X) (%d) must equal n_obs (%d).", (int)X.nrow(), N);
+        tulpa::stop("nrow(X) (%d) must equal n_obs (%d).", {(int)X.nrow(), N});
     }
     if ((int)y.size() != N) {
-        Rcpp::stop("length(y) (%d) must equal n_obs (%d).", (int)y.size(), N);
+        tulpa::stop("length(y) (%d) must equal n_obs (%d).", {(int)y.size(), N});
     }
     if ((int)n_trials.size() != N) {
-        Rcpp::stop("length(n_trials) (%d) must equal n_obs (%d).",
-                   (int)n_trials.size(), N);
+        tulpa::stop("length(n_trials) (%d) must equal n_obs (%d).",
+                   {(int)n_trials.size(), N});
     }
     // The list-parsing path checks both of these per arm; a kernel that builds
     // its single arm here indexes them exactly the same way.
     if ((int)re_idx.size() != N) {
-        Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d).",
-                   (int)re_idx.size(), N);
+        tulpa::stop("length(re_idx) (%d) must equal n_obs (%d).",
+                   {(int)re_idx.size(), N});
     }
     if ((int)spatial_idx.size() != N) {
-        Rcpp::stop("length(spatial_idx) (%d) must equal n_obs (%d).",
-                   (int)spatial_idx.size(), N);
+        tulpa::stop("length(spatial_idx) (%d) must equal n_obs (%d).",
+                   {(int)spatial_idx.size(), N});
     }
 
     parsed.resize(1);
@@ -55,8 +56,8 @@ void make_single_arm(
     if (offset_nullable.isNotNull()) {
         Rcpp::NumericVector off(offset_nullable);
         if ((int)off.size() != N) {
-            Rcpp::stop("length(offset) (%d) must equal n_obs (%d).",
-                       (int)off.size(), N);
+            tulpa::stop("length(offset) (%d) must equal n_obs (%d).",
+                       {(int)off.size(), N});
         }
         pa.offset = off;
     }
@@ -71,8 +72,8 @@ void make_single_arm(
     if (weights_nullable.isNotNull()) {
         Rcpp::NumericVector w(weights_nullable);
         if ((int)w.size() != N) {
-            Rcpp::stop("length(weights) (%d) must equal n_obs (%d).",
-                       (int)w.size(), N);
+            tulpa::stop("length(weights) (%d) must equal n_obs (%d).",
+                       {(int)w.size(), N});
         }
         a.weights = w;
     }

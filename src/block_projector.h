@@ -13,6 +13,7 @@
 #define TULPA_BLOCK_PROJECTOR_H
 
 #include "latent_block.h"
+#include "tulpa_stop.h"
 #include "spde_qbuilder.h"   // ARows, build_A_rows, spde_validate_projector
 #include <Rcpp.h>
 #include <cmath>
@@ -82,9 +83,9 @@ inline std::shared_ptr<std::vector<ARows>> read_block_projector(
     if (!bs.containsElementNamed("projector") || Rf_isNull(bs["projector"]))
         return nullptr;
     if (bs.containsElementNamed("svc_weight") && !Rf_isNull(bs["svc_weight"])) {
-        Rcpp::stop("Block %d (type '%s'): `projector` and `svc_weight` cannot "
+        tulpa::stop("Block %d (type '%s'): `projector` and `svc_weight` cannot "
                    "be combined; scale the projector's rows by the weight.",
-                   block_index + 1, type.c_str());
+                   {block_index + 1, type.c_str()});
     }
     Rcpp::List pr = bs["projector"];
     return build_projector_rows_per_arm(

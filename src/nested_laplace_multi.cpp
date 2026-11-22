@@ -33,6 +33,7 @@
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
 
 #include "areal_input_check.h"     // check_latent_obs_index
+#include "tulpa_stop.h"
 #include "block_projector.h"       // projected fields (RSR, RTR)
 #include "car_proper_block.h"      // set_car_proper_block_priors
 #include "constrained_structure_block.h"  // st_interaction
@@ -77,10 +78,10 @@ std::shared_ptr<std::vector<tulpa::ARows>> read_single_arm_projector(
         bs, Rcpp::IntegerVector::create(n_obs), size, block_index, type);
     if (rows && bs.containsElementNamed(idx_field) &&
         !Rf_isNull(bs[idx_field])) {
-        Rcpp::stop("Block %d (type '%s'): pass either `projector` or "
+        tulpa::stop("Block %d (type '%s'): pass either `projector` or "
                    "`%s`, not both; a projector already maps the "
-                   "observations to the units.", block_index + 1, type.c_str(),
-                   idx_field);
+                   "observations to the units.", {block_index + 1, type.c_str(),
+                   idx_field});
     }
     return rows;
 }
@@ -155,8 +156,8 @@ int build_blocks_of_type(
 
     auto require_axes = [&](int needed) {
         if (axis_count != needed) {
-            Rcpp::stop("Block type '%s' expects %d axes, got %d",
-                       type.c_str(), needed, axis_count);
+            tulpa::stop("Block type '%s' expects %d axes, got %d",
+                       {type.c_str(), needed, axis_count});
         }
     };
 
@@ -528,7 +529,7 @@ int build_blocks_of_type(
         return start + size;
     }
 
-    Rcpp::stop("Unknown block type '%s' in cpp_nested_laplace_multi", type.c_str());
+    tulpa::stop("Unknown block type '%s' in cpp_nested_laplace_multi", {type.c_str()});
     return latent_offset;
 }
 
@@ -564,10 +565,10 @@ int build_blocks_from_spec(
     }
     Rcpp::NumericVector w = bs["svc_weight"];
     if (w.size() != N) {
-        Rcpp::stop("Block type '%s': svc_weight has length %d, expected %d "
+        tulpa::stop("Block type '%s': svc_weight has length %d, expected %d "
                    "(one weight per observation).",
-                   Rcpp::as<std::string>(bs["type"]).c_str(),
-                   static_cast<int>(w.size()), N);
+                   {Rcpp::as<std::string>(bs["type"]).c_str(),
+                   static_cast<int>(w.size()), N});
     }
     auto svc_w = std::make_shared<std::vector<double>>(w.begin(), w.end());
     for (std::size_t b = first; b < blocks.size(); b++) {
@@ -610,13 +611,13 @@ Rcpp::List cpp_nested_laplace_multi(
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
-        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
-                   axis_offsets.size(), B);
+        tulpa::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   {axis_offsets.size(), B});
     }
     int total_axes = axis_offsets[B];
     if (theta_grid.ncol() != total_axes) {
-        Rcpp::stop("theta_grid must have %d columns (sum of axes), got %d",
-                   total_axes, theta_grid.ncol());
+        tulpa::stop("theta_grid must have %d columns (sum of axes), got %d",
+                   {total_axes, theta_grid.ncol()});
     }
 
     int N = y.size();
@@ -676,7 +677,7 @@ Rcpp::List cpp_nested_laplace_multi(
     if (!Rf_isNull(likelihood)) {
         Rcpp::XPtr<tulpa::NestedLikelihood> lk(likelihood);
         if (lk->spec == nullptr) {
-            Rcpp::stop("cpp_nested_laplace_multi: `likelihood` has a null spec.");
+            tulpa::stop("cpp_nested_laplace_multi: `likelihood` has a null spec.");
         }
         ext_spec     = lk->spec;
         ext_response = lk->response_data;

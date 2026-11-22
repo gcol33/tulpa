@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "hmc_field_coordinates.h"
 #include "hmc_gp.h"
 #include "log_post_impl.h"
@@ -44,7 +45,7 @@ static PriorRoot areal_root(const ModelData& data, bool bym2) {
         basis[i] = basis[j] = 0.0;
     }
     Eigen::LLT<Eigen::MatrixXd> factor(Q);
-    if (factor.info() != Eigen::Success) Rcpp::stop("Augmented areal precision must be positive definite");
+    if (factor.info() != Eigen::Success) tulpa::stop("Augmented areal precision must be positive definite");
     const Eigen::MatrixXd L = factor.matrixL();
     PriorRoot out;
     out.root = factor.matrixU().solve(Eigen::MatrixXd::Identity(n, n));
@@ -260,9 +261,9 @@ struct LikelihoodWorkingReference {
         if (fit_fixed && spec.working_eta.empty()) fit_fixed_effects();
         if (!spec.working_eta.empty()) {
             if (spec.working_eta.size() != static_cast<size_t>(model.n_processes))
-                Rcpp::stop("The likelihood working point must have one eta per process");
+                tulpa::stop("The likelihood working point must have one eta per process");
             for (double value : spec.working_eta)
-                if (!std::isfinite(value)) Rcpp::stop("The likelihood working point must be finite");
+                if (!std::isfinite(value)) tulpa::stop("The likelihood working point must be finite");
         }
         tulpa::initialize_generic_state(reference, model, layout, state);
         tulpa::precompute_generic_fixed_eta(model, state);
@@ -341,12 +342,12 @@ struct LikelihoodWorkingReference {
                 const double coupling = -(evaluate(h, k, h) - evaluate(h, k, -h) -
                     evaluate(-h, k, h) + evaluate(-h, k, -h)) / (4 * h * h);
                 if (!spec.working_eta.empty()) r += coupling * (anchor[k] - base[k]);
-                if (!std::isfinite(coupling)) Rcpp::stop("Gaussian field coordinates require finite reference likelihood curvature");
+                if (!std::isfinite(coupling)) tulpa::stop("Gaussian field coordinates require finite reference likelihood curvature");
                 for (int j = 0; j < layout.process_beta_count[k]; ++j)
                     row_cross[column++] = coupling * model.processes[k].X_flat[i * layout.process_beta_count[k] + j];
             }
             for (size_t j = 0; j < beta.size(); ++j) r += row_cross[j] * reference[beta[j]];
-            if (!std::isfinite(r) || !std::isfinite(w)) Rcpp::stop("Gaussian field coordinates require finite reference likelihood curvature");
+            if (!std::isfinite(r) || !std::isfinite(w)) tulpa::stop("Gaussian field coordinates require finite reference likelihood curvature");
             return {r, w, std::move(row_cross)};
     }
 };
@@ -603,12 +604,12 @@ struct SpatialMarginal {
         const auto& spec = *static_cast<const tulpa::LikelihoodSpec*>(model.likelihood_spec);
         if (!spec.ll_double || !spec.ll_arena || !spec.eta_weights_fn || !spec.eta_weights_arena_fn ||
             (spec.extra_prior && !spec.extra_prior_arena))
-            Rcpp::stop("Collapsed spatial inference requires double and arena likelihood weights and priors");
+            tulpa::stop("Collapsed spatial inference requires double and arena likelihood weights and priors");
         data.icar_collapsed = data.bym2_collapsed = data.gp_collapsed = false;
         if (outer.is_gp) data.gp_parameterization = 1;
         layout = compute_param_layout(data);
         begin = layout.is_gp ? layout.gp_w_start : layout.spatial_start;
-        if (layout.total_params != outer_size + d) Rcpp::stop("Collapsed spatial layout must remove exactly its Gaussian field");
+        if (layout.total_params != outer_size + d) tulpa::stop("Collapsed spatial layout must remove exactly its Gaussian field");
         if (!layout.is_gp) areal = areal_root(data, layout.is_bym2);
         mode.assign(d, 0.0);
     }
@@ -832,7 +833,7 @@ tulpa::SamplingTarget spatial_sampling_target(const ModelData& data, const Param
 
 void require_gaussian_spatial_marginal(const ModelData& data, const ParamLayout& layout) {
     if (spatial_sampling_target(data, layout) == tulpa::SamplingTarget::LAPLACE_SPATIAL_MARGINAL)
-        Rcpp::stop("Non-Gaussian collapsed spatial inference targets an uncorrected Laplace marginal (Tier 2) and is unavailable. Use full-field NUTS with parameterization = 'auto' (or 'standard' for ICAR/BYM2, 'noncentered' for GP). Custom Gaussian likelihoods must declare gaussian_spatial_marginal and supply exact likelihood weights.");
+        tulpa::stop("Non-Gaussian collapsed spatial inference targets an uncorrected Laplace marginal (Tier 2) and is unavailable. Use full-field NUTS with parameterization = 'auto' (or 'standard' for ICAR/BYM2, 'noncentered' for GP). Custom Gaussian likelihoods must declare gaussian_spatial_marginal and supply exact likelihood weights.");
 }
 
 double compute_collapsed_spatial(const std::vector<double>& params, const ModelData& data,
@@ -883,7 +884,7 @@ void reconstruct_spatial_point(const std::vector<double>& position, const ModelD
     const ParamLayout& layout, std::mt19937& rng, bool draw,
     double* structured, double* unstructured) {
     auto& marginal = spatial_coordinates::marginal(data, layout);
-    if (!marginal.solve(position)) Rcpp::stop("Collapsed field reconstruction requires a converged conditional mode");
+    if (!marginal.solve(position)) tulpa::stop("Collapsed field reconstruction requires a converged conditional mode");
     const auto prepared = marginal.prepare(position);
     auto u = marginal.mode;
     std::normal_distribution<double> normal;

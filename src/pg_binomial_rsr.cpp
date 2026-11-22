@@ -4,6 +4,7 @@
 // to the covariates.
 
 #include "pg_shared.h"
+#include "tulpa_stop.h"
 #include "pg_spatial.h"
 #include "pg_rng.h"
 #include "linalg_fast.h"
@@ -70,8 +71,8 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
   const int p = C.p;
 
   if (rsr_n != n_spatial_units) {
-    Rcpp::stop("`rsr_n` is %d but `n_spatial_units` is %d.",
-               rsr_n, n_spatial_units);
+    tulpa::stop("`rsr_n` is %d but `n_spatial_units` is %d.",
+               {rsr_n, n_spatial_units});
   }
   const int J = n_spatial_units;
   tulpa::pg_check_index(spatial_group, N, J, "spatial_group");

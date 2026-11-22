@@ -6,6 +6,7 @@
 // Reference: Zhou et al. (2012) "Lognormal and Gamma Mixed Negative Binomial Regression"
 
 #include "pg_negbin.h"
+#include "tulpa_stop.h"
 #include "pg_shared.h"
 #include "pg_spatial.h"  // update_spatial_icar / update_tau_icar
 #include "pg_rng.h"
@@ -297,12 +298,12 @@ List pg_negbin_gibbs(
 ) {
   int N = y.size();
   int p = X.ncol();
-  if (N < 1) Rcpp::stop("`y` is empty.");
+  if (N < 1) tulpa::stop("`y` is empty.");
   if (X.nrow() != N) {
-    Rcpp::stop("`X` has %d row(s) but `y` has length %d.",
-               static_cast<int>(X.nrow()), N);
+    tulpa::stop("`X` has %d row(s) but `y` has length %d.",
+               {static_cast<int>(X.nrow()), N});
   }
-  if (n_groups < 0) Rcpp::stop("`n_groups` must be >= 0; got %d.", n_groups);
+  if (n_groups < 0) tulpa::stop("`n_groups` must be >= 0; got %d.", {n_groups});
   if (n_groups > 0) pg_check_index(group, N, n_groups, "group");
   // The random-effect level move, the moment initializer and the compensating
   // (r, beta_0) move all write beta[0] as the intercept.
@@ -565,13 +566,13 @@ List pg_negbin_gibbs_spatial(
 ) {
   int N = y.size();
   int p = X.ncol();
-  if (N < 1) Rcpp::stop("`y` is empty.");
+  if (N < 1) tulpa::stop("`y` is empty.");
   if (X.nrow() != N) {
-    Rcpp::stop("`X` has %d row(s) but `y` has length %d.",
-               static_cast<int>(X.nrow()), N);
+    tulpa::stop("`X` has %d row(s) but `y` has length %d.",
+               {static_cast<int>(X.nrow()), N});
   }
   if (n_re_groups < 0) {
-    Rcpp::stop("`n_re_groups` must be >= 0; got %d.", n_re_groups);
+    tulpa::stop("`n_re_groups` must be >= 0; got %d.", {n_re_groups});
   }
   if (n_re_groups > 0) pg_check_index(re_group, N, n_re_groups, "re_group");
   pg_check_index(spatial_group, N, n_spatial_units, "spatial_group");

@@ -15,6 +15,7 @@
 #define TULPA_SAMPLER_LOG_PROB_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 
 #include <atomic>
 #include <cstddef>
@@ -37,8 +38,8 @@ inline Rcpp::NumericVector sampler_log_prob_rows(const Rcpp::NumericMatrix& draw
     const int n = draws.nrow();
     const int D = layout.total_params;
     if (n > 0 && draws.ncol() != D) {
-        Rcpp::stop("sampler_log_prob_rows: draws have %d columns but the layout "
-                   "has %d parameters.", (int)draws.ncol(), D);
+        tulpa::stop("sampler_log_prob_rows: draws have %d columns but the layout "
+                   "has %d parameters.", {(int)draws.ncol(), D});
     }
     std::vector<double> out(static_cast<std::size_t>(n), NA_REAL);
     if (n == 0) return Rcpp::wrap(out);
@@ -62,8 +63,8 @@ inline Rcpp::NumericVector sampler_log_prob_rows(const Rcpp::NumericMatrix& draw
     };
     tulpa_parallel_for(tulpa_omp_team_size(n), n, body);
     if (failed.load()) {
-        Rcpp::stop("per-draw log posterior failed: %s",
-                   err.empty() ? "unknown error" : err.c_str());
+        tulpa::stop("per-draw log posterior failed: %s",
+                   {err.empty() ? "unknown error" : err.c_str()});
     }
     return Rcpp::wrap(out);
 }

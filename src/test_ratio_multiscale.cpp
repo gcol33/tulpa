@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "hmc_multiscale_temporal_grad.h"
 
 namespace {
@@ -17,7 +18,7 @@ T multiscale_prior_value(const std::string& structure, const std::vector<T>& p) 
         value = tulpa_temporal::ar1_log_lik(phi, sigma2, rho);
     else if (structure == "iid")
         value = tulpa_temporal::iid_log_lik(phi, sigma2);
-    else Rcpp::stop("Unknown multiscale structure");
+    else tulpa::stop("Unknown multiscale structure");
     return value + tulpa_temporal::log_prior_sigma2_temporal_pc(sigma2, 1, .01) + p[n];
 }
 }

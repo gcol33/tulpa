@@ -23,6 +23,7 @@
 // are fixed; Q is built once and cached on ModelData::spde_data.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include "fixed_effect_prior.h"
 #include <vector>
 #include <cmath>
@@ -231,9 +232,9 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         tulpa::read_sigma_beta(sigma_beta);
     const int N = y_r.size();
     const int p = X_r.ncol();
-    if (N != n_obs) Rcpp::stop("length(y) must equal n_obs");
-    if (N == 0 || p == 0) Rcpp::stop("y and X must be non-empty");
-    if (n_mesh <= 0) Rcpp::stop("n_mesh must be positive");
+    if (N != n_obs) tulpa::stop("length(y) must equal n_obs");
+    if (N == 0 || p == 0) tulpa::stop("y and X must be non-empty");
+    if (n_mesh <= 0) tulpa::stop("n_mesh must be positive");
 
     SpdeFamily fam;
     if      (family == "gaussian")       fam = SpdeFamily::GAUSSIAN;
@@ -242,39 +243,39 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     else if (family == "gamma")          fam = SpdeFamily::GAMMA;
     else if (family == "neg_binomial_2") fam = SpdeFamily::NEGBIN;
     else if (family == "beta")           fam = SpdeFamily::BETA;
-    else Rcpp::stop("Unsupported family for tulpa_nuts_spde: '%s'. "
+    else tulpa::stop("Unsupported family for tulpa_nuts_spde: '%s'. "
                     "Supported: gaussian, poisson, binomial, gamma, "
-                    "neg_binomial_2, beta.", family.c_str());
+                    "neg_binomial_2, beta.", {family.c_str()});
 
     // Family-specific input validation.
     if (fam == SpdeFamily::POISSON || fam == SpdeFamily::NEGBIN) {
         for (int i = 0; i < N; i++) {
             if (!R_finite(y_r[i]) || y_r[i] < 0.0 ||
                 std::abs(y_r[i] - std::round(y_r[i])) > 1e-9) {
-                Rcpp::stop("%s family requires non-negative integer y",
-                           family.c_str());
+                tulpa::stop("%s family requires non-negative integer y",
+                           {family.c_str()});
             }
         }
     } else if (fam == SpdeFamily::BINOMIAL) {
         if (n_trials_r.size() != N) {
-            Rcpp::stop("binomial family requires n_trials of length n_obs");
+            tulpa::stop("binomial family requires n_trials of length n_obs");
         }
         for (int i = 0; i < N; i++) {
             if (!R_finite(y_r[i]) || y_r[i] < 0.0 || y_r[i] > n_trials_r[i] ||
                 std::abs(y_r[i] - std::round(y_r[i])) > 1e-9) {
-                Rcpp::stop("binomial family requires y in [0, n_trials]");
+                tulpa::stop("binomial family requires y in [0, n_trials]");
             }
         }
     } else if (fam == SpdeFamily::GAMMA) {
         for (int i = 0; i < N; i++) {
             if (!R_finite(y_r[i]) || y_r[i] <= 0.0) {
-                Rcpp::stop("gamma family requires strictly positive y");
+                tulpa::stop("gamma family requires strictly positive y");
             }
         }
     } else if (fam == SpdeFamily::BETA) {
         for (int i = 0; i < N; i++) {
             if (!R_finite(y_r[i]) || y_r[i] <= 0.0 || y_r[i] >= 1.0) {
-                Rcpp::stop("beta family requires y strictly in (0, 1)");
+                tulpa::stop("beta family requires y strictly in (0, 1)");
             }
         }
     }
@@ -317,7 +318,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         rat_poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
         rat_weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
         if (rat_poles.size() != rat_weights.size() || rat_poles.empty()) {
-            Rcpp::stop("rational_poles / rational_weights must be non-empty "
+            tulpa::stop("rational_poles / rational_weights must be non-empty "
                        "and of equal length.");
         }
     }
@@ -331,7 +332,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     const bool use_precomp_Q = Q_precomp_x.isNotNull() &&
                                Q_precomp_i.isNotNull() && Q_precomp_p.isNotNull();
     if (use_precomp_Q && joint_hypers) {
-        Rcpp::stop("Precomputed Q is a fixed-hyper path; joint_hypers must be "
+        tulpa::stop("Precomputed Q is a fixed-hyper path; joint_hypers must be "
                    "FALSE (the rational roots are not differentiable in kappa).");
     }
     if (!joint_hypers && !use_precomp_Q) {
@@ -478,7 +479,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     init[layout.extra_offset] = log_phi_init;
     if (joint_hypers) {
         if (layout.log_kappa_spde_idx < 0 || layout.log_tau_spde_idx < 0) {
-            Rcpp::stop("Internal error: joint_hypers=true but param layout "
+            tulpa::stop("Internal error: joint_hypers=true but param layout "
                        "did not reserve log_kappa / log_tau slots. This is a "
                        "bug in compute_param_layout.");
         }

@@ -2,6 +2,7 @@
 // Definitions of the NNGP prior scatter declared in gpu_nngp_laplace.h.
 
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "gpu_nngp_laplace.h"
 
 namespace tulpa {
@@ -24,39 +25,39 @@ void batch_nngp_scatter(
     // value is silent heap corruption rather than an error. Check the whole
     // contract once here, so the loops can index without re-deriving it.
     if (n_spatial < 0 || nn < 0) {
-        Rcpp::stop("batch_nngp_scatter: n_spatial (%d) and nn (%d) must be "
-                   "non-negative.", n_spatial, nn);
+        tulpa::stop("batch_nngp_scatter: n_spatial (%d) and nn (%d) must be "
+                   "non-negative.", {n_spatial, nn});
     }
     if (!(sigma2 > 0.0) || !(phi_gp > 0.0)) {
-        Rcpp::stop("batch_nngp_scatter: sigma2 (%g) and phi_gp (%g) must both "
-                   "be positive.", sigma2, phi_gp);
+        tulpa::stop("batch_nngp_scatter: sigma2 (%g) and phi_gp (%g) must both "
+                   "be positive.", {sigma2, phi_gp});
     }
     if (nn_order.size() != n_spatial) {
-        Rcpp::stop("batch_nngp_scatter: length(nn_order) (%d) must equal "
+        tulpa::stop("batch_nngp_scatter: length(nn_order) (%d) must equal "
                    "n_spatial (%d).",
-                   static_cast<int>(nn_order.size()), n_spatial);
+                   {static_cast<int>(nn_order.size()), n_spatial});
     }
     for (int i = 0; i < n_spatial; i++) {
         const int o = nn_order[i];
         if (o < 0 || o >= n_spatial) {
-            Rcpp::stop("batch_nngp_scatter: nn_order[%d] is %d; must be a "
-                       "0-based location index in [0, %d).", i + 1, o, n_spatial);
+            tulpa::stop("batch_nngp_scatter: nn_order[%d] is %d; must be a "
+                       "0-based location index in [0, %d).", {i + 1, o, n_spatial});
         }
     }
     if (nn_idx.nrow() != n_spatial || nn_idx.ncol() != nn) {
-        Rcpp::stop("batch_nngp_scatter: nn_idx is %d x %d; must be %d x %d.",
-                   static_cast<int>(nn_idx.nrow()),
-                   static_cast<int>(nn_idx.ncol()), n_spatial, nn);
+        tulpa::stop("batch_nngp_scatter: nn_idx is %d x %d; must be %d x %d.",
+                   {static_cast<int>(nn_idx.nrow()),
+                   static_cast<int>(nn_idx.ncol()), n_spatial, nn});
     }
     if (nn_dist.nrow() != n_spatial || nn_dist.ncol() != nn) {
-        Rcpp::stop("batch_nngp_scatter: nn_dist is %d x %d; must be %d x %d.",
-                   static_cast<int>(nn_dist.nrow()),
-                   static_cast<int>(nn_dist.ncol()), n_spatial, nn);
+        tulpa::stop("batch_nngp_scatter: nn_dist is %d x %d; must be %d x %d.",
+                   {static_cast<int>(nn_dist.nrow()),
+                   static_cast<int>(nn_dist.ncol()), n_spatial, nn});
     }
     if (coords.nrow() < n_spatial) {
-        Rcpp::stop("batch_nngp_scatter: nrow(coords) (%d) must be at least "
+        tulpa::stop("batch_nngp_scatter: nrow(coords) (%d) must be at least "
                    "n_spatial (%d).",
-                   static_cast<int>(coords.nrow()), n_spatial);
+                   {static_cast<int>(coords.nrow()), n_spatial});
     }
 
     cond_mean_out.assign(n_spatial, 0.0);

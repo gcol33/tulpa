@@ -2,6 +2,7 @@
 // run_hmc_parallel_chains_cpp: pure-C++ OpenMP across-chain core.
 
 #include <algorithm>
+#include "tulpa_stop.h"
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -224,14 +225,14 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   ParamLayout layout = layout_override ? *layout_override
                                        : compute_param_layout(data);
 
-  if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+  if (n_chains < 1) tulpa::stop("n_chains must be >= 1");
   if (!epsilon_init.empty() && static_cast<int>(epsilon_init.size()) != n_chains)
-    Rcpp::stop("epsilon_init must have one value per chain");
+    tulpa::stop("epsilon_init must have one value per chain");
   for (double step : epsilon_init) validate_epsilon_init(step);
   auto step_for = [&](int c) { return epsilon_init.empty() ? 0.0 : epsilon_init[c]; };
   if ((int)q_init_broadcast.size() != n_chains) {
-    Rcpp::stop("run_hmc_parallel_chains_cpp: %d initial positions for %d chains",
-               (int)q_init_broadcast.size(), n_chains);
+    tulpa::stop("run_hmc_parallel_chains_cpp: %d initial positions for %d chains",
+               {(int)q_init_broadcast.size(), n_chains});
   }
 
   std::vector<std::vector<double>> q_init_per_chain = q_init_broadcast;
@@ -374,8 +375,8 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     }
     if (chain_failed.load()) {
       if (shared_progress) shared_progress->finish();
-      Rcpp::stop("NUTS chain failed: %s",
-                 chain_err.empty() ? "unknown error" : chain_err.c_str());
+      tulpa::stop("NUTS chain failed: %s",
+                 {chain_err.empty() ? "unknown error" : chain_err.c_str()});
     }
   } else {
     // A one-wide team runs the chains one after another. The console bar stays

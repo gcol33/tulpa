@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "hsgp_sum.h"
 
 namespace tulpa {
@@ -23,16 +24,16 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
             ? Rcpp::as<Rcpp::List>(p["phi"])
             : Rcpp::List::create(p["phi_basis"]);
         if (phi.size() != n_obs.size())
-            Rcpp::stop("HSGP phi must contain one basis matrix per response arm.");
+            tulpa::stop("HSGP phi must contain one basis matrix per response arm.");
         const bool separate = p.containsElementNamed("training_phi");
         Rcpp::List train = separate ? Rcpp::as<Rcpp::List>(p["training_phi"]) : phi;
         if (!parts->empty() && phi.size() != parts->front().phi.size())
-            Rcpp::stop("HSGP components must have the same response arms.");
+            tulpa::stop("HSGP components must have the same response arms.");
         at_training = at_training && !separate;
         Component part;
         part.axis = axis_offsets[b];
         if (axis_offsets[b + 1] - part.axis != 2)
-            Rcpp::stop("HSGP components require sigma2 and lengthscale axes.");
+            tulpa::stop("HSGP components require sigma2 and lengthscale axes.");
         nl_grid_axis_positive("hsgp sigma2 axis", theta_grid, part.axis);
         nl_grid_axis_positive("hsgp lengthscale axis", theta_grid, part.axis + 1);
         part.kernel = priors::hsgp_kernel_from_spec(p, "hsgp block");
@@ -41,7 +42,7 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
             : Rcpp::as<Rcpp::NumericVector>(p["lambda_eig"]);
         part.eigenvalues = Eigen::Map<const Eigen::VectorXd>(eig.begin(), eig.size());
         if (p.containsElementNamed("m_total") && Rcpp::as<int>(p["m_total"]) != eig.size())
-            Rcpp::stop("HSGP m_total differs from its eigenvalue count.");
+            tulpa::stop("HSGP m_total differs from its eigenvalue count.");
         n_arms = phi.size();
         n_training = 0;
         for (int k = 0; k < train.size(); ++k)
@@ -50,7 +51,7 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
         int row = 0;
         for (int k = 0; k < train.size(); ++k) {
             Rcpp::NumericMatrix mat = train[k];
-            if (mat.ncol() != eig.size()) Rcpp::stop("HSGP training basis width differs from eigenvalues.");
+            if (mat.ncol() != eig.size()) tulpa::stop("HSGP training basis width differs from eigenvalues.");
             part.training.middleRows(row, mat.nrow()) =
                 Eigen::Map<const Eigen::MatrixXd>(mat.begin(), mat.nrow(), mat.ncol());
             row += mat.nrow();
@@ -58,21 +59,21 @@ LatentBlock make_hsgp_sum_block(int start, const Rcpp::List& specs,
         for (int k = 0; k < n_arms; ++k) {
             Rcpp::NumericMatrix mat = phi[k];
             if (mat.nrow() != n_obs[k])
-                Rcpp::stop("HSGP basis rows must match the response arm's observations.");
-            if (mat.ncol() != eig.size()) Rcpp::stop("HSGP prediction basis width differs from eigenvalues.");
+                tulpa::stop("HSGP basis rows must match the response arm's observations.");
+            if (mat.ncol() != eig.size()) tulpa::stop("HSGP prediction basis width differs from eigenvalues.");
             if (!parts->empty() && mat.nrow() != parts->front().phi[k].rows())
-                Rcpp::stop("HSGP components must have matching rows within each response arm.");
+                tulpa::stop("HSGP components must have matching rows within each response arm.");
             if (p.containsElementNamed("n_obs_per_arm")) {
                 Rcpp::IntegerVector n_obs = p["n_obs_per_arm"];
                 if (n_obs.size() != n_arms || n_obs[k] != mat.nrow())
-                    Rcpp::stop("HSGP n_obs_per_arm differs from its basis rows.");
+                    tulpa::stop("HSGP n_obs_per_arm differs from its basis rows.");
             }
             part.phi.emplace_back(Eigen::Map<const Eigen::MatrixXd>(mat.begin(), mat.nrow(), mat.ncol()));
         }
         if (p.containsElementNamed("svc_weight") && !Rf_isNull(p["svc_weight"])) {
             Rcpp::NumericVector w = p["svc_weight"];
             if (n_arms != 1 || w.size() != part.phi[0].rows())
-                Rcpp::stop("HSGP svc_weight must contain one weight per observation.");
+                tulpa::stop("HSGP svc_weight must contain one weight per observation.");
             part.phi[0].array().colwise() *= Eigen::Map<const Eigen::VectorXd>(w.begin(), w.size()).array();
             if (!separate) part.training = part.phi[0];
         }

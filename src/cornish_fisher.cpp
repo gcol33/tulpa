@@ -1,4 +1,5 @@
 #include "cornish_fisher.h"
+#include "tulpa_stop.h"
 #include <Rcpp.h>
 
 // Skew-corrected marginal quantiles for a block of latent coordinates.
@@ -28,7 +29,7 @@ Rcpp::List cpp_cornish_fisher_quantile(Rcpp::NumericVector mu,
   const int n  = mu.size();
   const int nz = z.size();
   if (sigma.size() != n || gamma3.size() != n || gamma1.size() != n) {
-    Rcpp::stop("cpp_cornish_fisher_quantile: mu, sigma, gamma3 and gamma1 must "
+    tulpa::stop("cpp_cornish_fisher_quantile: mu, sigma, gamma3 and gamma1 must "
                "have the same length.");
   }
 
@@ -73,7 +74,7 @@ Rcpp::List cpp_cornish_fisher_bands(Rcpp::NumericVector gamma3,
                                     double max_abs_centre) {
   const int n = gamma3.size();
   if (gamma1.size() != n) {
-    Rcpp::stop("cpp_cornish_fisher_bands: gamma3 and gamma1 must have the "
+    tulpa::stop("cpp_cornish_fisher_bands: gamma3 and gamma1 must have the "
                "same length.");
   }
   Rcpp::NumericVector centre(n);

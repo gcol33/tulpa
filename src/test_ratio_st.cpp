@@ -1,4 +1,5 @@
 #include <RcppEigen.h>
+#include "tulpa_stop.h"
 #include "st_gp_kernel.h"
 #include <tulpa/st_data.h>
 using namespace Rcpp;
@@ -7,7 +8,7 @@ static tulpa::CovType probe_covariance(const std::string& name) {
   if(name=="matern") return tulpa::CovType::MATERN32;
   if(name=="gaussian") return tulpa::CovType::GAUSSIAN;
   if(name=="spherical") return tulpa::CovType::SPHERICAL;
-  Rcpp::stop("Unknown covariance");
+  tulpa::stop("Unknown covariance");
 }
 static tulpa::SpatiotemporalData test_st_gp_structure(
     int n, NumericMatrix coords, NumericVector time_values, int nn,
@@ -39,7 +40,7 @@ static tulpa::SpatiotemporalData test_st_gp_structure(
   } else if (nonsep_type == "gneiting") {
     st.nonsep_type = tulpa::NonsepType::GNEITING;
   } else {
-    Rcpp::stop("unknown nonsep_type '%s'", nonsep_type.c_str());
+    tulpa::stop("unknown nonsep_type '%s'", {nonsep_type.c_str()});
   }
   st.cov_space = probe_covariance(cov_space);
   st.cov_time = probe_covariance(cov_time);
@@ -95,7 +96,7 @@ Rcpp::List cpp_test_st_gp_margin_normalizer(
   st.n_times = n_times;
   const tulpa_st_gp::StGpMarginNormalizer nz =
       tulpa_st_gp::st_gp_margin_normalizer_grad(tau, phi_space, phi_time, st);
-  if (!nz.ok) Rcpp::stop("the normalizer could not be formed");
+  if (!nz.ok) tulpa::stop("the normalizer could not be formed");
   return Rcpp::List::create(
       Rcpp::Named("value") = nz.value,
       Rcpp::Named("grad") = Rcpp::NumericVector::create(

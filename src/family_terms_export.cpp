@@ -22,6 +22,7 @@
 // each other. They exist for testing only.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <string>
 
 #include "laplace_family_link.h"
@@ -41,7 +42,7 @@ Rcpp::NumericVector cpp_family_loglik_batch(Rcpp::NumericVector y,
                                            std::string family, double phi) {
     const int n = eta.nrow();
     if (y.size() != n || (n_trials.size() != 1 && n_trials.size() != n)) {
-        Rcpp::stop("y and n_trials must match the rows of eta (n_trials may be scalar).");
+        tulpa::stop("y and n_trials must match the rows of eta (n_trials may be scalar).");
     }
     const auto fam = tulpa::resolve_family(family);
     std::vector<double> constants(n);
@@ -120,16 +121,16 @@ static inline void check_probe_lengths(const char* fn, R_xlen_t n,
                                        const Rcpp::IntegerVector& n_trials,
                                        const Rcpp::NumericVector* logit_zi) {
   if (y.size() != n) {
-    Rcpp::stop("%s: y (%d) and eta (%d) differ in length.",
-               fn, (int)y.size(), (int)n);
+    tulpa::stop("%s: y (%d) and eta (%d) differ in length.",
+               {fn, (int)y.size(), (int)n});
   }
   if (logit_zi && logit_zi->size() != n) {
-    Rcpp::stop("%s: logit_zi (%d) and eta (%d) differ in length.",
-               fn, (int)logit_zi->size(), (int)n);
+    tulpa::stop("%s: logit_zi (%d) and eta (%d) differ in length.",
+               {fn, (int)logit_zi->size(), (int)n});
   }
   if (n_trials.size() != 1 && n_trials.size() != n) {
-    Rcpp::stop("%s: n_trials must be length 1 or %d (got %d).",
-               fn, (int)n, (int)n_trials.size());
+    tulpa::stop("%s: n_trials must be length 1 or %d (got %d).",
+               {fn, (int)n, (int)n_trials.size()});
   }
 }
 
@@ -180,7 +181,7 @@ Rcpp::NumericVector cpp_family_obs_weight(const Rcpp::NumericVector& y,
                                           double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
   if (y.size() != n || n_trials.size() != n) {
-    Rcpp::stop("cpp_family_obs_weight(): y, n_trials and eta must have "
+    tulpa::stop("cpp_family_obs_weight(): y, n_trials and eta must have "
                "the same length.");
   }
   Rcpp::NumericVector out(n);
@@ -613,13 +614,13 @@ Rcpp::NumericVector cpp_bound_gaussian_loglik(const Rcpp::NumericVector& y,
   const R_xlen_t n = eta.size();
   if (y.size() != n || a.size() != n || b.size() != n ||
       (sigma.size() != 1 && sigma.size() != n)) {
-    Rcpp::stop("cpp_bound_gaussian_loglik(): y, a, b and eta must have the "
+    tulpa::stop("cpp_bound_gaussian_loglik(): y, a, b and eta must have the "
                "same length, and sigma length 1 or that length.");
   }
   const bool interval = family == "interval_gaussian";
   if (!interval && family != "truncated_gaussian") {
-    Rcpp::stop("cpp_bound_gaussian_loglik(): family '%s' reads no bound.",
-               family.c_str());
+    tulpa::stop("cpp_bound_gaussian_loglik(): family '%s' reads no bound.",
+               {family.c_str()});
   }
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; ++i) {

@@ -1,3 +1,4 @@
+#include "tulpa_stop.h"
 // hmc_gradient_dispatch.h
 // Gradient-mode dispatch for model likelihoods and engine-owned field targets.
 //
@@ -33,7 +34,7 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
         return &compute_full_gradient_field_coordinates;
     if (has_collapsed_spatial(layout)) return &compute_gradient_collapsed_spatial;
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
-        Rcpp::stop("tulpa: ModelData has n_processes == 0. Downstream packages "
+        tulpa::stop("tulpa: ModelData has n_processes == 0. Downstream packages "
                    "must populate `n_processes > 0` and `data.likelihood_spec` "
                    "via the generic LikelihoodSpec interface.");
     }
@@ -88,7 +89,7 @@ GradientFn resolve_prior_gradient_fn(GradientMode mode, const ModelData& data, c
         return &compute_prior_gradient_field_coordinates;
     if (has_collapsed_spatial(layout)) return &compute_prior_gradient_collapsed_spatial;
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
-        Rcpp::stop("tulpa: ModelData has n_processes == 0 — the generic "
+        tulpa::stop("tulpa: ModelData has n_processes == 0 — the generic "
                    "LikelihoodSpec interface is required for the prior-only "
                    "gradient path (multiple-time-stepping integrator).");
     }

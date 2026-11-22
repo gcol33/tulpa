@@ -2,6 +2,7 @@
 // Canonical likelihood functions used by the Laplace approximation engine.
 
 #include "laplace_likelihoods.h"
+#include "tulpa_stop.h"
 #include "linalg_fast.h"
 #include "autodiff_utils.h"  // tulpa::math::log_lik_negbin_log
 #include <Rcpp.h>
@@ -77,7 +78,7 @@ Rcpp::NumericVector cpp_precision_density(const Rcpp::NumericVector& y,
     bool beta, int order = 0) {
   const R_xlen_t n = y.size();
   if (mu.size() != n || phi.size() != n || order < 0 || order > 2)
-    Rcpp::stop("Equal input lengths and derivative order 0, 1 or 2 are required.");
+    tulpa::stop("Equal input lengths and derivative order 0, 1 or 2 are required.");
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; ++i) {
     if (ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i])) out[i] = NA_REAL;
@@ -93,7 +94,7 @@ Rcpp::NumericVector cpp_precision_density(const Rcpp::NumericVector& y,
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_beta_precision_score(const Rcpp::NumericVector& y,
     const Rcpp::NumericVector& mu, const Rcpp::NumericVector& phi, bool derivative) {
-  if (mu.size() != y.size() || phi.size() != y.size()) Rcpp::stop("Equal input lengths are required.");
+  if (mu.size() != y.size() || phi.size() != y.size()) tulpa::stop("Equal input lengths are required.");
   Rcpp::NumericVector out(y.size());
   for (R_xlen_t i = 0; i < y.size(); ++i)
     out[i] = ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i]) ? NA_REAL : derivative
@@ -106,7 +107,7 @@ Rcpp::NumericVector cpp_beta_precision_score(const Rcpp::NumericVector& y,
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_precision_math(const Rcpp::NumericVector& x,
                                        bool remainder, int order = 0) {
-  if (order < 0 || order > 4) Rcpp::stop("Derivative order must be in 0..4.");
+  if (order < 0 || order > 4) tulpa::stop("Derivative order must be in 0..4.");
   Rcpp::NumericVector out(x.size());
   for (R_xlen_t i = 0; i < x.size(); ++i)
     out[i] = ISNAN(x[i]) ? NA_REAL : remainder
@@ -121,7 +122,7 @@ Rcpp::NumericVector cpp_precision_math(const Rcpp::NumericVector& x,
 Rcpp::NumericVector cpp_log_rising_factorial(const Rcpp::NumericVector& y,
                                              const Rcpp::NumericVector& size) {
   const R_xlen_t n = y.size();
-  if (size.size() != n) Rcpp::stop("`y` and `size` must have the same length.");
+  if (size.size() != n) tulpa::stop("`y` and `size` must have the same length.");
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; ++i) {
     out[i] = (ISNAN(y[i]) || ISNAN(size[i])) ? NA_REAL
@@ -136,9 +137,9 @@ Rcpp::NumericVector cpp_log_rising_factorial(const Rcpp::NumericVector& y,
 Rcpp::NumericVector cpp_polygamma_rising_difference(int k,
                                                     const Rcpp::NumericVector& y,
                                                     const Rcpp::NumericVector& size) {
-  if (k < 0 || k > 3) Rcpp::stop("`k` must be 0, 1, 2 or 3.");
+  if (k < 0 || k > 3) tulpa::stop("`k` must be 0, 1, 2 or 3.");
   const R_xlen_t n = y.size();
-  if (size.size() != n) Rcpp::stop("`y` and `size` must have the same length.");
+  if (size.size() != n) tulpa::stop("`y` and `size` must have the same length.");
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; ++i) {
     out[i] = (ISNAN(y[i]) || ISNAN(size[i])) ? NA_REAL
@@ -155,7 +156,7 @@ Rcpp::NumericVector cpp_negbin2_log_density(const Rcpp::NumericVector& y,
                                             const Rcpp::NumericVector& phi) {
   const R_xlen_t n = y.size();
   if (mu.size() != n || phi.size() != n)
-    Rcpp::stop("`y`, `mu` and `phi` must have the same length.");
+    tulpa::stop("`y`, `mu` and `phi` must have the same length.");
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; ++i) {
     out[i] = (ISNAN(y[i]) || ISNAN(mu[i]) || ISNAN(phi[i])) ? NA_REAL

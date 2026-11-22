@@ -5,6 +5,7 @@
 #define TULPA_ARRAY_UTILS_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <cstddef>
 #include <vector>
 
@@ -21,7 +22,7 @@ inline std::vector<double> flatten_3d_rowmajor(
     int d1, int d2, int d3
 ) {
     if (d1 < 0 || d2 < 0 || d3 < 0) {
-        Rcpp::stop("flatten_3d_rowmajor: dimensions must be non-negative.");
+        tulpa::stop("flatten_3d_rowmajor: dimensions must be non-negative.");
     }
     // The index arithmetic below runs in std::size_t, and the extent is
     // checked against the input length, so a dimension triple that does not
@@ -30,7 +31,7 @@ inline std::vector<double> flatten_3d_rowmajor(
                         * static_cast<std::size_t>(d2)
                         * static_cast<std::size_t>(d3);
     if (n != static_cast<std::size_t>(arr.size())) {
-        Rcpp::stop("flatten_3d_rowmajor: d1 * d2 * d3 does not match length(arr).");
+        tulpa::stop("flatten_3d_rowmajor: d1 * d2 * d3 does not match length(arr).");
     }
 
     std::vector<double> result(n);

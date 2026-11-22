@@ -10,6 +10,7 @@
 // log sigma_i / LKJ algebra, which is exactly the drift this export avoids.
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <Eigen/Dense>
 #include <vector>
 
@@ -31,12 +32,12 @@ Rcpp::NumericVector cpp_recov_block_grad(Rcpp::NumericMatrix Smat,
                                          double lkj_eta = 1.0) {
   const int nc = Smat.nrow();
   if (Smat.ncol() != nc) {
-    Rcpp::stop("cpp_recov_block_grad: Smat must be square (got %d x %d).",
-               nc, (int)Smat.ncol());
+    tulpa::stop("cpp_recov_block_grad: Smat must be square (got %d x %d).",
+               {nc, (int)Smat.ncol()});
   }
   if (L.nrow() != nc || L.ncol() != nc) {
-    Rcpp::stop("cpp_recov_block_grad: L must be %d x %d (got %d x %d).",
-               nc, nc, (int)L.nrow(), (int)L.ncol());
+    tulpa::stop("cpp_recov_block_grad: L must be %d x %d (got %d x %d).",
+               {nc, nc, (int)L.nrow(), (int)L.ncol()});
   }
 
   Eigen::MatrixXd S(nc, nc), Lm(nc, nc);

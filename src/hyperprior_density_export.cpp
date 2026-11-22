@@ -7,6 +7,7 @@
 // is spaced and integrated in), which adds log|d theta / d log theta| = log theta.
 
 #include "pc_prior.h"
+#include "tulpa_stop.h"
 #include <Rcpp.h>
 #include <Rmath.h>
 #include <cmath>
@@ -54,8 +55,8 @@ Rcpp::NumericVector cpp_hyperprior_log_density(
 ) {
     const bool on_log = (coordinate == "log");
     if (!on_log && coordinate != "natural") {
-        Rcpp::stop("`coordinate` must be \"natural\" or \"log\", not \"%s\".",
-                   coordinate.c_str());
+        tulpa::stop("`coordinate` must be \"natural\" or \"log\", not \"%s\".",
+                   {coordinate.c_str()});
     }
     enum class Kind { SD, VARIANCE, PRECISION, RANGE, NB_SIZE };
     Kind k;
@@ -64,18 +65,18 @@ Rcpp::NumericVector cpp_hyperprior_log_density(
     else if (kind == "precision") k = Kind::PRECISION;
     else if (kind == "range")     k = Kind::RANGE;
     else if (kind == "nb_size")   k = Kind::NB_SIZE;
-    else Rcpp::stop("Unknown hyperprior kind \"%s\".", kind.c_str());
+    else tulpa::stop("Unknown hyperprior kind \"%s\".", {kind.c_str()});
     if (k == Kind::NB_SIZE) {
         if (!(lambda > 0.0) || !std::isfinite(lambda)) {
-            Rcpp::stop("The negative-binomial PC prior needs lambda > 0; got %g.",
-                       lambda);
+            tulpa::stop("The negative-binomial PC prior needs lambda > 0; got %g.",
+                       {lambda});
         }
     } else if (!tulpa::pc_anchors_valid(U, alpha)) {
-        Rcpp::stop("PC anchors need U > 0 and alpha in (0, 1); got U = %g, "
-                   "alpha = %g.", U, alpha);
+        tulpa::stop("PC anchors need U > 0 and alpha in (0, 1); got U = %g, "
+                   "alpha = %g.", {U, alpha});
     }
     if (k == Kind::RANGE && !(d > 0.0)) {
-        Rcpp::stop("The range PC prior needs a positive dimension; got d = %g.", d);
+        tulpa::stop("The range PC prior needs a positive dimension; got d = %g.", {d});
     }
 
     const double ninf = -std::numeric_limits<double>::infinity();

@@ -5,6 +5,7 @@
 #define TULPA_PG_SHARED_H
 
 #include <Rcpp.h>
+#include "tulpa_stop.h"
 #include <cmath>
 #include <algorithm>
 #include <utility>
@@ -38,17 +39,17 @@ namespace tulpa {
 inline void pg_check_index(const Rcpp::IntegerVector& idx, int expected_len,
                            int upper, const char* name) {
   if (idx.size() != expected_len) {
-    Rcpp::stop("`%s` has length %d but must have length %d.",
-               name, static_cast<int>(idx.size()), expected_len);
+    tulpa::stop("`%s` has length %d but must have length %d.",
+               {name, static_cast<int>(idx.size()), expected_len});
   }
   if (upper < 1) {
-    Rcpp::stop("`%s` indexes an empty range (upper bound %d).", name, upper);
+    tulpa::stop("`%s` indexes an empty range (upper bound %d).", {name, upper});
   }
   for (int i = 0; i < expected_len; i++) {
     const int v = idx[i];
     if (Rcpp::IntegerVector::is_na(v) || v < 1 || v > upper) {
-      Rcpp::stop("`%s[%d]` is %d; must be a 1-based index in [1, %d].",
-                 name, i + 1, v, upper);
+      tulpa::stop("`%s[%d]` is %d; must be a 1-based index in [1, %d].",
+                 {name, i + 1, v, upper});
     }
   }
 }
@@ -58,13 +59,13 @@ inline void pg_check_index(const Rcpp::IntegerVector& idx, int expected_len,
 // ceil((n_iter - n_warmup) / thin) iterations.
 inline int pg_n_save(int n_iter, int n_warmup, int thin) {
   if (thin < 1) {
-    Rcpp::stop("`thin` must be >= 1; got %d.", thin);
+    tulpa::stop("`thin` must be >= 1; got %d.", {thin});
   }
   if (n_warmup < 0) {
-    Rcpp::stop("`n_warmup` must be >= 0; got %d.", n_warmup);
+    tulpa::stop("`n_warmup` must be >= 0; got %d.", {n_warmup});
   }
   if (n_iter < n_warmup) {
-    Rcpp::stop("`n_iter` (%d) must be >= `n_warmup` (%d).", n_iter, n_warmup);
+    tulpa::stop("`n_iter` (%d) must be >= `n_warmup` (%d).", {n_iter, n_warmup});
   }
   return (n_iter - n_warmup + thin - 1) / thin;
 }
@@ -95,31 +96,31 @@ inline void pg_check_adjacency(const Rcpp::List& adj_list,
                                const Rcpp::IntegerVector& n_neighbors,
                                int n_units) {
   if (n_units <= 0) {
-    Rcpp::stop("`n_spatial_units` must be >= 1; got %d.", n_units);
+    tulpa::stop("`n_spatial_units` must be >= 1; got %d.", {n_units});
   }
   if (adj_list.size() != n_units) {
-    Rcpp::stop("`adj_list` has %d element(s) but `n_spatial_units` is %d.",
-               static_cast<int>(adj_list.size()), n_units);
+    tulpa::stop("`adj_list` has %d element(s) but `n_spatial_units` is %d.",
+               {static_cast<int>(adj_list.size()), n_units});
   }
   if (n_neighbors.size() != n_units) {
-    Rcpp::stop("`n_neighbors` has length %d but `n_spatial_units` is %d.",
-               static_cast<int>(n_neighbors.size()), n_units);
+    tulpa::stop("`n_neighbors` has length %d but `n_spatial_units` is %d.",
+               {static_cast<int>(n_neighbors.size()), n_units});
   }
   for (int j = 0; j < n_units; j++) {
     Rcpp::IntegerVector nb = adj_list[j];
     const int declared = n_neighbors[j];
     if (Rcpp::IntegerVector::is_na(declared) || declared < 0) {
-      Rcpp::stop("`n_neighbors[%d]` is %d; must be >= 0.", j + 1, declared);
+      tulpa::stop("`n_neighbors[%d]` is %d; must be >= 0.", {j + 1, declared});
     }
     if (nb.size() != declared) {
-      Rcpp::stop("`adj_list[[%d]]` holds %d neighbour(s) but `n_neighbors[%d]` "
-                 "is %d.", j + 1, static_cast<int>(nb.size()), j + 1, declared);
+      tulpa::stop("`adj_list[[%d]]` holds %d neighbour(s) but `n_neighbors[%d]` "
+                 "is %d.", {j + 1, static_cast<int>(nb.size()), j + 1, declared});
     }
     for (int k = 0; k < declared; k++) {
       const int v = nb[k];
       if (Rcpp::IntegerVector::is_na(v) || v < 1 || v > n_units) {
-        Rcpp::stop("`adj_list[[%d]][%d]` is %d; must be a 1-based unit index "
-                   "in [1, %d].", j + 1, k + 1, v, n_units);
+        tulpa::stop("`adj_list[[%d]][%d]` is %d; must be a 1-based unit index "
+                   "in [1, %d].", {j + 1, k + 1, v, n_units});
       }
     }
   }
@@ -210,10 +211,10 @@ inline bool pg_has_intercept(const Rcpp::NumericMatrix& X) {
 
 inline void pg_require_intercept(bool has_intercept, const char* what) {
   if (!has_intercept) {
-    Rcpp::stop("The %s Gibbs sampler centres its latent effects and absorbs "
+    tulpa::stop("The %s Gibbs sampler centres its latent effects and absorbs "
                "the removed level into the intercept, which leaves eta "
                "unchanged only when the first column of `X` is an all-ones "
-               "intercept. Supply a design with an intercept column.", what);
+               "intercept. Supply a design with an intercept column.", {what});
   }
 }
 
@@ -240,8 +241,8 @@ inline void pg_require_intercept(const Rcpp::NumericMatrix& X,
 inline void pg_check_rsr_projector(const Rcpp::NumericVector& P, int J,
                                    bool require_constant) {
   if (P.size() != static_cast<R_xlen_t>(J) * J) {
-    Rcpp::stop("`rsr_projection` has %d element(s) but must have %d "
-               "(a %d x %d matrix).", static_cast<int>(P.size()), J * J, J, J);
+    tulpa::stop("`rsr_projection` has %d element(s) but must have %d "
+               "(a %d x %d matrix).", {static_cast<int>(P.size()), J * J, J, J});
   }
   double max_asym = 0.0;
   for (int a = 0; a < J; a++) {
@@ -252,8 +253,8 @@ inline void pg_check_rsr_projector(const Rcpp::NumericVector& P, int J,
     }
   }
   if (max_asym > 1e-8) {
-    Rcpp::stop("`rsr_projection` is not symmetric (largest asymmetry %g); an "
-               "orthogonal projector must be.", max_asym);
+    tulpa::stop("`rsr_projection` is not symmetric (largest asymmetry %g); an "
+               "orthogonal projector must be.", {max_asym});
   }
   if (!require_constant) return;
   double max_row = 0.0;
@@ -263,9 +264,9 @@ inline void pg_check_rsr_projector(const Rcpp::NumericVector& P, int J,
     max_row = std::max(max_row, std::abs(s));
   }
   if (max_row > 1e-8) {
-    Rcpp::stop("`rsr_projection` does not annihilate the constant vector "
+    tulpa::stop("`rsr_projection` does not annihilate the constant vector "
                "(largest row sum %g). Orthogonalise the field against a design "
-               "that includes an intercept.", max_row);
+               "that includes an intercept.", {max_row});
   }
 }
 
@@ -294,21 +295,21 @@ inline PgNngpTopology pg_nngp_topology(const Rcpp::IntegerMatrix& nn_idx,
                                        const Rcpp::NumericMatrix& nn_dist,
                                        const Rcpp::IntegerVector& nn_order,
                                        int n_spatial, int nn) {
-  if (n_spatial <= 0) Rcpp::stop("`n_spatial` must be >= 1; got %d.", n_spatial);
-  if (nn < 0) Rcpp::stop("`nn` must be >= 0; got %d.", nn);
+  if (n_spatial <= 0) tulpa::stop("`n_spatial` must be >= 1; got %d.", {n_spatial});
+  if (nn < 0) tulpa::stop("`nn` must be >= 0; got %d.", {nn});
   if (nn_idx.nrow() != n_spatial || nn_idx.ncol() < nn) {
-    Rcpp::stop("`nn_idx` is %dx%d but must be %dx%d.",
-               static_cast<int>(nn_idx.nrow()), static_cast<int>(nn_idx.ncol()),
-               n_spatial, nn);
+    tulpa::stop("`nn_idx` is %dx%d but must be %dx%d.",
+               {static_cast<int>(nn_idx.nrow()), static_cast<int>(nn_idx.ncol()),
+               n_spatial, nn});
   }
   if (nn_dist.nrow() != n_spatial || nn_dist.ncol() < nn) {
-    Rcpp::stop("`nn_dist` is %dx%d but must be %dx%d.",
-               static_cast<int>(nn_dist.nrow()), static_cast<int>(nn_dist.ncol()),
-               n_spatial, nn);
+    tulpa::stop("`nn_dist` is %dx%d but must be %dx%d.",
+               {static_cast<int>(nn_dist.nrow()), static_cast<int>(nn_dist.ncol()),
+               n_spatial, nn});
   }
   if (nn_order.size() != n_spatial) {
-    Rcpp::stop("`nn_order` has length %d but must have length %d.",
-               static_cast<int>(nn_order.size()), n_spatial);
+    tulpa::stop("`nn_order` has length %d but must have length %d.",
+               {static_cast<int>(nn_order.size()), n_spatial});
   }
 
   PgNngpTopology top;
@@ -322,8 +323,8 @@ inline PgNngpTopology pg_nngp_topology(const Rcpp::IntegerMatrix& nn_idx,
   for (int i = 0; i < n_spatial; i++) {
     const int o = nn_order[i];
     if (Rcpp::IntegerVector::is_na(o) || o < 0 || o >= n_spatial) {
-      Rcpp::stop("`nn_order[%d]` is %d; must be a 0-based location index in "
-                 "[0, %d].", i + 1, o, n_spatial - 1);
+      tulpa::stop("`nn_order[%d]` is %d; must be a 0-based location index in "
+                 "[0, %d].", {i + 1, o, n_spatial - 1});
     }
     top.orig[i] = o;
   }
@@ -334,8 +335,8 @@ inline PgNngpTopology pg_nngp_topology(const Rcpp::IntegerMatrix& nn_idx,
       const int pos1 = nn_idx(i, t);
       if (Rcpp::IntegerVector::is_na(pos1) || pos1 <= 0) break;
       if (pos1 > n_spatial) {
-        Rcpp::stop("`nn_idx[%d, %d]` is %d; must be a 1-based ordered position "
-                   "in [1, %d].", i + 1, t + 1, pos1, n_spatial);
+        tulpa::stop("`nn_idx[%d, %d]` is %d; must be a 1-based ordered position "
+                   "in [1, %d].", {i + 1, t + 1, pos1, n_spatial});
       }
       const int pos = pos1 - 1;
       top.parent_pos[static_cast<size_t>(i) * nn + t] = pos;
@@ -566,11 +567,11 @@ inline void pg_update_scale_halfcauchy(const Rcpp::NumericVector& effects,
 inline void pg_check_pc_prior(double U, double alpha, const char* name) {
   if (pc_anchors_valid(U, alpha)) return;
   if (!std::isfinite(U) || !(U > 0.0)) {
-    Rcpp::stop("`prior_sigma_%s_U` must be > 0; got %g.", name, U);
+    tulpa::stop("`prior_sigma_%s_U` must be > 0; got %g.", {name, U});
   }
   if (!(alpha > 0.0 && alpha < 1.0)) {
-    Rcpp::stop("`prior_sigma_%s_alpha` is the tail probability P(sigma > U) "
-               "and must lie in (0, 1); got %g.", name, alpha);
+    tulpa::stop("`prior_sigma_%s_alpha` is the tail probability P(sigma > U) "
+               "and must lie in (0, 1); got %g.", {name, alpha});
   }
 }
 
@@ -813,8 +814,8 @@ inline double pg_log_icar(const double* phi, const PgIcarPrior& prior,
 inline Rcpp::List pg_range_moment_model(double lower, double upper) {
   if (!std::isfinite(lower) || !std::isfinite(upper) ||
       !(lower > 0.0) || !(upper > lower)) {
-    Rcpp::stop("The range prior needs finite 0 < lower < upper; got [%g, %g].",
-               lower, upper);
+    tulpa::stop("The range prior needs finite 0 < lower < upper; got [%g, %g].",
+               {lower, upper});
   }
   return Rcpp::List::create(
     Rcpp::Named("prior_power") = NA_REAL,
@@ -980,10 +981,10 @@ inline double rtruncnorm_pos(double linear, double precision) {
 inline void pg_draw_from_factor(device::DenseFactor& factor, int n, const double* b,
                                  double* out, const char* what) {
   std::vector<double> mean(n), z(n), z_star(n);
-  if (!factor.solve(b, mean.data())) Rcpp::stop("The %s conditional mean solve failed.", what);
+  if (!factor.solve(b, mean.data())) tulpa::stop("The %s conditional mean solve failed.", {what});
   for (int i = 0; i < n; i++) z[i] = R::rnorm(0.0, 1.0);
   if (!factor.solve(z.data(), z_star.data(), 1, device::DenseSystem::LowerTranspose))
-    Rcpp::stop("The %s conditional draw solve failed.", what);
+    tulpa::stop("The %s conditional draw solve failed.", {what});
   for (int i = 0; i < n; i++) out[i] = mean[i] + z_star[i];
 }
 
@@ -994,9 +995,9 @@ inline void pg_draw_gaussian_precision(double* M_flat, int n, const double* b,
   auto& factor = device::dense_factor(operation);
   if (!factor.factorize(M_flat, n, true, operation)) {
     const auto status = device::current_policy()->failure();
-    if (!status) Rcpp::stop(status.message);
-    Rcpp::stop("The %s full conditional has a %d x %d precision matrix that is "
-               "not positive definite.", what, n, n);
+    if (!status) tulpa::stop(status.message);
+    tulpa::stop("The %s full conditional has a %d x %d precision matrix that is "
+               "not positive definite.", {what, n, n});
   }
   pg_draw_from_factor(factor, n, b, out, what);
 }
@@ -1009,8 +1010,8 @@ inline void pg_draw_projected_gaussian(const double* projector, int n, const dou
   if (!factor.projected(projector, n, weights, residual, prior, true,
                          prior_scale, constant, linear.data(), operation)) {
     const auto status = device::current_policy()->failure();
-    if (!status) Rcpp::stop(status.message);
-    Rcpp::stop("The projected %s precision is not positive definite.", operation);
+    if (!status) tulpa::stop(status.message);
+    tulpa::stop("The projected %s precision is not positive definite.", {operation});
   }
   pg_draw_from_factor(factor, n, linear.data(), out, operation);
 }
@@ -1158,17 +1159,17 @@ struct PgGibbsCommon {
       eta_draws(store_eta_ ? n_save_ : 0, store_eta_ ? y.size() : 0),
       log_prob_draws(n_save_)
   {
-    if (N < 1) Rcpp::stop("`y` is empty.");
+    if (N < 1) tulpa::stop("`y` is empty.");
     if (n_trials.size() != N) {
-      Rcpp::stop("`n` has length %d but `y` has length %d.",
-                 static_cast<int>(n_trials.size()), N);
+      tulpa::stop("`n` has length %d but `y` has length %d.",
+                 {static_cast<int>(n_trials.size()), N});
     }
     if (X.nrow() != N) {
-      Rcpp::stop("`X` has %d row(s) but `y` has length %d.",
-                 static_cast<int>(X.nrow()), N);
+      tulpa::stop("`X` has %d row(s) but `y` has length %d.",
+                 {static_cast<int>(X.nrow()), N});
     }
     if (n_re_groups < 0) {
-      Rcpp::stop("`n_re_groups` must be >= 0; got %d.", n_re_groups);
+      tulpa::stop("`n_re_groups` must be >= 0; got %d.", {n_re_groups});
     }
     if (n_re_groups > 0) pg_check_index(re_group, N, n_re_groups, "re_group");
 
@@ -1178,8 +1179,8 @@ struct PgGibbsCommon {
     for (int i = 0; i < N; i++) {
       const int ni = n_trials[i];
       if (Rcpp::IntegerVector::is_na(ni) || ni < 0) {
-        Rcpp::stop("`n[%d]` is %d; must be a non-negative trial count.",
-                   i + 1, ni);
+        tulpa::stop("`n[%d]` is %d; must be a non-negative trial count.",
+                   {i + 1, ni});
       }
       kappa[i] = static_cast<double>(y[i]) - 0.5 * static_cast<double>(ni);
     }
@@ -1230,8 +1231,8 @@ struct PgGibbsCommon {
   // move, so it belongs to the previous draw.
   void save(int save_idx, const double* field_contrib) {
     if (save_idx < 0 || save_idx >= n_save) {
-      Rcpp::stop("Draw index %d is outside the %d allocated row(s).",
-                 save_idx, n_save);
+      tulpa::stop("Draw index %d is outside the %d allocated row(s).",
+                 {save_idx, n_save});
     }
     for (int j = 0; j < p; j++) beta_draws(save_idx, j) = beta[j];
     for (int g = 0; g < n_re_groups; g++) re_draws(save_idx, g) = re[g];

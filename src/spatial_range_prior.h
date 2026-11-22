@@ -2,6 +2,7 @@
 #define TULPA_SPATIAL_RANGE_PRIOR_H
 
 #include <tulpa/range_prior.h>
+#include "tulpa_stop.h"
 #include "autodiff_utils.h"
 #include "pc_prior.h"
 
@@ -29,12 +30,12 @@ inline void validate_spatial_range_prior(const RangePrior& prior, double U,
                                           double alpha, const char* name) {
     if (prior.type == RangePriorType::PC) {
         if (!pc_anchors_valid(U, alpha))
-            Rcpp::stop("%s range PC prior needs valid U and alpha anchors", name);
+            tulpa::stop("%s range PC prior needs valid U and alpha anchors", {name});
     } else if (prior.type == RangePriorType::UNIFORM) {
         if (!(prior.lower >= 0.0 && prior.upper > prior.lower && std::isfinite(prior.upper)))
-            Rcpp::stop("%s uniform range prior needs 0 <= lower < upper < Inf", name);
+            tulpa::stop("%s uniform range prior needs 0 <= lower < upper < Inf", {name});
     } else if (!(std::isfinite(prior.meanlog) && prior.sdlog > 0.0 && std::isfinite(prior.sdlog))) {
-        Rcpp::stop("%s lognormal range prior needs finite meanlog and positive sdlog", name);
+        tulpa::stop("%s lognormal range prior needs finite meanlog and positive sdlog", {name});
     }
 }
 

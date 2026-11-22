@@ -12,6 +12,7 @@
 #define TULPA_LAPLACE_SPEC_FIT_H
 
 #include "lkj_chol_helpers.h"
+#include "tulpa_stop.h"
 
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
@@ -39,8 +40,8 @@ inline std::vector<double> as_offset_vec(
     if (offset_nullable.isNull()) return {};
     Rcpp::NumericVector o(offset_nullable);
     if ((int)o.size() != N) {
-        Rcpp::stop("offset length (%d) must equal the number of observations (%d).",
-                   (int)o.size(), N);
+        tulpa::stop("offset length (%d) must equal the number of observations (%d).",
+                   {(int)o.size(), N});
     }
     return std::vector<double>(o.begin(), o.end());
 }
@@ -57,8 +58,8 @@ inline std::vector<double> as_weights_vec(
     if (weights_nullable.isNull()) return {};
     Rcpp::NumericVector w(weights_nullable);
     if ((int)w.size() != N) {
-        Rcpp::stop("weights length (%d) must equal the number of observations (%d).",
-                   (int)w.size(), N);
+        tulpa::stop("weights length (%d) must equal the number of observations (%d).",
+                   {(int)w.size(), N});
     }
     return std::vector<double>(w.begin(), w.end());
 }
@@ -72,8 +73,8 @@ inline std::vector<double> as_weights_vec(
 inline void check_arg_length(R_xlen_t actual, R_xlen_t expected,
                              const char* what, const char* against) {
     if (actual != expected) {
-        Rcpp::stop("%s (%d) must equal %s (%d).",
-                   what, (int)actual, against, (int)expected);
+        tulpa::stop("%s (%d) must equal %s (%d).",
+                   {what, (int)actual, against, (int)expected});
     }
 }
 
@@ -109,10 +110,10 @@ inline const std::vector<int>* unwrap_skew_idx(
         // inner_probe_column(); NA_INTEGER is INT_MIN, so subtracting 1 from it
         // is signed overflow before any consumer sees the value.
         if (idx_r[k] == NA_INTEGER || idx_r[k] < 1) {
-            Rcpp::stop("skew_idx[%d] is %s; latent indices are 1-based.",
-                       k + 1,
+            tulpa::stop("skew_idx[%d] is %s; latent indices are 1-based.",
+                       {k + 1,
                        idx_r[k] == NA_INTEGER ? "NA"
-                                              : std::to_string(idx_r[k]).c_str());
+                                              : std::to_string(idx_r[k]).c_str()});
         }
         storage[k] = idx_r[k] - 1;
     }
@@ -254,8 +255,8 @@ inline void pack_to_spec_re_params(
     if (!correlated || q == 1) {
         for (int c = 0; c < q; c++) {
             if (!(pack[c] > 0.0) || !std::isfinite(pack[c])) {
-                Rcpp::stop("%s: marginal SD %d must be finite and positive, got %g.",
-                           label, c + 1, pack[c]);
+                tulpa::stop("%s: marginal SD %d must be finite and positive, got %g.",
+                           {label, c + 1, pack[c]});
             }
             log_sigma[c] = std::log(pack[c]);
         }
@@ -263,8 +264,8 @@ inline void pack_to_spec_re_params(
     }
     for (int i = 0, n_pack = q * (q + 1) / 2; i < n_pack; i++) {
         if (!std::isfinite(pack[i])) {
-            Rcpp::stop("%s: packed Cholesky entry %d is not finite (%g).",
-                       label, i + 1, pack[i]);
+            tulpa::stop("%s: packed Cholesky entry %d is not finite (%g).",
+                       {label, i + 1, pack[i]});
         }
     }
     // Unpack the column-major lower-triangular Cholesky L (Sigma = L L').
@@ -282,9 +283,9 @@ inline void pack_to_spec_re_params(
         for (int k = 0; k <= r; k++) s += L[(size_t)r * q + k] * L[(size_t)r * q + k];
         sd[r] = std::sqrt(s);
         if (!(sd[r] > 0.0)) {
-            Rcpp::stop("%s: row %d of the packed Cholesky is all zero, so the "
+            tulpa::stop("%s: row %d of the packed Cholesky is all zero, so the "
                        "marginal SD is 0 and the correlation is undefined.",
-                       label, r + 1);
+                       {label, r + 1});
         }
         log_sigma[r] = std::log(sd[r]);
     }
