@@ -720,12 +720,10 @@ unity_nl.o: \
   nested_laplace_grid.h \
   nested_laplace_joint_core.h \
   nested_laplace_joint_multi.h \
-  nested_laplace_multi.h \
   hmc_car_proper.h \
   hmc_hsgp_kernels.h \
   laplace_block_fit.h \
   nl_entry_inputs.h \
-  nested_laplace_entries.h \
   nngp_block_factory.h \
   unit_precision_block.h \
   car_proper_block.h \
@@ -770,6 +768,7 @@ unity_nl.o: \
   row_classes.h \
   scatter_dense_basis.h \
   scatter_indexed_cache.h \
+  nested_laplace_multi.h \
   cholmod_view.h \
   hessian_pattern_guard.h \
   small_dense_sym.h \
