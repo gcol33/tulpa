@@ -492,25 +492,6 @@
     out
 }
 
-# The SUPPORT of an axis whose proposal tag is NA. A proposal tag names a
-# coordinate the outer Pareto-k, the joint CCD and the recenter lay nodes in;
-# the support is what a reported interval and a cell's mirrored edge must stay
-# inside. The two coincide wherever a tag exists; `rho` under a proper CAR (the
-# adjacency eigenvalue interval) or a multi-output HSGP has no support this
-# registry can name and stays NA. `st` is the axis vocabulary of
-# `fit_st_nested()`'s grid (`.ST_AXIS_MAP`), where `rho` is always the temporal
-# AR(1) correlation and `rho_spatial` the BYM2 mixing weight.
-.JOINT_AXIS_SUPPORT <- list(
-    st  = c(rho = "correlation", rho_spatial = "unit",
-            tau_spatial = "positive", tau_temporal = "positive")
-)
-
-.joint_block_axis_support <- function(type, axes) {
-    sup <- .JOINT_AXIS_SUPPORT[[type]]
-    if (is.null(sup)) return(rep(NA_character_, length(axes)))
-    unname(sup[axes])
-}
-
 # Whole-fit view of the same walk: every axis must be transformable, so a fit
 # carrying an unguessable one (car_proper's `rho_car`, a non-BYM2 `rho`)
 # DECLINES, naming the axes that stopped it.
@@ -564,8 +545,6 @@
         return(list(domain = rep(NA_character_, d), atom = rep(NA_real_, d)))
     }
     doms <- unname(.JOINT_AXIS_DOMAIN[tags])
-    sup <- .joint_axis_walk(res, .joint_block_axis_support, phi = NA_character_)
-    if (!.k_is_decline(sup)) doms[is.na(doms)] <- sup[is.na(doms)]
     cn <- colnames(res$theta_grid) %||% rep("", d)
     # A log-scale axis is a positive one and may carry a zero level. The claim
     # agrees with the tag on every axis that has both -- `log` already maps to

@@ -934,7 +934,7 @@ coef.summary.tulpa_fit <- function(object, ...) object$coefficients
 #' @keywords internal
 .hyper_axis_labels <- function(object, axes) {
   pref <- grepl("^b[0-9]+\\.", axes)
-  if (!any(pref) || inherits(object, "tulpa_st_nested")) return(axes)
+  if (!any(pref)) return(axes)
   pr <- object$prior
   blocks <- if (is.null(pr)) list() else if (!is.null(pr$type)) list(pr) else pr
   am <- .nested_axis_map(object, axes)

@@ -26,13 +26,6 @@ test_that("an ar1 autocorrelation axis is declared on the correlation support", 
     blocks = list(list(type = "ar1"))))
   expect_identical(geo$domain, c("positive", "correlation"))
 
-  st <- matrix(1, 1L, 4L, dimnames = list(NULL, c(
-    "sigma_spatial", "rho_spatial", "tau_temporal", "rho")))
-  geo_st <- tulpa:::.joint_axis_geometry(list(theta_grid = st,
-                                              prior = list(type = "st")))
-  expect_identical(geo_st$domain, c("positive", "unit", "positive",
-                                    "correlation"))
-
   # A proper-CAR `rho` has no support the registry names, and stays NA.
   car <- tulpa:::.joint_axis_geometry(list(
     theta_grid = matrix(1, 1L, 2L, dimnames = list(NULL, c("b1.tau", "b1.rho"))),
@@ -54,10 +47,10 @@ test_that("fit_st_nested ar1 and tulpa() bym2 + ar1 report rho inside (-1, 1)", 
                      temporal_type = "ar1", family = "poisson",
                      control = list(n_threads = 1L))
   hp <- summary(f)$hyperparameters
-  r <- hp[hp$parameter == "rho", ]
+  r <- hp[hp$parameter == "b2.rho", ]
   expect_gt(r$ci_lo, -1)
   expect_lt(r$ci_hi, 1)
-  expect_identical(unname(f$theta_cell_edge_coord[["rho"]]), "correlation")
+  expect_identical(unname(f$theta_cell_edge_coord[["b2.rho"]]), "correlation")
 
   g <- tulpa(y ~ x + spatial(region), data = d, family = "poisson",
              spatial = list(type = "bym2", adjacency = z$W),
@@ -80,10 +73,9 @@ test_that("fit_st_nested rw1 / rw2 carry no temporal rho axis", {
     f <- fit_st_nested(d$y, cbind(1, d$x), d$region, z$W, d$time, z$n_t,
                        temporal_type = tt, family = "poisson",
                        control = list(n_threads = 1L))
-    expect_false("rho" %in% colnames(f$theta_grid))
-    expect_false("rho" %in% summary(f)$hyperparameters$parameter)
-    expect_identical(sort(colnames(f$theta_grid)),
-                     c("tau_spatial", "tau_temporal"))
+    expect_false("b2.rho" %in% colnames(f$theta_grid))
+    expect_false("b2.rho" %in% summary(f)$hyperparameters$parameter)
+    expect_identical(sort(colnames(f$theta_grid)), c("b1.tau", "b2.tau"))
   }
 })
 

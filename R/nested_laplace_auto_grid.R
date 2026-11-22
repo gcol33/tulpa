@@ -169,7 +169,7 @@
 #' setting exactly as given, and re-centres (or, for a prior, engages its own
 #' regularizer over) a marked one when the fit rails against its ceiling.
 #'
-#' Four kinds of setting take the mark:
+#' Three kinds of setting take the mark:
 #' \itemize{
 #'   \item a grid axis on a nested-Laplace `prior` block (`sigma_grid`,
 #'     `tau_grid`, ...) -- a numeric vector of nodes, or the `[n_cells x k]`
@@ -177,9 +177,6 @@
 #'     take (`mcar` / `miid`'s `logchol_grid`, `tgmrf`'s `theta_grid_built`);
 #'   \item an entry of [tulpa_nested_laplace_joint()]'s `phi_grid` -- one arm's
 #'     dispersion axis;
-#'   \item a scalar grid-construction knob in `control`, for a driver that
-#'     builds its axes rather than taking them (`fit_st_nested()`'s
-#'     `n_grid_spatial`, `tau_upper`, ...);
 #'   \item a `prior_sigma` hyperprior specification -- a list, e.g.
 #'     `list("pc.prec", c(U = 3, alpha = 0.01))`.
 #' }
@@ -224,7 +221,7 @@
 #'   above all -- survives the mark; a list is returned unchanged apart from
 #'   the attribute.
 #' @seealso [is_auto_grid()], [auto_grid_place()],
-#'   [tulpa_nested_laplace_joint()], [fit_st_nested()]
+#'   [tulpa_nested_laplace_joint()]
 #' @examples
 #' prior <- list(type = "icar", sigma_grid = auto_grid(c(0.1, 0.5, 1, 2, 3)))
 #' is_auto_grid(prior$sigma_grid)

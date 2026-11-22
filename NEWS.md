@@ -1,5 +1,20 @@
 # tulpa 0.8.0
 
+* `fit_st_nested()` fits its spatial and temporal fields as the two blocks of
+  one multi-block `tulpa_nested_laplace()` fit, so the joint door places,
+  refines and scores its outer grid; the fitter's own tensor grid and its
+  one-attempt recentre are gone. The fit is the multi-block one: its axes are
+  `b1.<axis>` (spatial) and `b2.<axis>` (temporal), the generic accessors read
+  it through the block roles, and `control` is `tulpa_nested_laplace()`'s
+  (the grid knobs `n_grid_spatial`, `n_grid_temporal`, `n_grid_rho`,
+  `tau_lower` / `tau_upper`, `sigma_lower` / `sigma_upper`, `rho_lower` /
+  `rho_upper` and `rho_spatial` are refused). A proper-CAR field's correlation
+  is integrated, as on every other door, where the fitter held it at 0.9. At a
+  common grid the two paths give bit-identical cell log marginals (ICAR x RW1,
+  ICAR x AR1, BYM2 x AR1). Against dense fixed-grid references the placed fits
+  read the hyperparameter intervals the fixed grid missed: an ICAR precision
+  of 1.10 to 9.42 (dense) was 0.88 to 7.93 and is now 1.11 to 9.31 (#1197).
+
 * A multi-block `tulpa_nested_laplace()` fit is fitted by
   `tulpa_nested_laplace_joint()` on one arm, so its axes are laid by the joint
   door's one placement pass (an axis is placed when it rails or its grid does

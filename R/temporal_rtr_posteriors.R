@@ -442,9 +442,8 @@ temporal <- function(object, component = "all", summary = FALSE,
 # Columns of the `temporal =` field in a nested fit's latent vector, located
 # through the fit's own block layout (`.nl_role_cols()`), never at a fixed
 # offset: behind a spatial block the slice right after the fixed effects IS the
-# spatial field (gcol33/tulpa#903). fit_st_nested() records its own layout.
+# spatial field (gcol33/tulpa#903).
 .nl_temporal_field_cols <- function(object) {
-  if (!is.null(object$field_cols$temporal)) return(object$field_cols$temporal)
   .nl_role_cols(object$prior, object$block_latent_offsets,
                 if (is.matrix(object$modes)) ncol(object$modes), "temporal")
 }

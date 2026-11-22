@@ -71,7 +71,7 @@ test_that("auto_grid() marks a prior specification as well as a grid or a knob",
     expect_true(is_auto_grid(m))
     expect_true(is.list(m))
     expect_identical(m[[1L]], "pc.prec")
-    # A scalar control knob (fit_st_nested's grid knobs, gcol33/tulpa#294).
+    # A scalar knob.
     k <- auto_grid(4L)
     expect_true(is_auto_grid(k))
     expect_identical(as.numeric(k), 4)

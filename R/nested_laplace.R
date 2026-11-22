@@ -263,7 +263,7 @@
 #'     in silence. The per-axis policy names are the single-block path only: a
 #'     multi-block `prior` is fitted by [tulpa_nested_laplace_joint()], whose
 #'     placement pass applies the `TRUE` rule (rail or not resolved) to every
-#'     axis and refuses them, as [fit_st_nested()] does.
+#'     axis and refuses them.
 #'   * `max_grid_cells` (`NULL`, no ceiling) -- a ceiling on a multi-block
 #'     outer grid's cell count, one inner Newton solve per cell; a grid past it
 #'     is refused before any solve, naming the axes that produced the count.

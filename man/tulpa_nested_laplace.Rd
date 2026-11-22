@@ -348,7 +348,7 @@ a fit of any of them records which through \code{outer_grid_recenter_declined} r
 in silence. The per-axis policy names are the single-block path only: a
 multi-block \code{prior} is fitted by \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, whose
 placement pass applies the \code{TRUE} rule (rail or not resolved) to every
-axis and refuses them, as \code{\link[=fit_st_nested]{fit_st_nested()}} does.
+axis and refuses them.
 \item \code{max_grid_cells} (\code{NULL}, no ceiling) -- a ceiling on a multi-block
 outer grid's cell count, one inner Newton solve per cell; a grid past it
 is refused before any solve, naming the axes that produced the count.

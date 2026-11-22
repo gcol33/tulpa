@@ -666,8 +666,7 @@ tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
 # An axis's coordinate is a property of how its grid was built, so it is declared
 # rather than read off the node values -- inferring it from the spacing would let
 # the data choose the measure. A caller that builds its own grid declares its own
-# specs (`.nl_st_axis_specs()` is the spatiotemporal one); this table is for the
-# axes the joint and single-block dispatchers name.
+# specs; this table is for the axes the joint and single-block dispatchers name.
 #
 # A BOUNDED axis -- a correlation, a mixing weight -- is integrated on its
 # NATURAL coordinate, and that is a statement about the measure rather than

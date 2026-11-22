@@ -27,7 +27,7 @@ pass (\code{outer_grid_placement}) leaves a user-pinned
 setting exactly as given, and re-centres (or, for a prior, engages its own
 regularizer over) a marked one when the fit rails against its ceiling.
 
-Four kinds of setting take the mark:
+Three kinds of setting take the mark:
 \itemize{
 \item a grid axis on a nested-Laplace \code{prior} block (\code{sigma_grid},
 \code{tau_grid}, ...) -- a numeric vector of nodes, or the \verb{[n_cells x k]}
@@ -35,9 +35,6 @@ matrix of pre-paired coordinates the families whose axis is a matrix
 take (\code{mcar} / \code{miid}'s \code{logchol_grid}, \code{tgmrf}'s \code{theta_grid_built});
 \item an entry of \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}'s \code{phi_grid} -- one arm's
 dispersion axis;
-\item a scalar grid-construction knob in \code{control}, for a driver that
-builds its axes rather than taking them (\code{fit_st_nested()}'s
-\code{n_grid_spatial}, \code{tau_upper}, ...);
 \item a \code{prior_sigma} hyperprior specification -- a list, e.g.
 \code{list("pc.prec", c(U = 3, alpha = 0.01))}.
 }
@@ -82,5 +79,5 @@ auto_grid_place(auto_grid(c(0.5, 1, 2), place = FALSE))
 }
 \seealso{
 \code{\link[=is_auto_grid]{is_auto_grid()}}, \code{\link[=auto_grid_place]{auto_grid_place()}},
-\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, \code{\link[=fit_st_nested]{fit_st_nested()}}
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}
 }

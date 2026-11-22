@@ -611,8 +611,8 @@ area and time, is `spatiotemporal(type = )` with Knorr-Held types I to IV;
 Still off the front door: a panel temporal field alongside a spatial or
 `latent()` block, a temporal field alongside an SPDE field, and a
 `temporal_gp()` or `temporal_tvc()` field alongside any other field. Each reports an error naming the combination rather
-than dropping a term. `fit_st_nested()` fits the same additive model directly
-through its own kernels, for an areal, HSGP or NNGP spatial field.
+than dropping a term. `fit_st_nested()` fits the same additive model from
+vectors and indices, for an areal, HSGP or NNGP spatial field.
 
 ## See also
 

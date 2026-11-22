@@ -143,11 +143,15 @@ test_that("space-time HSGP field means use the cell's observation loading", {
   fit <- suppressWarnings(fit_st_nested(y, X, NULL, NULL, tt, 3L,
     spatial_type = "hsgp", temporal_type = "ar1", family = "gaussian", phi = .4,
     coords = xy, hsgp_m = 5L, hsgp_c = 1.8,
-    control = list(n_grid_spatial = 2L, n_grid_temporal = 2L,
-                   n_grid_rho = 2L)))
-  expect_equal(length(fit$field_cols$spatial), n)
+    control = list(axis_refine = "none", var_of_means_consistency = FALSE)))
+  expect_length(fit$spatial_effects, n)
   eta <- as.numeric(coef(fit)[1]) + fit$spatial_effects + fit$temporal_effects[tt]
-  expect_equal(eta, as.numeric(crossprod(fit$weights, fit$fitted_eta)), tolerance = 1e-8)
+  # A cell the screen dropped carries no mass and no fitted predictor.
+  live <- fit$weights > 0
+  expect_true(all(is.finite(fit$fitted_eta[live, ])))
+  expect_equal(eta, as.numeric(crossprod(fit$weights[live],
+                                         fit$fitted_eta[live, , drop = FALSE])),
+               tolerance = 1e-8)
 })
 
 test_that("a shared varying HSGP field retains its training rows across response arms", {

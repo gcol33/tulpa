@@ -254,9 +254,8 @@ compare_models <- function(..., criterion = c("waic", "loo", "wbic", "loglik")) 
 # name, the role of the field it belongs to ("spatial" / "temporal" /
 # "other"), that block's type, and its index in the prior list. Multi-block
 # grids prefix each axis with its block (`b<k>.<axis>`); a single block's axes
-# are bare and belong to it; a fit_st_nested() grid is read through its own map.
+# are bare and belong to it.
 .nested_axis_map <- function(object, axes) {
-  if (inherits(object, "tulpa_st_nested")) return(.st_axis_map(object, axes))
   pr <- object$prior
   blocks <- if (is.null(pr)) list() else if (!is.null(pr$type)) list(pr) else pr
   roles <- .nl_block_roles(pr)

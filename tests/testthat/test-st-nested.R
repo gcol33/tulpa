@@ -1,8 +1,7 @@
-# Additive spatiotemporal nested-Laplace driver fit_st_nested() (#158): wires the
-# cpp_nested_laplace_st_* kernels (previously reachable only from consumer
-# packages) through an exported fitter. Correctness anchor: the recovered
-# spatial and temporal field posterior means track the simulated fields, and the
-# fixed effects recover.
+# Additive spatiotemporal nested-Laplace fitter fit_st_nested() (#158): a
+# spatial and a temporal block of one multi-block nested-Laplace fit.
+# Correctness anchor: the recovered spatial and temporal field posterior means
+# track the simulated fields, and the fixed effects recover.
 
 sim_st <- function(seed = 7L, n_s = 20L, n_t = 10L, N = 600L) {
   set.seed(seed)
@@ -16,12 +15,9 @@ sim_st <- function(seed = 7L, n_s = 20L, n_t = 10L, N = 600L) {
        us = us, vt = vt)
 }
 
-# bym2's kernel (cpp_nested_laplace_st_bym2) integrates a (sigma_spatial,
-# rho_spatial) grid + a `scale_factor` computed from the adjacency, not the
-# `tau_spatial_grid` every other spatial type shares -- fit_st_nested() used
-# to build the icar-shaped argument list for every kernel, so this cell was
-# unreachable ("unused argument (tau_spatial_grid = ...)") on all three
-# temporal types (gcol33/tulpa#776).
+# bym2 integrates a (sigma, rho) spatial axis pair and a `scale_factor`
+# computed from the adjacency, not the precision every other areal type
+# carries; each temporal type is reached with it (gcol33/tulpa#776).
 sim_st_bym2 <- function(seed = 11L, n_s = 20L, n_t = 10L, N = 600L, rho = 0.7) {
   set.seed(seed)
   adj <- matrix(0, n_s, n_s)
@@ -68,7 +64,7 @@ test_that("fit_st_nested recovers the spatial and temporal fields (icar x rw1)",
             d$vt - mean(d$vt))
   expect_gt(cs, 0.85)
   expect_gt(ct, 0.80)
-  # Weights are a proper posterior over the (tau_spatial, tau_temporal, rho) grid.
+  # Weights are a proper posterior over the (b1.tau, b2.tau) grid.
   expect_equal(sum(fit$weights), 1, tolerance = 1e-8)
   expect_cells_solved(fit)
 })
@@ -83,7 +79,7 @@ test_that("fit_st_nested supports ar1 temporal and the generic accessors", {
   expect_false(is.null(vcov(fit)))
   expect_length(fit$temporal_effects, d$n_t)
   # rho is a real integrated axis.
-  expect_true("rho" %in% fit$theta_names)
+  expect_true("b2.rho" %in% colnames(fit$theta_grid))
 })
 
 test_that("fit_st_nested stamps family/n_trials/phi so the observation-level accessors work (#777)", {
@@ -132,7 +128,7 @@ test_that("fit_st_nested reaches bym2 x every temporal type (gcol33/tulpa#776)",
     expect_gt(ct, 0.6)
     expect_equal(sum(fit$weights), 1, tolerance = 1e-8)
     expect_cells_solved(fit)
-    expect_true(all(c("sigma_spatial", "rho_spatial") %in% fit$theta_names))
-    if (identical(tty, "ar1")) expect_true("rho" %in% fit$theta_names)
+    expect_true(all(c("b1.sigma", "b1.rho") %in% colnames(fit$theta_grid)))
+    if (identical(tty, "ar1")) expect_true("b2.rho" %in% colnames(fit$theta_grid))
   }
 })

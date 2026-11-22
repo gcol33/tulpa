@@ -10,29 +10,18 @@ skip_on_cran_budget()
 # gcol33/tulpa#676 -- the tulpa() dispatch restated defaults the backend
 # signatures already carry, so the same number lived in two files.
 
-test_that("fit_st_nested checks its control keys", {
+test_that("fit_st_nested checks its control keys against the nested door's", {
   skip_on_cran_budget()
-  keys <- tulpa:::.CONTROL_KEYS$st_nested
-  expect_true(is.character(keys) && length(keys) > 5L)
-  # Both knobs the driver reads and the roxygen did not name.
-  expect_true("rho_spatial" %in% keys)
-  expect_true("within_cell" %in% keys)
-
+  # fit_st_nested() is a two-block tulpa_nested_laplace() fit, so its control
+  # is that door's, checked under its own name.
   expect_error(
-    tulpa:::tulpa_check_control(list(rho_spatail = 0.5), keys, "fit_st_nested"),
-    "rho_spatail")
-  expect_silent(
-    tulpa:::tulpa_check_control(list(rho_spatial = 0.5), keys, "fit_st_nested"))
-})
-
-test_that("the proper-CAR mixing default has one home", {
-  skip_on_cran_budget()
-  # It was an inline literal in fit_st_nested(); .NL_ST_GRID is where every
-  # other spatiotemporal grid default lives.
-  expect_equal(tulpa:::.nl_st_default("rho_spatial"), 0.9)
-  expect_true("rho_spatial" %in% names(tulpa:::.NL_ST_GRID))
-  src <- paste(deparse(tulpa:::fit_st_nested), collapse = " ")
-  expect_match(src, 'nl_st_default("rho_spatial")', fixed = TRUE)
+    fit_st_nested(1:4, matrix(1, 4, 1), rep(1L, 4), diag(0, 1), 1:4, 4L,
+                  control = list(n_thread = 2L)),
+    "n_thread")
+  expect_error(
+    fit_st_nested(1:4, matrix(1, 4, 1), rep(1L, 4), diag(0, 1), 1:4, 4L,
+                  control = list(n_grid_spatial = 4L)),
+    "n_grid_spatial")
 })
 
 test_that("the dispatch omits a knob the caller did not set", {

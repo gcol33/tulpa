@@ -102,57 +102,10 @@ applies under either choice. The same two choices, under the same names,
 are offered by \code{\link[=tulpa]{tulpa()}}, \code{\link[=tulpa_eb]{tulpa_eb()}}, \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} and
 \code{\link[=fit_spde]{fit_spde()}}.}
 
-\item{control}{A list of numerical / grid knobs: \code{n_grid_spatial},
-\code{n_grid_temporal} (default 4 each), \code{n_grid_rho} (ar1 only, default 3),
-\code{tau_lower} / \code{tau_upper} (icar / car_proper precision grid bounds,
-default 0.25 / 16), \code{sigma_lower} / \code{sigma_upper} (bym2's spatial SD grid
-bounds in place of \code{tau_lower} / \code{tau_upper}, default 0.1 / 3 --
-\code{n_grid_spatial} sizes this axis too; its mixing-weight axis
-\code{rho_spatial} is always the fixed default node set and is not a \code{control}
-knob), \code{rho_lower} / \code{rho_upper} (ar1 grid, default 0.1 / 0.9), \code{max_iter},
-\code{tol}, \code{n_threads}, \code{auto_recenter} (default \code{TRUE}; \code{FALSE} holds the
-grid exactly as specified -- the per-axis policy names
-\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes are refused here with an error, since this
-driver recentres on the grid's collapsed-edge regime rather than on a
-per-axis rail; declines outright for \code{spatial_type = "bym2"}, whose
-(sigma, rho) spatial axes this recenter has no transform for yet, and for
-\code{"hsgp"}/\code{"nngp"}, same reason), \code{rho_spatial} (the proper-CAR mixing
-value the \code{car_proper} axis is held
-at, default \code{.NL_ST_GRID$rho_spatial}; unrelated to bym2's own integrated
-\code{rho_spatial} grid axis) and \code{within_cell} (\code{"log_quadratic"} /
-\code{"box_uniform"} / \code{"chord"},
-the within-cell construction the reported per-axis intervals are read
-with; defaults to
-\code{.NL_DIAG$within_cell}, as on every other nested door).
-
-For \code{spatial_type = "hsgp"}/\code{"nngp"}, the spatial axes are the field
-variance (\code{sigma2}) paired with the lengthscale (\code{lengthscale}) or NNGP
-range (\code{phi_gp}), read off the same shared default bounds the
-single-field \code{spatial_gp()} path uses (\code{gp_var} / \code{gp_lengthscale},
-\code{R/settings.R}) -- there is no separate \code{sigma2_lower}/\code{upper} knob here,
-only \code{n_grid_spatial}, which sizes the pair as it does for the areal
-families.
-
-The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling:
-when the fitted precision (or, for \code{ar1}, autocorrelation) posterior
-mode rails a boundary node (that axis's own marginal is maximal there,
-or the whole grid collapsed onto it: \code{pareto_k_regime = "collapsed_edge"}, see below), the driver fits a mode-Hessian via a
-derivative-free \code{optim()} over the grid and refits a grid re-centred on
-it (one attempt).
-
-A grid knob PINS the axes it shapes, and a pin always wins -- but
-pinning is decided by value, not by presence: a knob
-set to the engine's own default, or marked with \code{\link[=auto_grid]{auto_grid()}}, expresses
-no preference and leaves its axes free. That is what lets a wrapper
-package thread its own \code{n_grid}-style argument through \code{control} without
-silently disabling the recenter for every fit it makes. Pinning is also
-per axis: \code{tau_lower} / \code{tau_upper} hold the two precision axes,
-\code{n_grid_spatial} / \code{n_grid_temporal} one each, and \code{n_grid_rho} /
-\code{rho_lower} / \code{rho_upper} the \code{ar1} autocorrelation axis, so pinning one
-axis leaves the others free to be recentred. A pinned axis keeps its
-nodes exactly and is named in \code{outer_grid_pinned_axes}; with EVERY axis
-pinned the recenter declines outright and
-\code{outer_grid_recenter_declined} records which reason applied.}
+\item{control}{The numerical knobs of \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} (\code{max_iter},
+\code{tol}, \code{n_threads}, \code{auto_recenter}, \code{axis_refine}, \code{within_cell}, ...),
+passed to it unchanged. The outer grid starts from each block family's
+default axes and is placed and refined there.}
 
 \item{coords}{Coordinate matrix for a continuous spatial field, required
 when \code{spatial_type} is \code{"hsgp"} or \code{"nngp"} (ignored otherwise). For
@@ -185,43 +138,27 @@ is Matern 3/2.}
 \item{...}{Ignored.}
 }
 \value{
-A \code{tulpa_fit} (subclass \code{tulpa_nested_laplace}) carrying the
-fixed-effect posterior (\code{draws} via the grid mixture), \code{spatial_effects},
-\code{temporal_effects}, \code{log_marginal}, \code{weights}, \code{theta_grid} over
-\verb{(tau_spatial, tau_temporal, rho)} for an areal spatial field or
-\verb{(sigma2, lengthscale, tau_temporal, rho)} / \verb{(sigma2, phi_gp, tau_temporal, rho)} for \code{"hsgp"} / \code{"nngp"} (bym2: \verb{(sigma_spatial, rho_spatial, tau_temporal, rho)}; the temporal \code{rho} column is present
-for \code{temporal_type = "ar1"} only), and \code{family} / \code{n_trials} /
-\code{phi} (the
-R-level convention), which is what \code{\link[=fitted]{fitted()}}, \code{\link[=residuals]{residuals()}},
-\code{\link[=posterior_predict]{posterior_predict()}} and \code{\link[=simulate]{simulate()}} read the response family from.
-Also carries \code{pareto_k_regime}
-(\code{"spread"} / \code{"collapsed_interior"} / \code{"collapsed_edge"}, see
-\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}'s return docs for the definition) and
-\code{outer_grid_placement} (\code{"fixed"} or \code{"auto_recentered"}) plus, on a
-\code{"fixed"} placement, \code{outer_grid_recenter_declined}
-(\code{"grid_knobs_overridden"} / \code{"grid_not_collapsed"} /
-\code{"no_usable_curvature"} / \code{"refit_failed"} / \code{"sd_ceiling_unresolved"} /
-\code{"sd_floor_unresolved"}). A recentred fit also carries
-\code{outer_grid_pinned_axes}, the axes whose knobs were pinned and whose
-nodes were therefore kept, and \code{outer_grid_recenter_sd_clamp} /
-\verb{_sd_raw} / \verb{_sd_used} -- per moved axis, which mode-SD bound the
-placement hit, the SD the stencil measured, and the SD the axis was laid
-from. A bound-decline is PER AXIS here: the axes the
-mode-find did resolve are still re-placed, and
-\code{outer_grid_recenter_sd_declined} names the ones that kept their incoming
-nodes and on which bound, so a partially re-placed grid is not read as a
-fully re-placed one. With every free axis declined the pass reports the
-grid as the fixed one it still is.
+A \code{tulpa_fit} (subclass \code{tulpa_st_nested} of
+\code{tulpa_nested_laplace}): the multi-block fit \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}
+returns for the two blocks, block 1 the spatial field and block 2 the
+temporal one, so its outer axes are named \verb{b1.<axis>} / \verb{b2.<axis>}
+(\code{b1.tau} for an ICAR or proper-CAR field, \code{b1.sigma} / \code{b1.rho} for
+BYM2, \code{b1.sigma2} with \code{b1.lengthscale} / \code{b1.phi_gp} for HSGP / NNGP;
+\code{b2.tau}, and \code{b2.rho} under \code{ar1}). It also carries \code{spatial_effects}
+and \code{temporal_effects} (grid-weighted field posterior means: per areal
+unit or NNGP location, per observation for HSGP, per time point),
+\code{temporal} (the time layout \code{\link[=temporal]{temporal()}} reads), \code{spatial_type} and
+\code{temporal_type}.
 }
 \description{
 Fits \verb{y ~ X beta + u_spatial[s] + v_temporal[t]} with a spatial field --
 areal (\code{icar} / \code{bym2} / \code{car_proper}) or continuous (\code{hsgp} / \code{nngp}) --
-and a temporal field (\code{rw1} / \code{rw2} / \code{ar1}), integrating the spatial
-hyperparameter(s), temporal precision, and (for \code{ar1}) the temporal
-autocorrelation over a hyperparameter grid via the
-\verb{cpp_nested_laplace_st_*} kernels. The fixed-effect posterior is the
-grid-marginalised mixture; the spatial and temporal field posterior means are
-the grid-weighted latent modes.
+and a temporal field (\code{rw1} / \code{rw2} / \code{ar1}). The two fields are latent
+blocks of one nested-Laplace fit (\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} with a two-block
+\code{prior}), which integrates the spatial hyperparameter(s), the temporal
+precision and (for \code{ar1}) the temporal autocorrelation on its outer grid.
+The fixed-effect posterior is the grid-marginalised mixture; the spatial and
+temporal field posterior means are the grid-weighted latent modes.
 }
 \examples{
 \donttest{
@@ -237,5 +174,5 @@ fit <- fit_st_nested(y, cbind(1, x), s, adj, tt, n_t, family = "binomial")
 }
 }
 \seealso{
-\code{\link[=tulpa]{tulpa()}} (front door), \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} (single field).
+\code{\link[=tulpa]{tulpa()}} (front door), \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.
 }

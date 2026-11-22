@@ -275,7 +275,6 @@ field_effects <- function(object, component = NULL) {
 }
 
 # Where a nested-Laplace fit's spatial field sits in its latent vector: the
-# layout `fit_st_nested()` records (`field_cols`, `spatial_type`), else the
 # spatial-role block of the fit's prior located through `.nl_role_cols()`.
 # A single-block solve lays out [fixed, RE, field], so a lone ICAR /
 # proper-CAR block, one coordinate per unit, is the tail of that width. NULL
@@ -284,14 +283,6 @@ field_effects <- function(object, component = NULL) {
   M <- object$modes
   if (!is.matrix(M)) return(NULL)
   n_x <- ncol(M)
-  sp_cols <- object$field_cols$spatial
-  if (!is.null(sp_cols) && is.character(object$spatial_type)) {
-    type <- tolower(object$spatial_type)
-    n_cols <- length(sp_cols)
-    return(list(type = type, cols = as.integer(sp_cols),
-                n_units = if (type == "bym2") n_cols %/% 2L else n_cols,
-                projected = FALSE))
-  }
   prior <- object$prior
   roles <- .nl_block_roles(prior)
   k <- which(roles == "spatial")[1L]

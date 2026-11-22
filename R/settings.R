@@ -862,36 +862,6 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 }
 
 
-# --- spatiotemporal driver grid ----------------------------------------------
-#
-# `fit_st_nested()`'s own default grid (its `control` knobs override each
-# entry). Coarser per axis than the single-field defaults above because the
-# spatial precision, temporal precision and (ar1) autocorrelation cross into
-# ONE tensor: 4 x 4 x 3 = 48 inner solves at these settings.
-.NL_ST_GRID <- list(
-    n_spatial  = 4L,
-    n_temporal = 4L,
-    n_rho      = 3L,
-    tau_lower  = 0.25,
-    tau_upper  = 16,
-    rho_lower  = 0.1,
-    rho_upper  = 0.9,
-    # The proper-CAR mixing value the `car_proper` spatial axis is HELD at --
-    # a one-point axis on this driver, so the value is part of the model. It was
-    # an inline literal in fit_st_nested() (gcol33/tulpa#673); a selector gets
-    # one default, in one place.
-    rho_spatial = 0.9,
-    # bym2's spatial axis is a field SD (`sigma_spatial`), not a precision --
-    # same span as the single-field default `field_sd` axis (gcol33/tulpa#776).
-    # Its mixing-weight axis (`rho_spatial`, integrated rather than pinned)
-    # reuses the fixed `bym2_rho` node set directly, so it has no lower/upper
-    # knob here.
-    sigma_lower = 0.1,
-    sigma_upper = 3
-)
-
-.nl_st_default <- function(par) .settings_get(.NL_ST_GRID, par, "spatiotemporal grid setting")
-
 # --- diagnostics --------------------------------------------------------------
 #
 # Defaults of the approximation-reliability layer. `k_usable` is the REPORTED
@@ -1299,13 +1269,10 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # different objectives, so they are recorded separately rather than averaged
 # into one number that serves neither:
 #
-#  * `st` -- `fit_st_nested()`'s auto-grid over (tau_spatial, tau_temporal,
-#    rho). `ndeps` 1e-3 is `optim()`'s own default, written out so the step
-#    this path depends on is stated rather than inherited.
-#  * `pathfinder` -- `tulpa_pathfinder()`'s L-BFGS mode-find. It does NOT go
-#    through `.nl_lbfgsb_mode_find()`: it is unbounded, takes an analytic
-#    gradient when the caller supplies one, and carries `maxit` / `pgtol` as
-#    its own arguments, so `factr` is the only value it needs from here. It is
+#  * `pathfinder` -- `tulpa_pathfinder()`'s L-BFGS mode-find. It is
+#    unbounded, takes an analytic gradient when the caller supplies one, and
+#    carries `maxit` / `pgtol` as its own arguments, so `factr` is the only
+#    value it needs from here. It is
 #    recorded in this table anyway so every L-BFGS-B stop tolerance in the
 #    package is set in one place.
 #  * `hyper_ccd` -- the mode-centred CCD design's outer mode-find over the
@@ -1314,7 +1281,6 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 #    wide against the inner solve's tolerance because every evaluation is a
 #    full inner Laplace fit.
 .NL_MODE_FIND <- list(
-    st         = list(factr = 1e7, ndeps = 1e-3, maxit = 300L),
     pathfinder = list(factr = 1e7),
     hyper_ccd  = list(factr = 1e7, ndeps = 5e-2)
 )
