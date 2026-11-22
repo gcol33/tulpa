@@ -214,3 +214,31 @@ test_that("a pilot-screened fit places the same axes", {
         expect_lt(.bs_node_mass(fit, a), 0.9)
     }
 })
+
+test_that("a placed precision is followed out along a heavy upper tail", {
+    skip_on_cran()
+    # A binomial ICAR the data barely identify: the precision's posterior runs
+    # out along its PC prior's tau^(-3/2) tail. The placed axis is the engine's
+    # own, so refinement may lay levels past its top node. A dense 300-node
+    # log-spaced reference over (1, 1e7) reads tau's median 264 and 97.5% point
+    # 1.13e5 (log-sd 2.28), and x's posterior sd 0.1952.
+    set.seed(20260716)
+    S <- 30L
+    W <- matrix(0, S, S)
+    for (i in 1:(S - 1)) W[i, i + 1] <- W[i + 1, i] <- 1
+    df <- data.frame(region = factor(seq_len(S)))
+    df$x <- as.integer(df$region) / 10 + rnorm(S, 0, 0.3)
+    df$y <- rbinom(S, 20, plogis(-0.4 + 0.5 * df$x))
+    fit <- suppressMessages(tulpa(
+        y ~ x + spatial(region), data = df, family = "binomial",
+        n_trials = rep(20L, S), spatial = spatial_car(W, level = "obs"),
+        mode = "structured", control = list(progress = FALSE)))
+    expect_identical(fit$axis_span$b1.tau$refine, "extend")
+    expect_gt(max(fit$theta_grid[, "b1.tau"]),
+              max(fit$theta_grid[!nzchar(fit$refining_axis), "b1.tau"]))
+    hp <- summary(fit)$hyperparameters
+    hp <- hp[hp$parameter == "b1.tau", ]
+    expect_lt(abs(log(hp$ci_hi / 1.134e5)), 0.1 * 2.28)
+    expect_lt(abs(log(hp$median / 263.8)), 0.1 * 2.28)
+    expect_lt(abs(sqrt(vcov(fit)[2L, 2L]) / 0.1952 - 1), 0.01)
+})

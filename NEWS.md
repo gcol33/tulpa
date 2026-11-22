@@ -1,5 +1,12 @@
 # tulpa 0.8.0
 
+* A precision the placement pass lays is followed out past its top node when
+  the posterior runs on: its nodes are marked engine-placed (#1283), where
+  they had read as the caller's pin and were only densified. On a binomial
+  ICAR the data barely identify, the precision's 97.5% point read 3.6e4
+  against a dense 1.13e5 and now reads 1.33e5, and the slope's posterior sd
+  moved from 2.2% to 0.3% off the reference (#1273).
+
 * A proper-CAR correlation on the single-block joint backends and on a copied
   block (`rho_car`) takes the logit of the (0, 1) support its block declares,
   as the registry path's `rho` does, so the joint door places, refines and
