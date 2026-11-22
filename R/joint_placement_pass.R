@@ -299,8 +299,9 @@
 # coordinate the transform registry gives it (`tag`), as the registry rescue
 # lays it; an axis the registry gives none is not placed.
 # An axis another family lists first (a block's own scale, a BYM2 mixing weight)
-# stays that family's (`.joint_placement_slots()`); a matrix field (tgmrf) holds
-# every axis of its block in one field and is not addressed per axis here.
+# stays that family's (`.joint_placement_slots()`). A matrix field (a tgmrf
+# block's `theta_grid_built`) holds every axis of its block as one column each,
+# and is written whole whenever one of them is placed.
 .joint_field_slots <- function(res, st) {
     cn <- colnames(res$theta_grid) %||% character(0)
     out <- list()
@@ -324,7 +325,7 @@
         as.integer(st$cp$copy_blocks_zero) + 1L else integer(0)
     out <- list()
     for (sl in .nl_registry_axis_slots(st$prior)) {
-        if (sl$block %in% copied || !is.null(sl$column)) next
+        if (sl$block %in% copied) next
         tag <- tryCatch(.joint_pareto_block_tags(sl$type, sl$axis),
                         error = function(e) NA_character_)
         if (length(tag) != 1L || is.na(tag)) next
@@ -340,7 +341,6 @@
 .joint_block_declared_nodes <- function(res, st, b) {
     out <- list()
     for (sl in .nl_registry_axis_slots(st$prior[b])) {
-        if (!is.null(sl$column)) next
         out[[sl$axis]] <- .joint_declared_axis_ref(paste0("b", b, ".", sl$axis))(res)
     }
     out
@@ -356,10 +356,11 @@
 .joint_field_write <- function(st, s, nodes, auto = logical(0)) {
     b <- s$block
     blk <- st$prior[[b]]
-    bs <- Filter(function(x) is.null(x$column), .nl_registry_axis_slots(list(blk)))
+    bs <- .nl_registry_axis_slots(list(blk))
     lev <- lapply(bs, function(x) {
         if (identical(x$axis, s$axis)) return(sort(unique(as.numeric(nodes))))
         g <- .nl_strip_auto(blk[[x$field]])
+        if (!is.null(g) && !is.null(x$column)) g <- as.matrix(g)[, x$column]
         if (!is.null(g)) sort(unique(signif(as.numeric(g), 12L)))
         else s$cross[[x$axis]]
     })

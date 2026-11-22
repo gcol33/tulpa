@@ -1,5 +1,23 @@
 # tulpa 0.8.0
 
+* A multi-block `tulpa_nested_laplace()` fit is fitted by
+  `tulpa_nested_laplace_joint()` on one arm, so its axes are laid by the joint
+  door's one placement pass (an axis is placed when it rails or its grid does
+  not resolve its posterior) and refined and screened there; the registry's
+  multi-block placement is gone. On a multi-block `prior`,
+  `control$auto_recenter = "rail"` or `"always"` is refused. A fit whose
+  placement fired lays different nodes than before: over the registry test
+  files the hyperparameter medians moved by at most 0.13 of their value (an
+  AR(1) correlation whose 95% interval is -0.25 to 0.996) and every
+  coefficient by at most 0.07 posterior SDs. The joint door now places a
+  tgmrf block's axes and evaluates its precision from its closures at the
+  cells of every solve (#1195).
+
+* `tulpa_nested_laplace_joint()` scores the outer Pareto-k-hat once on a placed
+  fit: the fit the placement is read off leaves it to the refit it is replaced
+  by. A placed Poisson SPDE fit (n = 250) went from about 4.3 s to 2.0 s with
+  the same grid and k-hat (#1264).
+
 * `tgmrf()` and `tgmrf_cpp()` take `grid_span` where they took `bounds`: the
   box the outer theta grid and the samplers' pilot are laid over. The support
   of `theta` is that of `prior(theta)` alone, as the samplers already read it.

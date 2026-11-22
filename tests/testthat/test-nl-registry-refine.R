@@ -118,8 +118,13 @@ test_that("a field SD collapsed onto few nodes is refined on the registry door",
 test_that("a multi-block registry fit refines the same cells as the single block", {
     skip_on_cran()
     sim <- .nrr_sim()
-    one <- .nrr_fit(sim, sim$prior)
-    multi <- .nrr_fit(sim, list(sim$prior))
+    # The single block is placed by the registry rescue and the block list by
+    # the joint placement pass, so both hold a stated grid too coarse for the
+    # posterior and the refinement passes are compared on the same cells.
+    prior <- c(sim$prior, list(tau_grid = c(0.1, 0.25, 0.6)))
+    held <- list(auto_recenter = FALSE)
+    one <- .nrr_fit(sim, prior, held)
+    multi <- .nrr_fit(sim, list(prior), held)
     expect_equal(as.numeric(multi$log_marginal), as.numeric(one$log_marginal),
                  tolerance = 1e-8)
     expect_equal(as.numeric(multi$theta_grid[, "b1.tau"]),

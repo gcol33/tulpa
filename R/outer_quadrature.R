@@ -151,19 +151,6 @@
     design
 }
 
-.nl_validate_outer_design_prior <- function(design, prior) {
-    grids <- lapply(prior, function(p) .nl_block_axis_grid(p)$grid)
-    axes <- unlist(lapply(seq_along(grids), function(b)
-        paste0("b", b, ".", colnames(grids[[b]]))))
-    tg <- do.call(cbind, lapply(grids, function(g)
-        g[rep(seq_len(nrow(g)), length.out = max(vapply(grids, nrow, integer(1)))), ,
-          drop = FALSE]))
-    colnames(tg) <- axes
-    res <- list(theta_grid = tg, axis_offsets = c(0L, cumsum(vapply(grids, ncol, integer(1)))))
-    tags <- .nl_registry_axis_tags(res, prior, TRUE)
-    .nl_validate_outer_design_axes(design, tg, tags)
-}
-
 .nl_user_integrate <- function(res, solve, design, tags) {
     design <- .nl_validate_outer_design_axes(design, .nl_theta_matrix(res), tags)
     cells <- design$points
@@ -239,15 +226,6 @@
             view = view, tol = cfg$qmc_tol),
         user = .nl_user_integrate(res, solve, cfg$outer_design, tags),
         aghq = .nl_aghq_integrate(res, solve, prior, cfg$quad))
-}
-
-# The number of cells an outer design solves in full, which sizes the per-cell
-# side data a fit retains for them.
-.nl_outer_design_cells <- function(integration, cfg, n_axes) {
-    switch(integration, qmc = cfg$qmc_nodes,
-        user = nrow(cfg$outer_design$points),
-        aghq = prod(vapply(seq_len(n_axes), function(j)
-            length(.nl_sparse_rules(j > 2L)[[cfg$quad$max_level]]$x), integer(1))))
 }
 
 # The outer design a joint fit integrates on, NULL for a grid or CCD. A design

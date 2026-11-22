@@ -117,7 +117,7 @@ test_that("the adaptive sparse rule runs on the joint door for a multiscale fiel
   reg <- if (!is.null(fit$nested)) fit$nested else fit
   expect_identical(reg$integration, "aghq")
   prior <- lapply(seq_along(reg$prior), function(b)
-    tulpa:::.nl_block_as_arm(reg$prior[[b]], NULL, b))
+    tulpa:::.nl_block_as_arm(reg$prior[[b]], b))
   jnt <- tulpa_nested_laplace_joint(
     list(y = list(y = d$y, X = cbind(1, d$x), family = "poisson")),
     prior = prior, control = c(ctl, list(integration = "aghq")))

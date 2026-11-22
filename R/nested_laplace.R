@@ -260,9 +260,10 @@
 #'     car_proper and hsgp_mo each carry a correlation axis with no guessable
 #'     coordinate, and mcar / miid / tgmrf hold their axes in one matrix field;
 #'     a fit of any of them records which through `outer_grid_recenter_declined` rather than passing
-#'     in silence. The per-axis policy names are the standalone registry path
-#'     only -- [tulpa_nested_laplace_joint()] and [fit_st_nested()] refuse them
-#'     rather than accept them and ignore them.
+#'     in silence. The per-axis policy names are the single-block path only: a
+#'     multi-block `prior` is fitted by [tulpa_nested_laplace_joint()], whose
+#'     placement pass applies the `TRUE` rule (rail or not resolved) to every
+#'     axis and refuses them, as [fit_st_nested()] does.
 #'   * `max_grid_cells` (`NULL`, no ceiling) -- a ceiling on a multi-block
 #'     outer grid's cell count, one inner Newton solve per cell; a grid past it
 #'     is refused before any solve, naming the axes that produced the count.
@@ -702,18 +703,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     c("grid", .NL_OUTER_DESIGNS))
   use_design <- integration %in% .NL_OUTER_DESIGNS
   if (use_design && !.is_multi_block_prior(prior)) prior <- list(prior)
-  .prov <- .nl_grid_provenance(prior)
-  prior <- .prov$prior
-  # And refuse an axis this path cannot read: a grid field
-  # some OTHER driver spells the same family with is neither integrated nor
-  # reported here, so a pinned one is an error and a defaulted one is recorded.
-  .op_axis <- .nl_publish_axis_dropped(
-    .nl_check_axis_fields(prior, "registry", auto = .prov$auto))
-  on.exit(options(.op_axis), add = TRUE)
-  if (!is.null(design_cfg$outer_design)) {
-    design_cfg$outer_design <- .nl_validate_outer_design_prior(
-      design_cfg$outer_design, prior)
-  }
   # A model-supplied `likelihood` is only honoured by the spec-driven multi-block
   # driver (run_multi_block_nested_laplace); the single-kernel path (.nl_dispatch)
   # has no spec hook. Route a single LatentBlock-type prior through the
@@ -770,155 +759,21 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       stop("`control$fitted_var` applies to a single-block `prior`; ",
            "this fit takes the multi-block dispatch.", call. = FALSE)
     }
-    tm$mark("setup")
-    # Every full-grid solve of this fit -- the first one and the placement
-    # pass's refit -- is screened at the same tolerance and gated the same way,
-    # so no reported grid is a pruned one whose screen ranking was unreliable.
-    # Who wrote each axis's nodes is read off the prior as declared: a placement
-    # refit lays the engine's nodes on the block's grid fields, and those stay
-    # engine-placed rather than becoming a statement the refinement must keep.
-    prior_declared <- prior
-    solve_grid_multi <- function(prior_i) {
-      out <- .nl_prune_gate(
-        .nl_dispatch_multi(cargs, prior_i, likelihood = likelihood,
-                           progress = .nl_progress_args(control),
-                           within_cell = within_cell),
-        prune_tol_eff,
-        function() .nl_dispatch_multi(
-          utils::modifyList(cargs, list(prune_tol = 0)), prior_i,
-          likelihood = likelihood, progress = .nl_progress_args(control),
-          within_cell = within_cell))
-      refined <- .nl_refine_registry(
-        out, function(theta_mat, screen = NULL) .nl_dispatch_multi(
-          .nl_refine_cargs(cargs_no_ckpt, screen, prune_tol_eff), prior_i,
-          likelihood = likelihood, theta_grid_override = theta_mat),
-        prior_i, TRUE, .prov$auto,
-        declared = prior_declared,
-        consistency = var_of_means_consistency && !use_design,
-        adaptive_grid = adaptive_grid && !use_design,
-        edge_thresh = adaptive_grid_edge_thresh,
-        max_passes = adaptive_grid_max_passes,
-        user = control$axis_refine)
-      if (is.null(refined$refining_axis)) return(refined)
-      # The dispatcher integrated the base grid; the appended cells are measured
-      # and read with the rest.
-      refined <- .nl_attach_outer_integration(refined, "multi-block outer grid")
-      .nl_registry_moments_multi(refined, within_cell)
-    }
-    # The first solve leaves its grid unrefined when the placement pass below
-    # will lay it again (`.nl_refine_deferred()`).
-    recenter_policy <- .nl_recenter_mode(control$auto_recenter)
-    res <- .nl_with_refine_deferred(
-      function(r) .nl_registry_rescue_moves(r, NULL, prior, .prov$auto,
-                                            recenter_policy, multi = TRUE),
-      solve_grid_multi(prior))
-    tm$mark("grid")
-    if (isTRUE(keep_grid_hessians)) {
-      res <- .nl_attach_grid_hessians(res, p_fixed, keep_joint_prec)
-    }
-    tm$mark("postproc")
-    # The rescue reads the grid's outer-integration regime, attached here; the
-    # k-hat itself is read once, on the grid the placement pass leaves.
-    res <- .nl_attach_pareto_k(res, prior, cargs_lm, "multi", NULL,
-                               likelihood, k_samples, compute = FALSE,
-                               tail_points = k_tail_points)
-
-    # The same placement pass the single-block path runs, over the block list.
-    # Every axis is block-prefixed here, so a moved block is re-crossed on its
-    # own fields and its neighbours keep theirs; a prior whose blocks the
-    # family table does not cover declines with a reason rather than leaving
-    # the fit with no placement record at all.
-    refit_multi <- function(prior_i) {
-      r <- solve_grid_multi(prior_i)
-      if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
-      .nl_attach_pareto_k(r, prior_i, cargs_lm, "multi", NULL,
-                          likelihood, k_samples, compute = FALSE,
-                          tail_points = k_tail_points)
-    }
-    rescue_multi <- function(res_i) .nl_registry_grid_rescue(
-      res_i, NULL, prior,
-      refit = refit_multi,
-      refit_log_marginal = function(prior_i, theta_mat) {
-        .nl_dispatch_multi(cargs_lm, prior_i, likelihood = likelihood,
-                           theta_grid_override = theta_mat)$log_marginal
-      },
-      auto = .prov$auto, multi = TRUE,
-      policy = recenter_policy)
-    multi_rescue <- rescue_multi(res)
-    # A first solve the pass could not lay again still holds the grid it left
-    # unrefined: it is solved again with its refinement and read as any other.
-    if (isTRUE(multi_rescue$res$outer_refine_deferred)) {
-      multi_rescue <- rescue_multi(refit_multi(prior))
-    }
-    res   <- multi_rescue$res
-    prior <- multi_rescue$prior
-    res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
-    if (use_design) {
-      modes <- .nl_registry_refine_modes(colnames(res$theta_grid),
-        colnames(res$theta_grid), prior_declared, TRUE, .prov$auto,
-        user = control$axis_refine)
-      design_cells <- .nl_outer_design_cells(integration, design_cfg,
-                                             ncol(res$theta_grid))
-      solve_outer <- function(cells, retain) {
-        r <- .nl_dispatch_multi(if (retain) cargs_no_ckpt else cargs_lm,
-          prior, likelihood = likelihood, theta_grid_override = cells)
-        if (retain && isTRUE(keep_grid_hessians)) {
-          r <- .nl_attach_grid_hessians(r, p_fixed, budget_cells = design_cells)
-        }
-        r
-      }
-      res <- .nl_outer_design_integrate(res, integration, solve_outer,
-        .nl_registry_axis_tags(res, prior, TRUE), unname(modes) == "extend",
-        prior, design_cfg)
-      res <- .nl_registry_moments_multi(res, within_cell)
-      if (keep_joint_prec) {
-        k <- which.max(replace(res$log_marginal, !is.finite(res$log_marginal), -Inf))
-        modal_args <- utils::modifyList(cargs_no_ckpt,
-          list(x_init_nullable = as.numeric(res$modes[k, ])))
-        r <- .nl_dispatch_multi(modal_args, prior, likelihood = likelihood,
-          theta_grid_override = res$theta_grid[k, , drop = FALSE])
-        res$H_joint <- .nl_modal_joint_precision(r)
-      }
-    }
-    # The placement pass's mode-find and refit are grid work: they lay the grid
-    # the fit reports.
-    tm$mark("grid")
-    res <- .nl_attach_pareto_k(res, prior, cargs_lm, "multi", NULL,
-                               likelihood, k_samples, compute = diagnose_k,
-                               tail_points = k_tail_points)
-
-    res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "multi", NULL,
-                                   likelihood, p_fixed, skew_idx,
-                                   compute = diagnose_skew)
-    res <- .nl_skew_correction_attach(res, p_fixed, skew_correct)
-    res <- .nl_subspace_debias_attach(
-      res, sd_cfg,
-      redispatch = function(req) .nl_dispatch_multi(
-        cargs_no_ckpt, prior, likelihood = likelihood, debias = req,
-        theta_grid_override = .nl_refined_theta(res)),
-      p_fixed = p_fixed, beta_names = colnames(X),
-      remoments = function(r) .nl_registry_moments_multi(r, within_cell))
-    res <- .nl_cila_attach(
-      res, cila_cfg,
-      redispatch = function(req) .nl_dispatch_multi(
-        cargs_no_ckpt, prior, likelihood = likelihood, cila = req,
-        theta_grid_override = .nl_refined_theta(res)),
-      p_fixed = p_fixed, beta_names = colnames(X),
-      remoments = function(r) .nl_registry_moments_multi(r, within_cell))
-    tm$mark("diagnostics")
-    res$prior <- prior
-    res$beta_prior <- cargs$beta_prior
-    res$field_solve <- .nl_field_solve_record("multi", cargs_no_ckpt, prior,
-                                              likelihood)
-    res$timing <- tm$timing()
-    res <- .nl_attach_checkpoint_loaded(res, .ckpt, ckpt_loaded0)
-    return(.finalize_fit(res, backend = "nested_laplace",
-                         n_fixed = p_fixed, fixed_names = colnames(X),
-                         extra_class = c("tulpa_nested_laplace", "list"),
-                         data = list(y = y, n_trials = n_trials,
-                                    model_matrix = X, family = family,
-                                    offset = offset, phi = phi)))
+    return(.nl_registry_multi_fit(
+      prior, cargs, control, likelihood, hyperprior, integration,
+      keep_grid_hessians = keep_grid_hessians, X = X,
+      data = list(y = y, n_trials = n_trials, model_matrix = X,
+                  family = family, offset = offset, phi = phi)))
   }
+
+  .prov <- .nl_grid_provenance(prior)
+  prior <- .prov$prior
+  # And refuse an axis this path cannot read: a grid field
+  # some OTHER driver spells the same family with is neither integrated nor
+  # reported here, so a pinned one is an error and a defaulted one is recorded.
+  .op_axis <- .nl_publish_axis_dropped(
+    .nl_check_axis_fields(prior, "registry", auto = .prov$auto))
+  on.exit(options(.op_axis), add = TRUE)
 
   if (!is.null(likelihood)) {
     stop("`likelihood` (model-supplied spec) needs a latent prior block. ",
@@ -1772,18 +1627,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # per-axis grids: `block$n_grid[j]` (default `.NL_GRID$tgmrf_axis$n`)
     # equispaced points between block$grid_span$lower[j] and
     # block$grid_span$upper[j], or block$init[j] +/- `half_width` if the block
-    # states no span. Precomputed Q_k / logdet / log p(theta_k)
-    # at every grid row are packed into the C++ block spec by
-    # `.nl_tgmrf_per_grid()`.
+    # states no span. Q_k / logdet / log p(theta_k) at the cells of every
+    # solve are evaluated from the block's own closures and packed into the
+    # C++ block spec (`.joint_tgmrf_at_cells()`, `.nl_tgmrf_per_grid()`).
     cpp_fn = NULL,
-    # The multi-block converter builds the per-grid Q / logdet / log-prior from
-    # the block's own closures; the joint one takes them already materialised.
     required = list(
       axis  = c("theta_dim", "theta_names"),
       multi = c("n_latent", "obs_idx"),
-      joint = c("n_latent", "obs_idx", "Q_csc_p_per_grid", "Q_csc_i_per_grid",
-                "Q_csc_x_per_grid", "logdet_Q_per_grid",
-                "log_prior_theta_per_grid")),
+      joint = c("n_latent", "obs_idx")),
     defaults = function(p, a) {
       if (is.null(p$theta_grid_built)) {
         d <- p$theta_dim
@@ -2228,6 +2079,9 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # spread. Capped at `.NL_FIELD_COV_MAX` doubles over the grid; past the cap only
 # the marginals are kept and the draws fall back to independent coordinates.
 .NL_FIELD_COV_MAX <- 4e6
+#
+# `fixed = FALSE` adds the field reads alone and leaves the fixed-effect blocks
+# a fit already carries: a joint fit extracts them inside its own solves.
 
 .nl_attach_grid_hessians <- function(res, p_fixed, keep_joint = FALSE,
                                      var_cols = c(
@@ -2239,7 +2093,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                      units = .nl_unit_loads(
                                        res$blocks, res$block_latent_offsets,
                                        res$Q_csc_n, res$theta_grid),
-                                     budget_cells = length(res$Q_csc_p_per_grid)) {
+                                     budget_cells = length(res$Q_csc_p_per_grid),
+                                     fixed = TRUE) {
   Q_p <- res$Q_csc_p_per_grid
   Q_i <- res$Q_csc_i_per_grid
   Q_x <- res$Q_csc_x_per_grid
@@ -2350,8 +2205,10 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   }
   res <- .nl_attach_unit_loads(res, units, Q_p, Q_i, Q_x, n_x, cons)
 
-  res$grid_hessians <- grid_hessians
-  res$grid_modes    <- grid_modes
+  if (isTRUE(fixed)) {
+    res$grid_hessians <- grid_hessians
+    res$grid_modes    <- grid_modes
+  }
   if (n_var) {
     res$grid_field_var      <- field_var
     res$grid_field_var_cols <- var_cols
@@ -2753,21 +2610,21 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # (`.joint_block_spec_for_cpp()`). The registry spells a few single-response
 # fields as one object where the joint parser takes a per-arm list -- an HSGP
 # basis (`phi_basis`, `lambda_eig`) and an SPDE projector (`A_x`, `A_i`, `A_p`,
-# `n_obs`) -- and a tgmrf block carries its closures, which are evaluated at
-# every row of the block's columns of the outer grid (`block_joint_grid`).
-.nl_block_as_arm <- function(p, block_joint_grid, block_index) {
+# `n_obs`). A tgmrf block keeps its closures, which the joint driver evaluates
+# at the cells of every solve (`.joint_tgmrf_at_cells()`).
+.nl_block_as_arm <- function(p, block_index) {
   type <- tolower(p$type)
   .nl_check_block_fields(
     p, c("axis", if (.nl_block_is_projected(p)) "projected" else "multi"),
     block_index)
-  arm <- .nl_block_arm_fields(p, type, block_joint_grid)
+  arm <- .nl_block_arm_fields(p, type)
   p[names(arm)] <- arm
   p
 }
 
 # The per-arm fields `.nl_block_as_arm()` writes onto a registry block, NULL
 # where the block already reads the same in both forms.
-.nl_block_arm_fields <- function(p, type, block_joint_grid) {
+.nl_block_arm_fields <- function(p, type) {
   if (type == "hsgp" && is.null(p[["phi"]])) {
     phi <- as.matrix(p$phi_basis)
     storage.mode(phi) <- "double"
@@ -2778,7 +2635,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     return(list(A_x = list(as.numeric(p$A_x)), A_i = list(as.integer(p$A_i)),
                 A_p = list(as.integer(p$A_p)), n_obs_per_arm = as.integer(p$n_obs)))
   }
-  if (type == "tgmrf") return(.nl_tgmrf_per_grid(p, block_joint_grid))
   NULL
 }
 
@@ -2886,6 +2742,67 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     offset      = cargs$offset_nullable,
     likelihood  = likelihood,
     beta_prior  = cargs$beta_prior), 1L)
+}
+
+# A multi-block registry fit is the one-arm fit it is on the joint door
+# (`tulpa_nested_laplace_joint()`): the registry's response, design and
+# fixed-effect prior are the arm, its blocks the joint prior, and the joint
+# door's placement pass lays every axis, its refinement and outer designs
+# integrate them. What the registry reports beyond a joint fit is added to the
+# result -- each cell's field loadings and marginal field variances, read off the
+# per-cell precision the joint fit keeps for them (`.nl_attach_grid_hessians()`),
+# the record a cell is solved again from (`field_solve`), the response and the
+# fixed-effect prior -- and the fit is the registry's (`backend =
+# "nested_laplace"`).
+.nl_registry_multi_fit <- function(prior, cargs, control, likelihood, hyperprior,
+                                   integration, keep_grid_hessians, X, data) {
+  prior <- .nl_tgmrf_default_obs_idx(prior, length(cargs$y))
+  prior <- lapply(seq_along(prior), function(b) .nl_block_as_arm(prior[[b]], b))
+  ctl <- control
+  ctl$integration <- integration
+  ctl$store_Q <- isTRUE(keep_grid_hessians)
+  # The joint door takes a response's dispersion on its R-level convention.
+  arm <- .nl_registry_arm(cargs, likelihood)
+  arm$phi <- data$phi
+  fit <- tulpa_nested_laplace_joint(
+    stats::setNames(list(arm), .JOINT_ARM_NAME),
+    prior = prior, hyperprior = hyperprior, control = ctl)
+
+  oldClass(fit) <- NULL
+  fit[c("responses", "arm_layout", "eta_layout", "N", "cell_coupling",
+        "copy", "fixed_names")] <- NULL
+  fit$backend <- "nested_laplace"
+  fit$prior <- .nl_grid_provenance(fit$prior)$prior
+  if (isTRUE(keep_grid_hessians)) {
+    fit <- .nl_attach_grid_hessians(fit, ncol(X), fixed = FALSE)
+  }
+  fit$beta_prior <- cargs$beta_prior
+  fit$field_solve <- .nl_field_solve_record(
+    "multi", utils::modifyList(cargs, list(checkpoint_path = "", prune_tol = 0)),
+    fit$prior, likelihood)
+  for (nm in names(data)) fit[nm] <- list(data[[nm]])
+  .finalize_fit(fit, backend = "nested_laplace",
+                n_fixed = ncol(X), fixed_names = colnames(X),
+                extra_class = c("tulpa_nested_laplace", "list"), data = data)
+}
+
+# A tgmrf block given without an observation map reads one observation per
+# latent slot, the identity map; a block whose latent size is not the
+# observation count has to state its map.
+.nl_tgmrf_default_obs_idx <- function(prior_list, n_obs) {
+  for (b in seq_along(prior_list)) {
+    blk <- prior_list[[b]]
+    if (identical(tolower(blk$type %||% ""), "tgmrf") && is.null(blk$obs_idx)) {
+      if (blk$n_latent != n_obs) {
+        stop("tgmrf block has n_latent = ", blk$n_latent,
+             " but data has N = ", n_obs, " observations. Provide an explicit ",
+             "`obs_idx` argument to tgmrf() mapping observations to latent slots.",
+             call. = FALSE)
+      }
+      prior_list[[b]]$obs_idx <- seq_len(n_obs)
+    }
+  }
+  prior_list
 }
 
 # Per-block axis grid as a matrix `[n_block_cells x n_axes_for_block]`.
@@ -3054,24 +2971,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
                                # Corrected integrated Laplace:
                                # the kernel-facing request list, off by default.
                                cila = NULL) {
-  # Inject a default obs_idx for any tgmrf block that didn't supply one.
-  # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
-  # the canonical "one obs per latent slot" case has N == n_latent and the
-  # identity mapping. Heterogeneous (N != n_latent) layouts must supply
-  # obs_idx explicitly at tgmrf() construction.
-  N_obs <- length(cargs$y)
-  for (b in seq_along(prior_list)) {
-    blk <- prior_list[[b]]
-    if (identical(tolower(blk$type %||% ""), "tgmrf") && is.null(blk$obs_idx)) {
-      if (blk$n_latent != N_obs) {
-        stop("tgmrf block has n_latent = ", blk$n_latent,
-             " but data has N = ", N_obs, " observations. Provide an explicit ",
-             "`obs_idx` argument to tgmrf() mapping observations to latent slots.",
-             call. = FALSE)
-      }
-      prior_list[[b]]$obs_idx <- seq_len(N_obs)
-    }
-  }
+  prior_list <- .nl_tgmrf_default_obs_idx(prior_list, length(cargs$y))
 
   per_block <- lapply(prior_list, .nl_block_axis_grid)
   prepared  <- lapply(per_block, function(x) x$prepared)
@@ -3121,11 +3021,11 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   }
 
   arm <- .nl_registry_arm(cargs, likelihood)
-  blocks_spec <- .joint_blocks_spec_for_cpp(
-    lapply(seq_along(prepared), function(b) {
-      cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
-      .nl_block_as_arm(prepared[[b]], joint_grid[, cols, drop = FALSE], b)
-    }), 1L, arms = list(arm))
+  blocks_spec <- .joint_tgmrf_at_cells(
+    .joint_blocks_spec_for_cpp(
+      lapply(seq_along(prepared), function(b) .nl_block_as_arm(prepared[[b]], b)),
+      1L, arms = list(arm)),
+    prepared, joint_grid, axis_offsets)
 
   # Every block's hyperprior over its own columns, folded on the override path
   # too: a placement stencil re-evaluates the marginal through it and has to

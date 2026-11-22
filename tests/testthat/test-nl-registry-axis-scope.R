@@ -258,11 +258,9 @@ test_that("a multi-block registry fit always records a placement", {
     expect_true(base$outer_grid_placement %in% c("fixed", "auto_recentered"))
     expect_false(is.null(base$outer_grid_railed_axes))
 
-    always <- fit_iid(list(auto_recenter = "always"))
-    expect_identical(always$outer_grid_placement, "auto_recentered")
-    expect_identical(always$outer_grid_recenter_axes, "b1.sigma")
-    expect_length(sort(unique(as.numeric(always$theta_grid))),
-                  .nl_recenter("n_pts"))
+    # A multi-block fit places on the one rule of the joint placement pass, so a
+    # per-axis policy name is refused there.
+    expect_error(fit_iid(list(auto_recenter = "always")), "single-block")
 
     off <- fit_iid(list(auto_recenter = FALSE))
     expect_identical(off$outer_grid_placement, "fixed")

@@ -1491,17 +1491,17 @@ tulpa_nested_laplace_joint <- function(responses,
     on.exit(options(.op_axis), add = TRUE)
     # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
     # opt-out for a caller who wants the default axis integrated as-is. The
-    # joint rescues trigger on the whole grid's `collapsed_edge` regime rather
-    # than on a per-axis rail, so the per-axis policy names (`"rail"`,
-    # `"resolve"`, `"always"`) have no measured meaning here and are refused
+    # placement pass has one rule, an axis fires when it rails or its grid does
+    # not resolve its own posterior, so the per-axis policy names (`"rail"`,
+    # `"resolve"`, `"always"`) of the single-block registry path are refused
     # rather than accepted and ignored.
     if (is.character(control$auto_recenter)) {
         stop("control$auto_recenter = \"",
              paste(control$auto_recenter, collapse = "\", \""),
-             "\" names a per-axis placement policy implemented on the ",
-             "standalone tulpa_nested_laplace() registry path only; the joint ",
-             "path recentres on the grid's collapsed-edge regime, not a ",
-             "per-axis rail. Use TRUE or FALSE here.", call. = FALSE)
+             "\" names a per-axis placement policy of the single-block ",
+             "tulpa_nested_laplace() path; this fit places every axis that ",
+             "rails or does not resolve its own posterior. Use TRUE or FALSE ",
+             "here.", call. = FALSE)
     }
     auto_recenter <- !isFALSE(control$auto_recenter)
 

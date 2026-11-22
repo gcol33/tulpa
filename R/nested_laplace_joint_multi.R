@@ -403,19 +403,15 @@
             field_weight = field_weight
         )
     } else if (type == "tgmrf") {
-        # User-supplied GMRF: per-grid CSC Q + logdet + log p(theta).
+        # User-supplied GMRF: its per-cell CSC Q, logdet and log p(theta) are
+        # added at the cells of each solve (`.joint_tgmrf_at_cells()`).
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
                                               arm_n_obs, p$n_latent)
         list(
             type                       = "tgmrf",
             n_latent                   = as.integer(p$n_latent),
-            obs_idx                    = obs_idx,
-            Q_csc_p_per_grid           = lapply(p$Q_csc_p_per_grid, as.integer),
-            Q_csc_i_per_grid           = lapply(p$Q_csc_i_per_grid, as.integer),
-            Q_csc_x_per_grid           = lapply(p$Q_csc_x_per_grid, as.numeric),
-            logdet_Q_per_grid          = as.numeric(p$logdet_Q_per_grid),
-            log_prior_theta_per_grid   = as.numeric(p$log_prior_theta_per_grid)
+            obs_idx                    = obs_idx
         )
     } else if (type == "nngp") {
         spatial_idx <- if (!projected)
@@ -1044,19 +1040,22 @@
 # specs read off `grid`'s columns with the folded axes marked, the copy scale's
 # declared atom mass, and the caller's hyperprior roles
 # (`.joint_multi_hp_specs()`), with each free-covariance block measured under
-# the design `logchol` declares (`.joint_multi_declared_axes()`). The one
-# construction behind the weights and the screen that ranks the cells before any
-# is solved.
+# the design `logchol` declares (`.joint_multi_declared_axes()`), and a tgmrf
+# block's axes measured on the natural coordinate it declares them on
+# (`.nl_linear_axes()` over `blocks`). The one construction behind the weights
+# and the screen that ranks the cells before any is solved.
 .joint_multi_measure_specs <- function(grid, folded_axes, joint_grid,
                                        axis_offsets, B, fn_sigma, fn_alpha,
                                        fn_phi, copy_slab, copy_atom_mass,
                                        logchol, axis_refine = NULL,
-                                       axis_support = NULL) {
-    specs <- .joint_axis_specs_from_grid(grid, copy_slab = copy_slab,
-                                         folded_axes = folded_axes,
-                                         logchol = logchol,
-                                         axis_refine = axis_refine,
-                                         axis_support = axis_support)
+                                       axis_support = NULL, blocks = NULL) {
+    specs <- .joint_axis_specs_from_grid(
+        grid, copy_slab = copy_slab, folded_axes = folded_axes,
+        logchol = logchol, axis_refine = axis_refine,
+        linear_axes = .nl_linear_axes(list(theta_grid = joint_grid,
+                                           blocks = blocks,
+                                           axis_offsets = axis_offsets)),
+        axis_support = axis_support)
     specs <- lapply(specs, function(sp) {
         if (!is.null(sp$atom_mass)) sp$atom_mass <- copy_atom_mass
         sp
@@ -1104,7 +1103,7 @@
         res$theta_grid[base, , drop = FALSE], hp$axes, joint_grid, axis_offsets,
         B, fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
         logchol = hp_declared$logchol, axis_refine = axis_refine,
-        axis_support = hp$support)
+        axis_support = hp$support, blocks = prepared)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
                                              refining = refining)
     res <- .joint_attach_cell_measure(res, specs, refining)
@@ -1232,8 +1231,10 @@
                                       max_iter, tol, inner_refresh,
                                       fixed_block_p = 0L,
                                       fixed_block_extra = NULL,
-                                      inner_sparse_override = 0L) {
+                                      inner_sparse_override = 0L,
+                                      prepared = NULL) {
     force(arms); force(cp); force(blocks_spec); force(axis_offsets); force(B)
+    force(prepared)
     force(n_threads); force(force_sparse); force(cell_coupling)
     force(inner_sparse_override)
     force(hessian_pd_mode); force(step_curvature_mode)
@@ -1278,7 +1279,8 @@
             arms_list           = arms,
             copy_arms           = as.integer(cp$copy_arms_zero),
             copy_blocks         = as.integer(cp$copy_blocks_zero),
-            blocks_spec         = blocks_spec,
+            blocks_spec         = .joint_tgmrf_at_cells(blocks_spec, prepared,
+                                                        theta_mat, axis_offsets),
             theta_grid          = .joint_multi_cpp_grid(theta_mat, axis_offsets,
                                                         B, cp),
             axis_offsets        = axis_offsets,
@@ -1309,6 +1311,22 @@
             screen_log_offset   = screen_log_offset,
             screen_only         = isTRUE(screen_only))
     }
+}
+
+# A tgmrf block's precision, log-determinant and log prior, from its closures
+# (`Q(theta)` and `prior(theta)`, or a registered C++ spec), are evaluated at
+# the rows of `theta_mat` being solved, so every solve -- the grid, a placement
+# refit, a refinement level, a mode-find stencil, an importance draw -- reads
+# the block at its own cells (`.nl_tgmrf_per_grid()`).
+.joint_tgmrf_at_cells <- function(blocks_spec, prepared, theta_mat, axis_offsets) {
+    for (b in seq_along(prepared)) {
+        p <- prepared[[b]]
+        if (!identical(tolower(p$type %||% ""), "tgmrf")) next
+        cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+        pg <- .nl_tgmrf_per_grid(p, as.matrix(theta_mat)[, cols, drop = FALSE])
+        blocks_spec[[b]][names(pg)] <- pg
+    }
+    blocks_spec
 }
 
 # The `kernel_fn(new_cells, warm_start, store_extras)` closure the refinement
@@ -1613,7 +1631,8 @@
         max_iter = max_iter, tol = tol, inner_refresh = inner_refresh,
         fixed_block_p = fixed_block_p,
         fixed_block_extra = fixed_block_extra,
-        inner_sparse_override = inner_sparse_override)
+        inner_sparse_override = inner_sparse_override,
+        prepared = prepared)
 
     # Per-latent-axis fine grid values (sorted unique), shared by the CCD and the
     # adaptive-lattice integrators to place / locate the outer nodes.
@@ -2000,7 +2019,8 @@
                                   axis_offsets, B, fn_sigma, fn_alpha, fn_phi,
                                   copy_slab, copy_atom_mass,
                                   logchol = hp_declared$logchol,
-                                  axis_support = hp_base$support))
+                                  axis_support = hp_base$support,
+                                  blocks = prepared))
 
     # A placement pilot's detecting grid is read off the screen alone
     # (`.nl_pilot_control()`); the full-grid fallback below never is.
@@ -2147,7 +2167,7 @@
             view$grid, hp_base$axes, view$grid, axis_offsets, B,
             fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass,
             logchol = view$logchol, axis_refine = axis_refine_modes,
-            axis_support = hp_base$support)
+            axis_support = hp_base$support, blocks = prepared)
         refine_specs <- .hyper_specs_with_tags(refine_specs, .joint_axis_tags_raw(
             list(theta_grid = view$grid, axis_offsets = axis_offsets,
                  blocks = prepared)))
@@ -2419,7 +2439,12 @@
     # Local-CCD refinement invalidates the stored cells, so a fit it engaged on
     # records that reason instead.
     res <- .joint_attach_basis_block_cov(res, fixed$n_fixed, fixed_block_extra)
-    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
+    # The subspace-debias coupling closure reads the modal cell's joint
+    # precision, as on the single-block driver.
+    res <- .joint_finalize_grid_fixed(
+        res, fixed$n_fixed, keep_grid_hessians,
+        keep_joint = !is.null(subspace_debias) &&
+            !identical(subspace_debias$closure, FALSE))
     # Subspace debias, over the settled grid, through the
     # same `call_kernel` the skew probe and the Pareto-k batch re-dispatch with.
     res <- .nl_subspace_debias_attach(

@@ -731,6 +731,12 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   .hp_collect(tg, function(col) {
     bare <- sub("^b[0-9]+[.]", "", col)
     bo   <- block_of(col)
+    # A tgmrf block's own `prior(theta)` is its hyperprior, folded inside the
+    # kernel at every cell (`log_prior_theta_per_grid`), so nothing is added
+    # here and the axis is covered.
+    if (identical(tolower(bo$block$type %||% ""), "tgmrf")) {
+      return(list(fn = function(x) numeric(length(x))))
+    }
     role <- if (.joint_axis_is_dispersion(col)) "phi"
             else if (identical(bare, "alpha")) "alpha"
             else if (identical(bare, "sigma")) "sigma"

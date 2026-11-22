@@ -1894,39 +1894,33 @@ auto_grid_place <- function(x)
 # does the policy fire, and is a slot it would re-place one the caller left
 # movable? Read before the fit refines its grid (`tulpa.nl_defer_refine`).
 .nl_registry_rescue_moves <- function(res, type, prior, auto = character(0),
-                                      policy = .nl_recenter_mode(NULL),
-                                      multi = FALSE) {
+                                      policy = .nl_recenter_mode(NULL)) {
     if (identical(policy, "off")) return(FALSE)
-    blocks <- if (isTRUE(multi)) prior else {
-        b <- if (is.list(prior)) prior else list()
-        if (is.null(b$type)) b$type <- type
-        list(b)
-    }
+    blocks <- .nl_registry_single_blocks(prior, type)
     slots <- .nl_registry_axis_slots(blocks)
-    tags  <- .nl_registry_axis_tags(res, blocks, multi)
+    tags  <- .nl_registry_axis_tags(res, blocks, FALSE)
     if (!length(slots) || is.null(tags) || anyNA(tags)) return(FALSE)
     pinned <- vapply(slots, function(s) !is.null(.nl_slot_hold(
-        blocks, s, .nl_auto_fields_at(auto, if (isTRUE(multi)) s$block))),
-        logical(1))
-    fr <- .nl_registry_fire(res, slots, tags, policy,
-                            if (isTRUE(multi)) length(blocks) else 0L)
+        blocks, s, .nl_auto_fields_at(auto, NULL))), logical(1))
+    fr <- .nl_registry_fire(res, slots, tags, policy, 0L)
     fr$fire && any(!pinned[fr$sel])
 }
 
-# Standalone (non-joint) `tulpa_nested_laplace()` registry rescue -- the
-# registry counterpart of the joint placement pass (`.joint_place_axes()`). Scope: every axis
-# `.NL_REGISTRY_AXIS_FIELD` lists, on every block of the prior, each moved on
-# its own rail in whichever coordinate the engine's transform registry gives it
-# (`log` for a scale, `logit01` for the BYM2 mixing weight). The families it
-# does NOT cover, and why each declines rather than passing in silence, are
-# written out on that table.
-#
-# `multi = TRUE` says `prior` is a BLOCK LIST rather than one block, which is
-# the only difference between the two `tulpa_nested_laplace()` paths here: the
-# axes are then block-prefixed (`b<k>.tau`), provenance is read per block, and
-# a moved block is re-crossed on its own fields while its neighbours keep
-# theirs. A single-block prior is the length-1 case of the same walk -- there is
-# one rescue, not one per path.
+# A single-block registry prior as the length-1 block list the slot table walks,
+# its `type` filled from the dispatch when the block leaves it out.
+.nl_registry_single_blocks <- function(prior, type) {
+    b <- if (is.list(prior)) prior else list()
+    if (is.null(b$type)) b$type <- type
+    list(b)
+}
+
+# Single-block `tulpa_nested_laplace()` registry rescue -- the registry
+# counterpart of the joint placement pass (`.joint_place_axes()`), which places
+# every multi-block fit. Scope: every axis `.NL_REGISTRY_AXIS_FIELD` lists on the
+# block, each moved on its own rail in whichever coordinate the engine's
+# transform registry gives it (`log` for a scale, `logit01` for the BYM2 mixing
+# weight). The families it does NOT cover, and why each declines rather than
+# passing in silence, are written out on that table.
 #
 # One recenter attempt (not the joint path's two): the "runaway mode needs
 # a regularizing prior" pathology the joint pass's second attempt on a field SD
@@ -1943,7 +1937,6 @@ auto_grid_place <- function(x)
 .nl_registry_grid_rescue <- function(res, type, prior, refit, refit_log_marginal,
                                      auto = character(0),
                                      policy = .nl_recenter_mode(NULL),
-                                     multi = FALSE,
                                      max_attempts = .nl_recenter("max_attempts_registry")) {
     out <- list(res = res, prior = prior)
     # The rail REPORT is taken before anything can decline, so a fit says which
@@ -1952,19 +1945,14 @@ auto_grid_place <- function(x)
     # stored weights and needs neither curvature nor a scope entry.
     out$res <- .nl_attach_railed_axes(out$res)
 
-    multi    <- isTRUE(multi)
-    blocks   <- if (multi) prior else {
-        b <- if (is.list(prior)) prior else list()
-        if (is.null(b$type)) b$type <- type
-        list(b)
-    }
-    n_blocks <- if (multi) length(blocks) else 0L
-    unwrap   <- function(b) if (multi) b else b[[1L]]
-    bidx     <- function(s) if (multi) s$block else NULL
+    blocks   <- .nl_registry_single_blocks(prior, type)
+    n_blocks <- 0L
+    unwrap   <- function(b) b[[1L]]
+    bidx     <- function(s) NULL
     alias_of <- function(s) .nl_axis_alias(s$axis, bidx(s), n_blocks)
 
     slots <- .nl_registry_axis_slots(blocks)
-    tags  <- .nl_registry_axis_tags(out$res, blocks, multi)
+    tags  <- .nl_registry_axis_tags(out$res, blocks, FALSE)
     if (!length(slots) || is.null(tags) || anyNA(tags)) {
         out$res <- .nl_decline_recenter(out$res,
                                         .nl_out_of_scope_reason(out$res, tags))

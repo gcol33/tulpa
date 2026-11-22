@@ -24,7 +24,7 @@ test_that("the multi-block converter names the missing field too", {
   blk <- list(type = "icar", n_spatial_units = 4L,
               adj_row_ptr = c(0L, 1L, 2L, 3L, 4L), adj_col_idx = 0:3,
               n_neighbors = rep(1L, 4))   # spatial_idx absent
-  expect_error(tulpa:::.nl_block_as_arm(blk, NULL, 1L), "spatial_idx",
+  expect_error(tulpa:::.nl_block_as_arm(blk, 1L), "spatial_idx",
                fixed = TRUE)
 })
 

@@ -342,9 +342,15 @@ when it carries no block prefix (`.joint_axis_is_dispersion()`): `b1.phi_gp`
 is an NNGP block's lengthscale.
 
 **Every single-response block fit is a one-arm fit on the joint driver**
-(gcol33/tulpa#944, gcol33/tulpa#1195). The registry multi-block dispatch calls
-`cpp_nested_laplace_joint_multi` as a one-arm fit on the joint block parser
-(`.nl_block_as_arm()`), and `run_multi_block_nested_laplace`, which every
+(gcol33/tulpa#944, gcol33/tulpa#1195). A multi-block `tulpa_nested_laplace()`
+fit is `tulpa_nested_laplace_joint()` on one arm (`.nl_registry_multi_fit()`):
+its blocks go through the joint block parser (`.nl_block_as_arm()`), the joint
+placement pass (`.joint_place_axes()`, one rule: an axis fires when it rails or
+does not resolve its posterior, so the single-block registry policies
+`auto_recenter = "rail"/"always"` are refused there) lays every axis, and the
+registry's field reads, `field_solve` and response are added to the result. A
+tgmrf block's per-cell precision is evaluated from its closures at the cells of
+every joint solve (`.joint_tgmrf_at_cells()`). `run_multi_block_nested_laplace`, which every
 single-block `cpp_nested_laplace_*` entry reaches, is
 `run_single_arm_block_joint`: the response, the
 fixed-effect design and the RE block on one arm, a model-supplied likelihood
