@@ -29,39 +29,23 @@
 
 namespace tulpa {
 
-// Extract an optional offset() vector from a Nullable<NumericVector> into a
-// std::vector<double>, validating its length against N. A null argument yields
-// an empty vector (treated as "no offset" by the eta assemblers). Single source
-// of truth for the offset marshalling shared by the single-point Laplace and
-// ModelData-sampler R exports.
-inline std::vector<double> as_offset_vec(
-    const Rcpp::Nullable<Rcpp::NumericVector>& offset_nullable, int N
+// Extract an optional per-observation vector (an offset, likelihood weights)
+// from a Nullable<NumericVector> into a std::vector<double>, validating its
+// length against N; `what` names the argument in the error. A null argument
+// yields an empty vector, which every caller reads as absent: no offset on the
+// eta assemblers, a null `weights` pointer (1 everywhere) on
+// BuiltinFamilyResponse.
+inline std::vector<double> as_obs_vec(
+    const Rcpp::Nullable<Rcpp::NumericVector>& x_nullable, int N,
+    const char* what
 ) {
-    if (offset_nullable.isNull()) return {};
-    Rcpp::NumericVector o(offset_nullable);
-    if ((int)o.size() != N) {
-        tulpa::stop("offset length (%d) must equal the number of observations (%d).",
-                   {(int)o.size(), N});
+    if (x_nullable.isNull()) return {};
+    Rcpp::NumericVector x(x_nullable);
+    if ((int)x.size() != N) {
+        tulpa::stop("%s length (%d) must equal the number of observations (%d).",
+                   {what, (int)x.size(), N});
     }
-    return std::vector<double>(o.begin(), o.end());
-}
-
-// Extract an optional per-observation likelihood weight vector, validating its
-// length against N. A null argument yields an empty vector, which every caller
-// hands on as a null `weights` pointer -- the "1 everywhere" case
-// BuiltinFamilyResponse already reads. Same marshalling contract as
-// as_offset_vec above, so the two optional per-obs vectors are unwrapped the
-// same way at every spatial entry.
-inline std::vector<double> as_weights_vec(
-    const Rcpp::Nullable<Rcpp::NumericVector>& weights_nullable, int N
-) {
-    if (weights_nullable.isNull()) return {};
-    Rcpp::NumericVector w(weights_nullable);
-    if ((int)w.size() != N) {
-        tulpa::stop("weights length (%d) must equal the number of observations (%d).",
-                   {(int)w.size(), N});
-    }
-    return std::vector<double>(w.begin(), w.end());
+    return std::vector<double>(x.begin(), x.end());
 }
 
 // One length check for an R argument an entry point then indexes by some OTHER

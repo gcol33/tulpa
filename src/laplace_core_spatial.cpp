@@ -13,7 +13,7 @@
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
 #include "icar_kernel.h"           // count_graph_components
-#include "laplace_spec_fit.h"     // spec-solver marshalling for the single-point fits
+#include "laplace_block_fit.h"    // laplace_fit_blocks: the single-point spec-solver fit
 #include "latent_block.h"
 #include "nested_laplace_grid.h"   // nl_check_unit_interval
 #include "linalg_fast.h"
@@ -69,15 +69,9 @@ Rcpp::List cpp_laplace_fit_spatial(
         tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     const int block_start = p + (has_re ? n_re_groups : 0);
 
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
-    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
-
-    tulpa::SpecFamilyInputs in;
-    tulpa::build_spec_family_inputs(
-        in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/n_spatial_units,
-        weights.empty() ? nullptr : weights.data(),
-        offset.empty() ? nullptr : offset.data());
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
+    std::vector<double> weights =
+        tulpa::as_obs_vec(weights_nullable, N, "weights");
 
     // One constant null direction per connected component; the sampler and the
     // Polya-Gamma kernels derive the same partition from the same adjacency.
@@ -106,29 +100,11 @@ Rcpp::List cpp_laplace_fit_spatial(
     tulpa::centre_intrinsic_level(block);
     std::vector<tulpa::LatentBlock> blocks{ block };
 
-    std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) {
-        tulpa::nl_check_positive("sigma_re", sigma_re);
-        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
-    }
-    // Warm start: the [beta | RE | spatial] latent occupies the leading
-    // block_start + n_spatial_units params (contiguous before log_sigma_re).
-    if (x_init_nullable.isNotNull()) {
-        Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
-        const int n_lat = block_start + n_spatial_units;
-        for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
-    }
-
-    std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr =
-        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-
-    tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
-        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr,
-        /*return_re_cov=*/false, /*sparse_override=*/force_sparse,
-        /*store_Q=*/false, compute_skew, skew_idx_ptr);
-    return tulpa::laplace_result_to_list(res);
+    return tulpa::laplace_fit_blocks(
+        y, n, X, re_group, n_re_groups, sigma_re, family, phi, offset, weights,
+        blocks, /*n_block_latent=*/n_spatial_units, x_init_nullable,
+        max_iter, tol, n_threads, /*sparse_override=*/force_sparse,
+        compute_skew, skew_idx);
 }
 
 // [[Rcpp::export]]
@@ -180,15 +156,9 @@ Rcpp::List cpp_laplace_fit_bym2(
     const std::vector<double> node_prec = tulpa::read_node_prec(
         node_prec_nullable, n_spatial_units, "cpp_laplace_fit_bym2");
 
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
-    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
-
-    tulpa::SpecFamilyInputs in;
-    tulpa::build_spec_family_inputs(
-        in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/2 * n_spatial_units,
-        weights.empty() ? nullptr : weights.data(),
-        offset.empty() ? nullptr : offset.data());
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
+    std::vector<double> weights =
+        tulpa::as_obs_vec(weights_nullable, N, "weights");
 
     // phi block: ICAR-structured, d = sigma * sqrt(rho) * scale_factor, centered.
     tulpa::LatentBlock phi_block;
@@ -245,20 +215,10 @@ Rcpp::List cpp_laplace_fit_bym2(
 
     std::vector<tulpa::LatentBlock> blocks{ phi_block, theta_block };
 
-    std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) {
-        tulpa::nl_check_positive("sigma_re", sigma_re);
-        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
-    }
-
-    std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr =
-        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-
-    tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
-        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr,
-        /*return_re_cov=*/false, /*sparse_override=*/force_sparse,
-        /*store_Q=*/false, compute_skew, skew_idx_ptr);
-    return tulpa::laplace_result_to_list(res);
+    return tulpa::laplace_fit_blocks(
+        y, n, X, re_group, n_re_groups, sigma_re, family, phi, offset, weights,
+        blocks, /*n_block_latent=*/2 * n_spatial_units,
+        /*x_init_nullable=*/R_NilValue,
+        max_iter, tol, n_threads, /*sparse_override=*/force_sparse,
+        compute_skew, skew_idx);
 }

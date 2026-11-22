@@ -580,35 +580,44 @@ bool SparseCholeskySolver::solve(const double* b, double* x, int n,
     return true;
 }
 
+// out = S2 S1 in on an n x ncol column-major block, where S1 and S2 are the
+// CHOLMOD solve systems `first` and `second` against `factor`. `in` and `out`
+// may alias: the result lands in a CHOLMOD-owned buffer before it is copied.
+static bool cholmod_solve_pair(int first, int second, cholmod_factor* factor,
+                               cholmod_common* common, const double* in,
+                               double* out, int n, int ncol) {
+    cholmod_dense b_dense;
+    b_dense.nrow  = n;
+    b_dense.ncol  = ncol;
+    b_dense.nzmax = static_cast<std::size_t>(n) * ncol;
+    b_dense.d     = n;
+    b_dense.x     = const_cast<double*>(in);
+    b_dense.z     = nullptr;
+    b_dense.xtype = CHOLMOD_REAL;
+    b_dense.dtype = CHOLMOD_DOUBLE;
+
+    cholmod_dense* mid = M_cholmod_solve(first, factor, &b_dense, common);
+    if (!mid) return false;
+    cholmod_dense* z = M_cholmod_solve(second, factor, mid, common);
+    M_cholmod_free_dense(&mid, common);
+    if (!z) return false;
+
+    const double* zp = static_cast<const double*>(z->x);
+    const std::size_t total = static_cast<std::size_t>(n) * ncol;
+    for (std::size_t i = 0; i < total; i++) out[i] = zp[i];
+    M_cholmod_free_dense(&z, common);
+    return true;
+}
+
 bool SparseCholeskySolver::apply_inv_chol_factor(const double* eps, double* x,
                                                  int n, int ncol) {
     if (!host_factor()) return false;
     if (!factored_ || !factor_ || n <= 0 || ncol <= 0) return false;
     // LDL' has no square root on this route -- see the header.
     if (!factor_->is_ll) return false;
-
-    cholmod_dense b_dense;
-    b_dense.nrow  = n;
-    b_dense.ncol  = ncol;
-    b_dense.nzmax = static_cast<std::size_t>(n) * ncol;
-    b_dense.d     = n;
-    b_dense.x     = const_cast<double*>(eps);
-    b_dense.z     = nullptr;
-    b_dense.xtype = CHOLMOD_REAL;
-    b_dense.dtype = CHOLMOD_DOUBLE;
-
     // L' y = eps, then undo the fill-reducing permutation: x = P' y.
-    cholmod_dense* y = M_cholmod_solve(CHOLMOD_Lt, factor_, &b_dense, &common_);
-    if (!y) return false;
-    cholmod_dense* z = M_cholmod_solve(CHOLMOD_Pt, factor_, y, &common_);
-    M_cholmod_free_dense(&y, &common_);
-    if (!z) return false;
-
-    const double* zp = static_cast<const double*>(z->x);
-    const std::size_t total = static_cast<std::size_t>(n) * ncol;
-    for (std::size_t i = 0; i < total; i++) x[i] = zp[i];
-    M_cholmod_free_dense(&z, &common_);
-    return true;
+    return cholmod_solve_pair(CHOLMOD_Lt, CHOLMOD_Pt, factor_, &common_,
+                              eps, x, n, ncol);
 }
 
 bool SparseCholeskySolver::apply_chol_factor_inv(const double* b, double* y,
@@ -616,29 +625,9 @@ bool SparseCholeskySolver::apply_chol_factor_inv(const double* b, double* y,
     if (!host_factor()) return false;
     if (!factored_ || !factor_ || n <= 0 || ncol <= 0) return false;
     if (!factor_->is_ll) return false;
-
-    cholmod_dense b_dense;
-    b_dense.nrow  = n;
-    b_dense.ncol  = ncol;
-    b_dense.nzmax = static_cast<std::size_t>(n) * ncol;
-    b_dense.d     = n;
-    b_dense.x     = const_cast<double*>(b);
-    b_dense.z     = nullptr;
-    b_dense.xtype = CHOLMOD_REAL;
-    b_dense.dtype = CHOLMOD_DOUBLE;
-
     // Apply the fill-reducing permutation, then L z = P b.
-    cholmod_dense* pb = M_cholmod_solve(CHOLMOD_P, factor_, &b_dense, &common_);
-    if (!pb) return false;
-    cholmod_dense* z = M_cholmod_solve(CHOLMOD_L, factor_, pb, &common_);
-    M_cholmod_free_dense(&pb, &common_);
-    if (!z) return false;
-
-    const double* zp = static_cast<const double*>(z->x);
-    const std::size_t total = static_cast<std::size_t>(n) * ncol;
-    for (std::size_t i = 0; i < total; i++) y[i] = zp[i];
-    M_cholmod_free_dense(&z, &common_);
-    return true;
+    return cholmod_solve_pair(CHOLMOD_P, CHOLMOD_L, factor_, &common_,
+                              b, y, n, ncol);
 }
 
 double SparseCholeskySolver::log_determinant() {

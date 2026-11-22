@@ -21,6 +21,7 @@
 #include "tulpa/autodiff_arena.h"
 #include "autodiff_utils.h"
 #include "density_probe.h"
+#include "log_phi_normal_prior.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -89,34 +90,6 @@ Rcpp::NumericVector cpp_beta_density_terms(double y, double eta, double log_phi)
 }
 
 // ============================================================================
-// log_phi prior: Normal(0, sd_log_phi). Returned up to additive constants
-// (the -log(sd) - 0.5*log(2*pi) term cancels in NUTS).
-// ============================================================================
-static double beta_extra_prior_double(
-    const std::vector<double>& params,
-    const ParamLayout& layout,
-    const void* model_data
-) {
-    const auto* bd = static_cast<const BetaData*>(model_data);
-    double log_phi = params[layout.extra_offset];
-    double sd      = bd->log_phi_prior_sd;
-    return -0.5 * (log_phi / sd) * (log_phi / sd);
-}
-
-static tulpa::arena::Var beta_extra_prior_arena(
-    const std::vector<tulpa::arena::Var>& params,
-    const ParamLayout& layout,
-    const void* model_data
-) {
-    using tulpa::arena::Var;
-    const auto* bd = static_cast<const BetaData*>(model_data);
-    Var log_phi = params[layout.extra_offset];
-    double sd   = bd->log_phi_prior_sd;
-    Var z       = log_phi * Var(1.0 / sd);
-    return Var(-0.5) * z * z;
-}
-
-// ============================================================================
 // Rcpp entry: Fit a Beta GLM via tulpa NUTS, sampling beta + log_phi jointly.
 // ============================================================================
 // [[Rcpp::export]]
@@ -165,8 +138,8 @@ Rcpp::List cpp_tulpa_fit_beta_nuts(
     spec.ll_double         = beta_likelihood<double>;
     spec.ll_arena          = beta_likelihood<tulpa::arena::Var>;
     spec.n_extra_params    = 1;  // log_phi
-    spec.extra_prior       = beta_extra_prior_double;
-    spec.extra_prior_arena = beta_extra_prior_arena;
+    spec.extra_prior       = tulpa::log_phi_normal_prior_double<BetaData>;
+    spec.extra_prior_arena = tulpa::log_phi_normal_prior_arena<BetaData>;
 
     // ModelData
     ModelData data;

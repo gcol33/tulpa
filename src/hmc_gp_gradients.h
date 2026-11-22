@@ -12,14 +12,6 @@ struct NNGPGradients {
   double grad_log_phi;                // Gradient w.r.t. log(phi)
 };
 
-// Covariance derivative w.r.t. phi: dk(d)/dphi. Delegates to
-// tulpa_svc::dcov_dphi_svc, the single source of truth for every NNGP
-// gradient path.
-inline double dcov_dphi(double d, double phi, double cov_val, double sigma2,
-                        tulpa_svc::CovType cov_type) {
-  return tulpa_svc::dcov_dphi_svc(d, phi, cov_val, sigma2, cov_type);
-}
-
 // A location whose neighbour system cannot be formed conditions on nothing, so
 // its density is the marginal w_i ~ N(0, sigma2): this is that row's score in
 // w_i and its contribution to the d/d log sigma2 accumulator.
@@ -144,7 +136,7 @@ inline void gp_nngp_gradients(
       for (int j = 0; j < n_nb; j++) {
         double d = gp_data.nn_dist[i * nn + j];
         c_eigen(j) = compute_cov(d, sigma2, phi, gp_data.cov_type);
-        dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, gp_data.cov_type);
+        dc_eigen(j) = tulpa::cov_dphi(d, phi, c_eigen(j), sigma2, gp_data.cov_type);
       }
 
       // Validate neighbor indices
@@ -198,7 +190,7 @@ inline void gp_nngp_gradients(
       for (int j1 = 0; j1 < n_nb; j1++) {
         for (int j2 = j1 + 1; j2 < n_nb; j2++) {
           double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
-          double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
+          double dC_jk = tulpa::cov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
                                    gp_data.cov_type);
           dC[j1 * n_nb + j2] = dC_jk;
           dC[j2 * n_nb + j1] = dC_jk;

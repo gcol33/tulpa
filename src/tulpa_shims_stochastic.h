@@ -62,6 +62,19 @@ inline void copy_sg_sampler_result(
     out->final_epsilon = (n_eps > 0) ? epsilon_history[n_eps - 1] : 0.0;
 }
 
+// The body every flat-result sampler shim shares: copy the initial point,
+// run the sampler `run(q_init)` names, and copy its result out. `run` returns
+// any result carrying samples / log_lik / epsilon_history / success /
+// error_msg.
+template <class Run>
+inline void run_sg_sampler_shim(const double* init, int n_params,
+                                tulpa::SGSamplerShimResult* out, Run run) {
+    std::vector<double> q_init(init, init + n_params);
+    const auto res = run(q_init);
+    copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
+                           res.success, res.error_msg, out);
+}
+
 } // namespace
 
 extern "C" void tulpa_sghmc_fit_impl(
@@ -82,8 +95,6 @@ extern "C" void tulpa_sghmc_fit_impl(
     tulpa::SGSamplerShimResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
-    std::vector<double> q_init(init, init + n_params);
-
     tulpa_sghmc::SGHMCConfig cfg;
     cfg.n_iter        = n_iter;
     cfg.n_warmup      = n_warmup;
@@ -96,11 +107,10 @@ extern "C" void tulpa_sghmc_fit_impl(
     cfg.grad_clip     = grad_clip;
     cfg.verbose       = (verbose != 0);
 
-    tulpa_sghmc::SGHMCResult res =
-        tulpa_sghmc::run_sghmc_sampler(q_init, *data, *layout, cfg);
-
-    copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
-                           res.success, res.error_msg, result_out);
+    run_sg_sampler_shim(init, n_params, result_out,
+        [&](const std::vector<double>& q_init) {
+            return tulpa_sghmc::run_sghmc_sampler(q_init, *data, *layout, cfg);
+        });
     TULPA_SHIM_GUARD_END("tulpa_sghmc_fit")
 }
 
@@ -123,8 +133,6 @@ extern "C" void tulpa_sgld_fit_impl(
     tulpa::SGSamplerShimResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
-    std::vector<double> q_init(init, init + n_params);
-
     tulpa_sghmc::SGLDConfig cfg;
     cfg.n_iter         = n_iter;
     cfg.n_warmup       = n_warmup;
@@ -138,11 +146,10 @@ extern "C" void tulpa_sgld_fit_impl(
     cfg.seed           = seed;
     cfg.verbose        = (verbose != 0);
 
-    tulpa_sghmc::SGLDResult res =
-        tulpa_sghmc::run_sgld_sampler(q_init, *data, *layout, cfg);
-
-    copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
-                           res.success, res.error_msg, result_out);
+    run_sg_sampler_shim(init, n_params, result_out,
+        [&](const std::vector<double>& q_init) {
+            return tulpa_sghmc::run_sgld_sampler(q_init, *data, *layout, cfg);
+        });
     TULPA_SHIM_GUARD_END("tulpa_sgld_fit")
 }
 
@@ -171,8 +178,6 @@ extern "C" void tulpa_mclmc_fit_impl(
     tulpa::SGSamplerShimResult* result_out
 ) {
     TULPA_SHIM_GUARD_BEGIN
-    std::vector<double> q_init(init, init + n_params);
-
     tulpa_mclmc::MCLMCConfig cfg;
     cfg.n_iter   = n_iter;
     cfg.n_warmup = n_warmup;
@@ -184,11 +189,10 @@ extern "C" void tulpa_mclmc_fit_impl(
     // mass_diag stays empty (identity); extending the shim signature would
     // require an ABI bump.
 
-    tulpa_mclmc::MCLMCFitResult res =
-        tulpa_mclmc::run_mclmc_sampler(q_init, *data, *layout, cfg);
-
-    copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
-                           res.success, res.error_msg, result_out);
+    run_sg_sampler_shim(init, n_params, result_out,
+        [&](const std::vector<double>& q_init) {
+            return tulpa_mclmc::run_mclmc_sampler(q_init, *data, *layout, cfg);
+        });
     TULPA_SHIM_GUARD_END("tulpa_mclmc_fit")
 }
 

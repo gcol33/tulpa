@@ -41,6 +41,7 @@
 #include "hmc_hsgp_kernels.h"  // Eigen-free spectral density only
 #include "hsgp_block_factory.h"             // make_hsgp_block
 #include "laplace_spec_fit.h"               // build_spec_family_inputs + laplace_mode_spec_dense_solve
+#include "laplace_block_fit.h"              // laplace_fit_blocks
 #include "nl_entry_inputs.h"
 #include "nested_laplace_entries.h"                // NlEntryInputs + the per-driver runners
 #include "nngp_block_factory.h"             // make_nngp_block
@@ -408,8 +409,9 @@ Rcpp::List cpp_laplace_fit_car_proper(
     std::vector<int> re_group =
         tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     const int block_start = p + (has_re ? n_re_groups : 0);
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
-    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
+    std::vector<double> weights =
+        tulpa::as_obs_vec(weights_nullable, N, "weights");
 
     // One-cell (tau, rho) grids. The block's callbacks hold their own handles
     // on these (and run the log|D - rho W| determinant in block.prep).
@@ -419,34 +421,11 @@ Rcpp::List cpp_laplace_fit_car_proper(
         block_start, n_spatial_units, spatial_idx, tau_grid, rho_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
-    tulpa::SpecFamilyInputs in;
-    tulpa::build_spec_family_inputs(
-        in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA,
-        /*n_block_latent=*/n_spatial_units,
-        weights.empty() ? nullptr : weights.data(),
-        offset.empty() ? nullptr : offset.data());
-
-    std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) {
-        tulpa::nl_check_positive("sigma_re", sigma_re);
-        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
-    }
-    if (x_init_nullable.isNotNull()) {
-        Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
-        const int n_lat = block_start + n_spatial_units;
-        for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
-    }
-
-    std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr =
-        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-
-    tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
-        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr, /*return_re_cov=*/false,
-        /*sparse_override=*/0, /*store_Q=*/false, compute_skew, skew_idx_ptr);
-    return tulpa::laplace_result_to_list(res);
+    return tulpa::laplace_fit_blocks(
+        y, n, X, re_group, n_re_groups, sigma_re, family, phi, offset, weights,
+        blocks, /*n_block_latent=*/n_spatial_units, x_init_nullable,
+        max_iter, tol, n_threads, /*sparse_override=*/0,
+        compute_skew, skew_idx);
 }
 
 // =====================================================================
@@ -681,8 +660,9 @@ Rcpp::List cpp_laplace_fit_hsgp(
     std::vector<int> re_group =
         tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     const int block_start = p + (has_re ? n_re_groups : 0);
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
-    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
+    std::vector<double> weights =
+        tulpa::as_obs_vec(weights_nullable, N, "weights");
 
     // One-row (sigma2, lengthscale) grid; make_hsgp_block reads the amplitude /
     // lengthscale from theta_grid(k, axis) in block.prep, so the row must
@@ -699,33 +679,11 @@ Rcpp::List cpp_laplace_fit_hsgp(
         /*axis_sigma2=*/0, /*axis_ell=*/1, theta_grid,
         tulpa::priors::hsgp_kernel_from_code(kernel, "cpp_laplace_fit_hsgp")));
 
-    tulpa::SpecFamilyInputs in;
-    tulpa::build_spec_family_inputs(
-        in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/blocks.back().size,
-        weights.empty() ? nullptr : weights.data(),
-        offset.empty() ? nullptr : offset.data());
-
-    std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) {
-        tulpa::nl_check_positive("sigma_re", sigma_re);
-        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
-    }
-    if (x_init_nullable.isNotNull()) {
-        Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
-        const int n_lat = block_start + blocks.back().size;
-        for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
-    }
-
-    std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr =
-        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-
-    tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
-        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr, /*return_re_cov=*/false,
-        /*sparse_override=*/0, /*store_Q=*/false, compute_skew, skew_idx_ptr);
-    return tulpa::laplace_result_to_list(res);
+    return tulpa::laplace_fit_blocks(
+        y, n, X, re_group, n_re_groups, sigma_re, family, phi, offset, weights,
+        blocks, /*n_block_latent=*/blocks.back().size, x_init_nullable,
+        max_iter, tol, n_threads, /*sparse_override=*/0,
+        compute_skew, skew_idx);
 }
 
 // =====================================================================

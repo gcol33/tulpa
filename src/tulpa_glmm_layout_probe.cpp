@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "laplace_spec_fit.h"      // as_offset_vec
+#include "laplace_spec_fit.h"      // as_obs_vec
 #include "sampler_model_data.h"    // build_sampler_model_inputs / sampler_param_names
 
 using tulpa_hmc::ModelData;
@@ -77,7 +77,7 @@ Rcpp::List cpp_tulpa_glmm_layout(
     const int N = y.size();
 
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset,
         sigma_re_scale,

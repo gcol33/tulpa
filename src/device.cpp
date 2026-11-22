@@ -138,21 +138,28 @@ bool Policy::batch_selected(const std::string& name, std::size_t size, int varia
     });
     return setting != thresholds_.end() && std::isfinite(setting->batch_size) && size >= setting->batch_size;
 }
+namespace {
+// The stage entry named `name`, appended with zero counters when absent. The
+// caller holds the policy's mutex.
+Stage& find_or_insert_stage(std::vector<Stage>& stages, const std::string& name) {
+    auto stage = std::find_if(stages.begin(), stages.end(), [&](const Stage& x) { return x.operation == name; });
+    if (stage == stages.end()) { stages.push_back({name, 0, 0}); return stages.back(); }
+    return *stage;
+}
+}
 void Policy::record(const std::string& name, bool cuda) {
     record(name, cuda ? 0 : 1, cuda ? 1 : 0);
 }
 void Policy::record(const std::string& name, std::size_t cpu, std::size_t cuda) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto stage = std::find_if(stages_.begin(), stages_.end(), [&](const Stage& x) { return x.operation == name; });
-    if (stage == stages_.end()) { stages_.push_back({name, 0, 0}); stage = stages_.end() - 1; }
-    stage->cpu += cpu;
-    stage->cuda += cuda;
+    Stage& stage = find_or_insert_stage(stages_, name);
+    stage.cpu += cpu;
+    stage.cuda += cuda;
 }
 void Policy::work(const std::string& name, double amount) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto stage = std::find_if(stages_.begin(), stages_.end(), [&](const Stage& x) { return x.operation == name; });
-    if (stage == stages_.end()) { stages_.push_back({name, 0, 0}); stage = stages_.end() - 1; }
-    stage->work = std::max(stage->work, amount);
+    Stage& stage = find_or_insert_stage(stages_, name);
+    stage.work = std::max(stage.work, amount);
 }
 void Policy::fail(const Status& status) { cell_status(status); note(status); }
 void Policy::note(const Status& status) { std::lock_guard<std::mutex> lock(mutex_); failure_.absorb(status); }

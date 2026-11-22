@@ -35,6 +35,7 @@
 #include "tulpa/autodiff_arena.h"
 #include "autodiff_utils.h"
 #include "density_probe.h"
+#include "log_phi_normal_prior.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -135,35 +136,6 @@ T spde_glm_likelihood(
         }
     }
     return T(0.0);
-}
-
-// =====================================================================
-// log_phi prior: Normal(0, sd_log_phi). Returned up to additive constants.
-// The w_mesh prior moved to tulpa_priors_spde.h and is now wired through
-// the structured HMC path (compute_spde_prior in initialize_generic_state).
-// =====================================================================
-static double spde_glm_log_phi_prior_double(
-    const std::vector<double>& params,
-    const ParamLayout& layout,
-    const void* model_data
-) {
-    const auto* sd = static_cast<const SpdeGlmData*>(model_data);
-    double log_phi = params[layout.extra_offset];
-    double sd_lp   = sd->log_phi_prior_sd;
-    return -0.5 * (log_phi / sd_lp) * (log_phi / sd_lp);
-}
-
-static tulpa::arena::Var spde_glm_log_phi_prior_arena(
-    const std::vector<tulpa::arena::Var>& params,
-    const ParamLayout& layout,
-    const void* model_data
-) {
-    using tulpa::arena::Var;
-    const auto* sd = static_cast<const SpdeGlmData*>(model_data);
-    Var log_phi = params[layout.extra_offset];
-    double sd_lp = sd->log_phi_prior_sd;
-    Var z = log_phi * Var(1.0 / sd_lp);
-    return Var(-0.5) * z * z;
 }
 
 }  // anonymous namespace
@@ -385,8 +357,8 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     spec.ll_double         = spde_glm_likelihood<double>;
     spec.ll_arena          = spde_glm_likelihood<tulpa::arena::Var>;
     spec.n_extra_params    = 1;  // log_phi
-    spec.extra_prior       = spde_glm_log_phi_prior_double;
-    spec.extra_prior_arena = spde_glm_log_phi_prior_arena;
+    spec.extra_prior       = tulpa::log_phi_normal_prior_double<SpdeGlmData>;
+    spec.extra_prior_arena = tulpa::log_phi_normal_prior_arena<SpdeGlmData>;
 
     ModelData data;
     data.N           = N;

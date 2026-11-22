@@ -1,8 +1,8 @@
 // cov_kernel_equiv.cpp
 // Probes for the isotropic covariance kernel and its phi-derivative.
 //
-// dcov_dphi has ONE implementation, tulpa_svc::dcov_dphi_svc, which the GP
-// path delegates to, and it covers every cov_type spatial_gp() advertises --
+// dk(d)/dphi has ONE implementation, tulpa::cov_dphi, which the GP and SVC
+// paths both call, and it covers every cov_type spatial_gp() advertises --
 // exponential, matern 3/2, gaussian and spherical -- so a fit takes its
 // covariance and its gradient from the same kernel whichever it names.
 //
@@ -27,5 +27,5 @@ double cpp_test_compute_cov(double d, double sigma2, double phi, int cov_type) {
 double cpp_test_dcov_dphi(double d, double sigma2, double phi, int cov_type) {
   const tulpa::CovType ct = static_cast<tulpa::CovType>(cov_type);
   const double cov_val = tulpa_svc::compute_cov(d, sigma2, phi, ct);
-  return tulpa_svc::dcov_dphi_svc(d, phi, cov_val, sigma2, ct);
+  return tulpa::cov_dphi(d, phi, cov_val, sigma2, ct);
 }

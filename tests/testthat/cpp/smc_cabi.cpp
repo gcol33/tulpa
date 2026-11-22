@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "laplace_spec_fit.h"      // as_offset_vec
+#include "laplace_spec_fit.h"      // as_obs_vec
 #include "sampler_model_data.h"    // build_sampler_model_inputs
 #include "tulpa/smc_api.h"         // SmcFitFn, SMCShimResult, get_smc_fit_fn
 
@@ -44,7 +44,7 @@ Rcpp::List cpp_test_smc_cabi(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials
                              int seed, double bridge_end) {
     const int N = y.size();
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(R_NilValue, N);
+    std::vector<double> offset = tulpa::as_obs_vec(R_NilValue, N, "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, NA_REAL, sigma_beta, offset, 2.5,
         R_NilValue, R_NilValue, R_NilValue);

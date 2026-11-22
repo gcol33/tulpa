@@ -49,6 +49,33 @@ double compute_log_joint_grad(
   return log_post;
 }
 
+// Monte Carlo average of the reparameterised ELBO integrand. Each draw maps
+// standard normals (all taken from one N(0, 1) stream, in the order `draw`
+// requests them) to theta, evaluates log p(y, theta) and its gradient, adds
+// the gradient to grad_mu (d theta / d mu = I for every family) and hands it
+// to `accumulate` for the family's own parameters. grad_mu is averaged here
+// and the averaged log joint is returned; the family averages its own
+// accumulators.
+template <class Draw, class Accumulate>
+double vi_reparam_mc_average(int mc_samples, std::mt19937& rng,
+                             const ModelData& data, const ParamLayout& layout,
+                             Eigen::VectorXd& grad_mu,
+                             Draw draw, Accumulate accumulate) {
+  std::normal_distribution<double> N01(0.0, 1.0);
+  auto standard_normal = [&]() { return N01(rng); };
+  double elbo = 0.0;
+  for (int m = 0; m < mc_samples; ++m) {
+    Eigen::VectorXd theta = draw(standard_normal);
+    Eigen::VectorXd grad_theta;
+    double log_joint = compute_log_joint_grad(theta, data, layout, grad_theta);
+    grad_mu += grad_theta;
+    accumulate(grad_theta);
+    elbo += log_joint;
+  }
+  grad_mu /= mc_samples;
+  return elbo / mc_samples;
+}
+
 // =====================================================================
 // VI Dispatcher
 // =====================================================================
@@ -98,39 +125,22 @@ MeanFieldGradients compute_meanfield_elbo_grad(
   MeanFieldGradients result;
   result.grad_mu = Eigen::VectorXd::Zero(D);
   result.grad_log_sigma = Eigen::VectorXd::Zero(D);
-  result.elbo = 0.0;
 
-  std::normal_distribution<double> N01(0.0, 1.0);
   Eigen::VectorXd sigma = exp(params.log_sigma.array());
+  Eigen::VectorXd eps(D);
 
-  for (int m = 0; m < mc_samples; ++m) {
-    // Sample ε ~ N(0, I)
-    Eigen::VectorXd eps(D);
-    for (int i = 0; i < D; ++i) {
-      eps(i) = N01(rng);
-    }
-
-    // Reparameterize: θ = μ + σ ⊙ ε
-    Eigen::VectorXd theta = params.mu.array() + sigma.array() * eps.array();
-
-    // Gradient of log p(y, θ) w.r.t. θ
-    Eigen::VectorXd grad_theta;
-    double log_joint = compute_log_joint_grad(theta, data, layout, grad_theta);
-
-    // Chain rule for μ: ∂L/∂μ = ∂log_p/∂θ · ∂θ/∂μ = ∂log_p/∂θ
-    result.grad_mu += grad_theta;
-
-    // Chain rule for log_σ: ∂L/∂log_σᵢ = ∂log_p/∂θᵢ · ∂θᵢ/∂log_σᵢ
-    //                                  = ∂log_p/∂θᵢ · εᵢ · σᵢ
-    result.grad_log_sigma += (grad_theta.array() * eps.array() * sigma.array()).matrix();
-
-    result.elbo += log_joint;
-  }
-
-  // Average over MC samples
-  result.grad_mu /= mc_samples;
+  result.elbo = vi_reparam_mc_average(
+      mc_samples, rng, data, layout, result.grad_mu,
+      // ε ~ N(0, I); θ = μ + σ ⊙ ε
+      [&](auto& standard_normal) -> Eigen::VectorXd {
+        for (int i = 0; i < D; ++i) eps(i) = standard_normal();
+        return params.mu.array() + sigma.array() * eps.array();
+      },
+      // ∂L/∂log_σᵢ = ∂log_p/∂θᵢ · εᵢ · σᵢ
+      [&](const Eigen::VectorXd& grad_theta) {
+        result.grad_log_sigma += (grad_theta.array() * eps.array() * sigma.array()).matrix();
+      });
   result.grad_log_sigma /= mc_samples;
-  result.elbo /= mc_samples;
 
   meanfield_add_entropy_grad(params, result.grad_log_sigma);
 
@@ -222,48 +232,28 @@ LowRankGradients compute_lowrank_elbo_grad(
   result.grad_mu = Eigen::VectorXd::Zero(D);
   result.grad_L = Eigen::MatrixXd::Zero(D, r);
   result.grad_log_d = Eigen::VectorXd::Zero(D);
-  result.elbo = 0.0;
 
-  std::normal_distribution<double> N01(0.0, 1.0);
   Eigen::VectorXd d = exp(params.log_d.array());
+  Eigen::VectorXd eta(r);
+  Eigen::VectorXd eps(D);
 
-  for (int m = 0; m < mc_samples; ++m) {
-    // Sample η ~ N(0, Iᵣ) for low-rank part
-    Eigen::VectorXd eta(r);
-    for (int i = 0; i < r; ++i) {
-      eta(i) = N01(rng);
-    }
-
-    // Sample ε ~ N(0, I_D) for diagonal part
-    Eigen::VectorXd eps(D);
-    for (int i = 0; i < D; ++i) {
-      eps(i) = N01(rng);
-    }
-
-    // Reparameterize: θ = μ + L η + d ⊙ ε
-    Eigen::VectorXd theta = params.mu + params.L * eta + d.asDiagonal() * eps;
-
-    // Gradient of log p(y, θ) w.r.t. θ
-    Eigen::VectorXd grad_theta;
-    double log_joint = compute_log_joint_grad(theta, data, layout, grad_theta);
-
-    // Chain rule for μ: ∂L/∂μ = ∂log_p/∂θ
-    result.grad_mu += grad_theta;
-
-    // Chain rule for L: ∂θ/∂L = η' (outer product with grad_theta)
-    result.grad_L.noalias() += grad_theta * eta.transpose();
-
-    // Chain rule for log_d: ∂θ/∂log_dᵢ = εᵢ · dᵢ
-    result.grad_log_d += (grad_theta.array() * eps.array() * d.array()).matrix();
-
-    result.elbo += log_joint;
-  }
-
-  // Average over MC samples
-  result.grad_mu /= mc_samples;
+  result.elbo = vi_reparam_mc_average(
+      mc_samples, rng, data, layout, result.grad_mu,
+      // η ~ N(0, Iᵣ) for the low-rank part, then ε ~ N(0, I_D) for the
+      // diagonal part; θ = μ + L η + d ⊙ ε
+      [&](auto& standard_normal) -> Eigen::VectorXd {
+        for (int i = 0; i < r; ++i) eta(i) = standard_normal();
+        for (int i = 0; i < D; ++i) eps(i) = standard_normal();
+        return params.mu + params.L * eta + d.asDiagonal() * eps;
+      },
+      [&](const Eigen::VectorXd& grad_theta) {
+        // ∂θ/∂L = η' (outer product with grad_theta)
+        result.grad_L.noalias() += grad_theta * eta.transpose();
+        // ∂θ/∂log_dᵢ = εᵢ · dᵢ
+        result.grad_log_d += (grad_theta.array() * eps.array() * d.array()).matrix();
+      });
   result.grad_L /= mc_samples;
   result.grad_log_d /= mc_samples;
-  result.elbo /= mc_samples;
 
   lowrank_add_entropy_grad(params, result.grad_L, result.grad_log_d);
 
@@ -368,38 +358,22 @@ FullRankGradients compute_fullrank_elbo_grad(
   FullRankGradients result;
   result.grad_mu = Eigen::VectorXd::Zero(D);
   result.grad_L = Eigen::MatrixXd::Zero(D, D);
-  result.elbo = 0.0;
 
-  std::normal_distribution<double> N01(0.0, 1.0);
+  Eigen::VectorXd eps(D);
 
-  for (int m = 0; m < mc_samples; ++m) {
-    // Sample ε ~ N(0, I)
-    Eigen::VectorXd eps(D);
-    for (int i = 0; i < D; ++i) {
-      eps(i) = N01(rng);
-    }
-
-    // Reparameterize: θ = μ + L ε
-    Eigen::VectorXd theta = params.mu + params.L * eps;
-
-    // Gradient of log p(y, θ) w.r.t. θ
-    Eigen::VectorXd grad_theta;
-    double log_joint = compute_log_joint_grad(theta, data, layout, grad_theta);
-
-    // Chain rule for μ: ∂L/∂μ = ∂log_p/∂θ
-    result.grad_mu += grad_theta;
-
-    // Chain rule for L: ∂θ/∂L[i,j] = ε[j] (only if i >= j for lower triangular)
-    // So ∂L/∂L = grad_theta * ε'
-    result.grad_L.noalias() += grad_theta * eps.transpose();
-
-    result.elbo += log_joint;
-  }
-
-  // Average over MC samples
-  result.grad_mu /= mc_samples;
+  result.elbo = vi_reparam_mc_average(
+      mc_samples, rng, data, layout, result.grad_mu,
+      // ε ~ N(0, I); θ = μ + L ε
+      [&](auto& standard_normal) -> Eigen::VectorXd {
+        for (int i = 0; i < D; ++i) eps(i) = standard_normal();
+        return params.mu + params.L * eps;
+      },
+      // ∂θ/∂L[i,j] = ε[j] (only if i >= j for lower triangular),
+      // so ∂L/∂L = grad_theta * ε'
+      [&](const Eigen::VectorXd& grad_theta) {
+        result.grad_L.noalias() += grad_theta * eps.transpose();
+      });
   result.grad_L /= mc_samples;
-  result.elbo /= mc_samples;
 
   // Zero out upper triangle (L is lower triangular)
   for (int i = 0; i < D; ++i) {

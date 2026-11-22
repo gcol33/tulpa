@@ -19,7 +19,7 @@
 #include "laplace_core.h"
 #include "tulpa_stop.h"
 #include "hessian_pattern_guard.h"          // HessianPatternGuard
-#include "laplace_spec_fit.h"               // as_offset_vec, unwrap_skew_idx
+#include "laplace_spec_fit.h"               // as_obs_vec, unwrap_skew_idx
 #include "nested_laplace_grid.h"            // nl_grid_cell_to_result_list
 #include "nested_laplace_joint_core.h"      // ParsedArm / JointArm, make_single_arm
 #include "nested_laplace_joint_multi.h"     // run_multi_block_nested_laplace_joint

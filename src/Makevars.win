@@ -83,6 +83,7 @@ unity_core.o: \
   sparse_cholesky.h \
   cornish_fisher.h \
   crt_rng.h \
+  elementwise_map.h \
   laplace_likelihoods.h \
   laplace_family_link.h \
   laplace_family_curvature.h \
@@ -91,6 +92,7 @@ unity_core.o: \
   glmm_oracle.h \
   builtin_family_ll_ad.h \
   density_probe.h \
+  probe_lengths.h \
   fastmath.h \
   device.h \
   device_batch.h \
@@ -166,6 +168,7 @@ unity_core.o: \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
   log_post_device_impl.h \
+  laplace_re_priors.h \
   linear_constraint_rows.h \
   hmc_gp_cg.h \
   hmc_gp_lbfgs.h \
@@ -524,6 +527,7 @@ unity_hmc.o: \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
   tulpa_priors_mstemporal.h \
+  tulpa_priors_tvc.h \
   simp/scheme.h \
   simp/harmonic.h \
   checkpoint_io.h \
@@ -536,7 +540,6 @@ unity_hmc.o: \
   tulpa_priors_hsgp.h \
   tulpa_priors_spde.h \
   tulpa_priors_svc.h \
-  tulpa_priors_tvc.h \
   tulpa_priors_latent.h \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
@@ -592,13 +595,16 @@ unity_laplace.o: \
   areal_input_check.h \
   laplace_cholesky.h \
   icar_kernel.h \
+  laplace_block_fit.h \
   latent_block.h \
   laplace_likelihoods.h \
+  elementwise_map.h \
   autodiff_utils.h \
   laplace_profile.h \
   laplace_newton_loop.h \
   intrinsic_log_pdet.h \
   laplace_s2z.h \
+  laplace_hessian_target.h \
   laplace_builtin_family_spec.h \
   laplace_cholesky_dispatch.h \
   laplace_spec_curvature3.h \
@@ -751,6 +757,7 @@ unity_nl.o: \
   nested_laplace_multi.h \
   hmc_car_proper.h \
   hmc_hsgp_kernels.h \
+  laplace_block_fit.h \
   nl_entry_inputs.h \
   nested_laplace_entries.h \
   nngp_block_factory.h \
@@ -798,8 +805,8 @@ unity_nl.o: \
   row_classes.h \
   scatter_dense_basis.h \
   scatter_indexed_cache.h \
-  hessian_pattern_guard.h \
   cholmod_view.h \
+  hessian_pattern_guard.h \
   small_dense_sym.h \
   checkpoint_io.h \
   spde_logdet.h \
@@ -947,6 +954,7 @@ unity_pg.o: \
   laplace_spatial_priors.h \
   hmc_temporal.h \
   pg_negbin.h \
+  elementwise_map.h \
   device_dense.h \
   omp_threads.h \
   pc_prior.h \
@@ -987,6 +995,7 @@ unity_samplers.o: \
   hmc_sampler.h \
   autodiff_utils.h \
   density_probe.h \
+  log_phi_normal_prior.h \
   log_post_impl.h \
   linalg_fast.h \
   hmc_field_coordinates.h \
@@ -1034,6 +1043,7 @@ unity_samplers.o: \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
+  tulpa_priors_tvc.h \
   hmc_hsgp_kernels.h \
   intrinsic_log_pdet.h \
   hmc_gp_cg.h \
@@ -1052,7 +1062,6 @@ unity_samplers.o: \
   tulpa_priors_hsgp.h \
   tulpa_priors_spde.h \
   tulpa_priors_svc.h \
-  tulpa_priors_tvc.h \
   tulpa_priors_latent.h \
   tulpa_priors_st.h \
   tulpa_priors_zioi.h \
@@ -1112,6 +1121,7 @@ unity_spatial.o: \
   hmc_sampler.h \
   spde_matern_map.h \
   density_probe.h \
+  log_phi_normal_prior.h \
   hmc_gp_cg.h \
   pc_prior.h \
   hmc_gp_lbfgs.h \

@@ -23,7 +23,7 @@
 #include <vector>
 
 #include "hmc_sampler.h"           // ModelData / ParamLayout
-#include "laplace_spec_fit.h"      // as_offset_vec
+#include "laplace_spec_fit.h"      // as_obs_vec
 #include "log_post_impl.h"         // GenericLogPostState, generic_eta_at
 #include "sampler_model_data.h"    // build_sampler_model_inputs
 #include "sampler_log_prob.h"      // sampler_log_prob_rows
@@ -54,7 +54,7 @@ Rcpp::NumericMatrix cpp_tulpa_glmm_eta_draws(
     const int N = y.size();
 
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset,
         sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec,
@@ -137,7 +137,7 @@ Rcpp::List cpp_sampler_field_draws(
     const double sigma_beta_value = tulpa::read_sigma_beta(sigma_beta);
     const int N = y.size();
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset,
         sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec,

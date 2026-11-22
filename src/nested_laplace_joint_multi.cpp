@@ -189,22 +189,25 @@ struct NestedOmpLevels {
     NestedOmpLevels& operator=(const NestedOmpLevels&) = delete;
 };
 
-// Build a per-arm idx closure from an Rcpp::List of per-arm IntegerVectors.
-// The closure captures cached IntegerVectors so per-grid-point eta evaluation
-// doesn't re-resolve the list each call.
-inline std::function<int(int, int)> make_per_arm_idx_fn(
-    const Rcpp::List& per_arm_idx_list, int n_arms, const char* field_name,
+// Build a per-arm per-row closure (arm, row) -> element from an Rcpp::List of
+// per-arm vectors of R type RTYPE. The closure captures the cached vectors so
+// per-grid-point eta evaluation does not re-resolve the list each call.
+template<int RTYPE>
+inline std::function<typename Rcpp::traits::storage_type<RTYPE>::type(int, int)>
+make_per_arm_vector_fn(
+    const Rcpp::List& per_arm_list, int n_arms, const char* field_name,
     int block_index, const std::vector<tulpa::JointArm>* arms_ptr
 ) {
-    if (static_cast<int>(per_arm_idx_list.size()) != n_arms) {
+    using Elem = typename Rcpp::traits::storage_type<RTYPE>::type;
+    if (static_cast<int>(per_arm_list.size()) != n_arms) {
         tulpa::stop("blocks_spec[[%d]]$%s must be a list of length n_arms (%d), got %d.",
                    {block_index + 1, field_name, n_arms,
-                   static_cast<int>(per_arm_idx_list.size())});
+                   static_cast<int>(per_arm_list.size())});
     }
-    std::vector<Rcpp::IntegerVector> cache;
+    std::vector<Rcpp::Vector<RTYPE>> cache;
     cache.reserve(n_arms);
     for (int k = 0; k < n_arms; k++) {
-        cache.push_back(Rcpp::as<Rcpp::IntegerVector>(per_arm_idx_list[k]));
+        cache.push_back(Rcpp::as<Rcpp::Vector<RTYPE>>(per_arm_list[k]));
         // The closure reads cache[k_arm][i] for every row i of arm k with no
         // bounds check, so a vector shorter than that arm reads past the
         // allocation the first time a grid cell scatters those rows. The
@@ -218,16 +221,24 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
                        (*arms_ptr)[k].N});
         }
     }
-    return [cache](int i, int k_arm) -> int {
+    return [cache](int i, int k_arm) -> Elem {
         return cache[k_arm][i];
     };
 }
 
-// Build a per-arm per-row weight closure from an Rcpp::List of per-arm
-// NumericVectors (areal SVC). Mirrors make_per_arm_idx_fn: caches the
-// per-arm vectors so per-grid-point eta evaluation does not re-resolve the
-// list. Returns an empty std::function when the spec carries no svc_weight, so
-// the block's row_weight stays unset (uniform weight 1, no behavior change).
+// Per-arm row index closure from an Rcpp::List of per-arm IntegerVectors.
+inline std::function<int(int, int)> make_per_arm_idx_fn(
+    const Rcpp::List& per_arm_idx_list, int n_arms, const char* field_name,
+    int block_index, const std::vector<tulpa::JointArm>* arms_ptr
+) {
+    return make_per_arm_vector_fn<INTSXP>(per_arm_idx_list, n_arms, field_name,
+                                          block_index, arms_ptr);
+}
+
+// Per-arm per-row weight closure from the spec's `svc_weight` list of per-arm
+// NumericVectors (areal SVC). Returns an empty std::function when the spec
+// carries no svc_weight, so the block's row_weight stays unset (uniform
+// weight 1).
 inline std::function<double(int, int)> make_per_arm_row_weight_fn(
     const Rcpp::List& bs, int n_arms, int block_index,
     const std::vector<tulpa::JointArm>* arms_ptr
@@ -237,28 +248,8 @@ inline std::function<double(int, int)> make_per_arm_row_weight_fn(
         return std::function<double(int, int)>();
     }
     Rcpp::List w_list = bs["svc_weight"];
-    if (static_cast<int>(w_list.size()) != n_arms) {
-        tulpa::stop("blocks_spec[[%d]]$svc_weight must be a list of length "
-                   "n_arms (%d), got %d.",
-                   {block_index + 1, n_arms,
-                   static_cast<int>(w_list.size())});
-    }
-    std::vector<Rcpp::NumericVector> cache;
-    cache.reserve(n_arms);
-    for (int k = 0; k < n_arms; k++) {
-        cache.push_back(Rcpp::as<Rcpp::NumericVector>(w_list[k]));
-        // Same unchecked per-row read as make_per_arm_idx_fn.
-        if (arms_ptr && k < static_cast<int>(arms_ptr->size()) &&
-            cache[k].size() < (*arms_ptr)[k].N) {
-            tulpa::stop("blocks_spec[[%d]]$svc_weight[[%d]] holds %d entries but "
-                       "arm %d has %d observations.", {block_index + 1, k + 1,
-                       static_cast<int>(cache[k].size()), k + 1,
-                       (*arms_ptr)[k].N});
-        }
-    }
-    return [cache](int i, int k_arm) -> double {
-        return cache[k_arm][i];
-    };
+    return make_per_arm_vector_fn<REALSXP>(w_list, n_arms, "svc_weight",
+                                           block_index, arms_ptr);
 }
 
 // Optional aliased fixed-effect column of a weighted (SVC / TVC) intrinsic

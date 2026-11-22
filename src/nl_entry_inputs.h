@@ -156,7 +156,7 @@ inline Rcpp::List nl_run_multi_block_entry(
         in.compute_skew, run.skew_idx_ptr,
         run.debias_req.ptr, run.cila_req.ptr,
         in.screen_iters, in.compute_fitted_var,
-        tulpa::as_offset_vec(in.offset, in.N()),
+        tulpa::as_obs_vec(in.offset, in.N(), "offset"),
         in.screen_offset(), &in.beta_prior
     );
     nl_attach_axes(out, out_axes);

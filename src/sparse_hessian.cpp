@@ -364,54 +364,43 @@ bool S2ZBlockSchurFactor::prepare_sqrt() {
     return true;
 }
 
-// v <- T^-1 L^-1 P v on `ncol` field columns.
-bool S2ZBlockSchurFactor::rf_inv(double* v, int ncol) {
-    const std::size_t NF = static_cast<std::size_t>(nf_);
-    if (!sf_->apply_chol_factor_inv(v, v, nf_, ncol)) return false;
-    std::vector<double> t(m_), s(m_);
+// v <- T^-1 v on `ncol` columns of length nf, T^-1 = I - Y Gm Y' with Y the
+// nf x m fold columns (column-major) and Gm the m x m row-major core.
+static void s2z_fold_correct(const std::vector<double>& Yf,
+                             const std::vector<double>& Gm, int m, int nf,
+                             double* v, int ncol) {
+    const std::size_t NF = static_cast<std::size_t>(nf);
+    std::vector<double> t(m), s(m);
     for (int c = 0; c < ncol; ++c) {
         double* vc = v + NF * c;
-        for (int a = 0; a < m_; ++a) {
-            const double* ya = Yf_.data() + NF * a;
+        for (int a = 0; a < m; ++a) {
+            const double* ya = Yf.data() + NF * a;
             double acc = 0.0;
             for (std::size_t i = 0; i < NF; ++i) acc += ya[i] * vc[i];
             t[a] = acc;
         }
-        for (int a = 0; a < m_; ++a) {
+        for (int a = 0; a < m; ++a) {
             double acc = 0.0;
-            for (int b = 0; b < m_; ++b) acc += Gm_[(std::size_t) a * m_ + b] * t[b];
+            for (int b = 0; b < m; ++b) acc += Gm[(std::size_t) a * m + b] * t[b];
             s[a] = acc;
         }
-        for (int a = 0; a < m_; ++a) {
-            const double* ya = Yf_.data() + NF * a;
+        for (int a = 0; a < m; ++a) {
+            const double* ya = Yf.data() + NF * a;
             for (std::size_t i = 0; i < NF; ++i) vc[i] -= ya[i] * s[a];
         }
     }
+}
+
+// v <- T^-1 L^-1 P v on `ncol` field columns.
+bool S2ZBlockSchurFactor::rf_inv(double* v, int ncol) {
+    if (!sf_->apply_chol_factor_inv(v, v, nf_, ncol)) return false;
+    s2z_fold_correct(Yf_, Gm_, m_, nf_, v, ncol);
     return true;
 }
 
 // w <- P' L^-T T^-1 w on `ncol` field columns (T^-1 is symmetric).
 bool S2ZBlockSchurFactor::rf_inv_t(double* w, int ncol) {
-    const std::size_t NF = static_cast<std::size_t>(nf_);
-    std::vector<double> t(m_), s(m_);
-    for (int c = 0; c < ncol; ++c) {
-        double* wc = w + NF * c;
-        for (int a = 0; a < m_; ++a) {
-            const double* ya = Yf_.data() + NF * a;
-            double acc = 0.0;
-            for (std::size_t i = 0; i < NF; ++i) acc += ya[i] * wc[i];
-            t[a] = acc;
-        }
-        for (int a = 0; a < m_; ++a) {
-            double acc = 0.0;
-            for (int b = 0; b < m_; ++b) acc += Gm_[(std::size_t) a * m_ + b] * t[b];
-            s[a] = acc;
-        }
-        for (int a = 0; a < m_; ++a) {
-            const double* ya = Yf_.data() + NF * a;
-            for (std::size_t i = 0; i < NF; ++i) wc[i] -= ya[i] * s[a];
-        }
-    }
+    s2z_fold_correct(Yf_, Gm_, m_, nf_, w, ncol);
     return sf_->apply_inv_chol_factor(w, w, nf_, ncol);
 }
 

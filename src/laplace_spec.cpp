@@ -1416,35 +1416,33 @@ struct LaplaceShimResult;
 // Coordinate map between the compacted latent vector (length n_x, layout
 // [beta | RE | blocks]) the shared Newton loop drives and the full params vector
 // the spec helpers read (latent slots interleaved with pinned hyperparameters).
-// Mutual inverses; single source of truth for the bridge used by
-// spec_inner_solve and its callers.
-static inline void scatter_compacted_latent(
-    const SpecLatentLayout& L, const double* x, std::vector<double>& p
-) {
+// Mutual inverses over one index walk; single source of truth for the bridge
+// used by spec_inner_solve and its callers.
+//
+// Calls f(param_index, latent_index) for every latent slot, over the fixed
+// effects of each process, then each RE term, then each block.
+template <class F>
+static inline void for_each_compacted_latent(const SpecLatentLayout& L, F&& f) {
     for (int k = 0; k < L.np; k++)
         for (int j = 0; j < L.beta_count[k]; j++)
-            p[L.beta_start[k] + j] = x[L.latent_offset[k] + j];
+            f(L.beta_start[k] + j, L.latent_offset[k] + j);
     for (const ReTermSlot& s : L.re_terms) {
         const int n = s.n_groups * s.n_coefs;
-        for (int j = 0; j < n; j++) p[s.param_start + j] = x[s.latent_offset + j];
+        for (int j = 0; j < n; j++) f(s.param_start + j, s.latent_offset + j);
     }
     for (int b = 0; b < L.n_blocks; b++)
         for (int j = 0; j < L.block_size[b]; j++)
-            p[L.block_param_start[b] + j] = x[L.block_latent_offset[b] + j];
+            f(L.block_param_start[b] + j, L.block_latent_offset[b] + j);
+}
+static inline void scatter_compacted_latent(
+    const SpecLatentLayout& L, const double* x, std::vector<double>& p
+) {
+    for_each_compacted_latent(L, [&](int pi, int xi) { p[pi] = x[xi]; });
 }
 static inline void gather_compacted_latent(
     const SpecLatentLayout& L, const std::vector<double>& p, double* x
 ) {
-    for (int k = 0; k < L.np; k++)
-        for (int j = 0; j < L.beta_count[k]; j++)
-            x[L.latent_offset[k] + j] = p[L.beta_start[k] + j];
-    for (const ReTermSlot& s : L.re_terms) {
-        const int n = s.n_groups * s.n_coefs;
-        for (int j = 0; j < n; j++) x[s.latent_offset + j] = p[s.param_start + j];
-    }
-    for (int b = 0; b < L.n_blocks; b++)
-        for (int j = 0; j < L.block_size[b]; j++)
-            x[L.block_latent_offset[b] + j] = p[L.block_param_start[b] + j];
+    for_each_compacted_latent(L, [&](int pi, int xi) { x[xi] = p[pi]; });
 }
 
 // Spec-driven Laplace inner solve for any np >= 1: the one place the

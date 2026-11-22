@@ -27,7 +27,7 @@
 #include <vector>
 #include <cmath>
 
-#include "laplace_spec_fit.h"      // as_offset_vec
+#include "laplace_spec_fit.h"      // as_obs_vec
 #include "sampler_model_data.h"    // build_sampler_model_inputs / sampler_param_names
 #include "hmc_sampler.h"           // tulpa_hmc::run_hmc_parallel_chains_cpp, HMCResultCpp
 #include "hmc_chain_stack.h"       // tulpa_hmc::stack_hmc_chains
@@ -198,7 +198,7 @@ Rcpp::List cpp_vi_elbo_grad(
 
     const int N = y.size();
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, /*phi2=*/NA_REAL, sigma_beta_value, offset,
         /*sigma_re_scale=*/2.5, R_NilValue, R_NilValue, R_NilValue);
@@ -375,7 +375,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     // Build the full ModelData + ParamLayout (fixed effects + any RE / spatial /
     // temporal structure) once; the kernels sample the full vector it lays out.
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> offset = tulpa::as_obs_vec(offset_nullable, N, "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, phi2, sigma_beta_value, offset, sigma_re_scale,
         re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec, zi_spec);

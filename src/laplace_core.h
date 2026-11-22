@@ -264,6 +264,20 @@ struct LaplaceResult {
   std::string         cila_fallback;
 };
 
+// Attach a flat column-major buffer as a [rows x cols] NumericMatrix under
+// `name`, when both dimensions are positive and the buffer holds exactly
+// rows * cols values; otherwise the field is left off.
+inline void attach_colmajor_matrix(Rcpp::List& out, const char* name,
+                                   const std::vector<double>& v,
+                                   int rows, int cols) {
+  if (rows <= 0 || cols <= 0 ||
+      v.size() != static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols))
+    return;
+  Rcpp::NumericMatrix m(rows, cols);
+  for (std::size_t e = 0; e < v.size(); e++) m[e] = v[e];
+  out[name] = m;
+}
+
 // Emit the subspace-debias fields onto a result list, when the solver ran the
 // correction. One attach point, mirroring attach_inner_is_fields below.
 inline void attach_debias_fields(Rcpp::List& out, const LaplaceResult& res) {
@@ -278,19 +292,9 @@ inline void attach_debias_fields(Rcpp::List& out, const LaplaceResult& res) {
   if (!res.debias_importance.empty()) out["debias_importance"] = res.debias_importance;
   if (!res.debias_importance_log_weights.empty())
     out["debias_importance_log_weights"] = res.debias_importance_log_weights;
-  const int S = res.debias_n_kept;
-  if (S > 0 && res.debias_draws.size() ==
-                   static_cast<std::size_t>(S) * static_cast<std::size_t>(q)) {
-    Rcpp::NumericMatrix dr(S, q);
-    for (std::size_t e = 0; e < res.debias_draws.size(); e++) dr[e] = res.debias_draws[e];
-    out["debias_draws"] = dr;
-  }
-  if (res.debias_sigma_ss.size() ==
-          static_cast<std::size_t>(q) * static_cast<std::size_t>(q)) {
-    Rcpp::NumericMatrix ss(q, q);
-    for (int e = 0; e < q * q; e++) ss[e] = res.debias_sigma_ss[e];
-    out["debias_sigma_ss"] = ss;
-  }
+  attach_colmajor_matrix(out, "debias_draws", res.debias_draws,
+                         res.debias_n_kept, q);
+  attach_colmajor_matrix(out, "debias_sigma_ss", res.debias_sigma_ss, q, q);
 }
 
 // Emit the corrected-integrated-Laplace fields onto a result list, when the
@@ -304,15 +308,8 @@ inline void attach_cila_fields(Rcpp::List& out, const LaplaceResult& res) {
   out["cila_declined"]     = res.cila_declined;
   out["cila_fallback"]     = res.cila_fallback;
   if (!res.cila_log_w.empty()) out["cila_log_w"] = res.cila_log_w;
-  const int M = res.cila_n_points;
-  const int p = res.cila_n_fixed;
-  if (M > 0 && p > 0 &&
-      res.cila_fixed.size() == static_cast<std::size_t>(M) *
-                               static_cast<std::size_t>(p)) {
-    Rcpp::NumericMatrix fx(M, p);
-    for (std::size_t e = 0; e < res.cila_fixed.size(); e++) fx[e] = res.cila_fixed[e];
-    out["cila_fixed"] = fx;
-  }
+  attach_colmajor_matrix(out, "cila_fixed", res.cila_fixed,
+                         res.cila_n_points, res.cila_n_fixed);
 }
 
 // Emit the inner-Laplace importance-curve fields onto a result list, when the

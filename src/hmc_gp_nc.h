@@ -3,7 +3,7 @@
 // =============================================================================
 //
 // A namespace-body fragment, not a standalone header: hmc_gp.h includes it
-// inside `namespace tulpa_gp { }`, and it resolves dcov_dphi / compute_cov from
+// inside `namespace tulpa_gp { }`, and it resolves compute_cov from
 // what that file has already declared. It carries no include guard and must not
 // be included directly. Same pattern as hmc_nuts_chain_setup.h and the
 // hmc_nuts_chain_iter_*.h fragments, which hmc_nuts_chain.cpp documents.
@@ -46,60 +46,56 @@ struct NNGPNCView {
     }
 };
 
-// Fast-path view over GPData (cached nn_neighbor_dist).
-inline NNGPNCView make_gp_nc_view(const GPData& g) {
+// View over one NNGP scale whose pairwise neighbour distances are cached (the
+// fast path of pair_dist()), at the GP fields' fixed jitter and clamp floor.
+inline NNGPNCView make_cached_nc_view(int n_obs, int nn, const int* nn_idx,
+                                      const double* nn_dist,
+                                      const double* nn_neighbor_dist,
+                                      const int* nn_order,
+                                      const int* nn_order_inv,
+                                      const double* coords, CovType cov_type) {
     NNGPNCView v;
-    v.n_obs = g.n_obs;
-    v.nn = g.nn;
-    v.nn_idx = g.nn_idx.data();
-    v.nn_dist = g.nn_dist.data();
-    v.nn_neighbor_dist = g.nn_neighbor_dist.data();
-    v.nn_order = g.nn_order.data();
-    v.nn_order_inv = g.nn_order_inv.data();
-    v.coords = g.coords.data();
-    v.cov_type = g.cov_type;
+    v.n_obs = n_obs;
+    v.nn = nn;
+    v.nn_idx = nn_idx;
+    v.nn_dist = nn_dist;
+    v.nn_neighbor_dist = nn_neighbor_dist;
+    v.nn_order = nn_order;
+    v.nn_order_inv = nn_order_inv;
+    v.coords = coords;
+    v.cov_type = cov_type;
     v.jitter = kGpJitter;
     v.var_floor = kGpVarFloor;
     v.floor_mode = tulpa_nngp::VarFloor::Clamp;
     return v;
+}
+
+inline NNGPNCView make_gp_nc_view(const GPData& g) {
+    return make_cached_nc_view(g.n_obs, g.nn, g.nn_idx.data(), g.nn_dist.data(),
+                               g.nn_neighbor_dist.data(), g.nn_order.data(),
+                               g.nn_order_inv.data(), g.coords.data(),
+                               g.cov_type);
 }
 
 // MultiscaleGPData holds two independent NNGP scales (local / regional),
-// each with its own cached nn_neighbor_dist -- the fast path, same as
-// GPData. These build the view for one scale at a time; the caller runs the
-// transform once per scale.
+// each with its own cached nn_neighbor_dist. These build the view for one
+// scale at a time; the caller runs the transform once per scale.
 inline NNGPNCView make_msgp_nc_view_local(const MultiscaleGPData& g) {
-    NNGPNCView v;
-    v.n_obs = g.n_obs;
-    v.nn = g.nn_local;
-    v.nn_idx = g.nn_idx_local.data();
-    v.nn_dist = g.nn_dist_local.data();
-    v.nn_neighbor_dist = g.nn_neighbor_dist_local.data();
-    v.nn_order = g.nn_order_local.data();
-    v.nn_order_inv = g.nn_order_inv_local.data();
-    v.coords = g.coords.data();
-    v.cov_type = g.cov_type;
-    v.jitter = kGpJitter;
-    v.var_floor = kGpVarFloor;
-    v.floor_mode = tulpa_nngp::VarFloor::Clamp;
-    return v;
+    return make_cached_nc_view(g.n_obs, g.nn_local, g.nn_idx_local.data(),
+                               g.nn_dist_local.data(),
+                               g.nn_neighbor_dist_local.data(),
+                               g.nn_order_local.data(),
+                               g.nn_order_inv_local.data(), g.coords.data(),
+                               g.cov_type);
 }
 
 inline NNGPNCView make_msgp_nc_view_regional(const MultiscaleGPData& g) {
-    NNGPNCView v;
-    v.n_obs = g.n_obs;
-    v.nn = g.nn_regional;
-    v.nn_idx = g.nn_idx_regional.data();
-    v.nn_dist = g.nn_dist_regional.data();
-    v.nn_neighbor_dist = g.nn_neighbor_dist_regional.data();
-    v.nn_order = g.nn_order_regional.data();
-    v.nn_order_inv = g.nn_order_inv_regional.data();
-    v.coords = g.coords.data();
-    v.cov_type = g.cov_type;
-    v.jitter = kGpJitter;
-    v.var_floor = kGpVarFloor;
-    v.floor_mode = tulpa_nngp::VarFloor::Clamp;
-    return v;
+    return make_cached_nc_view(g.n_obs, g.nn_regional, g.nn_idx_regional.data(),
+                               g.nn_dist_regional.data(),
+                               g.nn_neighbor_dist_regional.data(),
+                               g.nn_order_regional.data(),
+                               g.nn_order_inv_regional.data(), g.coords.data(),
+                               g.cov_type);
 }
 
 // SVCData does not cache pairwise neighbour distances (its density kernel,
@@ -184,7 +180,7 @@ inline void nngp_row_derivatives(int i, double sigma2, double phi,
     for (int j = 0; j < count; ++j) {
         const double distance = view.nn_dist[static_cast<size_t>(i) * nn + j];
         const double covariance = compute_cov(distance, sigma2, phi, view.cov_type);
-        out.dc(j) = dcov_dphi(distance, phi, covariance, sigma2, view.cov_type);
+        out.dc(j) = tulpa::cov_dphi(distance, phi, covariance, sigma2, view.cov_type);
         out.alpha(j) = ws.B_flat[static_cast<size_t>(i) * nn + j];
         for (int k = 0; k <= j; ++k)
             out.L(j, k) = ws.L_flat[static_cast<size_t>(i) * nn * nn + j * nn + k];
@@ -201,7 +197,7 @@ inline void nngp_row_derivatives(int i, double sigma2, double phi,
         const double distance = view.pair_dist(i, j, k, ws.nb_idx_flat[i * nn + j],
             ws.nb_idx_flat[i * nn + k]);
         const double covariance = compute_cov(distance, sigma2, phi, view.cov_type);
-        out.dC_alpha(j) += dcov_dphi(distance, phi, covariance, sigma2, view.cov_type) * out.alpha(k);
+        out.dC_alpha(j) += tulpa::cov_dphi(distance, phi, covariance, sigma2, view.cov_type) * out.alpha(k);
     }
     out.rhs.head(count) = out.dc.head(count) - out.dC_alpha.head(count);
     const Eigen::VectorXd y = L.triangularView<Eigen::Lower>().solve(out.rhs.head(count));

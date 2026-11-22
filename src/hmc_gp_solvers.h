@@ -43,43 +43,18 @@ inline bool cg_neighbor_solve(
 // Neighbor-system solver dispatch
 // -----------------------------------------------------------------------------
 //
-// Single source of truth for "solve C * alpha = c" inside the per-observation
-// NNGP loop. Branches on `cfg.effective_solver()` and either
-//   (a) does an Eigen LLT factorization in-place (Cholesky path), or
-//   (b) calls dense_cg_solve / dense_pcg_solve from hmc_gp_cg.h.
-//
-// `llt` is reused as workspace by the Cholesky branch and ignored by CG.
-// Returns true on success, false on failure (non-PSD or CG non-convergence).
+// Single source of truth for "solve C * x = rhs" inside the per-observation
+// NNGP loop, against a factor of C that is already in `llt`. Branches on
+// `cfg.effective_solver()` and either
+//   (a) solves through the precomputed Eigen LLT factor (Cholesky path), or
+//   (b) calls dense_cg_solve / dense_pcg_solve from hmc_gp_cg.h, which has no
+//       factor to reuse and ignores `llt`.
+// Returns true on success, false on CG non-convergence.
 //
 // CG is an explicit choice on GPSolverConfig; we do NOT
 // silently fall back to Cholesky on CG failure — the caller treats failure
 // the same way as a Cholesky non-PSD failure (typically: -INFINITY for
 // log-lik, or zero contribution for gradients), so HMC will reject the step.
-inline bool solve_neighbor_system(
-    Eigen::MatrixXd& C_eigen, int n_nb,
-    const Eigen::VectorXd& c_eigen,
-    Eigen::VectorXd& alpha_out,
-    Eigen::LLT<Eigen::MatrixXd>& llt,
-    const GPSolverConfig& cfg
-) {
-  GPSolver effective = cfg.effective_solver();
-
-  if (effective == GPSolver::CG || effective == GPSolver::PCG) {
-    return cg_neighbor_solve(C_eigen, n_nb, c_eigen, alpha_out, cfg,
-                             effective == GPSolver::PCG);
-  }
-
-  // Default / Cholesky path
-  llt.compute(C_eigen.topLeftCorner(n_nb, n_nb));
-  if (llt.info() != Eigen::Success) return false;
-  if (alpha_out.size() < n_nb) alpha_out.resize(n_nb);
-  alpha_out.head(n_nb) = llt.solve(c_eigen.head(n_nb));
-  return true;
-}
-
-// Same as above but solves a SECOND system reusing the already-factored
-// matrix when possible. For Cholesky, that's `llt.solve(rhs)`. For CG, we
-// just call the iterative solver again — there is no factor to reuse.
 inline bool solve_neighbor_system_second(
     const Eigen::MatrixXd& C_eigen, int n_nb,
     const Eigen::VectorXd& rhs,
@@ -97,5 +72,25 @@ inline bool solve_neighbor_system_second(
   if (out.size() < n_nb) out.resize(n_nb);
   out.head(n_nb) = llt.solve(rhs.head(n_nb));
   return true;
+}
+
+// The first solve of a neighbour system: on the Cholesky path factor the
+// leading n_nb x n_nb block of C into `llt` (reused as workspace, and left
+// holding the factor for later solve_neighbor_system_second calls), then
+// solve. Returns false on a non-PSD factorization or CG non-convergence.
+inline bool solve_neighbor_system(
+    Eigen::MatrixXd& C_eigen, int n_nb,
+    const Eigen::VectorXd& c_eigen,
+    Eigen::VectorXd& alpha_out,
+    Eigen::LLT<Eigen::MatrixXd>& llt,
+    const GPSolverConfig& cfg
+) {
+  GPSolver effective = cfg.effective_solver();
+  if (effective != GPSolver::CG && effective != GPSolver::PCG) {
+    llt.compute(C_eigen.topLeftCorner(n_nb, n_nb));
+    if (llt.info() != Eigen::Success) return false;
+  }
+  return solve_neighbor_system_second(C_eigen, n_nb, c_eigen, alpha_out, llt,
+                                      cfg);
 }
 

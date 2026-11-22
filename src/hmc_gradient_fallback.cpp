@@ -137,7 +137,9 @@ void compute_gradient_generic_numerical(
 // =====================================================================
 // Generic LikelihoodSpec gradient: arena reverse-mode AD against
 // compute_log_post_generic<Var>. Folds in the optional extra-prior
-// arena variant when the model package ships one.
+// arena variant when the model package ships one. `skip_obs_loop` drops the
+// observation likelihood (the prior-only force below); `allow_device` lets
+// the observation loop run on the device backend.
 // =====================================================================
 
 static void compute_gradient_arena_impl(
@@ -146,6 +148,7 @@ static void compute_gradient_arena_impl(
     const ParamLayout& layout,
     std::vector<double>& grad,
     double* log_post_out,
+    bool skip_obs_loop,
     bool allow_device
 ) {
     using namespace tulpa::arena;
@@ -157,7 +160,8 @@ static void compute_gradient_arena_impl(
 
     Var log_post = tulpa::compute_log_post_generic<Var>(
         params_ar, data, layout,
-        spec->ll_arena, data.model_response_data, false, false, allow_device);
+        spec->ll_arena, data.model_response_data, skip_obs_loop,
+        /*skip_prior=*/false, allow_device);
 
     if (spec->extra_prior_arena != nullptr) {
         log_post = log_post + spec->extra_prior_arena(
@@ -172,13 +176,15 @@ static void compute_gradient_arena_impl(
 void compute_gradient_generic_arena(const std::vector<double>& params,
     const ModelData& data, const ParamLayout& layout, std::vector<double>& grad,
     double* log_post_out) {
-    compute_gradient_arena_impl(params,data,layout,grad,log_post_out,false);
+    compute_gradient_arena_impl(params, data, layout, grad, log_post_out,
+                                /*skip_obs_loop=*/false, /*allow_device=*/false);
 }
 
 void compute_gradient_generic_device(const std::vector<double>& params,
     const ModelData& data, const ParamLayout& layout, std::vector<double>& grad,
     double* log_post_out) {
-    compute_gradient_arena_impl(params,data,layout,grad,log_post_out,true);
+    compute_gradient_arena_impl(params, data, layout, grad, log_post_out,
+                                /*skip_obs_loop=*/false, /*allow_device=*/true);
 }
 
 // =====================================================================
@@ -214,25 +220,8 @@ void compute_gradient_prior_arena(
     std::vector<double>& grad,
     double* log_post_out
 ) {
-    using namespace tulpa::arena;
-    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
-
-    ArenaScope scope;
-    Arena* ar = scope.arena();
-    std::vector<Var> params_ar = make_vars(ar, params);
-
-    Var log_prior = tulpa::compute_log_post_generic<Var>(
-        params_ar, data, layout,
-        spec->ll_arena, data.model_response_data, /*skip_obs_loop=*/true);
-
-    if (spec->extra_prior_arena != nullptr) {
-        log_prior = log_prior + spec->extra_prior_arena(
-            params_ar, layout, data.model_response_data);
-    }
-
-    if (log_post_out) *log_post_out = log_prior.val();
-    log_prior.backward();
-    grad = get_adjoints(params_ar);
+    compute_gradient_arena_impl(params, data, layout, grad, log_post_out,
+                                /*skip_obs_loop=*/true, /*allow_device=*/false);
 }
 
 // =====================================================================

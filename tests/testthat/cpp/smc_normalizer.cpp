@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "laplace_spec_fit.h"      // as_offset_vec
+#include "laplace_spec_fit.h"      // as_obs_vec
 #include "sampler_model_data.h"    // build_sampler_model_inputs / sampler_param_names
 #include "smc_interweave.h"
 
@@ -23,7 +23,7 @@ Rcpp::List cpp_test_log_prior_normalized(
     Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue) {
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(R_NilValue, y.size());
+    std::vector<double> offset = tulpa::as_obs_vec(R_NilValue, y.size(), "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, NA_REAL, sigma_beta, offset,
         sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec);
@@ -61,7 +61,7 @@ Rcpp::NumericVector cpp_test_sampler_init(
     Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue) {
     tulpa::SamplerModelInputs in;
-    std::vector<double> offset = tulpa::as_offset_vec(R_NilValue, y.size());
+    std::vector<double> offset = tulpa::as_obs_vec(R_NilValue, y.size(), "offset");
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, NA_REAL, sigma_beta, offset,
         sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec);

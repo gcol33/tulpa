@@ -19,6 +19,14 @@ struct Scope {
     void check() const { const auto s = policy->failure(); if (!s) tulpa::stop(s.message); }
 };
 
+// Mean wall-clock seconds of `repetitions` calls of `evaluate`.
+template<class F>
+double mean_seconds(int repetitions, const F& evaluate) {
+    const auto start = std::chrono::steady_clock::now();
+    for (int trial = 0; trial < repetitions; ++trial) evaluate();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
+}
+
 template<class T>
 T temporal(const std::vector<T>& q, const std::vector<double>& times, int kind,
            bool centered, double relative_nugget, bool tvc) {
@@ -82,12 +90,8 @@ Rcpp::List cpp_device_dense(const Eigen::MatrixXd& matrix, const Eigen::MatrixXd
             scope.check(); tulpa::stop("dense fixture solve failed");
         }
     };
-    const auto first_start = std::chrono::steady_clock::now();
-    evaluate();
-    const double first_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - first_start).count();
-    const auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < repetitions; ++i) evaluate();
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
+    const double first_seconds = tulpa_dense_fixture::mean_seconds(1, evaluate);
+    const double seconds = tulpa_dense_fixture::mean_seconds(repetitions, evaluate);
     if (!factor.lower(lower.data(), true)) { scope.check(); tulpa::stop("dense fixture lower download failed"); }
     Eigen::VectorXd z(matrix.rows()), perturbation(matrix.rows());
     for (int i = 0; i < z.size(); ++i) z[i] = std::sin(0.31 * i);
@@ -122,12 +126,8 @@ Rcpp::List cpp_device_temporal_dense(Rcpp::NumericVector times, Rcpp::NumericVec
         arena_value = result.val();
         for (std::size_t i = 0; i < variables.size(); ++i) gradient[i] = variables[i].adj();
     };
-    const auto first_start = std::chrono::steady_clock::now();
-    evaluate();
-    const double first_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - first_start).count();
-    const auto start = std::chrono::steady_clock::now();
-    for (int trial = 0; trial < repetitions; ++trial) evaluate();
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
+    const double first_seconds = tulpa_dense_fixture::mean_seconds(1, evaluate);
+    const double seconds = tulpa_dense_fixture::mean_seconds(repetitions, evaluate);
     value = tulpa_dense_fixture::temporal(x, t, kind, centered, relative_nugget, tvc);
     scope.check();
     const bool used = tulpa::device::dense_factor("temporal_gp").used_cuda();
@@ -170,12 +170,8 @@ Rcpp::List cpp_device_hsgp_dense(const Eigen::MatrixXd& basis, const Eigen::Vect
             gradient.array() *= scale.array();
         }
     };
-    const auto first_start = std::chrono::steady_clock::now();
-    evaluate();
-    const double first_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - first_start).count();
-    const auto start = std::chrono::steady_clock::now();
-    for (int trial = 0; trial < repetitions; ++trial) evaluate();
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
+    const double first_seconds = tulpa_dense_fixture::mean_seconds(1, evaluate);
+    const double seconds = tulpa_dense_fixture::mean_seconds(repetitions, evaluate);
     scope.check();
     Rcpp::List result = Rcpp::List::create(Rcpp::_["seconds"] = seconds, Rcpp::_["first_seconds"] = first_seconds);
     if (action == "all" || action == "crossprod") result["gram"] = gram;
@@ -196,13 +192,11 @@ Rcpp::List cpp_device_dense_adjoint(const Eigen::MatrixXd& lower, const Eigen::M
     using Matrix = tulpa_coordinate_linalg::Matrix;
     const Matrix l = lower, g = adjoint;
     Matrix out(l.rows(), l.cols());
-    const auto start = std::chrono::steady_clock::now();
-    for (int trial = 0; trial < repetitions; ++trial) {
+    const double seconds = tulpa_dense_fixture::mean_seconds(repetitions, [&]() {
         if (!tulpa::device::cholesky_adjoint(l.data(), g.data(), out.data(), l.rows())) {
             scope.check(); tulpa::stop("dense adjoint failed");
         }
-    }
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
+    });
     scope.check();
     return Rcpp::List::create(Rcpp::_["gradient"] = out, Rcpp::_["seconds"] = seconds);
 }
@@ -231,12 +225,8 @@ Rcpp::List cpp_device_projected_dense(const Eigen::MatrixXd& projector, const Ei
             scope.check(); tulpa::stop("projected factor or solve failed");
         }
     };
-    const auto first_start = std::chrono::steady_clock::now();
-    evaluate();
-    const double first_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - first_start).count();
-    const auto start = std::chrono::steady_clock::now();
-    for (int trial = 0; trial < repetitions; ++trial) evaluate();
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
+    const double first_seconds = tulpa_dense_fixture::mean_seconds(1, evaluate);
+    const double seconds = tulpa_dense_fixture::mean_seconds(repetitions, evaluate);
     scope.check();
     if (!tulpa::device::projected_precision(p.data(), n, weights.data(), residual.data(),
             precision.data(), linear.data(), operation)) { scope.check(); tulpa::stop("projected precision read failed"); }
@@ -283,14 +273,12 @@ Rcpp::List cpp_device_hsgp_cross(const Eigen::MatrixXd& left, const Eigen::Matri
         tulpa::stop("invalid HSGP cross-product dimensions");
     tulpa_dense_fixture::Scope scope(choice);
     Eigen::MatrixXd out(left.cols(), right.cols());
-    const auto start = std::chrono::steady_clock::now();
-    for (int trial = 0; trial < repetitions; ++trial) {
+    const double seconds = tulpa_dense_fixture::mean_seconds(repetitions, [&]() {
         if (!tulpa::device::cross_product(left.data(), left.rows(), left.cols(), right.data(),
                                          right.cols(), out.data())) {
             scope.check(); tulpa::stop("HSGP cross-product failed");
         }
-    }
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / repetitions;
+    });
     scope.check();
     return Rcpp::List::create(Rcpp::_["value"] = out, Rcpp::_["seconds"] = seconds,
         Rcpp::_["variant"] = tulpa::device::cross_variant(left.cols(), right.cols()));

@@ -29,6 +29,7 @@
 #define TULPA_LATENT_BLOCK_H
 
 #include <stdexcept>
+#include "laplace_re_priors.h"
 #include "laplace_types.h"
 #include "linear_constraint_rows.h"
 #include <Rcpp.h>
@@ -64,11 +65,7 @@ inline constexpr double kAliasColumnTol = 1e-9;
 inline std::vector<CenterFold> center_intercept(Rcpp::NumericVector& x,
                                                 int start, int length) {
     if (length <= 0) return {};
-    double mean = 0.0;
-    for (int i = 0; i < length; i++) mean += x[start + i];
-    mean /= length;
-    for (int i = 0; i < length; i++) x[start + i] -= mean;
-    return { CenterFold{0, mean} };
+    return { CenterFold{0, center_effects(x, start, length)} };
 }
 
 // The weighted twin: the level removed is c = sum_i w_i x_i / sum_i w_i, the

@@ -195,18 +195,6 @@ inline CovType parse_cov_type(const std::string& cov_str) {
 // Gradient computation for SVC parameters (for hand-coded HMC gradients)
 // -----------------------------------------------------------------------------
 
-// Covariance derivative w.r.t. phi: dk(d)/dphi. Single source of truth for
-// every NNGP gradient path (SVC and GP); see dcov_dphi in hmc_gp_gradients.h,
-// which delegates here.
-//
-// sigma2 is needed for SPHERICAL alone: the other kernels' derivatives are
-// proportional to k(d), so they can be written from cov_val, but the spherical
-// polynomial's is not, so it takes sigma2 explicitly.
-inline double dcov_dphi_svc(double d, double phi, double cov_val, double sigma2,
-                            CovType cov_type) {
-  return tulpa::cov_dphi(d, phi, cov_val, sigma2, cov_type);
-}
-
 } // namespace tulpa_svc
 
 #endif // TULPA_HMC_SVC_H

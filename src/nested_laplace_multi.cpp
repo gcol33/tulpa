@@ -749,7 +749,7 @@ Rcpp::List cpp_nested_laplace_multi(
         tulpa::DebiasRequest(debias).ptr,
         tulpa::CilaRequest(cila).ptr,
         tulpa::CHEAP_SCREEN_ITERS, compute_fitted_var,
-        tulpa::as_offset_vec(offset_nullable, N),
+        tulpa::as_obs_vec(offset_nullable, N, "offset"),
         tulpa::read_screen_offset(screen_log_offset),
         &bp
     );
