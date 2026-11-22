@@ -303,7 +303,7 @@ test_that("a copy scale truly zero reads the atom mass a grid laid toward zero r
   ctl <- list(n_threads = 2L, progress = FALSE)
   fz <- tulpa_nested_laplace_joint(list(counts = counts, detect = det), prior = icar, control = ctl)
   expect_length(fz$outer_grid_railed_axes, 0L)
-  sg <- sort(unique(tulpa_outer_grid(fz)$nodes[, "sigma"]))
+  sg <- sort(unique(tulpa_outer_grid(fz)$nodes[, "b1.sigma"]))
   pr <- icar; pr$sigma_grid <- sg
   dz <- det; dz$field_coef <- list(name = "alpha",
                                    grid = c(0, exp(seq(log(1e-3), log(3), length.out = 29))))

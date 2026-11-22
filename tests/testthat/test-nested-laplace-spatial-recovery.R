@@ -128,10 +128,10 @@ test_that("nested-Laplace CAR_proper recovers (tau, rho) with CI coverage", {
     fit <- suppressWarnings(tulpa_nested_laplace(
       as.integer(y), rep(1L, N), matrix(1, N, 1), prior = prior,
       family = "binomial", control = list(diagnose_k = FALSE)))
-    tau_hat[s] <- fit$theta_mean[["tau"]]; rho_hat[s] <- fit$theta_mean[["rho"]]
+    tau_hat[s] <- fit$theta_mean[["b1.tau"]]; rho_hat[s] <- fit$theta_mean[["b1.rho"]]
     field_cor[s] <- stats::cor(fit$modes[1, 2:(1 + S)], u)
-    tau_cov[s] <- tau_true >= fit$theta_ci_lo[["tau"]] && tau_true <= fit$theta_ci_hi[["tau"]]
-    rho_cov[s] <- rho_true >= fit$theta_ci_lo[["rho"]] && rho_true <= fit$theta_ci_hi[["rho"]]
+    tau_cov[s] <- tau_true >= fit$theta_ci_lo[["b1.tau"]] && tau_true <= fit$theta_ci_hi[["b1.tau"]]
+    rho_cov[s] <- rho_true >= fit$theta_ci_lo[["b1.rho"]] && rho_true <= fit$theta_ci_hi[["b1.rho"]]
   }
   # rho (the spatial autocorrelation) recovers as a point estimate; tau (a global
   # variance from ONE field realization) is attenuated/noisy as a point estimate
@@ -186,7 +186,7 @@ test_that("nested-Laplace BYM2 sigma tracks the field amplitude", {
     fit <- suppressWarnings(tulpa_nested_laplace(
       as.integer(y), rep(1L, N), matrix(1, N, 1), prior = prior,
       family = "binomial", control = list(diagnose_k = FALSE)))
-    fit$theta_mean[["sigma"]]
+    fit$theta_mean[["b1.sigma"]]
   }
   lo <- vapply(1:5, function(s) bym2_sigma(0.4, 200L + s), numeric(1))
   hi <- vapply(1:5, function(s) bym2_sigma(1.8, 300L + s), numeric(1))
