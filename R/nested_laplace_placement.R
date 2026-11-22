@@ -255,8 +255,10 @@
 # `.nl_registry_rescue_moves()`): a fit the placement pass will lay again is
 # refit on the placed axes, and refining it first would spend its passes on a
 # grid the refit replaces -- bisecting a collapsed axis level by level with no
-# mode to lay it at. Read on `res` with the declared grid `theta_grid` and its
-# log marginal.
+# mode to lay it at. The joint driver leaves the outer k-hat of such a fit to
+# the refit too: placement reads the grid regime and the placement mode, never
+# the k-hat. Read on `res` with the declared grid `theta_grid` and its log
+# marginal.
 .nl_refine_deferred <- function(res, theta_grid, log_marginal) {
     defer <- getOption("tulpa.nl_defer_refine")
     if (!is.function(defer)) return(FALSE)

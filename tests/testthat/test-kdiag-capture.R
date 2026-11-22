@@ -327,10 +327,9 @@ test_that("fit_spde: aperture reproduces the reported k-hat", {
                                   n_trials = rep(1L, n_obs),
                                   control = list(progress = FALSE))))
     skip_if(is.na(k$value$pareto_k), "SPDE k-hat declined on this fixture")
-    # The joint door scores the fit its placement was read off and the placed
-    # refit, one write each; the refit's is the last and the reported one.
-    expect_identical(k$n_writes,
-                     1L + as.integer(k$value$nested$outer_grid_recenter_attempts %||% 0L))
+    # The fit its placement is read off leaves the k-hat to the placed refit,
+    # so the one write is the reported one.
+    expect_identical(k$n_writes, 1L)
     .kcap_expect_reproduces(k, k$value$pareto_k)
 })
 

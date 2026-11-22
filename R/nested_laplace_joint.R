@@ -1583,9 +1583,9 @@ tulpa_nested_laplace_joint <- function(responses,
         copy_blocks = as.integer(state$cp$copy_blocks_zero %||% integer(0)) + 1L,
         n = .nl_pilot_n(control), enabled = auto_recenter)
 
-    # The detecting fit leaves its grid unrefined when the placement pass will
-    # lay it again (`.nl_refine_deferred()`): the refit at the placed axes
-    # refines its own grid.
+    # The detecting fit leaves its grid unrefined and its outer k-hat unscored
+    # when the placement pass will lay it again (`.nl_refine_deferred()`): the
+    # refit at the placed axes refines its own grid and scores its own k-hat.
     detect_fit <- function() {
         if (!isTRUE(auto_recenter)) return(fit_once(prior, prior_sigma))
         .nl_with_refine_deferred(
@@ -1643,8 +1643,9 @@ tulpa_nested_laplace_joint <- function(responses,
     res <- adopt(place(res, state))
 
     # A detecting fit the placement pass could not lay again (no usable
-    # curvature, a clamp) still holds the grid it left unrefined. It is solved
-    # again with its refinement, handed the mode the placement read, and the
+    # curvature, a clamp) still holds the grid it left unrefined and unscored.
+    # It is solved again with its refinement and k-hat, handed the mode the
+    # placement read, and the
     # pass reads that fit as it reads any other.
     if (isTRUE(res$outer_refine_deferred)) {
         res <- local({
@@ -2556,10 +2557,13 @@ tulpa_nested_laplace_joint <- function(responses,
     # drawn from the integrator's Gaussian proposal (reusing the generic
     # `kernel_fn` + `hp_fn` so no kernel-call machinery is duplicated) and
     # PSIS-smooth. Declines (NA -> quad-ESS) when an axis has unguessable
-    # support (e.g. CAR_proper's rho_car).
+    # support (e.g. CAR_proper's rho_car). A deferred fit is replaced by the
+    # fit its placement lays, so it leaves the k-hat to that fit as it leaves
+    # its refinement; the regime and the placement mode it is read for are
+    # attached either way.
     res <- .joint_attach_pareto_k_single(res, kernel_fn, hp_fn,
                                          max_iter   = max_iter,
-                                         diagnose_k = diagnose_k,
+                                         diagnose_k = diagnose_k && !deferred,
                                          diagnose_draws = diagnose_draws,
                                          n_threads_outer = pareto_k_threads,
                                          pareto_k_by_arm = pareto_k_by_arm,

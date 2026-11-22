@@ -2384,14 +2384,15 @@
     # unguessable support (CAR_proper's rho_car, a non-BYM2 rho, ...).
     # The diagnostic's importance batch runs across `pareto_k_threads` (resolved
     # by the top-level caller from control$k_threads; NULL only on a direct call,
-    # where it follows this fit's own thread grant)..
+    # where it follows this fit's own thread grant). A deferred fit leaves the
+    # k-hat to the fit its placement lays, as it leaves its refinement.
     k_to <- pareto_k_threads %||%
         .tulpa_pareto_k_threads(n_threads_outer, n_threads, diagnose_draws, NULL)
     res <- .joint_attach_pareto_k_multi(res, call_kernel,
                                         axis_offsets, B, arm_names,
                                         fn_sigma, fn_alpha, fn_phi,
                                         max_iter, tol,
-                                        diagnose_k = diagnose_k,
+                                        diagnose_k = diagnose_k && !deferred,
                                         diagnose_draws = diagnose_draws,
                                         n_threads_outer = k_to,
                                         proposal = ccd_proposal,
