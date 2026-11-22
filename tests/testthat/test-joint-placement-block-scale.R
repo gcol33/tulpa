@@ -113,7 +113,78 @@ test_that("the mode-find varies an axis its kept cells hold at one node", {
     expect_equal(sqrt(diag(pm$cov_u)), c(0.1, 0.2), tolerance = 0.02)
 })
 
+test_that("a block's scale is written as a tensor over its paired second axis", {
+    skip_on_cran_budget()
+    # car_proper carries (tau, rho) as paired cells. A placed precision is
+    # re-crossed with the block's rho levels, never written beside them.
+    blk <- list(type = "car_proper", n_spatial_units = 3L, spatial_idx = 1:3,
+                adj_row_ptr = c(0L, 1L, 3L, 4L), adj_col_idx = c(1L, 0L, 2L, 1L),
+                n_neighbors = c(1L, 2L, 1L))
+    gr <- expand.grid(tau = c(0.5, 1, 2), rho = c(0.3, 0.6, 0.9))
+    blk$tau_grid <- gr$tau
+    blk$rho_grid <- gr$rho
+    st <- list(prior = list(blk, list(type = "rw1", tau_grid = c(1, 2))))
+    tg <- cbind(b1.tau = gr$tau, b1.rho = gr$rho, b2.tau = 1)
+    fam <- tulpa:::.joint_placement_families()
+    slots <- tulpa:::.joint_placement_slots(list(theta_grid = tg), st, fam)
+    s <- Filter(function(x) identical(x$label, "b1.tau"), slots)[[1L]]
+    new_tau <- c(0.4, 0.8, 1.6, 3.2, 6.4)
+    out <- fam[[s$family]]$write(st, s, new_tau)$prior[[1L]]
+    filled <- tulpa:::.NL_REGISTRY$car_proper$defaults(out, NULL)
+    cells <- unique(cbind(filled$tau_grid, filled$rho_grid))
+    expect_identical(nrow(cells), 15L)
+    expect_setequal(unique(filled$tau_grid), new_tau)
+    expect_setequal(unique(filled$rho_grid), c(0.3, 0.6, 0.9))
+
+    # A non-copy BYM2 block's SD and mixing weight are both its registry axes,
+    # so whichever one an attempt moves, the pair is re-crossed.
+    bym <- list(type = "bym2", sigma_grid = gr$tau, rho_grid = gr$rho)
+    stb <- list(prior = list(bym, list(type = "rw1", tau_grid = c(1, 2))))
+    tgb <- cbind(b1.sigma = gr$tau, b1.rho = gr$rho, b2.tau = 1)
+    sl <- tulpa:::.joint_placement_slots(list(theta_grid = tgb), stb, fam)
+    fam_of <- stats::setNames(vapply(sl, `[[`, "", "family"),
+                              vapply(sl, `[[`, "", "label"))
+    expect_identical(unname(fam_of[c("b1.sigma", "b1.rho")]), c("field", "field"))
+    s_rho <- sl[[match("b1.rho", names(fam_of))]]
+    outb <- fam[["field"]]$write(stb, s_rho, c(0.2, 0.5, 0.8, 0.95))$prior[[1L]]
+    expect_identical(nrow(unique(cbind(outb$sigma_grid, outb$rho_grid))), 12L)
+})
+
 skip_on_cran()
+
+test_that("a placed precision beside a stated proper-CAR rho is crossed with it", {
+    skip_on_cran()
+    S <- 50L
+    set.seed(707L + S + 5000L)
+    eff <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4)), scale = FALSE))
+    set.seed(707L + S)
+    idx <- rep(seq_len(S), each = 10L)
+    X <- cbind(1, rnorm(length(idx)))
+    y <- as.numeric(X %*% c(-0.2, 0.7)) + eff[idx] + rnorm(length(idx), 0, sqrt(0.5))
+    nbr <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+    nn <- lengths(nbr)
+    base <- list(type = "car_proper", n_spatial_units = S, spatial_idx = idx,
+                 adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+                 adj_col_idx = as.integer(unlist(nbr)) - 1L,
+                 n_neighbors = as.integer(nn))
+    ctl <- list(n_threads = 1L, diagnose_k = FALSE, progress = FALSE)
+    for (rg in list(c(0.3, 0.6, 0.85, 0.95), c(0.3, 0.5, 0.7, 0.85, 0.95))) {
+        fit <- suppressWarnings(tulpa_nested_laplace(
+            y = y, n_trials = rep(1L, length(y)), X = X,
+            prior = c(base, list(rho_grid = rg)), family = "gaussian",
+            phi = 0.5, control = c(ctl, list(axis_refine = "none"))))
+        expect_true("b1.tau" %in% fit$outer_grid_recenter_axes)
+        tg <- fit$theta_grid
+        n_tau <- length(unique(tg[, "b1.tau"]))
+        expect_setequal(unique(tg[, "b1.rho"]), rg)
+        expect_identical(nrow(unique(tg)), n_tau * length(rg))
+    }
+    # Dense reference: tau on 120 log-spaced nodes crossed with the five rho
+    # nodes, tau's 95% interval 2.18 to 7.09, median 4.06.
+    ci <- c(fit$theta_ci_lo[["b1.tau"]], fit$theta_median[["b1.tau"]],
+            fit$theta_ci_hi[["b1.tau"]])
+    expect_lt(max(abs(log(ci) - log(c(2.18, 4.06, 7.09)))), 0.1 * 0.300)
+})
 
 test_that("a non-copy block's own scale axes are placed and integrated", {
     skip_on_cran()

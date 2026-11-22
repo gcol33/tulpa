@@ -83,18 +83,6 @@
                 st$prior[[s$block]]$sigma_grid <- nodes
                 st
             }),
-        block_scale = list(
-            slots = function(res, st) .joint_block_scale_slots(res, st),
-            hold = function(s, st)
-                .nl_axis_hold(st$prior[[s$block]], s$field,
-                              .nl_auto_fields_at(auto, s$block),
-                              type = tolower(st$prior[[s$block]]$type %||% "")),
-            fires = function(res, s) .nl_axis_placement_fires(res, s$label, "log"),
-            write = function(st, s, nodes) {
-                st$prior[[s$block]][[s$field]] <- nodes
-                st
-            },
-            together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
         phi = list(
             slots = function(res, st)
                 lapply(.nl_phi_axis_slots(res, st$phi_grid), function(p) list(
@@ -240,7 +228,9 @@
 # the field's SD. A default rho axis is a fixed ladder graded towards 1, so a
 # posterior reaching below its lowest node is cut at that node's box edge until
 # the axis is laid where the mode-find found it. Single-block the axis is `rho`;
-# multi-block every BYM2 block's own `b<k>.rho`, copied or not.
+# multi-block a copied BYM2 block's `b<k>.rho`, whose copy grid crosses each
+# axis it carries. A non-copy block's `b<k>.rho` is one of its registry axes,
+# paired with its SD, and the `field` family re-crosses the two.
 .joint_mixing_slots <- function(res, st) {
     cn <- colnames(res$theta_grid) %||% character(0)
     if (!.is_multi_block_prior(st$prior)) {
@@ -251,7 +241,7 @@
                          ref = .joint_declared_axis_ref("rho"))))
     }
     out <- list()
-    for (b in seq_along(st$prior)) {
+    for (b in .joint_copied_blocks(st)) {
         lbl <- .axis_label(b, "rho")
         if (!identical(tolower(st$prior[[b]]$type %||% ""), "bym2") ||
             !lbl %in% cn) next
@@ -261,47 +251,22 @@
     out
 }
 
-# --- a non-copy block's own scale --------------------------------------------
-#
-# A multi-block prior block that carries no copy integrates its own scale on the
-# axis its registry path reads: an iid random effect's SD (`b<k>.sigma`), an
-# areal field's precision (`b<k>.tau`, an arm-specific field the copy does not
-# reach), a temporal block's precision. Each is laid from the same outer mode as
-# the copied field's SD, in its own log coordinate, and written back onto the
-# block's own grid field. A block that is copied is the `copy_sigma` family's.
-.JOINT_BLOCK_SCALE_AXES <- c(sigma = "sigma_grid", tau = "tau_grid")
-
-.joint_block_scale_slots <- function(res, st) {
-    if (!.is_multi_block_prior(st$prior)) return(list())
-    cn <- colnames(res$theta_grid) %||% character(0)
-    copied <- if (!is.null(st$cp) && isTRUE(st$cp$has_copy))
-        as.integer(st$cp$copy_blocks_zero) + 1L else integer(0)
-    out <- list()
-    for (b in setdiff(seq_along(st$prior), copied)) {
-        for (a in names(.JOINT_BLOCK_SCALE_AXES)) {
-            lbl <- .axis_label(b, a)
-            if (!lbl %in% cn) next
-            out[[length(out) + 1L]] <- list(
-                label = lbl, axis = a, block = b,
-                field = .JOINT_BLOCK_SCALE_AXES[[a]],
-                ref = .joint_declared_axis_ref(lbl))
-        }
-    }
-    out
-}
-
 # --- a block's registry field axes ------------------------------------------
 #
-# Every other axis a non-copy block lays on a grid field of its own, as the
-# registry door binds it (`.NL_REGISTRY_AXIS_FIELD`): a Gaussian-process field's
-# variance and lengthscale (`b<k>.sigma2`, `b<k>.lengthscale`, `b<k>.phi_gp`),
-# an AR(1) block's correlation. Each is laid from the outer mode in the
-# coordinate the transform registry gives it (`tag`), as the registry rescue
-# lays it; an axis the registry gives none is not placed.
-# An axis another family lists first (a block's own scale, a BYM2 mixing weight)
-# stays that family's (`.joint_placement_slots()`). A matrix field (a tgmrf
-# block's `theta_grid_built`) holds every axis of its block as one column each,
-# and is written whole whenever one of them is placed.
+# Every axis a non-copy block lays on a grid field of its own, as the registry
+# door binds it (`.NL_REGISTRY_AXIS_FIELD`): the block's own scale (an iid
+# random effect's SD `b<k>.sigma`, an areal or temporal field's precision
+# `b<k>.tau`), a Gaussian-process field's variance and lengthscale
+# (`b<k>.sigma2`, `b<k>.lengthscale`, `b<k>.phi_gp`), an AR(1) or proper-CAR
+# block's correlation. Each is laid from the outer mode in the coordinate the
+# transform registry gives it (`tag`); an axis the registry gives none is not
+# placed. A block that is copied is the `copy_sigma` family's, and a BYM2
+# mixing weight the `mixing` family's (`.joint_placement_slots()`).
+#
+# A block's vector fields are paired cells, so one axis is never written alone:
+# `.joint_field_write()` re-crosses the block as the tensor of every axis's
+# levels. A matrix field (a tgmrf block's `theta_grid_built`) holds every axis
+# of its block as one column each, and is written whole the same way.
 .joint_field_slots <- function(res, st) {
     cn <- colnames(res$theta_grid) %||% character(0)
     out <- list()
@@ -321,8 +286,7 @@
 # each labelled as the grid names it.
 .joint_field_registry_slots <- function(st) {
     if (!.is_multi_block_prior(st$prior)) return(list())
-    copied <- if (!is.null(st$cp) && isTRUE(st$cp$has_copy))
-        as.integer(st$cp$copy_blocks_zero) + 1L else integer(0)
+    copied <- .joint_copied_blocks(st)
     out <- list()
     for (sl in .nl_registry_axis_slots(st$prior)) {
         if (sl$block %in% copied) next
@@ -335,6 +299,12 @@
         out[[length(out) + 1L]] <- sl
     }
     out
+}
+
+# The blocks of a multi-block prior a copy targets, 1-based.
+.joint_copied_blocks <- function(st) {
+    if (!is.null(st$cp) && isTRUE(st$cp$has_copy))
+        as.integer(st$cp$copy_blocks_zero) + 1L else integer(0)
 }
 
 # The nodes each vector-field axis of block `b` was declared on in `res`, named
@@ -478,9 +448,10 @@
 # grid names them, read off the call arguments before any fit: the mode-find's
 # own trigger (`.joint_attach_placement()`) is handed them, so it runs on a grid
 # that concentrated without railing. They are the dispersions, the copy scales,
-# on a multi-block prior every block's own scale -- a copied field's SD as
-# much as a non-copy block's SD or precision -- and every BYM2 mixing weight,
-# since each of those fires on an unresolved posterior as well as on a rail.
+# on a multi-block prior a copied field's SD and every registry axis of a
+# non-copy block (`.joint_movable_field_axes()`, its SD or precision among
+# them), and every BYM2 mixing weight, since each of those fires on an
+# unresolved posterior as well as on a rail.
 .joint_movable_extra_axes <- function(st, phi_auto, auto = logical(0)) {
     phi <- paste0("phi_", intersect(names(which(phi_auto)),
                                     names(st$phi_grid) %||% character(0)))
@@ -490,26 +461,20 @@
     alpha <- character(0)
     scale <- character(0)
     if (.is_multi_block_prior(st$prior)) {
-        copied <- integer(0)
-        if (isTRUE(st$cp$has_copy)) {
-            copied <- as.integer(st$cp$copy_blocks_zero) + 1L
-            for (b in copied) {
-                if (movable(list(block = b))) {
-                    alpha <- c(alpha, .nl_axis_alias("alpha", b,
-                                                     length(st$prior))[1L])
-                }
+        copied <- .joint_copied_blocks(st)
+        for (b in copied) {
+            if (movable(list(block = b))) {
+                alpha <- c(alpha, .nl_axis_alias("alpha", b,
+                                                 length(st$prior))[1L])
             }
         }
         for (b in seq_along(st$prior)) {
             blk <- st$prior[[b]]
-            fields <- if (b %in% copied) c(sigma = "sigma_grid")
-                      else .JOINT_BLOCK_SCALE_AXES
-            for (a in names(fields)) {
-                hold <- .nl_axis_hold(
-                    blk, fields[[a]], .nl_auto_fields_at(auto, b),
-                    type = if (b %in% copied) ".copy"
-                           else tolower(blk$type %||% ""))
-                if (is.null(hold)) scale <- c(scale, .axis_label(b, a))
+            if (b %in% copied &&
+                is.null(.nl_axis_hold(blk, "sigma_grid",
+                                      .nl_auto_fields_at(auto, b),
+                                      type = ".copy"))) {
+                scale <- c(scale, .axis_label(b, "sigma"))
             }
             type <- tolower(blk$type %||% "")
             if (type %in% c("mcar", "miid") &&

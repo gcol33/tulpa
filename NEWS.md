@@ -1,5 +1,19 @@
 # tulpa 0.8.0
 
+* The joint placement pass writes a non-copy block's axes as the tensor of
+  their levels. A block's (scale, correlation) grid is paired cells, and the
+  pass wrote a placed scale or BYM2 mixing weight alone beside the other
+  axis: at a different length the fit stopped with a paired-cells error (a
+  proper-CAR fit with four stated `rho` nodes), at the same length the two
+  were read as paired cells, a five-cell diagonal for a 5 x 5 tensor. On the
+  stated five-node proper-CAR fit the precision read 4.10 / 8.72 / 11.12 at
+  its 2.5 / 50 / 97.5% points against a dense 2.18 / 4.06 / 7.09, and now
+  reads 2.19 / 4.06 / 7.06. On a `tulpa()` / `fit_st_nested()` BYM2 x AR(1)
+  fit, where placement moves the field SD and the mixing weight together,
+  the SD read 0.325 / 0.413 / 0.538 against a dense 0.298 / 0.406 / 0.578 and
+  now reads 0.299 / 0.405 / 0.568, and the mixing weight 0.628 / 0.879 /
+  0.978 against 0.604 / 0.912 / 0.996, now 0.623 / 0.923 / 0.997 (#1283).
+
 * A proper-CAR block's correlation `rho` takes a proposal coordinate, the
   logit of the (0, 1) support its block declares, so the joint door places,
   refines and scores it like a BYM2 mixing weight, and the fit's outer
