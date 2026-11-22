@@ -309,13 +309,10 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",
     families = NULL,
-    # cpp_nested_laplace_joint_multi is an Rcpp export (an R-level entry point),
-    # not a registered C-ABI callable -- a model package reaches this driver's
-    # per-field kernels individually instead, through the six symbols below
-    # (gcol33/tulpa#775).
-    cabi = c("tulpa_nested_laplace_icar", "tulpa_nested_laplace_bym2",
-             "tulpa_nested_laplace_car_proper", "tulpa_nested_laplace_temporal",
-             "tulpa_nested_laplace_nngp", "tulpa_nested_laplace_hsgp"),
+    # A single-response fit runs on the joint driver, whose entry
+    # (cpp_nested_laplace_joint_multi) is an Rcpp export rather than a
+    # registered C-ABI callable.
+    cabi = NULL,
     hyperprior = TRUE,
     note = "Single-arm nested Laplace; integrates latent-block hyperparameters"
   ),
