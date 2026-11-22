@@ -270,11 +270,11 @@ inline void build_joint_hessian_pattern(
     // ---- (1) Per-arm β/β dense + β/RE dense + RE/RE diagonal ----
     for (int k = 0; k < n_arms; k++) {
         const ParsedArm& pa = parsed[k];
-        detail::add_dense_block_pattern(entries,
+        tulpa::detail::add_dense_block_pattern(entries,
                                          pa.beta_start, pa.p,
                                          pa.beta_start, pa.p);
         if (pa.n_re_groups > 0) {
-            detail::add_dense_block_pattern(entries,
+            tulpa::detail::add_dense_block_pattern(entries,
                                              pa.re_start, pa.n_re_groups,
                                              pa.beta_start, pa.p);
         }
@@ -316,15 +316,15 @@ inline void build_joint_hessian_pattern(
             if (blk.contrib_kind == BlockContribKind::DENSE_BASIS) {
                 // Every obs hits every basis coefficient → full sub-blocks
                 // unconditionally. No per-obs enumeration.
-                detail::add_dense_block_pattern(entries,
+                tulpa::detail::add_dense_block_pattern(entries,
                                                  blk.start, blk.size,
                                                  pa.beta_start, pa.p);
                 if (pa.n_re_groups > 0) {
-                    detail::add_dense_block_pattern(entries,
+                    tulpa::detail::add_dense_block_pattern(entries,
                                                      blk.start, blk.size,
                                                      pa.re_start, pa.n_re_groups);
                 }
-                detail::add_dense_block_pattern(entries,
+                tulpa::detail::add_dense_block_pattern(entries,
                                                  blk.start, blk.size,
                                                  blk.start, blk.size);
                 continue;
@@ -333,7 +333,7 @@ inline void build_joint_hessian_pattern(
             // INDEXED_SINGLE / INDEXED_MULTI: per-obs enumeration.
             for (int i = 0; i < N_k; i++) {
                 if (mask_missing && joint_row_masked(arms[k], i)) continue;
-                detail::resolve_indexed_dofs(blk, i, k, dof_scratch);
+                tulpa::detail::resolve_indexed_dofs(blk, i, k, dof_scratch);
                 if (dof_scratch.empty()) continue;
 
                 // β × {active dofs}
@@ -382,7 +382,7 @@ inline void build_joint_hessian_pattern(
 
                 if (b1_dense || b2_dense) {
                     // Dense-basis on either side → over-pattern full cross.
-                    detail::add_dense_block_pattern(entries,
+                    tulpa::detail::add_dense_block_pattern(entries,
                                                      blk2.start, blk2.size,
                                                      blk1.start, blk1.size);
                     continue;
@@ -391,9 +391,9 @@ inline void build_joint_hessian_pattern(
                 // Both indexed: per-obs enumeration.
                 for (int i = 0; i < N_k; i++) {
                     if (mask_missing && joint_row_masked(arms[k], i)) continue;
-                    detail::resolve_indexed_dofs(blk1, i, k, dof_scratch);
+                    tulpa::detail::resolve_indexed_dofs(blk1, i, k, dof_scratch);
                     if (dof_scratch.empty()) continue;
-                    detail::resolve_indexed_dofs(blk2, i, k, dof_scratch2);
+                    tulpa::detail::resolve_indexed_dofs(blk2, i, k, dof_scratch2);
                     if (dof_scratch2.empty()) continue;
 
                     for (const auto& dw1 : dof_scratch) {
@@ -430,24 +430,24 @@ inline void build_joint_hessian_pattern(
             const ParsedArm& pa_l = parsed[l];
             // beta_k x beta_l
             if (pa_k.p > 0 && pa_l.p > 0) {
-                detail::add_dense_block_pattern(entries,
+                tulpa::detail::add_dense_block_pattern(entries,
                                                  pa_k.beta_start, pa_k.p,
                                                  pa_l.beta_start, pa_l.p);
             }
             // beta_k x RE_l, beta_l x RE_k
             if (pa_k.p > 0 && pa_l.n_re_groups > 0) {
-                detail::add_dense_block_pattern(entries,
+                tulpa::detail::add_dense_block_pattern(entries,
                                                  pa_k.beta_start, pa_k.p,
                                                  pa_l.re_start, pa_l.n_re_groups);
             }
             if (pa_l.p > 0 && pa_k.n_re_groups > 0) {
-                detail::add_dense_block_pattern(entries,
+                tulpa::detail::add_dense_block_pattern(entries,
                                                  pa_l.beta_start, pa_l.p,
                                                  pa_k.re_start, pa_k.n_re_groups);
             }
             // RE_k x RE_l
             if (pa_k.n_re_groups > 0 && pa_l.n_re_groups > 0) {
-                detail::add_dense_block_pattern(entries,
+                tulpa::detail::add_dense_block_pattern(entries,
                                                  pa_k.re_start, pa_k.n_re_groups,
                                                  pa_l.re_start, pa_l.n_re_groups);
             }

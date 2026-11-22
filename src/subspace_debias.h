@@ -167,7 +167,7 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
 
   std::vector<double> L(static_cast<std::size_t>(q) * q, 0.0);
   double log_det_ss = 0.0;
-  detail::cholesky_factorize_impl_raw(FlatSymMat{out.sigma_ss.data(), q}, q,
+  tulpa::detail::cholesky_factorize_impl_raw(FlatSymMat{out.sigma_ss.data(), q}, q,
                                       L.data(), log_det_ss);
   for (int e = 0; e < q * q; e++) {
     if (!std::isfinite(L[e])) { out.declined = "degenerate_proposal"; return out; }

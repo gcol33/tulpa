@@ -21,6 +21,13 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+// windows.h defines FALSE / TRUE as integer macros, shadowing R's Rboolean
+// enumerators for whatever shares the translation unit, and far / near as
+// empty macros.
+#undef FALSE
+#undef TRUE
+#undef far
+#undef near
 #include <vector>
 #endif
 
@@ -34,24 +41,6 @@ int cpp_get_max_threads() {
   #else
   return 1;
   #endif
-}
-
-// Total installed physical RAM in bytes, or 0 when it cannot be determined.
-// Returned as a double: a byte count can exceed the R integer range. The
-// memory-budget clamp in the nested-Laplace grid drivers consumes the C++
-// total_ram_bytes() / available_ram_bytes() directly; these wrappers exist so
-// the queries are observable from R (tests, diagnostics).
-// [[Rcpp::export]]
-double cpp_total_ram_bytes() {
-  return static_cast<double>(tulpa::total_ram_bytes());
-}
-
-// Currently available (free + reclaimable) physical RAM in bytes, or 0 when it
-// cannot be determined. This, not the installed total, is what the outer-grid
-// thread budget is sized against so a loaded machine is not over-provisioned.
-// [[Rcpp::export]]
-double cpp_available_ram_bytes() {
-  return static_cast<double>(tulpa::available_ram_bytes());
 }
 
 // Number of physical performance cores, or 0 when the topology cannot be

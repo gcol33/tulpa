@@ -167,8 +167,8 @@ inline void local_maxima_golden(Fn&& g, const VectorXd& nodes, int num_iter,
     double gb = g(z1);
     for (int k = 0; k < num_iter; ++k) {
       const double mid = (z0 + z2) / 2.0;
-      const double far = (z1 <= mid) ? z2 : z0;
-      const double xx = z1 + gm * (far - z1);
+      const double far_end = (z1 <= mid) ? z2 : z0;
+      const double xx = z1 + gm * (far_end - z1);
       const double gx = g(xx);
       if (gx > gb) {
         if (xx > z1) z0 = z1; else z2 = z1;

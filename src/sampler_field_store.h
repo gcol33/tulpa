@@ -39,6 +39,7 @@
 #include "tulpa_priors_temporal.h"
 #include "tulpa_priors_icar.h"
 #include "tulpa_priors_mstemporal.h"
+#include "tulpa_priors_tvc.h"
 
 namespace tulpa {
 

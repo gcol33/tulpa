@@ -12,6 +12,13 @@
   #define NOMINMAX
   #endif
   #include <windows.h>
+  // windows.h defines FALSE / TRUE as integer macros, shadowing R's Rboolean
+  // enumerators for whatever shares the translation unit, and far / near as
+  // empty macros.
+  #undef FALSE
+  #undef TRUE
+  #undef far
+  #undef near
 #elif defined(__APPLE__)
   #include <cstdint>
   #include <sys/sysctl.h>
