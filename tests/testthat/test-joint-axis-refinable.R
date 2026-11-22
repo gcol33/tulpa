@@ -471,7 +471,7 @@ test_that("a multi-block axis is eligible by its bare name, a dispersion by its 
     # a dispersion.
     expect_true(all(vapply(c("b1.phi_gp", "b1.sigma2", "b1.lengthscale",
                              "b1.range"), elig, logical(1))))
-    expect_false(tulpa:::.joint_axis_is_dispersion("b1.phi_gp"))
+    expect_false(tulpa:::.axis_is_dispersion("b1.phi_gp"))
     # A field's `rho` takes points on the coordinate its mode is tagged with; a
     # proper-CAR `rho_car` has no such coordinate.
     expect_true(all(vapply(c("b1.rho", "rho"), elig, logical(1))))

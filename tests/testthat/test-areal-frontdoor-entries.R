@@ -128,7 +128,7 @@ test_that("an areal prior_sigma is the PC anchor of the fit's hyperprior", {
              mode = "nested_laplace",
              control = c(.fe_ctl, list(auto_recenter = FALSE,
                                        var_of_means_consistency = FALSE)))
-  tau <- as.numeric(tulpa:::.nl_theta_matrix(f)[, "tau"])
+  tau <- as.numeric(tulpa:::.nl_theta_matrix(f)[, "b1.tau"])
   expect_equal(as.numeric(f$log_hyperprior),
                tulpa:::.hp_log_scale_density(tau, "precision", c(0.2, 0.05)),
                tolerance = 1e-10)
@@ -144,7 +144,7 @@ test_that("a bare-list BYM2 field carries the scaling spatial_bym2() computes", 
   f_spec <- tulpa(y ~ x + spatial(region), fx$d, family = "poisson",
                   spatial = spatial_bym2(fx$A, group_var = "region"),
                   mode = "nested_laplace", control = ctl)
-  expect_equal(f_list$prior$scale_factor,
+  expect_equal(f_list$prior[[1L]]$scale_factor,
                tulpa:::.bym2_component_scaling(fx$A)$scale_factor)
   expect_equal(as.numeric(logLik(f_list)), as.numeric(logLik(f_spec)))
   expect_equal(coef(f_list), coef(f_spec))
@@ -182,6 +182,6 @@ test_that("adaptive_grid refines an NNGP grid's variance and range axes", {
           control = c(.fe_ctl, list(adaptive_grid = TRUE))))
   info <- fit$adaptive_grid_info
   expect_false(is.null(info))
-  expect_setequal(strsplit(info$triggered_axes, ",")[[1]], c("sigma2", "phi_gp"))
-  expect_true(all(c("sigma2", "phi_gp") %in% fit$refining_axis))
+  expect_setequal(strsplit(info$triggered_axes, ",")[[1]], c("b1.sigma2", "b1.phi_gp"))
+  expect_true(all(c("b1.sigma2", "b1.phi_gp") %in% fit$refining_axis))
 })

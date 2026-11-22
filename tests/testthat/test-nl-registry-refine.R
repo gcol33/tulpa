@@ -52,11 +52,16 @@ skip_on_cran()
 test_that("a field SD collapsed onto few nodes is refined on the registry door", {
     skip_on_cran()
     sim <- .nrr_sim()
-    # Held as laid, so the consistency pass reads the default axis itself
-    # rather than one the placement pass laid at 1.25 posterior SDs.
-    held <- .nrr_fit(sim, sim$prior, list(axis_refine = "none",
-                                          auto_recenter = FALSE))
-    fit  <- .nrr_fit(sim, sim$prior, list(auto_recenter = FALSE))
+    # A default axis a decade per node holds the field precision on one
+    # interior node. Held as laid, with no placement mode, the consistency pass
+    # bisects it; a placed axis is laid at 1.25 posterior SDs instead and left
+    # as it is.
+    prior <- sim$prior
+    prior$tau_grid <- auto_grid(c(0.001, 0.01, 0.1, 1, 10))
+    # Unscreened, so every cell the pass adds is solved and read.
+    held <- .nrr_fit(sim, prior, list(axis_refine = "none",
+                                      auto_recenter = FALSE, prune = FALSE))
+    fit  <- .nrr_fit(sim, prior, list(auto_recenter = FALSE, prune = FALSE))
     min_ess <- tulpa:::.nl_diag("axis_sd_ess")
 
     expect_lt(held$theta_sd_ess[[1L]], min_ess)
