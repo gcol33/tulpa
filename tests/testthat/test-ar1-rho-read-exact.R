@@ -51,22 +51,18 @@ skip_on_cran()
     control = utils::modifyList(list(n_threads = 1L, diagnose_k = FALSE,
                                      diagnose_skew = FALSE, progress = FALSE),
                                 ctrl)))
-  list(exact = exact, default = fit(),
-       recentred = fit(list(auto_recenter = "always")))
+  list(exact = exact, default = fit())
 })
 
 test_that("the default AR(1) grid reads rho's interval near the exact one", {
   skip_on_cran()
   fx <- .ar1_exact_fixture()
   ex <- fx$exact
+  f <- fx$default
   # Exact: mean 0.835, 95% interval (0.663, 0.976).
-  for (f in list(fx$default, fx$recentred)) {
-    expect_lt(abs(f$theta_mean[["rho"]] - ex[["mean"]]), 0.01)
-    expect_lt(abs(f$theta_ci_hi[["rho"]] - ex[["hi"]]), 0.01)
-  }
+  expect_lt(abs(f$theta_mean[["b1.rho"]] - ex[["mean"]]), 0.01)
+  expect_lt(abs(f$theta_ci_hi[["b1.rho"]] - ex[["hi"]]), 0.01)
   # The lower bound is where a row whose cell at rho = 0.4 was pruned carried
-  # its quadratic tail across that cell: 0.333 on the default grid and 0.586
-  # recentred, now 0.613 and 0.650.
-  expect_lt(abs(fx$default$theta_ci_lo[["rho"]] - ex[["lo"]]), 0.06)
-  expect_lt(abs(fx$recentred$theta_ci_lo[["rho"]] - ex[["lo"]]), 0.03)
+  # its quadratic tail across that cell.
+  expect_lt(abs(f$theta_ci_lo[["b1.rho"]] - ex[["lo"]]), 0.06)
 })

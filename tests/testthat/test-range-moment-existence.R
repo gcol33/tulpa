@@ -226,11 +226,11 @@ test_that("a precision under the PC prior has no posterior mean or SD", {
           control = list(n_threads = 2, progress = FALSE))
   }
   proper <- summary(fit_under("proper"))$hyperparameters
-  expect_identical(proper$parameter, "tau")
+  expect_identical(proper$parameter, "b1.tau")
   expect_identical(proper$mean, Inf)
   expect_identical(proper$sd, Inf)
   expect_true(all(is.finite(unlist(proper[c("median", "ci_lo", "ci_hi")]))))
-  expect_false(attr(proper, "moment_existence")$tau$mean_exists)
+  expect_false(attr(proper, "moment_existence")[["b1.tau"]]$mean_exists)
   sg <- spatial_range(fit_under("proper"))
   expect_true(all(is.finite(unlist(sg["sigma", ]))))
 

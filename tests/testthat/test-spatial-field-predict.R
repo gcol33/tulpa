@@ -77,7 +77,7 @@ test_that("the NNGP field at a new location carries its conditional variance", {
   src <- tulpa:::.field_source(fit)
   on <- which(fit$weights > 0)
   w <- fit$weights[on] / sum(fit$weights[on])
-  s2 <- tulpa:::.field_theta(src$theta, "sigma2")[on]
+  s2 <- tulpa:::.field_theta(src$theta, "sigma2", "b1.")[on]
   # Far from every fitted location the predictive is the prior: the weighted
   # mixture of N(0, sigma2_k) over the cells.
   far <- data.frame(lon = 50, lat = 50, x = 0)

@@ -105,7 +105,8 @@ test_that("a high PSIS k withholds the posterior correction", {
   skip_on_cran()
   testthat::local_mocked_bindings(tulpa_psis = function(log_ratios, ...) {
     list(pareto_k = .95, is_ess = 3, log_weights = rep(-log(length(log_ratios)),
-                                                     length(log_ratios)))
+                                                     length(log_ratios)),
+         tail_len = max(1L, length(log_ratios) %/% 5L))
   }, .package = "tulpa")
   blk <- tgmrf(Q = function(theta) Matrix::Diagonal(3, exp(-2 * theta)),
     prior = function(theta) dnorm(theta, 0, .4, log = TRUE),

@@ -19,21 +19,21 @@ test_that("GP lengthscale is reported in coordinate units at every door", {
   expect_gt(k, 2)                     # the coordinates were standardized
 
   hp <- summary(fit)$hyperparameters
-  row <- hp[hp$parameter == "phi_gp", ]
-  expect_equal(row$mean, unname(fit$theta_mean[["phi_gp"]]) * k)
-  expect_equal(row$ci_hi, unname(fit$theta_ci_hi[["phi_gp"]]) * k)
+  row <- hp[hp$parameter == "b1.phi_gp", ]
+  expect_equal(row$mean, unname(fit$theta_mean[["b1.phi_gp"]]) * k)
+  expect_equal(row$ci_hi, unname(fit$theta_ci_hi[["b1.phi_gp"]]) * k)
   # The sigma2 axis carries no length and is untouched.
-  expect_equal(hp$mean[hp$parameter == "sigma2"],
-               unname(fit$theta_mean[["sigma2"]]))
+  expect_equal(hp$mean[hp$parameter == "b1.sigma2"],
+               unname(fit$theta_mean[["b1.sigma2"]]))
 
   g <- tulpa_outer_grid(fit)
-  expect_equal(unname(g$nodes[, "phi_gp"]), unname(fit$theta_grid[, "phi_gp"]) * k)
-  expect_equal(unname(g$nodes[, "sigma2"]), unname(fit$theta_grid[, "sigma2"]))
+  expect_equal(unname(g$nodes[, "b1.phi_gp"]), unname(fit$theta_grid[, "b1.phi_gp"]) * k)
+  expect_equal(unname(g$nodes[, "b1.sigma2"]), unname(fit$theta_grid[, "b1.sigma2"]))
 
   set.seed(1)
   hd <- tulpa_hyper_draws(fit, n = 4000)
-  expect_true(all(hd[, "phi_gp"] >= min(g$nodes[, "phi_gp"]) / 2))
-  expect_equal(stats::median(hd[, "phi_gp"]), row$median, tolerance = 0.1)
+  expect_true(all(hd[, "b1.phi_gp"] >= min(g$nodes[, "b1.phi_gp"]) / 2))
+  expect_equal(stats::median(hd[, "b1.phi_gp"]), row$median, tolerance = 0.1)
 
   # spatial_range()'s range is three lengthscales, in the same units.
   sr <- spatial_range(fit)
@@ -55,7 +55,7 @@ test_that("an HSGP field's range converts its lengthscale as the SE kernel's on 
                                     cov = "squared_exponential"),
                mode = "nested_laplace", control = list(progress = FALSE)))
   hp <- summary(fit)$hyperparameters
-  ls_mean <- hp$mean[hp$parameter == "lengthscale"]
+  ls_mean <- hp$mean[hp$parameter == "b1.lengthscale"]
   expect_equal(spatial_range(fit)["range", "mean"], se * ls_mean,
                tolerance = 1e-8)
 

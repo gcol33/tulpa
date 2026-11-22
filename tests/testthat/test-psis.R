@@ -417,7 +417,7 @@ test_that("tulpa_nested_laplace reports an outer k-hat for a positive-scale bloc
   expect_true(is.na(off$pareto_k))                  # gated off
 })
 
-test_that("outer k-hat declines (NA) for a multi-block nested fit", {
+test_that("outer k-hat is scored for a multi-block nested fit", {
   skip_on_cran()
   set.seed(4)
   nr <- 40L; spr <- 8L; N <- nr * spr
@@ -432,8 +432,10 @@ test_that("outer k-hat declines (NA) for a multi-block nested fit", {
   fit <- suppressWarnings(tulpa_nested_laplace(
     y = y, n_trials = rep(5L, N), X = X, prior = prior,
     family = "binomial", phi = 1, control = list(max_iter = 80L, tol = 1e-7)))
-  expect_true(is.na(fit$pareto_k))                  # multi-block: declined, not guessed
-  expect_gt(length(fit$weights), 1L)                # quadrature-ESS fallback available
+  # A multi-block registry fit is a one-arm joint fit, whose outer k-hat reads
+  # the multi-block grid like any other.
+  expect_true(is.finite(fit$pareto_k))
+  expect_gt(length(fit$weights), 1L)
 })
 
 # --------------------------------------------------------------------------- #
