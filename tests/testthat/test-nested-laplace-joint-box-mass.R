@@ -2,12 +2,12 @@
 # (gcol33/tulpa#326).
 #
 # A cell's shipped mass is the midpoint atom `Delta exp(ell_c)`, which cannot see
-# the log-marginal's gradient across the cell. `.joint_local_ccd_box_mass()`
+# the log-marginal's gradient across the cell. `.joint_local_ccd_cell_box_mass()`
 # integrates the cell's own local quadratic over the cell's own box instead, off
 # the same three-point stencil the design scale already differences, so it costs
 # no inner solve. What is checked here is the closed form against quadrature, the
-# per-axis handling of a convex axis, and what the rule does to the reported read
-# when it is run through the #322 harness at zero fitting minutes.
+# per-axis handling of a convex axis, and the reading the local-CCD refinement
+# records for the cells it refines.
 
 # The axis integral by composite Simpson on the max-shifted exponent. Independent
 # of `stats::integrate()`, so the estimator's numeric route is not being compared
@@ -31,28 +31,6 @@
   v <- stats::integrate(function(u) exp(g * u - 0.5 * a * u^2 - mx),
                         -h_lo, h_hi, rel.tol = .Machine$double.eps^0.75)$value
   mx + log(v) - log(h_lo + h_hi)
-}
-
-# --------------------------------------------------------------------------- #
-# The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
-# --------------------------------------------------------------------------- #
-
-# The candidate weight vector: the box multiplier entering as a per-cell design
-# weight, exactly the way the harness takes one.
-.bxm_weights <- function(d) {
-  bm <- tulpa:::.joint_local_ccd_box_mass(d$joint_grid, d$log_marginal,
-                                          d$axis_names, d$axis_tags)
-  base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
-  list(bm = bm, w = outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio)))
-}
-
-# Every axis's own u-space level spacing. The multiplier form is only a rule at
-# all because the common cell volume `Delta` cancels in the softmax, and that is
-# a property of the grid rather than of the rule.
-.bxm_spacings <- function(d) {
-  lapply(seq_len(ncol(d$joint_grid)), function(j)
-    diff(sort(unique(tulpa:::.joint_pareto_fwd(d$axis_tags[j],
-                                               d$joint_grid[, j])))))
 }
 
 skip_on_cran_budget()
@@ -153,7 +131,7 @@ test_that("the gradient is the same three points the curvature is", {
   expect_null(tulpa:::.joint_local_ccd_diff3(-1, 0, 1, 1, NA_real_, 1))
 })
 
-test_that("a boundary cell has no centred stencil and keeps its midpoint atom", {
+test_that("a boundary cell has no centred stencil, an interior one its own factors", {
   skip_on_cran_budget()
   mu <- c(0.3, -0.2); s <- c(0.8, 1.3)
   lv <- list(a = c(-1, 0, 1), b = c(-1, 0, 1))
@@ -162,43 +140,29 @@ test_that("a boundary cell has no centred stencil and keeps its midpoint atom", 
   lm <- -0.5 * rowSums(sweep(sweep(gg, 2L, mu, "-")^2, 2L, s^2, "/"))
   tags <- c("identity", "identity")
 
-  bm <- tulpa:::.joint_local_ccd_box_mass(gg, lm, colnames(gg), tags)
-  interior <- gg[, 1L] == 0 & gg[, 2L] == 0
-  expect_identical(bm$computed, unname(interior))
-  # Exactly one interior cell on a 3 x 3 grid, and every other cell is the atom
-  # it already was: multiplier 1, log 0.
-  expect_equal(sum(bm$computed), 1L)
-  expect_true(all(bm$log_box_ratio[!bm$computed] == 0))
-  expect_true(bm$log_box_ratio[interior] != 0)
-  expect_identical(bm$n_axes_declined, 0L)
-  # No axis that reached a per-axis gate fell at one, and the eight boundary
-  # cells account for their own axes: the stencil is a cell-level object, so a
-  # cell missing a neighbour on one axis has no local quadratic on either. The
-  # count and the tally are read together rather than one summing to the other
-  # (gcol33/tulpa#334).
-  expect_identical(bm$declined_reasons,
-                   c(boundary = 16L, no_factor = 0L, cancellation = 0L))
-  expect_identical(bm$n_axes_declined,
-                   sum(bm$declined_reasons[c("no_factor", "cancellation")]))
+  # Exactly one interior cell on a 3 x 3 grid. The stencil is a cell-level
+  # object, so a cell missing a neighbour on one axis has no local quadratic on
+  # either.
+  geo <- tulpa:::.joint_local_ccd_geometry(gg, colnames(gg), tags)
+  interior <- unname(gg[, 1L] == 0 & gg[, 2L] == 0)
+  has_st <- vapply(seq_len(nrow(gg)), function(c)
+    !is.null(tulpa:::.joint_local_ccd_cell_stencil(c, geo$U, lm, geo$up, geo$dn)),
+    logical(1))
+  expect_identical(has_st, interior)
 
   # The interior cell's multiplier is the product of its own axis factors.
-  nb <- tulpa:::.joint_local_ccd_neighbors(gg, gg, seq_len(2L))
-  st <- tulpa:::.joint_local_ccd_cell_stencil(which(interior), gg, lm,
-                                              nb$up, nb$dn)
-  expect_equal(bm$log_box_ratio[interior],
+  st <- tulpa:::.joint_local_ccd_cell_stencil(which(interior), geo$U, lm,
+                                              geo$up, geo$dn)
+  bm <- tulpa:::.joint_local_ccd_cell_box_mass(st)
+  expect_identical(bm$n_axes_declined, 0L)
+  expect_true(bm$log_box_ratio != 0)
+  expect_equal(bm$log_box_ratio,
                sum(vapply(1:2, function(j)
                  .bxm_simpson(st$g[j], -st$d2[j], st$half_lo[j], st$half_hi[j]),
                  numeric(1))), tolerance = 1e-10, ignore_attr = TRUE)
 
   # An unguessable-support grid declines whole rather than guessing a transform.
-  # No cell was scored at all there, so no axis declined at a gate and the tally
-  # is empty: the whole-grid decline is what `computed` reports, not a per-axis
-  # refusal.
-  none <- tulpa:::.joint_local_ccd_box_mass(gg, lm, colnames(gg), NULL)
-  expect_false(any(none$computed))
-  expect_true(all(none$log_box_ratio == 0))
-  expect_true(all(none$declined_reasons == 0L))
-  expect_identical(names(none$declined_reasons), tulpa:::.LCCD_BOX_REASONS)
+  expect_null(tulpa:::.joint_local_ccd_geometry(gg, colnames(gg), NULL))
 })
 
 # --------------------------------------------------------------------------- #
@@ -246,10 +210,7 @@ test_that("a cell's decline tally is per axis, alongside the count", {
   bm <- tulpa:::.joint_local_ccd_cell_box_mass(st)
   expect_identical(bm$n_axes_declined, 2L)
   expect_identical(bm$declined_reasons,
-                   c(boundary = 0L, no_factor = 1L, cancellation = 1L))
-  # `boundary` cannot fire on a cell that already holds a stencil, and the slot
-  # is carried anyway so the tally is the same object the grid-wide entry point
-  # returns.
+                   c(no_factor = 1L, cancellation = 1L))
   expect_identical(names(bm$declined_reasons), tulpa:::.LCCD_BOX_REASONS)
 
   # The two axes that were read still contribute their exact factors, which is
@@ -279,12 +240,13 @@ test_that("a refined cell records the box mass beside the cloud's own", {
   expect_length(out$info$log_box_ratio, nc)
   expect_true(all(is.finite(out$info$log_box_ratio)))
 
-  # It is the grid-wide rule's reading of the same cells, so the two entry
-  # points cannot drift apart.
-  bm <- tulpa:::.joint_local_ccd_box_mass(gg, lmf(gg), colnames(gg),
-                                          c("identity", "identity"))
-  expect_equal(out$info$log_box_ratio, bm$log_box_ratio[out$info$cells],
-               tolerance = 1e-12)
+  # It is the cell rule's reading of each refined cell's own stencil.
+  geo <- tulpa:::.joint_local_ccd_geometry(gg, colnames(gg),
+                                           c("identity", "identity"))
+  lbr <- vapply(out$info$cells, function(c)
+    tulpa:::.joint_local_ccd_cell_box_mass(tulpa:::.joint_local_ccd_cell_stencil(
+      c, geo$U, lmf(gg), geo$up, geo$dn))$log_box_ratio, numeric(1))
+  expect_equal(out$info$log_box_ratio, lbr, tolerance = 1e-12)
 })
 
 skip_on_cran()
@@ -359,103 +321,4 @@ test_that("a convex axis is integrated rather than declined", {
   expect_identical(f$route, "numeric")
   expect_equal(f$log_factor, .bxm_simpson(0, 1e-14, 1, 1), tolerance = 1e-12)
   expect_true(is.na(tulpa:::.joint_local_ccd_log_pnorm_diff(-5e-8, 5e-8)))
-})
-
-test_that("the base grid's cells have equal volume, so Delta cancels", {
-  skip_on_cran()
-  d <- outer_grid_dump(ogd_fixture_fit(ogd_fixture_sim(c(0.8, 0.5, 0.3)), 5L))
-  # A geometric sigma grid is uniform in u = log sigma, so every interior cell
-  # is congruent and the multiplier can enter without carrying Delta_c. Asserted
-  # rather than assumed: on a grid whose cells differ in volume the same
-  # multiplier would silently drop a per-cell factor.
-  for (sp in .bxm_spacings(d)) {
-    expect_gt(length(sp), 1L)
-    expect_lt(stats::sd(sp) / mean(sp), 1e-12)
-  }
-  # And the cell volume is the same on every axis-interior cell, which is the
-  # statement the softmax needs.
-  vol <- prod(vapply(.bxm_spacings(d), function(sp) sp[1L], numeric(1)))
-  expect_true(is.finite(vol) && vol > 0)
-})
-
-test_that("the box rule's read is reported against what this grid can resolve", {
-  skip_on_cran()
-  sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
-
-  # A five-level tensor base: 125 cells, 27 of them interior on all three axes,
-  # and those 27 carry 0.99999 of the integration weight, so the rule is scored
-  # where the posterior actually is.
-  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L))
-  expect_null(d5$dnode)
-  expect_identical(d5$support, "density")
-  b5 <- .bxm_weights(d5)
-  expect_identical(sum(b5$bm$computed), 27L)
-  expect_identical(b5$bm$n_axes_declined, 0L)
-  expect_gt(sum(d5$weights[b5$bm$computed]), 0.999)
-
-  r5 <- outer_grid_weight_report(d5, b5$w)
-  # Measured under the read the engine ships (`dev_notes/issue1187/floor1187.R`):
-  # at five levels the rule moves the interval by more than one step of
-  # coarsening moves it -- endpoints 0.1043 against a floor of 0.0436, widths
-  # 0.2085 against 0.0735 -- and the median by less, 0.0072 against 0.0249. On
-  # this grid the correction reaches the interval and not the centre.
-  #
-  # Which part is resolved at this resolution is a property of the within-cell
-  # read, not of the rule (gcol33/tulpa#599). Under `chord` the same fit answers
-  # the other way round: the median clears its floor (0.0127 against 0.0020)
-  # and neither half of the interval does (0.0287 against 0.0862, 0.0573
-  # against 0.1723). Both reads place the same mass in the same cells and
-  # differ in where inside a cell they place it, and on a five-level grid that
-  # is a half-cell -- the resolution these parts are read at. The floor moves
-  # with the read for the same reason (median 0.0020 under `chord`, 0.0249
-  # under the shipped read), so this is the resolution of the reported read
-  # changing rather than the rule's effect.
-  expect_true(r5$above_floor[["endpoints"]])
-  expect_true(r5$above_floor[["widths"]])
-  expect_false(r5$above_floor[["median"]])
-  expect_gt(r5$diff$widths, 2 * r5$floor$widths)
-
-  # Coarser, which is where a cell carries a real gradient: at four levels the
-  # same rule moves all three parts above what the grid resolves -- the
-  # endpoints 0.2453 against a floor of 0.0468, the median 0.2503 against
-  # 0.0360 and the widths 0.2032 against 0.0907. The multiplier is not a small
-  # correction there -- the steepest cell's log multiplier is 15.5 nats --
-  # because a four-level grid puts whole nats of log-marginal across a single
-  # cell. Under `chord` all three parts clear their floors at four levels too.
-  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
-  b4 <- .bxm_weights(d4)
-  expect_identical(sum(b4$bm$computed), 8L)
-  r4 <- outer_grid_weight_report(d4, b4$w)
-  expect_gt(r4$diff$endpoints, r4$floor$endpoints)
-  expect_true(all(r4$above_floor))
-  expect_gt(max(b4$bm$log_box_ratio), 10)
-})
-
-test_that("where the read moves above the floor it moves toward the dense answer", {
-  skip_on_cran()
-  # The floor says whether a difference is resolved; it does not say which
-  # direction is right. The arbiter for that is the same model on a grid fine
-  # enough for the read to be a property of the posterior -- twelve levels per
-  # axis, 1728 cells -- against which both the midpoint atom and the box rule
-  # are scored on the coarse grid.
-  sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
-  ref <- outer_grid_rebuild(outer_grid_dump(ogd_fixture_fit(sim, 12L)))
-
-  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
-  e0 <- outer_grid_read_diff(ref, outer_grid_rebuild(d4))
-  e1 <- outer_grid_read_diff(ref, outer_grid_rebuild(d4, .bxm_weights(d4)$w))
-  # Measured on the four-level grid: endpoint error 0.2126 -> 0.1797 and width
-  # error 0.3326 -> 0.1679, so the interval the coarse grid reports moves toward
-  # the converged one, by a sixth on the endpoints and twofold on the widths.
-  # The median goes the other way, 0.1427 -> 0.1487: the rule redistributes mass
-  # toward the cell edges nearest the peak, which sharpens the spread and
-  # overshoots the location.
-  #
-  # The box-uniform read already recovers part of what the rule recovers -- the
-  # same three errors read under `chord` start at 0.4046 / 0.8092 / 0.1050 -- so
-  # the rule has a smaller remaining gain here than it does against that read,
-  # and the endpoint margin is the thin one of the three.
-  expect_lt(e1$endpoints, e0$endpoints)
-  expect_lt(e1$widths, e0$widths)
-  expect_gt(e1$median, e0$median)
 })

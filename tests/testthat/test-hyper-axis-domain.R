@@ -354,16 +354,12 @@ test_that("every declared axis domain is a well-formed interval", {
         # parameterisation degenerates, so none of them is a member.
         expect_true(all(d$open), info = key)
     }
-    expect_error(tulpa:::.nl_axis_domain_entry("no_such_axis"),
-                 "Unknown axis domain")
-
     # The values, pinned. `rho` names four different parameters across the
     # families and 1 is an open upper bound of all four, while their lower ends
     # disagree, so only the upper end is claimed by the name; a block that
     # knows which one it holds declares the tighter interval on its own spec.
-    expect_equal(tulpa:::.nl_axis_domain_entry("rho")$bounds, c(-Inf, 1))
-    expect_equal(tulpa:::.nl_axis_domain_entry("rho_car")$bounds, c(-Inf, 1))
-    expect_equal(tulpa:::.nl_axis_domain_entry(".positive")$bounds, c(0, Inf))
+    expect_equal(tulpa:::.hyper_axis_domain(list(name = "rho"))$bounds, c(-Inf, 1))
+    expect_equal(tulpa:::.hyper_axis_domain(list(name = "rho_car"))$bounds, c(-Inf, 1))
 
     # The positive family is read off the coordinate declaration rather than
     # from a second list of names.
@@ -389,7 +385,7 @@ test_that("no bounded axis reports a support outside its domain", {
     )
     axes <- c("rho", "rho_car", "b1.rho", "b3.rho_car")
     for (axis in axes) {
-        dom <- tulpa:::.nl_axis_domain_entry(tulpa:::.axis_bare(axis))
+        dom <- tulpa:::.hyper_axis_domain(list(name = axis))
         for (nm in names(node_sets)) {
             g <- node_sets[[nm]]
             lab <- paste(axis, nm)

@@ -1386,19 +1386,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_precision_math
-Rcpp::NumericVector cpp_precision_math(const Rcpp::NumericVector& x, bool remainder, int order);
-RcppExport SEXP _tulpa_cpp_precision_math(SEXP xSEXP, SEXP remainderSEXP, SEXP orderSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type x(xSEXP);
-    Rcpp::traits::input_parameter< bool >::type remainder(remainderSEXP);
-    Rcpp::traits::input_parameter< int >::type order(orderSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_precision_math(x, remainder, order));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_log_rising_factorial
 Rcpp::NumericVector cpp_log_rising_factorial(const Rcpp::NumericVector& y, const Rcpp::NumericVector& size);
 RcppExport SEXP _tulpa_cpp_log_rising_factorial(SEXP ySEXP, SEXP sizeSEXP) {
@@ -3171,7 +3158,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 25},
     {"_tulpa_cpp_precision_density", (DL_FUNC) &_tulpa_cpp_precision_density, 5},
     {"_tulpa_cpp_beta_precision_score", (DL_FUNC) &_tulpa_cpp_beta_precision_score, 4},
-    {"_tulpa_cpp_precision_math", (DL_FUNC) &_tulpa_cpp_precision_math, 3},
     {"_tulpa_cpp_log_rising_factorial", (DL_FUNC) &_tulpa_cpp_log_rising_factorial, 2},
     {"_tulpa_cpp_polygamma_rising_difference", (DL_FUNC) &_tulpa_cpp_polygamma_rising_difference, 3},
     {"_tulpa_cpp_negbin2_log_density", (DL_FUNC) &_tulpa_cpp_negbin2_log_density, 3},

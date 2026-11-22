@@ -75,7 +75,7 @@ test_that("every registered backend is reachable from R", {
   # longer a registry entry with a NULL fitter. assert_backend_reachable()'s
   # no-fitter branch stays in place for a future C-ABI-only kernel.
   for (b in names(BACKEND_REGISTRY)) {
-    expect_true(backend_is_reachable(b), info = b)
+    expect_no_error(assert_backend_reachable(b))
   }
 })
 

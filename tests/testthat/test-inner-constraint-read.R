@@ -68,7 +68,7 @@ for (n_s in c(40L, 250L)) {
     expect_lt(max(abs(fit$modes[1, ] - cs$m)), 1e-8)
 
     sd_ex <- sqrt(diag(cs$V))
-    mm <- tulpa:::.joint_mixture_moments(fit)
+    mm <- joint_mixture_moments(fit)
     expect_lt(max(abs(sqrt(diag(mm$Sigma)) / sd_ex - 1)), 1e-8)
     blk <- solve(fit$grid_hessians[[1L]])
     expect_lt(max(abs(sqrt(diag(blk)) / sd_ex[1:2] - 1)), 1e-8)

@@ -53,7 +53,7 @@ test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data"
   unit  <- rep(seq_len(n_units), each = reps)   # per-obs spatial unit (1-based)
   N     <- length(unit)
 
-  phi_true  <- sim_spatial_effects(W, sigma = 0.6, type = "icar")
+  phi_true  <- sim_icar_effects(W, sigma = 0.6)
   beta_true <- c(-0.3, 0.8)
   x  <- rnorm(N)
   X  <- cbind(1, x)
@@ -100,7 +100,7 @@ test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", 
   unit  <- rep(seq_len(n_units), each = reps)   # per-obs spatial unit (1-based)
   N     <- length(unit)
 
-  phi_true  <- sim_spatial_effects(W, sigma = 0.5, type = "icar")
+  phi_true  <- sim_icar_effects(W, sigma = 0.5)
   beta_true <- c(0.8, 0.5)                       # log-mean intercept + slope
   x  <- rnorm(N)
   X  <- cbind(1, x)
@@ -150,7 +150,7 @@ test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data",
   W <- rook_adj(nr, nc)
   n <- nr * nc                                   # one observation per unit
 
-  phi_true  <- sim_spatial_effects(W, sigma = 0.5, type = "icar")
+  phi_true  <- sim_icar_effects(W, sigma = 0.5)
   beta_true <- c(-0.3, 0.8)
   x  <- rnorm(n)
   X  <- cbind(1, x)

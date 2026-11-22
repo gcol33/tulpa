@@ -17,3 +17,15 @@ rook_adj <- function(nr, nc) {
   }
   A
 }
+
+# One draw of a centred ICAR field with scale `sigma` on `adjacency`: the
+# intrinsic precision diag(n_i) - W, lifted by 0.01 I so it can be factored,
+# sampled through its Cholesky factor and centred to sum to zero.
+sim_icar_effects <- function(adjacency, sigma = 0.5) {
+  adj <- as.matrix(adjacency)
+  n <- nrow(adj)
+  Q <- diag(rowSums(adj)) - adj
+  L <- chol(Q + 0.01 * diag(n))
+  phi <- backsolve(L, rnorm(n)) * sigma
+  phi - mean(phi)
+}

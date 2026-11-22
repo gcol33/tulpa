@@ -185,8 +185,8 @@ test_that("widening a heavy-tailed grid lowers the k-hat; densifying does not", 
 
 test_that("the joint dispatch reads a strictly better k than its first pass", {
     skip_on_cran()
-    # .nested_grid_pareto_k / .nested_outer_pareto_k each call
-    # .nested_is_pareto_k ONCE, so what they report is the raw grid-moment
+    # .nested_outer_pareto_k calls
+    # .nested_is_pareto_k ONCE, so what it reports is the raw grid-moment
     # Gaussian -- `k_gm` here. The joint path adds moment matching and the two
     # rescues and keeps the minimum, so it can never read worse, and on a
     # heavy-tailed posterior it reads a different BAND.

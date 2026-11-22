@@ -485,7 +485,7 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   list(reason = .hp_decline("logchol_design_measure"))
 }
 
-# Where each placement coordinate of `.re_cpc_block_to_logchol()` sits among a
+# Where each placement coordinate of `.re_cpc_batch_to_logchol()` sits among a
 # block's log-Cholesky columns (`.mcar_logchol_names()` order): its first p
 # entries are the log SDs, which take the diagonal columns `L<i><i>`, and the
 # rest are the atanh partial correlations in column-major lower-triangle order,

@@ -69,17 +69,6 @@ test_that("every outer-k backend reports the tail it fitted on", {
   expect_identical(out2$tail_points, 50L)
 })
 
-test_that("the single-block grid path passes its tail_points on", {
-  skip_on_cran()
-  # It accepted the argument and dropped it, so an explicit request never
-  # reached the scorer at all on that path.
-  fml <- names(formals(tulpa:::.nested_grid_pareto_k))
-  expect_true("tail_points" %in% fml)
-  body_txt <- paste(deparse(body(tulpa:::.nested_grid_pareto_k)),
-                    collapse = " ")
-  expect_match(body_txt, "tail_points = tail_points")
-})
-
 test_that("the joint pass reports the k it chose its proposal on", {
   skip_on_cran()
   # The joint driver resolves once at the top and hands the resolved value to

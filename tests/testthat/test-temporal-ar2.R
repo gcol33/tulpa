@@ -14,10 +14,10 @@ skip_on_cran_budget()
 # parameterization is proven to stay inside the stationarity triangle; and the
 # block recovers the AR coefficients end-to-end through nested Laplace.
 
-test_that(".ar2_precision is the exact stationary AR(2) GMRF", {
+test_that(".arp_precision at p = 2 is the exact stationary AR(2) GMRF", {
   skip_on_cran_budget()
   n <- 60L; phi1 <- 0.5; phi2 <- 0.3; tau <- 4
-  Q <- as.matrix(tulpa:::.ar2_precision(n, phi1, phi2, tau))
+  Q <- as.matrix(tulpa:::.arp_precision(n, c(phi1, phi2), tau))
 
   # Pentadiagonal (order-2 Markov): nothing beyond band 2.
   expect_true(all(Q[abs(row(Q) - col(Q)) > 2] == 0))
@@ -40,8 +40,8 @@ test_that(".ar2_precision is the exact stationary AR(2) GMRF", {
 test_that("PACF parameterization stays inside the stationarity triangle", {
   skip_on_cran_budget()
   for (a1 in c(-2.5, -0.6, 0.7, 2.5)) for (a2 in c(-2.5, 0, 1.8)) {
-    phi <- tulpa:::.ar2_pacf_to_phi(tanh(a1), tanh(a2))
-    p1 <- phi[["phi1"]]; p2 <- phi[["phi2"]]
+    phi <- tulpa:::.arp_pacf_to_phi(c(tanh(a1), tanh(a2)))
+    p1 <- phi[1L]; p2 <- phi[2L]
     expect_true(p2 > -1 && (p1 + p2) < 1 && (p2 - p1) < 1)
   }
 })
@@ -55,7 +55,7 @@ test_that(".arp_* generalize the AR(2) construction (gcol33/tulpa C10)", {
   expect_equal(unname(stats::ARMAacf(ar = phi, lag.max = 3, pacf = TRUE)),
                psi, tolerance = 1e-10)
   expect_equal(tulpa:::.arp_pacf_to_phi(c(0.4, 0.2)),
-               unname(tulpa:::.ar2_pacf_to_phi(0.4, 0.2)), tolerance = 1e-12)
+               c(0.4 * (1 - 0.2), 0.2), tolerance = 1e-12)
 
   # Autocovariances match stats::ARMAacf up to the gamma0 scale.
   n <- 40L; tau <- 4
@@ -140,12 +140,12 @@ test_that("temporal_ar2() recovers the AR(2) coefficients through nested Laplace
 
   # theta_mean = (log_tau, atanh_psi1, atanh_psi2) -> AR coefficients.
   psi1 <- tanh(fit$theta_mean[[2]]); psi2 <- tanh(fit$theta_mean[[3]])
-  phi  <- tulpa:::.ar2_pacf_to_phi(psi1, psi2)
+  phi  <- tulpa:::.arp_pacf_to_phi(c(psi1, psi2))
   # Single-realization AR recovery is noisy; require the right region.
-  expect_gt(phi[["phi1"]], 0.25)
-  expect_lt(phi[["phi1"]], 0.95)
-  expect_gt(phi[["phi2"]], -0.1)
-  expect_lt(phi[["phi2"]], 0.6)
+  expect_gt(phi[1L], 0.25)
+  expect_lt(phi[1L], 0.95)
+  expect_gt(phi[2L], -0.1)
+  expect_lt(phi[2L], 0.6)
 })
 
 test_that("the ?temporal_ar2 default fit does not warn about its own default grid (gcol33/tulpa#820)", {

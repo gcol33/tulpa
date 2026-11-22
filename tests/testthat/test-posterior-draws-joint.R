@@ -58,7 +58,7 @@ test_that("mixture draws reproduce the law-of-total-covariance mean + Sigma", {
     field_idx <- layout$phi_start + seq_len(n_s)        # 1-based field block
     idx <- c(beta_idx, field_idx[1:3])
 
-    target <- tulpa:::.joint_mixture_moments(fit, idx)
+    target <- joint_mixture_moments(fit, idx)
     expect_false(is.null(target))
 
     set.seed(99)
@@ -117,7 +117,7 @@ test_that("degenerate single-cell grid draws N(m_1, V_1)", {
 
     layout <- fit$arm_layout
     idx <- seq_len(sum(layout$p))   # the four fixed effects
-    target <- tulpa:::.joint_mixture_moments(fit, idx)
+    target <- joint_mixture_moments(fit, idx)
 
     set.seed(42)
     draws <- tulpa_posterior_draws(fit, idx = idx, n = 30000L)
@@ -202,7 +202,7 @@ test_that("multi-block joint fit samples through inherited dispatch", {
     beta_idx  <- seq_len(sum(fit$arm_layout$p))
     idx <- c(beta_idx, field_idx)
 
-    target <- tulpa:::.joint_mixture_moments(fit, idx)
+    target <- joint_mixture_moments(fit, idx)
     expect_false(is.null(target))
     set.seed(8)
     draws <- tulpa_posterior_draws(fit, idx = idx, n = 20000L)

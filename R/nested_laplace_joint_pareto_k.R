@@ -620,8 +620,7 @@
 # uniform in, weighted by plain softmax with NO volume element. A `log` axis
 # is geometric -- uniform in
 # u = log(theta) -- so log_marginal is already the u-space density and the
-# Jacobian is 0, matching the single-block .nested_grid_pareto_k and the SPDE
-# path (confirmed empirically: with the log-axis Jacobian the outer k-hat
+# Jacobian is 0, matching the SPDE path (confirmed empirically: with the log-axis Jacobian the outer k-hat
 # overstates the grid-node ground truth by ~0.25-0.55, enough to flip a verdict
 # near 0.7). A `logit01` (correlation) axis has a grid uniform in the natural
 # rho, so mapping rho -> logit(rho) DOES carry the logit Jacobian
@@ -882,8 +881,7 @@
 # Shared preparation for the outer Pareto-k-hat of a joint nested-Laplace
 # result. Fits a Gaussian proposal to the joint hyperparameter posterior in the
 # per-axis unconstrained coordinate `u` (weighted mean `u_hat` + covariance `Su`
-# over the integration grid, the analogue of `.nested_grid_pareto_k` generalised
-# to mixed support), splices the CCD mode-Hessian `proposal`
+# over the integration grid, on mixed support), splices the CCD mode-Hessian `proposal`
 # over the axes it spans, and engages the delta-collapse FD rescue
 # Returns the proposal summary the scorer draws
 # from, or a `.k_decline()` (an axis with unguessable support, an unusable grid /

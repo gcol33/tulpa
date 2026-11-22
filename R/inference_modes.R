@@ -588,14 +588,6 @@ get_backend_tier <- function(backend) {
 # Reachability + dispatch spine
 # ==============================================================================
 
-#' Is a backend reachable from R (does it have an R-level fitter)?
-#' @noRd
-backend_is_reachable <- function(backend) {
-  entry <- BACKEND_REGISTRY[[backend]]
-  !is.null(entry) && !is.null(entry$fitter)
-}
-
-
 #' Error if a selected backend has no R-level fitter
 #'
 #' @description
@@ -872,30 +864,6 @@ tulpa_dispatch <- function(mode,
     names(res$means)[seq_len(p)] <- X_names
   }
   res
-}
-
-
-#' Map mode to valid backends
-#' @param mode Character: "auto", "exact", "structured", or "optimized"
-#' @return Character vector of valid backends for this mode
-#' @noRd
-get_mode_backends <- function(mode) {
-  mode <- tolower(mode)
-
-  if (mode == "auto") {
-    # Auto can choose Tier 1 or Tier 2, never Tier 3
-    return(c(INFERENCE_TIERS$exact$backends, INFERENCE_TIERS$structured$backends))
-  }
-
-  if (mode %in% names(INFERENCE_TIERS)) {
-    return(INFERENCE_TIERS[[mode]]$backends)
-  }
-
-  stop(sprintf(
-    "Unknown mode: '%s'. Use one of: %s",
-    mode,
-    paste(c("auto", names(INFERENCE_TIERS)), collapse = ", ")
-  ), call. = FALSE)
 }
 
 

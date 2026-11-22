@@ -349,10 +349,6 @@ cpp_beta_precision_score <- function(y, mu, phi, derivative) {
     .Call(`_tulpa_cpp_beta_precision_score`, y, mu, phi, derivative)
 }
 
-cpp_precision_math <- function(x, remainder, order = 0L) {
-    .Call(`_tulpa_cpp_precision_math`, x, remainder, order)
-}
-
 cpp_log_rising_factorial <- function(y, size) {
     .Call(`_tulpa_cpp_log_rising_factorial`, y, size)
 }

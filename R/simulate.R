@@ -682,40 +682,6 @@ theta_from_fit <- function(fit, sim_index, built, family, fit_source = NULL) {
 }
 
 
-#' Generate spatial random effects for simulation
-#'
-#' @param adjacency Adjacency matrix
-#' @param sigma Standard deviation
-#' @param type Spatial type: "icar" (default), "bym2"
-#'
-#' @return Numeric vector of spatial effects
-#' @noRd
-sim_spatial_effects <- function(adjacency, sigma = 0.5, type = "icar") {
-  n <- nrow(adjacency)
-
-  if (type == "icar") {
-    # Generate ICAR effects via conditional simulation
-    adj <- as.matrix(adjacency)
-    n_neighbors <- rowSums(adj)
-    Q <- diag(n_neighbors) - adj
-
-    # Regularize for sampling
-    Q_reg <- Q + 0.01 * diag(n)
-    L <- chol(Q_reg)
-
-    # Generate from precision matrix
-    z <- rnorm(n)
-    phi <- backsolve(L, z) * sigma
-
-    # Center
-    phi <- phi - mean(phi)
-    return(phi)
-  }
-
-  # Default: IID
-  rnorm(n, 0, sigma)
-}
-
 # Draw `n` response vectors from the model `formula` / `family` at `data`:
 # the designs are built once, `theta_at(s, built)` gives draw s its
 # parameters, and the family's simulator turns the linear predictor into a

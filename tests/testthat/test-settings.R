@@ -457,7 +457,6 @@ test_that("every outer-k entry point defaults to the registry's draw budget", {
         .joint_pareto_k                = "n_samples",
         .nested_outer_pareto_k         = "n_samples",
         .nested_is_pareto_k            = "n_samples",
-        .nested_grid_pareto_k          = "n_samples",
 
         .joint_attach_pareto_k_multi   = "diagnose_draws",
         .joint_dispatch_multi          = "diagnose_draws"

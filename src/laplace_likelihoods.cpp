@@ -100,19 +100,6 @@ Rcpp::NumericVector cpp_beta_precision_score(const Rcpp::NumericVector& y,
       y, mu, phi);
 }
 
-// Stirling remainder derivatives or d - log(1+d).
-// [[Rcpp::export]]
-Rcpp::NumericVector cpp_precision_math(const Rcpp::NumericVector& x,
-                                       bool remainder, int order = 0) {
-  if (order < 0 || order > 4) tulpa::stop("Derivative order must be in 0..4.");
-  Rcpp::NumericVector out(x.size());
-  for (R_xlen_t i = 0; i < x.size(); ++i)
-    out[i] = ISNAN(x[i]) ? NA_REAL : remainder
-      ? tulpa::math::stirling_remainder_derivative(x[i], order)
-      : tulpa::math::log1pmx(x[i]);
-  return out;
-}
-
 // Elementwise log Gamma(y + size) - log Gamma(size) over equal-length count
 // and size vectors (NA where either is NA).
 // [[Rcpp::export]]

@@ -78,15 +78,6 @@
   methods::as(methods::as(Q, "generalMatrix"), "CsparseMatrix")
 }
 
-# Order-2 wrappers (the AR(2) block predates the general construction; kept as
-# the p = 2 specialization of the shared helpers).
-.ar2_precision <- function(n, phi1, phi2, tau) {
-  .arp_precision(n, c(phi1, phi2), tau)
-}
-.ar2_pacf_to_phi <- function(psi1, psi2) {
-  stats::setNames(.arp_pacf_to_phi(c(psi1, psi2)), c("phi1", "phi2"))
-}
-
 #' AR(2) temporal latent field (second-order autoregressive)
 #'
 #' @description

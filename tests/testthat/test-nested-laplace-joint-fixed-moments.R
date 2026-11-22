@@ -172,12 +172,12 @@ test_that("the single-block joint mixture matches the independent law-of-total-c
   expect_gt(length(fit$weights), 1L)
   expect_gt(sort(fit$weights, decreasing = TRUE)[2L], 0.01)
 
-  # `.joint_mixture_moments()` reads the same mixture off the stored
+  # `joint_mixture_moments()` reads the same mixture off the stored
   # precisions after the fit, through the R-level extraction entry and an R
   # marginalization, where vcov() reads the blocks the loop retained.
   fq <- .j305_icar_fit(d, store_Q = TRUE, skew_correct = FALSE)
   p <- fit$n_fixed
-  mm <- tulpa:::.joint_mixture_moments(fq, idx = seq_len(p))
+  mm <- joint_mixture_moments(fq, idx = seq_len(p))
   expect_equal(unname(vcov(fit)), unname(mm$Sigma), tolerance = 1e-8)
   expect_equal(unname(coef(fit)), unname(mm$mean), tolerance = 1e-10)
 

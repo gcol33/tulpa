@@ -32,3 +32,15 @@ Rcpp::NumericMatrix cpp_test_precision_perturb(Rcpp::NumericVector x, int order)
     result.attr("lgamma_calls") = precision_lgamma_calls;
     return result;
 }
+
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_test_precision_math(Rcpp::NumericVector x,
+                                            bool remainder, int order) {
+    precision_lgamma_shift = 0;
+    Rcpp::NumericVector out(x.size());
+    for (R_xlen_t i=0; i<x.size(); ++i)
+        out[i] = remainder
+            ? tulpa::math::stirling_remainder_derivative(x[i], order)
+            : tulpa::math::log1pmx(x[i]);
+    return out;
+}

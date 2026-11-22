@@ -1736,8 +1736,6 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     .positive = list(bounds = c(0, Inf),   open = c(TRUE, TRUE))
 )
 
-.nl_axis_domain_entry <- function(key) .settings_get(.NL_AXIS_DOMAIN, key, "axis domain")
-
 # --- joint CCD placement cost ------------------------------------------------
 #
 # What PLACING a central composite design costs, in the only unit that matters

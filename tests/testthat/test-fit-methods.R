@@ -162,7 +162,7 @@ test_that("mode = 'auto' selects an R-reachable backend on a plain model", {
   fit <- tulpa(y ~ x, data = d$df, family = "gaussian", mode = "auto", phi = 0.8,
                control = list(n_iter = 800L, warmup = 400L))
   expect_s3_class(fit, "tulpa_fit")
-  expect_true(backend_is_reachable(fit$backend))
+  expect_no_error(assert_backend_reachable(fit$backend))
   expect_named(coef(fit), c("(Intercept)", "x"))
 })
 

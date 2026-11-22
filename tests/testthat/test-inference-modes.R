@@ -1,15 +1,35 @@
-
 test_that("auto mode never selects a Tier 3 (VI / approximate) backend", {
   # Design invariant: auto may choose only Tier 1 (exact) or Tier 2 (structured),
   # never the approximate-MCMC / VI backends (registry tier "optimized"), which
-  # carry no correctness guarantee and are explicit opt-in only.
+  # carry no correctness guarantee and are explicit opt-in only. Read off the
+  # selector itself over every arm it branches on.
   reg  <- tulpa:::BACKEND_REGISTRY
-  auto <- tulpa:::get_mode_backends("auto")
   optimized <- names(Filter(function(e) identical(e$tier, "optimized"), reg))
+  expect_true("vi" %in% optimized)
 
-  expect_true("vi" %in% optimized)               # VI is in the opt-in tier
-  expect_false("vi" %in% auto)                    # and auto never picks it
-  expect_length(intersect(auto, optimized), 0L)   # nor any other approximate one
+  fams <- c("gaussian", "poisson", "binomial", "gamma", "negbin")
+  cases <- list(
+    list(),
+    list(n_obs = 1e5),
+    list(has_re = TRUE),
+    list(has_latent = TRUE),
+    list(has_spatial = TRUE, spatial_type = "icar"),
+    list(has_spatial = TRUE, spatial_type = "spde"),
+    list(has_spatial = TRUE, spatial_type = "svc"),
+    list(has_temporal = TRUE, temporal = list(type = "rw1")),
+    list(has_temporal = TRUE, temporal = list(type = "gp")),
+    list(has_temporal = TRUE, temporal = list(type = "tvc")),
+    list(feat = list(ziformula = TRUE)),
+    list(has_spatial = TRUE, spatial_type = "icar", feat = list(ziformula = TRUE))
+  )
+  for (f in fams) for (cs in cases) {
+    args <- utils::modifyList(
+      list(mode = "auto", family = list(name = f, distribution = f), n_obs = 200L),
+      cs)
+    sel <- do.call(tulpa:::select_inference_mode, args)
+    expect_false(sel$backend %in% optimized,
+                 info = paste(f, paste(names(cs), collapse = "+")))
+  }
 })
 
 skip_on_cran_budget()
@@ -54,8 +74,9 @@ test_that("the unknown-mode message names every mode the registry defines", {
   skip_on_cran_budget()
   # The message and the sibling that validates the same names both have to come
   # off INFERENCE_TIERS; a restated list goes stale the moment a tier is added.
-  msg <- tryCatch(tulpa:::get_mode_backends("no-such-mode"),
-                  error = conditionMessage)
+  msg <- tryCatch(tulpa:::select_inference_mode(
+    "no-such-mode", family = list(name = "gaussian", distribution = "gaussian"),
+    n_obs = 10L), error = conditionMessage)
   for (m in c("auto", names(tulpa:::INFERENCE_TIERS))) {
     expect_true(grepl(m, msg, fixed = TRUE), info = m)
   }

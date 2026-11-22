@@ -1598,19 +1598,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   2 * (log(2) - a - log1p(exp(-2 * a)))
 }
 
-# One full block: placement coordinates -> log-Cholesky coordinates and the
-# log-Jacobian of that map.
-.re_cpc_block_to_logchol <- function(v, nc) {
-  b <- .re_cpc_batch_to_logchol(matrix(v, 1L), nc)
-  list(theta = as.numeric(b$theta), log_jac = b$log_jac[1L])
-}
-
 .re_logchol_indices <- function(nc) {
   idx <- matrix(0L, nc, nc)
   idx[lower.tri(idx, diag = TRUE)] <- seq_len(nc * (nc + 1L) / 2L)
   idx
 }
 
+# Full-block placement coordinates (one row per point) -> log-Cholesky
+# coordinates and the log-Jacobian of that map, per row.
 .re_cpc_batch_to_logchol <- function(V, nc) {
   V <- as.matrix(V)
   n <- nrow(V)
@@ -1636,7 +1631,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   list(theta = theta, log_jac = log_jac)
 }
 
-# Inverse of .re_cpc_block_to_logchol().
+# Inverse of .re_cpc_batch_to_logchol() for one point.
 .re_logchol_block_to_cpc <- function(theta, nc) {
   as.numeric(.re_logchol_batch_to_cpc(matrix(theta, 1L), nc))
 }

@@ -15,13 +15,18 @@
   J
 }
 
+.cpc_to_logchol <- function(v, nc) {
+  b <- tulpa:::.re_cpc_batch_to_logchol(matrix(v, 1L), nc)
+  list(theta = as.numeric(b$theta), log_jac = b$log_jac)
+}
+
 test_that("the partial-correlation map inverts the log-Cholesky map", {
   set.seed(11)
   for (nc in 2:4) {
     k <- nc * (nc + 1L) / 2L
     for (rep in 1:5) {
       v <- c(rnorm(nc, 0, 0.7), rnorm(k - nc, 0, 1.2))
-      th <- tulpa:::.re_cpc_block_to_logchol(v, nc)$theta
+      th <- .cpc_to_logchol(v, nc)$theta
       expect_equal(tulpa:::.re_logchol_block_to_cpc(th, nc), v, tolerance = 1e-10)
       # Sigma from the map has the requested marginal SDs.
       L <- tulpa:::.re_logchol_to_L(th, nc)
@@ -36,8 +41,8 @@ test_that("the map's log-Jacobian is the log-determinant of its derivative", {
     k <- nc * (nc + 1L) / 2L
     for (rep in 1:5) {
       v <- c(rnorm(nc, 0, 0.7), rnorm(k - nc, 0, 1.2))
-      J <- .num_jac_place(function(x) tulpa:::.re_cpc_block_to_logchol(x, nc)$theta, v)
-      expect_equal(tulpa:::.re_cpc_block_to_logchol(v, nc)$log_jac,
+      J <- .num_jac_place(function(x) .cpc_to_logchol(x, nc)$theta, v)
+      expect_equal(.cpc_to_logchol(v, nc)$log_jac,
                    as.numeric(determinant(J, logarithm = TRUE)$modulus),
                    tolerance = 1e-6)
     }
@@ -53,7 +58,7 @@ test_that("a stacked layout maps only its correlated blocks", {
   tr <- tulpa:::.re_cov_place_to_theta(V, layout)
   expect_equal(tr$theta[, 4:6], V[, 4:6])
   for (r in 1:2) {
-    b <- tulpa:::.re_cpc_block_to_logchol(V[r, 1:3], 2L)
+    b <- .cpc_to_logchol(V[r, 1:3], 2L)
     expect_equal(tr$theta[r, 1:3], b$theta)
     expect_equal(tr$log_jac[r], b$log_jac)
     expect_equal(tr$log_jac[r], V[r, 2])         # c = 2: log|J| = log sigma_2

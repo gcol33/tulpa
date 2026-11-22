@@ -85,8 +85,8 @@ test_that("nested_laplace and nested_laplace_joint are registered Tier 2", {
   }
   # Joint is registered (a known model-package engine) but reachable as a
   # named function; the single-response formula guard is what blocks it.
-  expect_true(backend_is_reachable("nested_laplace"))
-  expect_true(backend_is_reachable("nested_laplace_joint"))
+  expect_no_error(assert_backend_reachable("nested_laplace"))
+  expect_no_error(assert_backend_reachable("nested_laplace_joint"))
 })
 
 skip_on_cran()

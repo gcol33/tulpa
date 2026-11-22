@@ -286,61 +286,6 @@ sbc_crps <- function(dist, y) {
     stop("unhandled predictive kind ", dist$kind))
 }
 
-# The definition, integrated numerically. An arbiter for the closed forms above;
-# not used by the driver.
-#
-# The integrand jumps at y, and a trapezoid rule straddling a jump converges
-# only as O(h). Splitting at y -- and, for a discrete predictive, at every atom
-# -- leaves a smooth piece on each side, which buys O(h^2) and makes a few
-# thousand points a tighter arbiter than a few hundred thousand straddling ones.
-sbc_crps_integral <- function(dist, y, n_grid = 20001L) {
-  stopifnot(dist$kind %in% c("mixture", "discrete"))
-  if (identical(dist$kind, "mixture")) {
-    sd <- sqrt(pmax(dist$var, 0))
-    lo <- min(c(dist$mu - 12 * sd, y)) - 1
-    hi <- max(c(dist$mu + 12 * sd, y)) + 1
-    brk <- y
-    cdf <- function(q) as.numeric(crossprod(dist$w, stats::pnorm(
-      matrix(q, length(dist$mu), length(q), byrow = TRUE), dist$mu, sd)))
-  } else {
-    lo <- min(c(dist$support, y)) - 1
-    hi <- max(c(dist$support, y)) + 1
-    brk <- sort(unique(c(y, dist$support)))
-    cdf <- function(q) vapply(q, function(z)
-      sum(dist$probs[dist$support <= z]), numeric(1))
-  }
-  ends <- sort(unique(c(lo, brk, hi)))
-  total <- 0
-  for (s in seq_len(length(ends) - 1L)) {
-    z <- seq(ends[s], ends[s + 1L], length.out = n_grid)
-    # Evaluate strictly inside the panel so the indicator and the discrete CDF
-    # are each constant across it.
-    zi <- (z[-1] + z[-n_grid]) / 2
-    g <- (cdf(zi) - as.numeric(zi >= y))^2
-    total <- total + mean(g) * (ends[s + 1L] - ends[s])
-  }
-  total
-}
-
-# Draw from a predictive.
-sbc_sample <- function(dist, n) {
-  switch(dist$kind,
-    mixture = {
-      k <- sample.int(length(dist$w), n, replace = TRUE, prob = dist$w)
-      stats::rnorm(n, dist$mu[k], sqrt(pmax(dist$var[k], 0)))
-    },
-    discrete = sample(dist$support, n, replace = TRUE, prob = dist$probs),
-    draws = sample(dist$x, n, replace = TRUE),
-    stop("cannot sample predictive kind ", dist$kind))
-}
-
-# The Monte-Carlo kernel estimator, the second independent arbiter.
-sbc_crps_mc <- function(dist, y, n = 2e6L) {
-  x <- sbc_sample(dist, n)
-  x2 <- sbc_sample(dist, n)
-  mean(abs(x - y)) - 0.5 * mean(abs(x - x2))
-}
-
 # ---------------------------------------------------------------------------
 # 4. Simultaneous ECDF bands
 #

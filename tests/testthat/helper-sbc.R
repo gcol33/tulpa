@@ -9,7 +9,7 @@
 #
 # What the package supplies, and what these fixtures call:
 #   sbc_mixture / sbc_normal / sbc_discrete / sbc_rank / sbc_draws  (exported)
-#   sbc_pit, sbc_fold, sbc_crps, sbc_crps_integral, sbc_sample, sbc_crps_mc
+#   sbc_pit, sbc_fold, sbc_crps
 #   sbc_crossing_prob, sbc_ecdf_band, sbc_ecdf_inside, sbc_ecdf_dev,
 #   sbc_ecdf_test
 #   recov_sbc, recov_posterior_sbc, sbc_report, sbc_crps_compare

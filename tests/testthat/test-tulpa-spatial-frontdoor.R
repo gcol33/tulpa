@@ -17,7 +17,7 @@ sim_areal_binomial <- function(nr = 7L, nc = 7L, reps = 4L, seed = 7L) {
   n_units <- nr * nc
   unit <- rep(seq_len(n_units), each = reps)
   N <- length(unit)
-  phi  <- sim_spatial_effects(W, sigma = 0.6, type = "icar")
+  phi  <- sim_icar_effects(W, sigma = 0.6)
   beta <- c(-0.3, 0.8)
   x    <- rnorm(N)
   eta  <- beta[1] + beta[2] * x + phi[unit]

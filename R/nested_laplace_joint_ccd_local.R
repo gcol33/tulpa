@@ -658,10 +658,6 @@
 # The vocabulary a declined axis is reported under, one entry per structurally
 # distinct refusal:
 #
-#   boundary      the cell has no centred three-point stencil, so no local
-#                 quadratic exists to integrate. The stencil is a cell-level
-#                 object -- one axis missing a neighbour leaves the whole cell
-#                 without one -- so every axis of such a cell carries it.
 #   no_factor     the quadratic formed and its integral did not: a degenerate
 #                 box, a non-finite coefficient, or a quadrature that returned
 #                 nothing on an axis whose closed form was never refused.
@@ -675,10 +671,9 @@
 #                 territory.
 #
 # Fixed and ordered, so a per-cell tally is a fixed-length integer vector
-# whatever that cell happened to hit and a grid-level tally is one vector
-# addition.
-.LCCD_BOX_REASONS  <- c("boundary", "no_factor", "cancellation")
-.LCCD_BARY_REASONS <- c("boundary", "no_factor", "cancellation", "out_of_box")
+# whatever that cell happened to hit.
+.LCCD_BOX_REASONS  <- c("no_factor", "cancellation")
+.LCCD_BARY_REASONS <- c("no_factor", "cancellation", "out_of_box")
 
 # A declined axis, tagged with the gate that declined it. The value field is
 # absent rather than NA, so the caller's own `f$log_factor` / `f$u_bar` is NULL
@@ -856,61 +851,6 @@
          n_axes_numeric = n_numeric, n_axes_declined = length(reasons),
          declined_reasons = .joint_local_ccd_reason_tally(reasons,
                                                           .LCCD_BOX_REASONS))
-}
-
-# Every cell of a tensor outer grid, scored by the same rule.
-#
-# The per-cell multiplier is the whole of what the estimator contributes to the
-# integration: the softmax in `.joint_integration_weights()` normalises the
-# common cell volume `Delta` away, so `exp(log_box_ratio)` enters as a `dnode`
-# and nothing else has to change. That cancellation is a property of the GRID,
-# not of the rule -- it holds because a geometric grid is uniform in
-# `u = log theta` and its interior cells are congruent -- so a caller reusing the
-# multiplier form on a grid whose cells differ in volume has to carry `Delta_c`
-# itself.
-#
-# A cell missing a neighbour on any axis has no centred stencil and takes the
-# midpoint atom it already had: `log_box_ratio` 0, `computed` FALSE. That is the
-# same decline `.joint_local_ccd_cell_curv()` returns NULL for, one gate earlier,
-# and it is the `boundary` entry of `declined_reasons` -- `d` axes per such cell,
-# the stencil being a cell-level object. `n_axes_declined` counts only the axes
-# that reached the per-axis loop and fell there, so the two are read together
-# rather than one being the sum of the other: the invariant is
-# `n_axes_declined == sum(declined_reasons[c("no_factor", "cancellation")])`.
-#
-# A grid declining WHOLE -- an unguessable-support axis (NULL tags), an axis name
-# the grid does not carry, a degenerate layout -- is reported by `computed` being
-# FALSE everywhere and leaves the tally at zero: no axis of any cell was scored,
-# so none of them declined at a gate.
-.joint_local_ccd_box_mass <- function(joint_grid, log_marginal, latent_axes,
-                                      tags) {
-    n <- nrow(joint_grid)
-    out <- list(log_box_ratio = rep(0, n), computed = rep(FALSE, n),
-                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L,
-                declined_reasons =
-                    .joint_local_ccd_reason_tally(character(0),
-                                                  .LCCD_BOX_REASONS))
-    geo <- .joint_local_ccd_geometry(joint_grid, latent_axes, tags)
-    if (is.null(geo)) return(out)
-    d <- geo$d
-
-    for (c in seq_len(n)) {
-        st <- .joint_local_ccd_cell_stencil(c, geo$U, log_marginal, geo$up,
-                                            geo$dn)
-        if (is.null(st)) {
-            out$declined_reasons[["boundary"]] <-
-                out$declined_reasons[["boundary"]] + d
-            next
-        }
-        bm <- .joint_local_ccd_cell_box_mass(st)
-        out$log_box_ratio[c] <- bm$log_box_ratio
-        out$computed[c]      <- TRUE
-        out$n_axes_closed    <- out$n_axes_closed + bm$n_axes_closed
-        out$n_axes_numeric   <- out$n_axes_numeric + bm$n_axes_numeric
-        out$n_axes_declined  <- out$n_axes_declined + bm$n_axes_declined
-        out$declined_reasons <- out$declined_reasons + bm$declined_reasons
-    }
-    out
 }
 
 # log|phi(z_lo) - phi(z_hi)| and its sign, the numerator of the truncated mean.
@@ -1091,87 +1031,6 @@
          n_axes_declined = length(reasons),
          declined_reasons = .joint_local_ccd_reason_tally(reasons,
                                                           .LCCD_BARY_REASONS))
-}
-
-# Every cell of a tensor outer grid moved to its own mass barycentre.
-#
-# Returns the perturbed PHYSICAL grid alongside the u-space offsets, because the
-# per-axis summary reads physical theta. The map back is the axis's own
-# `.joint_pareto_inv()`, and that it is a mean in `u` pushed through `exp` rather
-# than a mean in theta is a DESIGN CHOICE of the quantile read, not an
-# approximation slipped past:
-#
-#   the grid stores physical theta on a geometric grid while the quadratic the
-#   barycentre comes from is fitted in `u = log theta` (which is why
-#   `log_marginal` needs no Jacobian on that axis), so `ubar`
-#   is a mean in `u` and `exp(E[u]) != E[exp(u)]`;
-#
-#   the quantile read does not want a mean. Its atom is a REPRESENTATIVE POINT
-#   of the cell, and a weighted quantile is equivariant under a monotone map, so
-#   mapping `ubar` through `exp` gives the atom the representative point of the
-#   cell measured in the coordinate the quadratic was fitted in -- and, since
-#   `exp` is monotone and the barycentre is in the box, keeps it inside its own
-#   cell, which the moment-free reading depends on.
-#
-# The MOMENT read is a different question with a different answer: `theta_mean` /
-# `theta_sd` are moments in theta, so they need the transformed truncated moment
-# rather than the transformed barycentre, and nothing here touches them.
-#
-# A cell missing a neighbour on any axis has no centred stencil and stays where
-# it is: offset 0, `computed` FALSE, the same decline the box mass makes one gate
-# earlier, and the same `boundary` entry of `declined_reasons` at `d` axes per
-# such cell. Non-latent columns (an active phi dispersion tensor) are never
-# moved.
-.joint_local_ccd_barycentre <- function(joint_grid, log_marginal, latent_axes,
-                                        tags) {
-    n <- nrow(joint_grid)
-    out <- list(joint_grid = joint_grid,
-                u_offset = matrix(0, n, length(latent_axes)),
-                bary_shift = rep(NA_real_, n), computed = rep(FALSE, n),
-                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L,
-                declined_reasons =
-                    .joint_local_ccd_reason_tally(character(0),
-                                                  .LCCD_BARY_REASONS))
-    geo <- .joint_local_ccd_geometry(joint_grid, latent_axes, tags)
-    if (is.null(geo)) return(out)
-    d <- geo$d
-    latent_cols <- geo$latent_cols
-    U <- geo$U
-
-    for (c in seq_len(n)) {
-        st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, geo$up, geo$dn)
-        if (is.null(st)) {
-            out$declined_reasons[["boundary"]] <-
-                out$declined_reasons[["boundary"]] + d
-            next
-        }
-        bc <- .joint_local_ccd_cell_bary(st)
-        out$u_offset[c, ]    <- bc$u_bar
-        out$bary_shift[c]    <- bc$bary_shift
-        out$computed[c]      <- TRUE
-        out$n_axes_closed    <- out$n_axes_closed + bc$n_axes_closed
-        out$n_axes_numeric   <- out$n_axes_numeric + bc$n_axes_numeric
-        out$n_axes_declined  <- out$n_axes_declined + bc$n_axes_declined
-        out$declined_reasons <- out$declined_reasons + bc$declined_reasons
-    }
-
-    # Only a cell that moves is rewritten. A round trip through
-    # `.joint_pareto_fwd()` / `.joint_pareto_inv()` is the identity in exact
-    # arithmetic and not in floating point, so writing every cell back would
-    # perturb the coordinates of the cells the rule declined to move -- and a
-    # rule has to leave what it declines exactly as it found it, or a read taken
-    # under it is not attributable to the cells it did move.
-    tg <- joint_grid
-    for (j in seq_len(d)) {
-        off <- out$u_offset[, j]
-        mv  <- off != 0
-        if (any(mv)) {
-            tg[mv, latent_cols[j]] <-
-                .joint_pareto_inv(tags[j], U[mv, j] + off[mv])$theta
-        }
-    }
-    out$joint_grid <- tg
-    out
 }
 
 # How far the cell's own outer log-marginal is from the quadratic the design was
@@ -1583,11 +1442,7 @@
     # scalar: one [cells x reasons] integer matrix, its columns the full
     # vocabulary so a reason no cell hit reads 0 rather than being absent. An
     # empty side gives a 0-row matrix carrying the same column names, so a
-    # reader takes the vocabulary off the matrix either way. The `boundary`
-    # column is structurally 0 on both sides -- every cell reaching the loop
-    # above passed `.joint_local_ccd_cell_curv()` and so has a centred stencil --
-    # and is carried so the tally is the same object the grid-wide entry points
-    # return.
+    # reader takes the vocabulary off the matrix either way.
     rec_mat <- function(acc, nm, vocab) {
         m <- matrix(0L, length(acc), length(vocab),
                     dimnames = list(NULL, vocab))

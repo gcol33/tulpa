@@ -20,7 +20,7 @@ skip_on_cran_budget()
 test_that("agq is registered, reachable, and a valid front-door backend", {
   skip_on_cran_budget()
   expect_true("agq" %in% ALL_BACKENDS)
-  expect_true(backend_is_reachable("agq"))
+  expect_no_error(assert_backend_reachable("agq"))
   expect_equal(get_backend_tier("agq")$tier, 2L)
 })
 
