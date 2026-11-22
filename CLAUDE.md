@@ -284,8 +284,8 @@ An axis whose at-mode proposal is empty -- a placement laid it at 1.25 SDs, ESS
 2.8 by construction -- is left as it is.
 
 The cheap-pass screen is ON by default for the joint and registry doors
-(`.NL_SCREEN$prune`, per door; the SPDE fitter stays opt-in because its CCD
-mode-find reads through the screened entry). The driver bounds the mass the
+(`.NL_SCREEN$prune`, per door; an integer-nu `fit_spde()` fit runs on the
+joint door and takes its default). The driver bounds the mass the
 dropped cells may carry, lifting each by the worst screening error measured on
 a kept cell, and repairs past `CHEAP_SCREEN_GATE_MASS` (mirrors
 `.NL_SCREEN$gate_mass`) by solving the dropped cells that carry the bound. The
