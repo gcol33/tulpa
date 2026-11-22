@@ -48,13 +48,25 @@ test_that("a decline reason is stamped only when the recenter did not run", {
 
 # The joint placement pass over one family, driven with a
 # `refit(prior, prior_sigma)` callback.
-.place_field_sd <- function(res, prior, prior_sigma, refit, auto = logical(0),
-                            enabled = TRUE, max_attempts = 2L) {
+.place_field <- function(res, prior, prior_sigma, refit, auto = logical(0),
+                         enabled = TRUE, max_attempts = 2L) {
     tulpa:::.joint_place_axes(
         res, list(prior = prior, prior_sigma = prior_sigma),
         refit = function(st, from) refit(st$prior, st$prior_sigma),
-        families = tulpa:::.joint_placement_families(auto = auto)["sigma"],
+        families = tulpa:::.joint_placement_families(auto = auto)["field"],
         enabled = enabled, max_attempts = max_attempts)
+}
+# A one-block icar fit on the precision axis `b1.tau`, its marginal a Gaussian
+# in log tau centred at `mode` with SD 0.5, laid on `nodes`. The default axis
+# spaces its nodes 0.58 apart in log tau, so a centre inside it is resolved and
+# one past its top node (30) rails there.
+.tau_fit <- function(mode, nodes = tulpa:::.nl_grid_axis("gmrf_tau"),
+                     cov = 0.25) {
+    list(theta_grid = cbind(b1.tau = nodes),
+         log_marginal = -0.5 * ((log(nodes) - log(mode)) / 0.5)^2,
+         outer_mode_u = log(mode), outer_mode_cov_u = matrix(cov, 1, 1),
+         outer_mode_axis_tags = "log", outer_mode_axis_names = "b1.tau",
+         outer_grid_placement = "fixed", blocks = list(list(type = "icar")))
 }
 .place_copy_sd <- function(res, prior, copy, cp, prior_sigma, refit,
                            auto = list(), enabled = TRUE, max_attempts = 2L) {
@@ -271,94 +283,87 @@ test_that("axis index resolves by name, then by being the only log axis", {
     expect_true(is.na(tulpa:::.nl_axis_index(NULL, "sigma")))
 })
 
-test_that("the single-block rescue guard honours a pin and passes a default", {
+test_that("the field placement honours a pin and passes a default", {
     skip_on_cran_budget()
-    # No fit: a stub `res` carrying only the diagnostic fields the rescue reads,
+    # No fit: a stub `res` carrying the grid, marginal and outer mode the
+    # placement reads, railed on the top node of the default precision axis,
     # and a refit that records whether it was called.
-    stub_res <- list(pareto_k_regime = "collapsed_edge",
-                     pareto_k_grid_edge_axes = "sigma",
-                     pareto_k_grid_edge_sides = "upper",
-                     outer_mode_u = log(3),
-                     outer_mode_cov_u = matrix(0.25, 1, 1),
-                     outer_mode_axis_tags = "log",
-                     outer_mode_axis_names = "sigma",
-                     outer_grid_placement = "fixed")
+    railed <- .tau_fit(100)
     calls <- new.env(parent = emptyenv())
     calls$n <- 0L
     refit <- function(prior_i, prior_sigma_i) {
         calls$n <- calls$n + 1L
-        calls$grid <- prior_i$sigma_grid
-        # Refit lands on a spread grid, so the loop stops after one attempt.
-        utils::modifyList(stub_res, list(pareto_k_regime = "spread",
-                                         pareto_k_grid_edge_axes = character(0)))
+        calls$grid <- as.numeric(prior_i[[1L]]$tau_grid)
+        # The refit's grid holds the mode it was laid at, resolved, so the loop
+        # stops after one attempt.
+        .tau_fit(100, nodes = calls$grid)
     }
     icar <- list(type = "icar")
 
-    # 1. Axis absent -> recenters.
-    out <- .place_field_sd(stub_res, icar, NULL, refit)
+    # 1. Axis absent -> placed past the rail.
+    out <- .place_field(railed, list(icar), NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(calls$n, 1L)
-    expect_gt(max(calls$grid), 3)
+    expect_gt(max(calls$grid), 30)
+    expect_true(is_auto_grid(out$st$prior[[1L]]$tau_grid))
     expect_null(out$res$outer_grid_recenter_declined)
-    expect_identical(out$res$outer_grid_recenter_axes, "sigma")
+    expect_identical(out$res$outer_grid_recenter_axes, "b1.tau")
     expect_null(out$res$outer_grid_axis_declined)
 
-    # 2. Engine default handed in unmarked -> still recenters (#293).
+    # 2. Engine default handed in unmarked -> still placed (#293).
     calls$n <- 0L
-    out <- .place_field_sd(
-        stub_res, c(icar, list(sigma_grid = tulpa:::.nl_grid_axis("field_sd"))),
+    out <- .place_field(
+        railed, list(c(icar, list(tau_grid = tulpa:::.nl_grid_axis("gmrf_tau")))),
         NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(calls$n, 1L)
 
-    # 3. A marked caller default -> recenters.
+    # 3. A marked caller default -> placed.
     calls$n <- 0L
-    out <- .place_field_sd(
-        stub_res, c(icar, list(sigma_grid = auto_grid(c(0.2, 0.6, 1.8)))),
-        NULL, refit, auto = "sigma_grid")
+    out <- .place_field(
+        railed, list(c(icar, list(tau_grid = auto_grid(c(0.5, 2, 8))))),
+        NULL, refit, auto = list("tau_grid"))
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(calls$n, 1L)
 
     # 4. A genuine pin -> untouched, with the reason recorded.
     calls$n <- 0L
-    out <- .place_field_sd(
-        stub_res, c(icar, list(sigma_grid = c(0.1, 0.5, 1, 2, 3))), NULL, refit)
+    out <- .place_field(
+        railed, list(c(icar, list(tau_grid = c(0.5, 1, 2, 4, 8)))), NULL, refit)
     expect_identical(out$res$outer_grid_placement, "fixed")
     expect_identical(out$res$outer_grid_recenter_declined, "axis_pinned")
-    expect_identical(out$res$outer_grid_axis_declined, c(sigma = "axis_pinned"))
+    expect_identical(out$res$outer_grid_axis_declined, c(b1.tau = "axis_pinned"))
     expect_identical(calls$n, 0L)
 
-    # 5. A grid that never collapsed -> untouched, different reason.
+    # 5. A grid that resolves its posterior -> untouched, different reason.
     calls$n <- 0L
-    spread <- utils::modifyList(stub_res,
-                                list(pareto_k_regime = "spread",
-                                     pareto_k_grid_edge_axes = character(0)))
-    out <- .place_field_sd(spread, icar, NULL, refit)
-    expect_identical(out$res$outer_grid_recenter_declined, "grid_not_collapsed")
+    out <- .place_field(.tau_fit(3), list(icar), NULL, refit)
+    expect_identical(out$res$outer_grid_recenter_declined,
+                     "grid_resolves_posterior")
     expect_identical(out$res$outer_grid_axis_declined,
-                     c(sigma = "grid_not_collapsed"))
+                     c(b1.tau = "grid_resolves_posterior"))
     expect_identical(calls$n, 0L)
 
-    # 6. Collapsed, but no curvature to recentre on -> untouched, own reason.
+    # 6. Railed, but no curvature to place on -> untouched, own reason.
     calls$n <- 0L
-    blind <- utils::modifyList(stub_res, list(outer_mode_u = NULL,
-                                              outer_mode_cov_u = NULL))
-    out <- .place_field_sd(blind, icar, NULL, refit)
+    blind <- utils::modifyList(railed, list(outer_mode_u = NULL,
+                                            outer_mode_cov_u = NULL))
+    out <- .place_field(blind, list(icar), NULL, refit)
     expect_identical(out$res$outer_grid_recenter_declined, "no_usable_curvature")
     expect_identical(out$res$outer_grid_axis_declined,
-                     c(sigma = "no_usable_curvature"))
+                     c(b1.tau = "no_usable_curvature"))
     expect_identical(calls$n, 0L)
 
-    out <- .place_field_sd(stub_res, icar, NULL, refit,
-                                            enabled = FALSE)
+    out <- .place_field(railed, list(icar), NULL, refit, enabled = FALSE)
     expect_identical(out$res$outer_grid_axis_declined,
-                     c(sigma = "auto_recenter_disabled"))
+                     c(b1.tau = "auto_recenter_disabled"))
 
-    # 7. A prior shape this rescue does not cover stamps nothing at all -- the
-    #    multi-block rescue chained after it owns that fit.
-    out <- .place_field_sd(stub_res, list(icar), NULL, refit)
+    # 7. A block the registry binds no axis to offers the family no slot, so
+    #    the pass stamps nothing at all.
+    out <- .place_field(railed, list(list(type = "lf")), NULL, refit)
     expect_null(out$res$outer_grid_recenter_declined)
     expect_null(out$res$outer_grid_axis_declined)
+    expect_identical(calls$n, 0L)
 })
 
 # gcol33/tulpa#297: the second attempt's regularizing PC prior was suppressed by
@@ -380,25 +385,28 @@ test_that(".nl_prior_sigma_is_pinned reads provenance, not presence", {
 
 test_that("the second recenter attempt engages the PC prior unless it was PINNED", {
     skip_on_cran_budget()
+    # The escalation rides the copy block's field SD, the one family that
+    # carries it (`escalate = TRUE` in `.joint_placement_families()`).
     stub_res <- list(pareto_k_regime = "collapsed_edge",
-                     pareto_k_grid_edge_axes = "sigma",
-                     pareto_k_grid_edge_sides = "upper",
-                     outer_mode_u = log(3),
-                     outer_mode_cov_u = matrix(0.25, 1, 1),
-                     outer_mode_axis_tags = "log",
-                     outer_mode_axis_names = "sigma",
-                     outer_grid_placement = "fixed")
+                     pareto_k_grid_edge_axes = "b1.sigma",
+                     outer_mode_u = c(log(3), 0.4),
+                     outer_mode_cov_u = diag(c(0.25, 0.09)),
+                     outer_mode_axis_tags = c("log", "identity"),
+                     outer_mode_axis_names = c("b1.sigma", "b1.alpha"),
+                     outer_grid_placement = "fixed",
+                     blocks = list(list(type = "icar")))
+    cp <- list(has_copy = TRUE, copy_blocks_zero = 0L)
     calls <- new.env(parent = emptyenv())
-    # Never leaves collapsed_edge, so the loop runs its full two attempts.
+    # Never leaves its rail, so the loop runs its full two attempts.
     refit <- function(prior_i, prior_sigma_i) {
         calls$last_prior_sigma <- prior_sigma_i
         stub_res
     }
-    icar <- list(type = "icar")
+    blocks <- list(list(type = "icar"))
     pc <- tulpa:::.nl_recenter("sigma_pc_prior")
 
     # No prior at all -> attempt 2 adds the engine's PC prior.
-    out <- .place_field_sd(stub_res, icar, NULL, refit)
+    out <- .place_copy_sd(stub_res, blocks, NULL, cp, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_attempts, 2L)
     expect_true(out$res$outer_grid_prior_added)
     expect_equal(calls$last_prior_sigma, pc)
@@ -407,7 +415,7 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     # A wrapper's own default, declared -> the escalation still engages, and the
     # engine's prior replaces the declared default.
     wrapper_default <- auto_grid(list("pc.prec", c(U = 1, alpha = 0.01)))
-    out <- .place_field_sd(stub_res, icar, wrapper_default, refit)
+    out <- .place_copy_sd(stub_res, blocks, NULL, cp, wrapper_default, refit)
     expect_true(out$res$outer_grid_prior_added)
     expect_equal(calls$last_prior_sigma, pc)
     expect_null(out$res$outer_grid_prior_declined)
@@ -415,7 +423,7 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     # A deliberate, undeclared choice -> held, and the suppression is legible
     # rather than an `attempts = 2` that quietly did the same thing twice.
     chosen <- list("pc.prec", c(U = 1, alpha = 0.01))
-    out <- .place_field_sd(stub_res, icar, chosen, refit)
+    out <- .place_copy_sd(stub_res, blocks, NULL, cp, chosen, refit)
     expect_identical(out$res$outer_grid_recenter_attempts, 2L)
     expect_false(out$res$outer_grid_prior_added)
     expect_identical(out$res$outer_grid_prior_declined, "prior_pinned")

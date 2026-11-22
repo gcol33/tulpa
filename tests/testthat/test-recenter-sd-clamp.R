@@ -68,31 +68,31 @@ test_that("the incoming span is read in each axis's own coordinate", {
     expect_true(is.na(.nl_axis_span_u(c(1, 2), NA_character_)))
 })
 
-# A single-block field-SD grid railed on its upper node (the posterior sits
-# past it), with an outer mode whose spread on log sigma is 8 nats: past the placement ceiling, so the FD
-# stencil's reading cannot lay the axis as measured. That is the #387 case.
+# A one-block icar precision grid railed on its upper node (the posterior sits
+# past it), with an outer mode whose spread on log tau is 8 nats: past the
+# placement ceiling, so the FD stencil's reading cannot lay the axis as
+# measured. That is the #387 case, on the `field` family's `b1.tau` axis.
+.sdc_fit <- function(g, lm, mode_u) {
+    list(theta_grid = cbind(b1.tau = g), log_marginal = lm(g),
+         outer_mode_u = mode_u, outer_mode_cov_u = matrix(64, 1, 1),
+         outer_mode_axis_tags = "log", outer_mode_axis_names = "b1.tau",
+         outer_grid_placement = "fixed", blocks = list(list(type = "icar")))
+}
+
 .sdc_railed <- function() {
-    sg <- .nl_grid_axis("field_sd")
-    top <- 4 * max(sg)
-    lm <- function(s) -0.5 * ((log(s) - log(top)) / 0.5)^2
-    list(stub = list(theta_grid = cbind(sigma = sg), log_marginal = lm(sg),
-                     outer_mode_u = log(top), outer_mode_cov_u = matrix(64, 1, 1),
-                     outer_mode_axis_tags = "log", outer_mode_axis_names = "sigma",
-                     outer_grid_placement = "fixed"),
-         lm = lm, grid = sg)
+    tg <- .nl_grid_axis("gmrf_tau")
+    top <- 4 * max(tg)
+    lm <- function(t) -0.5 * ((log(t) - log(top)) / 0.5)^2
+    list(stub = .sdc_fit(tg, lm, log(top)), lm = lm, grid = tg)
 }
 
 .sdc_place <- function(case, seen) {
-    .joint_place_axes(case$stub, list(prior = list(type = "icar")),
-        families = .joint_placement_families()["sigma"],
+    .joint_place_axes(case$stub, list(prior = list(list(type = "icar"))),
+        families = .joint_placement_families()["field"],
         refit = function(st, from) {
             seen$n <- seen$n + 1L
-            g <- st$prior$sigma_grid
-            list(theta_grid = cbind(sigma = g), log_marginal = case$lm(g),
-                 outer_mode_u = case$stub$outer_mode_u,
-                 outer_mode_cov_u = case$stub$outer_mode_cov_u,
-                 outer_mode_axis_tags = "log", outer_mode_axis_names = "sigma",
-                 outer_grid_placement = "fixed")
+            .sdc_fit(as.numeric(st$prior[[1L]]$tau_grid), case$lm,
+                     case$stub$outer_mode_u)
         })
 }
 
@@ -106,15 +106,15 @@ test_that("a placed axis records what it was laid from", {
                                .sdc_place(case, seen))$res
     expect_gt(seen$n, 0L)
     expect_identical(out$outer_grid_placement, "auto_recentered")
-    expect_identical(unname(out$outer_grid_recenter_sd_clamp[["sigma"]]), "ceiling")
-    expect_equal(unname(out$outer_grid_recenter_sd_raw[["sigma"]]), 8,
+    expect_identical(unname(out$outer_grid_recenter_sd_clamp[["b1.tau"]]), "ceiling")
+    expect_equal(unname(out$outer_grid_recenter_sd_raw[["b1.tau"]]), 8,
                  tolerance = 1e-12)
-    expect_identical(unname(out$outer_grid_recenter_sd_used[["sigma"]]),
+    expect_identical(unname(out$outer_grid_recenter_sd_used[["b1.tau"]]),
                      .nl_recenter("max_sd_u"))
     # The placement note says the bound was hit, so a reader is not left to
     # infer it from the width.
     note <- .tulpa_grid_placement_note(.tulpa_grid_placement(out))
-    expect_match(note, "mode SD hit its bound on .*sigma")
+    expect_match(note, "mode SD hit its bound on .*b1\\.tau")
 })
 
 test_that("declining on the ceiling is visible as its own reason", {
@@ -126,7 +126,7 @@ test_that("declining on the ceiling is visible as its own reason", {
     # "no_usable_curvature", which would read as "the stencil failed" rather
     # than "the stencil said something the policy refuses to lay an axis from".
     expect_identical(out$outer_grid_recenter_declined, "sd_ceiling_unresolved")
-    expect_identical(unname(out$outer_grid_axis_declined[["sigma"]]),
+    expect_identical(unname(out$outer_grid_axis_declined[["b1.tau"]]),
                      "sd_ceiling_unresolved")
     expect_false(identical(out$outer_grid_placement, "auto_recentered"))
     # A declining pass refits nothing, so the grid the caller supplied is the
