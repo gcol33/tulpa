@@ -105,6 +105,31 @@ test_that("importance quadrature on the joint door reads the registry's posterio
   expect_lt(abs(fit$log_evidence - exact$log_evidence), 0.05)
 })
 
+test_that("the adaptive sparse rule runs on the joint door for a multiscale field", {
+  skip_on_cran()
+  set.seed(1371)
+  d <- data.frame(lon = runif(12), lat = runif(12), x = rnorm(12), y = rpois(12, 2))
+  ctl <- list(progress = FALSE, quad_max_level = 3L, quad_read_nodes = 2048L,
+              quad_read_max_nodes = 2048L, quad_tol = 5, quad_evidence_tol = 1)
+  fit <- tulpa(y ~ x, data = d, family = "poisson",
+               spatial = spatial_multiscale(~lon + lat, approx = "hsgp", m = 3),
+               control = ctl)
+  reg <- if (!is.null(fit$nested)) fit$nested else fit
+  expect_identical(reg$integration, "aghq")
+  prior <- lapply(seq_along(reg$prior), function(b)
+    tulpa:::.nl_block_as_arm(reg$prior[[b]], NULL, b))
+  jnt <- tulpa_nested_laplace_joint(
+    list(y = list(y = d$y, X = cbind(1, d$x), family = "poisson")),
+    prior = prior, control = c(ctl, list(integration = "aghq")))
+  expect_identical(jnt$integration, "aghq")
+  expect_true(all(jnt$weights >= 0))
+  expect_equal(tulpa:::.nl_outer_coupling_mass(jnt$outer_posterior$partition, "column"),
+               unname(jnt$weights), tolerance = 1e-12)
+  # The two doors seed the rule from their own placed grids, so they agree to
+  # the rule's own evidence target rather than to the bit.
+  expect_lt(abs(jnt$log_evidence - reg$log_evidence), ctl$quad_evidence_tol)
+})
+
 test_that("an outer design is refused where the joint door cannot lay it", {
   f <- .jod_gaussian(); n <- length(f$y)
   arm <- list(y = list(y = f$y, X = matrix(1, n, 1), family = "gaussian", phi = .2))
