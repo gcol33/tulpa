@@ -1,12 +1,7 @@
 // Test probes over src/hmc_rcpp_utils.cpp, compiled against the engine by load_cpp_fixture().
 
-#include <RcppEigen.h>
 #include <Rcpp.h>
 #include "sysmem.h"
-#include "omp_threads.h"
-#include <omp.h>
-#include <windows.h>
-#include <vector>
 
 // Total installed physical RAM in bytes, or 0 when it cannot be determined.
 // Returned as a double: a byte count can exceed the R integer range. The
