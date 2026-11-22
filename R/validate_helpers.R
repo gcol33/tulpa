@@ -444,6 +444,18 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   invisible(as.integer(x))
 }
 
+# One finite number strictly inside (`lower`, `upper`), refused with
+# "<where>: `<arg>` <what>; got <x>." -- `what` states the requirement in the
+# caller's words ("must be a single positive number").
+#' @keywords internal
+.check_scalar_in <- function(x, arg, where, lower, upper, what) {
+  if (!.is_scalar_num(x) || x <= lower || x >= upper) {
+    stop(where, ": `", arg, "` ", what, "; got ", format(x), ".",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 # Penalized-complexity anchors: P(sigma > U) = alpha calibrates the exponential
 # rate lambda = -log(alpha) / U, which exists only for U > 0 and alpha in
 # (0, 1). At alpha = 1 the rate is 0 and log(rate) is -Inf, so the prior is -Inf
@@ -455,17 +467,11 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 #' @keywords internal
 .check_pc_anchors <- function(U, alpha, arg_U, arg_alpha, where,
                               tail = paste0("P(sigma > ", arg_U, ")")) {
-  if (!is.numeric(U) || length(U) != 1L || !is.finite(U) || U <= 0) {
-    stop(where, ": `", arg_U, "` must be a single positive number; got ",
-         format(U), ".", call. = FALSE)
-  }
-  if (!is.numeric(alpha) || length(alpha) != 1L || !is.finite(alpha) ||
-      alpha <= 0 || alpha >= 1) {
-    stop(where, ": `", arg_alpha, "` is the tail probability ",
-         tail, " and must lie in (0, 1); got ", format(alpha), ".",
-         call. = FALSE)
-  }
-  invisible(TRUE)
+  .check_scalar_in(U, arg_U, where, 0, Inf,
+                   "must be a single positive number")
+  .check_scalar_in(alpha, arg_alpha, where, 0, 1,
+                   paste0("is the tail probability ", tail,
+                          " and must lie in (0, 1)"))
 }
 
 
@@ -506,11 +512,8 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 # log-marginal" (gcol33/tulpa#894).
 #' @keywords internal
 .check_lkj_eta <- function(eta, arg, where) {
-  if (!is.numeric(eta) || length(eta) != 1L || !is.finite(eta) || eta <= 0) {
-    stop(where, ": `", arg, "` is the LKJ shape and must be a single ",
-         "positive number; got ", format(eta), ".", call. = FALSE)
-  }
-  invisible(TRUE)
+  .check_scalar_in(eta, arg, where, 0, Inf,
+                   "is the LKJ shape and must be a single positive number")
 }
 
 # The same check for an anchor pair passed as one `c(U, alpha)` argument (the

@@ -43,6 +43,20 @@
 # plotting, k-fold and PSIS-LOO surfaces as well as that loop's early stop, so
 # every one of them now reads `.nl_diag("k_usable")` from here.
 
+# The one accessor over a settings table: `par` must name an entry (`what` names
+# the table in the error), and when `option` is a prefix,
+# `getOption(paste0(option, par))` overrides the table value.
+.settings_get <- function(table, par, what, option = NULL) {
+    if (!par %in% names(table)) {
+        stop("Unknown ", what, " '", par, "'.", call. = FALSE)
+    }
+    if (!is.null(option)) {
+        ov <- getOption(paste0(option, par), NULL)
+        if (!is.null(ov)) return(ov)
+    }
+    table[[par]]
+}
+
 # --- outer hyperparameter grid axes ------------------------------------------
 #
 # One entry per DISTINCT default axis, keyed by a name that says what the axis
@@ -237,12 +251,7 @@
     lkj_eta               = 2
 )
 
-.nl_hyperprior <- function(par) {
-    if (!par %in% names(.NL_HYPERPRIOR)) {
-        stop("Unknown default hyperprior setting '", par, "'.", call. = FALSE)
-    }
-    .NL_HYPERPRIOR[[par]]
-}
+.nl_hyperprior <- function(par) .settings_get(.NL_HYPERPRIOR, par, "default hyperprior setting")
 
 # The PC anchor pair as `c(U, alpha)`, the shape every `prior_sigma` argument
 # takes.
@@ -843,12 +852,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # SWEPT -- one build, several arms paired on the same seeds -- rather than
 # measured across builds that differ in more than the setting under test.
 .nl_recenter <- function(par) {
-    if (!par %in% names(.NL_RECENTER)) {
-        stop("Unknown recenter setting '", par, "'.", call. = FALSE)
-    }
-    ov <- getOption(paste0("tulpa.recenter.", par), NULL)
-    if (!is.null(ov)) return(ov)
-    .NL_RECENTER[[par]]
+    .settings_get(.NL_RECENTER, par, "recenter setting", "tulpa.recenter.")
 }
 
 
@@ -880,12 +884,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     sigma_upper = 3
 )
 
-.nl_st_default <- function(par) {
-    if (!par %in% names(.NL_ST_GRID)) {
-        stop("Unknown spatiotemporal grid setting '", par, "'.", call. = FALSE)
-    }
-    .NL_ST_GRID[[par]]
-}
+.nl_st_default <- function(par) .settings_get(.NL_ST_GRID, par, "spatiotemporal grid setting")
 
 # --- diagnostics --------------------------------------------------------------
 #
@@ -1324,16 +1323,9 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 )
 
 .nl_mode_find <- function(consumer, par) {
-    if (!consumer %in% names(.NL_MODE_FIND)) {
-        stop("Unknown mode-find consumer '", consumer, "'.", call. = FALSE)
-    }
-    tune <- .NL_MODE_FIND[[consumer]]
-    if (!par %in% names(tune)) {
-        stop("Unknown mode-find setting '", par, "'.", call. = FALSE)
-    }
-    ov <- getOption(paste0("tulpa.mode_find.", consumer, ".", par), NULL)
-    if (!is.null(ov)) return(ov)
-    tune[[par]]
+    tune <- .settings_get(.NL_MODE_FIND, consumer, "mode-find consumer")
+    .settings_get(tune, par, "mode-find setting",
+                  paste0("tulpa.mode_find.", consumer, "."))
 }
 
 # `axis_sd_ess` is the quadrature effective sample size an outer axis has to
@@ -1558,12 +1550,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     debias_n_draws       = 4000L
 )
 
-.nl_diag <- function(par) {
-    if (!par %in% names(.NL_DIAG)) {
-        stop("Unknown diagnostic setting '", par, "'.", call. = FALSE)
-    }
-    .NL_DIAG[[par]]
-}
+.nl_diag <- function(par) .settings_get(.NL_DIAG, par, "diagnostic setting")
 
 
 
@@ -1643,12 +1630,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     re_cov_gate_mass = 1e-4
 )
 
-.nl_screen <- function(par) {
-    if (!par %in% names(.NL_SCREEN)) {
-        stop("Unknown screening setting '", par, "'.", call. = FALSE)
-    }
-    .NL_SCREEN[[par]]
-}
+.nl_screen <- function(par) .settings_get(.NL_SCREEN, par, "screening setting")
 
 # --- default fixed-effect prior ----------------------------------------------
 #
@@ -1724,11 +1706,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 )
 
 .tulpa_prior_sd <- function(consumer = "tulpa") {
-    if (!consumer %in% names(.PRIOR_CONSUMERS)) {
-        stop("Unknown fixed-effect prior consumer '", consumer, "'.",
-             call. = FALSE)
-    }
-    .TULPA_PRIOR[[.PRIOR_CONSUMERS[[consumer]]]]
+    .TULPA_PRIOR[[.settings_get(.PRIOR_CONSUMERS, consumer,
+                                "fixed-effect prior consumer")]]
 }
 
 # The engine's fixed-effect prior object, in the `list(mean, sd)` shape every
@@ -1762,12 +1741,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     placed = "extend"
 )
 
-.nl_axis_refine <- function(par) {
-    if (!par %in% names(.NL_AXIS_REFINE)) {
-        stop("Unknown axis-refinement setting '", par, "'.", call. = FALSE)
-    }
-    .NL_AXIS_REFINE[[par]]
-}
+.nl_axis_refine <- function(par) .settings_get(.NL_AXIS_REFINE, par, "axis-refinement setting")
 
 # --- natural domain of a bounded outer axis ----------------------------------
 #
@@ -1811,12 +1785,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     .positive = list(bounds = c(0, Inf),   open = c(TRUE, TRUE))
 )
 
-.nl_axis_domain_entry <- function(key) {
-    if (!key %in% names(.NL_AXIS_DOMAIN)) {
-        stop("Unknown axis domain '", key, "'.", call. = FALSE)
-    }
-    .NL_AXIS_DOMAIN[[key]]
-}
+.nl_axis_domain_entry <- function(key) .settings_get(.NL_AXIS_DOMAIN, key, "axis domain")
 
 # --- joint CCD placement cost ------------------------------------------------
 #
@@ -1880,12 +1849,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     stop_sd          = 0.05
 )
 
-.ccd_placement <- function(par) {
-    if (!par %in% names(.CCD_PLACEMENT)) {
-        stop("Unknown CCD placement setting '", par, "'.", call. = FALSE)
-    }
-    .CCD_PLACEMENT[[par]]
-}
+.ccd_placement <- function(par) .settings_get(.CCD_PLACEMENT, par, "CCD placement setting")
 
 # Degrees of freedom of `imh_laplace()`'s multivariate-t proposal.
 #
@@ -1916,12 +1880,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     df = 5
 )
 
-.imh_proposal <- function(par) {
-    if (!par %in% names(.IMH_PROPOSAL)) {
-        stop("Unknown IMH proposal setting '", par, "'.", call. = FALSE)
-    }
-    .IMH_PROPOSAL[[par]]
-}
+.imh_proposal <- function(par) .settings_get(.IMH_PROPOSAL, par, "IMH proposal setting")
 
 # Inner importance sampling for tgmrf marginal correction. Pilot batches at
 # the outer mode set a fixed particle count before sampling (Doucet et al. 2015).

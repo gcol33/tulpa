@@ -116,35 +116,51 @@
     identical(sub(":.*$", "", label[1L]), "unguessable_axis")
 }
 
-# One-line user-facing reading of a decline label, for `print` /
-# `diagnostic_summary()`. `label` is `res$pareto_k_declined`.
-.k_decline_note <- function(label) {
+# One-line user-facing reading of a decline label `"<reason>[: <detail>]"`,
+# shared by the outer and the inner k-hat. `notes` maps each reason to its
+# reading: a string is the whole note, a function of the detail (NULL when the
+# label carries none) builds it. An unlisted reason reads NULL.
+.decline_note <- function(label, notes) {
     if (is.null(label) || !length(label) || is.na(label)) return(NULL)
     reason <- sub(":.*$", "", label)
     detail <- if (grepl(":", label, fixed = TRUE)) sub("^[^:]*:\\s*", "", label) else NULL
-    with_detail <- function(txt) {
-        if (is.null(detail)) txt else paste0(txt, " (", detail, ")")
-    }
-    switch(reason,
+    note <- notes[[reason]]
+    if (is.function(note)) note(detail) else note
+}
+
+# A note reading `txt`, followed by the label's detail in parentheses when it
+# carries one.
+.decline_with_detail <- function(txt) {
+    function(detail) if (is.null(detail)) txt else paste0(txt, " (", detail, ")")
+}
+
+# The reading both layers give an internal bookkeeping mismatch.
+.decline_internal_inconsistency <- function() {
+    .decline_with_detail(paste(
+        "an internal bookkeeping mismatch stopped the diagnostic;",
+        "this indicates an engine bug -- please report it"))
+}
+
+# One-line user-facing reading of a decline label, for `print` /
+# `diagnostic_summary()`. `label` is `res$pareto_k_declined`.
+.k_decline_note <- function(label) {
+    .decline_note(label, list(
         not_requested = "the outer diagnostic was not requested (control$diagnose_k = FALSE)",
-        not_applicable = with_detail("this fit's outer grid is not one the k-hat is defined on"),
-        unguessable_axis = paste0(
+        not_applicable = .decline_with_detail("this fit's outer grid is not one the k-hat is defined on"),
+        unguessable_axis = function(detail) paste0(
             "the outer grid carries an axis whose support is not safely known",
             if (!is.null(detail)) paste0(" (", detail, ")") else "",
             "; k-hat is permanently unavailable for this family -- read the",
             " quadrature ESS instead"),
         draws_too_few = "too few importance draws to fit the GPD tail; raise control$k_samples",
-        grid_too_small = with_detail("the outer grid / weights cannot support a proposal"),
+        grid_too_small = .decline_with_detail("the outer grid / weights cannot support a proposal"),
         no_varying_axis = "every outer axis is pinned to a single value; there is nothing to sample along",
-        degenerate_proposal = with_detail(
+        degenerate_proposal = .decline_with_detail(
             "the outer proposal degenerated (non-finite or non-PD mode curvature)"),
-        internal_inconsistency = with_detail(paste(
-            "an internal bookkeeping mismatch stopped the diagnostic;",
-            "this indicates an engine bug -- please report it")),
-        not_converged = with_detail(paste(
+        internal_inconsistency = .decline_internal_inconsistency(),
+        not_converged = .decline_with_detail(paste(
             "the inner solve the diagnostic re-dispatches did not reach a mode,",
-            "so there is no Laplace approximation at a mode to score")),
-        NULL)
+            "so there is no Laplace approximation at a mode to score"))))
 }
 
 # Whitened-radius envelope for the outer Pareto-k importance draws

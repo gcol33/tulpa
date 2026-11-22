@@ -465,29 +465,11 @@ temporal_gp <- function(time_var,
 #' @param ... Ignored.
 #' @export
 print.tulpa_temporal_gp <- function(x, ...) {
-  cat("tulpa Gaussian Process temporal specification\n")
-  cat("==============================================\n\n")
-
-  cat("Time variable:", x$time_var, "\n")
-  if (!is.null(x$group_var)) {
-    cat("Group variable:", x$group_var, "\n")
-  }
-
-  cov_str <- x$cov
-  if (x$cov == "matern" && !is.null(x$nu)) {
-    cov_str <- sprintf("%s (nu = %.1f)", x$cov, x$nu)
-  } else if (x$cov == "periodic" && !is.null(x$period)) {
-    cov_str <- sprintf("%s (period = %.1f)", x$cov, x$period)
-  }
-  cat("Covariance:", cov_str, "\n")
-  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
-
-  if (!is.null(x$n_obs)) {
-    cat("\nObservations:", x$n_obs, "\n")
-    cat("Unique time points:", x$n_times, "\n")
-  }
-
-  invisible(x)
+  .print_gp_spec(x, "tulpa Gaussian Process temporal specification",
+                 head = c(list(list("Time variable:", x$time_var)),
+                          if (!is.null(x$group_var))
+                            list(list("Group variable:", x$group_var))),
+                 after_obs = list(list("Unique time points:", x$n_times)))
 }
 
 

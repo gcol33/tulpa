@@ -231,24 +231,46 @@ spatial_gp <- function(coords,
 #' @param ... Ignored.
 #' @export
 print.tulpa_gp <- function(x, ...) {
-  cat("tulpa Gaussian Process spatial specification\n")
-  cat("=============================================\n\n")
+  .print_gp_spec(x, "tulpa Gaussian Process spatial specification",
+                 head = list(list("Coordinates:", paste(x$coord_vars, collapse = ", "))),
+                 after_cov = list(list("Neighbors (NNGP):", x$nn)))
+}
 
-  cat("Coordinates:", paste(x$coord_vars, collapse = ", "), "\n")
-  cov_str <- x$cov
-  if (x$cov == "matern" && !is.null(x$nu)) {
-    cov_str <- sprintf("%s (nu = %.1f)", x$cov, x$nu)
+# Printer shared by the spatial and temporal GP specifications. `head`,
+# `after_cov` and `after_obs` are lists of lines, each line a list of the
+# values `cat()` prints space-separated before its newline: `head` follows the
+# title, `after_cov` the covariance line, `after_obs` the observation count.
+.print_gp_spec <- function(x, title, head = list(), after_cov = list(),
+                           after_obs = list()) {
+  cat_lines <- function(lines) {
+    for (line in lines) do.call(cat, c(line, list("\n")))
   }
-  cat("Covariance:", cov_str, "\n")
-  cat("Neighbors (NNGP):", x$nn, "\n")
+  cat(title, "\n", sep = "")
+  cat(strrep("=", nchar(title) + 1L), "\n\n", sep = "")
 
+  cat_lines(head)
+  cat("Covariance:", .gp_cov_label(x), "\n")
+  cat_lines(after_cov)
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
     cat("\nObservations:", x$n_obs, "\n")
+    cat_lines(after_obs)
   }
 
   invisible(x)
+}
+
+# A GP covariance name with its shape parameter: the Matern smoothness `nu`
+# or the periodic kernel's `period` when the specification carries one.
+.gp_cov_label <- function(x) {
+  if (x$cov == "matern" && !is.null(x$nu)) {
+    sprintf("%s (nu = %.1f)", x$cov, x$nu)
+  } else if (x$cov == "periodic" && !is.null(x$period)) {
+    sprintf("%s (period = %.1f)", x$cov, x$period)
+  } else {
+    x$cov
+  }
 }
 
 

@@ -1312,15 +1312,28 @@ family_mean <- function(eta, family, phi = 1.0) {
 }
 
 
+# Call one registered operation of a family with the positional arguments in
+# `...`, appending `phi2` when the family takes a second dispersion. `what`
+# names the operation in the error raised when the family registers none; NULL
+# leaves an absent operation unchecked.
+.family_dispatch <- function(family, op, phi2, ..., what = NULL) {
+  fn <- .family_ops(family)[[op, exact = FALSE]]
+  if (!is.null(what) && is.null(fn)) {
+    stop(sprintf("Family '%s' has no %s function registered.", family, what),
+         call. = FALSE)
+  }
+  if (is.null(.phi2_or_stop(family, phi2))) {
+    return(fn(...))
+  }
+  fn(..., phi2)
+}
+
+
 #' Elementwise log-likelihood for a family
 #' @noRd
 family_loglik <- function(eta, y, family, n_trials = NULL, phi = 1.0,
                           phi2 = NULL) {
-  ops <- .family_ops(family)
-  if (is.null(.phi2_or_stop(family, phi2))) {
-    return(ops$loglik(eta, y, n_trials, phi))
-  }
-  ops$loglik(eta, y, n_trials, phi, phi2)
+  .family_dispatch(family, "loglik", phi2, eta, y, n_trials, phi)
 }
 
 
@@ -1328,11 +1341,7 @@ family_loglik <- function(eta, y, family, n_trials = NULL, phi = 1.0,
 #' @noRd
 family_score_eta <- function(eta, y, family, n_trials = NULL, phi = 1.0,
                              phi2 = NULL) {
-  ops <- .family_ops(family)
-  if (is.null(.phi2_or_stop(family, phi2))) {
-    return(ops$score(eta, y, n_trials, phi))
-  }
-  ops$score(eta, y, n_trials, phi, phi2)
+  .family_dispatch(family, "score", phi2, eta, y, n_trials, phi)
 }
 
 
@@ -1340,11 +1349,7 @@ family_score_eta <- function(eta, y, family, n_trials = NULL, phi = 1.0,
 #' @noRd
 family_weight <- function(eta, family, n_trials = NULL, phi = 1.0,
                           phi2 = NULL) {
-  ops <- .family_ops(family)
-  if (is.null(.phi2_or_stop(family, phi2))) {
-    return(ops$weight(eta, n_trials, phi))
-  }
-  ops$weight(eta, n_trials, phi, phi2)
+  .family_dispatch(family, "weight", phi2, eta, n_trials, phi)
 }
 
 
@@ -1352,15 +1357,8 @@ family_weight <- function(eta, family, n_trials = NULL, phi = 1.0,
 #' @noRd
 family_sample <- function(eta, family, n_trials = NULL, phi = 1.0,
                           phi2 = NULL) {
-  ops <- .family_ops(family)
-  if (is.null(ops$sample)) {
-    stop(sprintf("Family '%s' has no sampling function registered.", family),
-         call. = FALSE)
-  }
-  if (is.null(.phi2_or_stop(family, phi2))) {
-    return(ops$sample(eta, n_trials, phi))
-  }
-  ops$sample(eta, n_trials, phi, phi2)
+  .family_dispatch(family, "sample", phi2, eta, n_trials, phi,
+                   what = "sampling")
 }
 
 
@@ -1368,15 +1366,8 @@ family_sample <- function(eta, family, n_trials = NULL, phi = 1.0,
 #' @noRd
 family_variance <- function(eta, family, n_trials = NULL, phi = 1.0,
                             phi2 = NULL) {
-  ops <- .family_ops(family)
-  if (is.null(ops$variance)) {
-    stop(sprintf("Family '%s' has no variance function registered.", family),
-         call. = FALSE)
-  }
-  if (is.null(.phi2_or_stop(family, phi2))) {
-    return(ops$variance(eta, n_trials, phi))
-  }
-  ops$variance(eta, n_trials, phi, phi2)
+  .family_dispatch(family, "variance", phi2, eta, n_trials, phi,
+                   what = "variance")
 }
 
 

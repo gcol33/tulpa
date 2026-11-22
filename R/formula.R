@@ -141,26 +141,7 @@ nobars <- function(term) {
 #' @return A list of language objects, each a `latent(...)` call
 #' @noRd
 find_latent_terms <- function(term) {
-  if (is.name(term) || !is.language(term)) return(NULL)
-
-  if (is.call(term) && identical(term[[1]], as.name("latent")) &&
-      length(term) == 2L) {
-    return(list(term))
-  }
-
-  if (identical(term[[1]], as.name("("))) {
-    return(find_latent_terms(term[[2]]))
-  }
-
-  if (!is.call(term)) return(NULL)
-  op <- term[[1]]
-  if (!is.name(op) || !(as.character(op) %in% .FORMULA_OPS)) return(NULL)
-
-  if (length(term) == 2L) {
-    return(find_latent_terms(term[[2]]))
-  }
-
-  c(find_latent_terms(term[[2]]), find_latent_terms(term[[3]]))
+  find_special_terms(term, "latent", .is_latent_call)
 }
 
 #' Remove all latent(...) calls from a formula's parse tree
@@ -172,10 +153,11 @@ find_latent_terms <- function(term) {
 #'   if nothing remains.
 #' @noRd
 no_latent_terms <- function(term) {
-  .strip_rhs(term, function(x) {
-    is.call(x) && identical(x[[1]], as.name("latent")) && length(x) == 2L
-  })
+  no_special_terms(term, "latent", .is_latent_call)
 }
+
+# A `latent(...)` call is a latent block when it wraps exactly one argument.
+.is_latent_call <- function(cl) length(cl) == 2L
 
 # ----------------------------------------------------------------------------
 # Special model terms: spatial(col) / temporal(col)
@@ -183,9 +165,9 @@ no_latent_terms <- function(term) {
 # These name a single data column (the per-observation spatial unit / time
 # index); the structure + adjacency/coords arrive through tulpa()'s spatial= /
 # temporal= argument, not the formula. The finder/stripper mirror nobars()
-# but are parameterised by the wrapper name, so spatial and temporal share one
-# implementation. (latent(...) keeps its own pair above -- it evaluates its
-# argument to an object, a different semantics from naming a column.)
+# but are parameterised by the wrapper name, so spatial, temporal and latent
+# share one walker. (latent(...) evaluates its argument to an object, a
+# different semantics from naming a column; only the walk is shared.)
 # ----------------------------------------------------------------------------
 
 # Collect all `fname(...)` calls on the rhs (fname = "spatial" / "temporal").
@@ -227,14 +209,7 @@ no_special_terms <- function(term, fname, pred = NULL) {
 # malformed old-form call -- is left to the areal-naming path, which validates
 # and errors on it as before.
 .is_spatial_field_call <- function(cl) {
-  args <- as.list(cl)[-1L]
-  nm <- names(args)
-  if (!is.null(nm) && any(nzchar(nm) & nm %in% c("graph", "formula"))) {
-    return(TRUE)
-  }
-  any(vapply(args,
-             function(a) is.call(a) && identical(a[[1L]], as.name("~")),
-             logical(1)))
+  .is_field_call(cl, c("graph", "formula"))
 }
 
 # Distinguish the two `temporal(...)` forms (the temporal mirror of
@@ -244,9 +219,16 @@ no_special_terms <- function(term, fname, pred = NULL) {
 # tulpa_temporal_field. A bare `temporal(col)` naming term (one bare column
 # name) is left to the temporal-naming path.
 .is_temporal_field_call <- function(cl) {
+  .is_field_call(cl, c("formula", "structure"))
+}
+
+# Is `cl` an inline field constructor: a call carrying one of the argument
+# names in `field_args`, or a one-sided formula (`~ ...`) argument given
+# positionally?
+.is_field_call <- function(cl, field_args) {
   args <- as.list(cl)[-1L]
   nm <- names(args)
-  if (!is.null(nm) && any(nzchar(nm) & nm %in% c("formula", "structure"))) {
+  if (!is.null(nm) && any(nzchar(nm) & nm %in% field_args)) {
     return(TRUE)
   }
   any(vapply(args,

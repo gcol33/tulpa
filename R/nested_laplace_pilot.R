@@ -129,23 +129,33 @@
     auto_grid(c(v[v <= 0], slab))
 }
 
+# The one thinning rule over a copy coefficient's axis, wherever its spec
+# lives: an explicit `grid` is thinned by `.nl_pilot_alpha_grid()` (a stated
+# one is kept), otherwise the resolution `res` is lowered to `n` unless it is
+# already within it, or is unset and the engine's default `copy_alpha` axis is.
+# NULL when nothing moves; otherwise `list(grid =)` or `list(res =)`, the one
+# entry to write back.
+.nl_pilot_copy_axis <- function(grid, res, n) {
+    if (!is.null(grid) && length(grid) > 0L) {
+        thin <- .nl_pilot_alpha_grid(grid, n)
+        if (is.null(thin)) return(NULL)
+        return(list(grid = thin))
+    }
+    if (!is.null(res) && length(res) > 0L && as.integer(res) <= n) {
+        return(NULL)
+    }
+    if (is.null(res) && length(.nl_grid_axis("copy_alpha")) <= n) {
+        return(NULL)
+    }
+    list(res = as.integer(n))
+}
+
 .nl_pilot_alpha <- function(spec, n) {
     if (!is.list(spec)) return(list(spec = spec, moved = FALSE))
-    if (!is.null(spec$alpha_grid) && length(spec$alpha_grid) > 0L) {
-        thin <- .nl_pilot_alpha_grid(spec$alpha_grid, n)
-        if (is.null(thin)) return(list(spec = spec, moved = FALSE))
-        spec$alpha_grid <- thin
-        return(list(spec = spec, moved = TRUE))
-    }
-    cur <- spec$alpha_n
-    if (!is.null(cur) && length(cur) > 0L && as.integer(cur) <= n) {
-        return(list(spec = spec, moved = FALSE))
-    }
-    if (is.null(cur) &&
-        length(.nl_grid_axis("copy_alpha")) <= n) {
-        return(list(spec = spec, moved = FALSE))
-    }
-    spec$alpha_n <- as.integer(n)
+    th <- .nl_pilot_copy_axis(spec$alpha_grid, spec$alpha_n, n)
+    if (is.null(th)) return(list(spec = spec, moved = FALSE))
+    if (!is.null(th[["grid"]])) spec$alpha_grid <- th[["grid"]]
+    else spec$alpha_n <- th[["res"]]
     list(spec = spec, moved = TRUE)
 }
 
@@ -158,21 +168,10 @@
     if (is.numeric(fc)) return(list(arm = arm, moved = FALSE))
     if (is.character(fc) && length(fc) == 1L) fc <- list(name = fc)
     if (!is.list(fc)) return(list(arm = arm, moved = FALSE))
-    if (!is.null(fc$grid) && length(fc$grid) > 0L) {
-        thin <- .nl_pilot_alpha_grid(fc$grid, n)
-        if (is.null(thin)) return(list(arm = arm, moved = FALSE))
-        fc$grid <- thin
-        arm$field_coef <- fc
-        return(list(arm = arm, moved = TRUE))
-    }
-    cur <- fc[["n"]]
-    if (!is.null(cur) && length(cur) > 0L && as.integer(cur) <= n) {
-        return(list(arm = arm, moved = FALSE))
-    }
-    if (is.null(cur) && length(.nl_grid_axis("copy_alpha")) <= n) {
-        return(list(arm = arm, moved = FALSE))
-    }
-    fc[["n"]] <- as.integer(n)
+    th <- .nl_pilot_copy_axis(fc$grid, fc[["n"]], n)
+    if (is.null(th)) return(list(arm = arm, moved = FALSE))
+    if (!is.null(th[["grid"]])) fc$grid <- th[["grid"]]
+    else fc[["n"]] <- th[["res"]]
     arm$field_coef <- fc
     list(arm = arm, moved = TRUE)
 }

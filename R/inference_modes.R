@@ -137,6 +137,15 @@ TIER_META <- list(
 #' * `hyperprior` -- `TRUE` when the backend's fitter takes the outer
 #'     `hyperprior = c("proper", "flat")` choice `tulpa()` forwards; absent
 #'     otherwise.
+#' * `zi`       -- `TRUE` when the backend carries a `ziformula` mixture: the
+#'     `tulpa_sample_glmm` samplers through the `logit_zi` callback, `laplace`
+#'     as process 1 of the two-process spec, and `eb` / `re_cov_nested` through
+#'     that same spec as their inner solve; absent otherwise. Read by
+#'     `.zi_backends()`.
+#' * `estimates_re_scale` -- `TRUE` when the backend determines the
+#'     random-effect scale (samples, integrates or maximizes over it) rather
+#'     than conditioning on a supplied `sigma_re`; absent otherwise. Read by
+#'     `.re_scale_estimating_backends()`.
 #' * `note`     -- optional human-readable note.
 #'
 #' Family identity (for `families`) is checked against `family$name`,
@@ -147,6 +156,7 @@ TIER_META <- list(
 BACKEND_REGISTRY <- list(
   # ---- Tier 1: Exact ----
   hmc = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "chain",
     tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL,
@@ -160,11 +170,13 @@ BACKEND_REGISTRY <- list(
                  "model packages also drive NUTS through the C ABI")
   ),
   ess = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "chain",
     tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_run_ess_sampler"
   ),
   gibbs = list(
+    estimates_re_scale = TRUE,
     emits = "chain",
     # The Polya-Gamma spatial sweep updates ONE random-intercept block
     # alongside the field, so a second (1 | g) term is refused at dispatch and
@@ -182,6 +194,7 @@ BACKEND_REGISTRY <- list(
                  "symbols above")
   ),
   re_cov_gibbs = list(
+    estimates_re_scale = TRUE,
     emits = "chain",
     tier = "exact", input = "design", fitter = "tulpa_re_cov_gibbs",
     # The four restrictions its own dispatch enforces, declared here so the auto
@@ -200,22 +213,26 @@ BACKEND_REGISTRY <- list(
   # emit chains, so Rhat/ESS measure mixing -- but mixing does not certify the
   # (biased) stationary distribution, which is exactly what "exact" would imply.
   sghmc = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "chain",
     tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_sghmc_fit"
   ),
   sgld = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "chain",
     tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_sgld_fit"
   ),
   mclmc = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "chain",
     tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_mclmc_fit",
     note = "Microcanonical Langevin Monte Carlo over a fixed-effect GLM (unadjusted by default; approximate)"
   ),
   smc = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "iid",
     tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_smc_fit",
@@ -233,11 +250,13 @@ BACKEND_REGISTRY <- list(
   ),
   # ---- Tier 2: Structured ----
   laplace = list(
+    zi = TRUE,
     emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_laplace",
     families = NULL, cabi = "tulpa_laplace_spec_dense", carries_weights = TRUE
   ),
   re_cov_nested = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_re_cov_nested",
     families = NULL, cabi = NULL, hyperprior = TRUE,
@@ -257,6 +276,7 @@ BACKEND_REGISTRY <- list(
     families = NULL, cabi = NULL
   ),
   agq = list(
+    estimates_re_scale = TRUE,
     emits = "iid",
     tier = "structured", input = "design", fitter = "agq_fit",
     families = c("binomial", "poisson", "gaussian"), cabi = NULL,
@@ -273,6 +293,7 @@ BACKEND_REGISTRY <- list(
                  "(exact for a Gaussian likelihood), no random effects / fields")
   ),
   eb = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_eb",
     families = NULL, cabi = NULL, hyperprior = TRUE,
@@ -331,6 +352,7 @@ BACKEND_REGISTRY <- list(
   ),
   # ---- Tier 3: Optimized ----
   vi = list(
+    zi = TRUE, estimates_re_scale = TRUE,
     emits = "iid",
     tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_fit_vi",
@@ -1262,11 +1284,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
 # the doc's claim has a single referent.
 #' @keywords internal
 .re_scale_estimating_backends <- function() {
-  c("eb", "agq", "gibbs", "re_cov_nested", "re_cov_gibbs", "re_aghq",
-    names(BACKEND_REGISTRY)[vapply(
-      BACKEND_REGISTRY,
-      function(b) identical(b$input, "modeldata"),
-      logical(1))])
+  names(Filter(function(e) isTRUE(e$estimates_re_scale), BACKEND_REGISTRY))
 }
 
 

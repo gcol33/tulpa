@@ -1594,7 +1594,21 @@ tulpa_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_gr
                                           field_marginal = TRUE, n_threads = 1L,
                                           soft_cols_list = NULL,
                                           soft_D_per_grid = NULL) {
-  cpp_joint_inner_vcov_blocks(
+  do.call(cpp_joint_inner_vcov_blocks, .joint_inner_vcov_args(
+    Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list,
+    field_marginal, n_threads, soft_cols_list, soft_D_per_grid))
+}
+
+# The arguments `cpp_joint_inner_vcov_blocks()` and
+# `cpp_joint_inner_vcov_mixture()` share, coerced to the types the engine reads:
+# the per-cell lower-triangle CSC precisions, the extracted index set, and the
+# hard and soft constraint rows (the soft rows only when soft precisions are
+# supplied).
+.joint_inner_vcov_args <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid,
+                                   n_x, idx, n_dense, A_cols_list,
+                                   field_marginal, n_threads, soft_cols_list,
+                                   soft_D_per_grid) {
+  list(
     Q_p_per_grid = Q_p_per_grid, Q_i_per_grid = Q_i_per_grid,
     Q_x_per_grid = Q_x_per_grid,
     n_x = as.integer(n_x), idx = as.integer(idx), n_dense = as.integer(n_dense),
@@ -1661,17 +1675,12 @@ tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
                                            soft_cols_list = NULL,
                                            soft_D_per_grid = NULL) {
   if (!is.null(modes)) modes <- as.matrix(modes) + 0
-  cpp_joint_inner_vcov_mixture(
-    Q_p_per_grid = Q_p_per_grid, Q_i_per_grid = Q_i_per_grid,
-    Q_x_per_grid = Q_x_per_grid,
-    n_x = as.integer(n_x), idx = as.integer(idx), n_dense = as.integer(n_dense),
-    A_cols_list = .constraint_rows_for_cpp(A_cols_list),
-    weights = as.numeric(weights), modes = modes,
-    field_marginal = isTRUE(field_marginal), n_threads = as.integer(n_threads),
-    soft_cols_list = if (!is.null(soft_D_per_grid))
-      .constraint_rows_for_cpp(soft_cols_list),
-    soft_D_per_grid = soft_D_per_grid
-  )
+  args <- .joint_inner_vcov_args(
+    Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list,
+    field_marginal, n_threads, soft_cols_list, soft_D_per_grid)
+  args$weights <- as.numeric(weights)
+  args["modes"] <- list(modes)
+  do.call(cpp_joint_inner_vcov_mixture, args)
 }
 
 # ----------------------------------------------------------------------------

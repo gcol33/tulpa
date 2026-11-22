@@ -379,17 +379,12 @@
   }
   uc    <- as.matrix(spatial$unique_coords)
   n_loc <- nrow(uc)
-  nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
   lp <- .nl_default_range_prior(uc)
-  list(
+  c(list(
     type             = "nngp",
-    coords           = .coords_2col(uc, "gp() / nngp() under a sampler mode"),
-    nn               = nn,
-    nn_idx           = matrix(as.integer(ni$nn_idx), n_loc, nn),
-    nn_dist          = matrix(as.numeric(ni$nn_dist), n_loc, nn),
-    nn_neighbor_dist = as.numeric(aperm(ni$nn_neighbor_dist, c(3, 2, 1))),
-    nn_order         = as.integer(ni$nn_order) - 1L,
-    nn_order_inv     = as.integer(ni$nn_order_inv %||% seq_len(n_loc)) - 1L,
+    coords           = .coords_2col(uc, "gp() / nngp() under a sampler mode")),
+    .nngp_sampler_neighbours(ni, n_loc, spatial$nn),
+    list(
     obs_to_loc       = as.integer(spatial$obs_to_loc) - 1L,
     cov_type         = gp_cov_type(spatial),
     nu               = as.numeric(spatial$nu %||% 1.5),
@@ -400,7 +395,31 @@
     parameterization = .sampler_parameterization(spatial),
     gp_parameterization =
       if (.sampler_parameterization(spatial) %in% c("auto", "noncentered")) 1L else 0L
-  )
+  ))
+}
+
+# The NNGP neighbour structure validate_gp() / validate_svc() computed, in the
+# sampler's index conventions: `nn` neighbours per location (the spec's own
+# count, else the width of the neighbour table), nn_idx / nn_dist as
+# [n_loc x nn] matrices, nn_neighbor_dist row-major [i, j1, j2] (omitted when
+# `neighbor_dist = FALSE`), nn_order / nn_order_inv 0-based. Every name carries
+# `suffix`, so one scale of a multi-scale field reads `nn_local`,
+# `nn_idx_local`, ...
+#' @keywords internal
+.nngp_sampler_neighbours <- function(ni, n_loc, nn, suffix = "",
+                                     neighbor_dist = TRUE) {
+  nn <- as.integer(nn %||% ncol(ni$nn_idx))
+  out <- list(
+    nn      = nn,
+    nn_idx  = matrix(as.integer(ni$nn_idx), n_loc, nn),
+    nn_dist = matrix(as.numeric(ni$nn_dist), n_loc, nn))
+  if (neighbor_dist) {
+    out$nn_neighbor_dist <- as.numeric(aperm(ni$nn_neighbor_dist, c(3, 2, 1)))
+  }
+  out$nn_order     <- as.integer(ni$nn_order) - 1L
+  out$nn_order_inv <- as.integer(ni$nn_order_inv %||% seq_len(n_loc)) - 1L
+  names(out) <- paste0(names(out), suffix)
+  out
 }
 
 
@@ -425,25 +444,14 @@
   }
   uc <- as.matrix(spatial$unique_coords)
   n_loc <- nrow(uc)
-  nn_local <- as.integer(spatial$nn_local %||% ncol(nil$nn_idx))
-  nn_regional <- as.integer(spatial$nn_regional %||% ncol(nir$nn_idx))
   # "auto" resolves to non-centered, matching spatial_gp()'s default.
   noncentered <- !identical(spatial$sampler %||% "auto", "centered")
-  list(
+  c(list(
     type                      = "multiscale",
-    coords                    = .coords_2col(uc, "the multiscale GP sampler spec"),
-    nn_local                  = nn_local,
-    nn_idx_local              = matrix(as.integer(nil$nn_idx), n_loc, nn_local),
-    nn_dist_local             = matrix(as.numeric(nil$nn_dist), n_loc, nn_local),
-    nn_neighbor_dist_local    = as.numeric(aperm(nil$nn_neighbor_dist, c(3, 2, 1))),
-    nn_order_local            = as.integer(nil$nn_order) - 1L,
-    nn_order_inv_local        = as.integer(nil$nn_order_inv %||% seq_len(n_loc)) - 1L,
-    nn_regional                = nn_regional,
-    nn_idx_regional            = matrix(as.integer(nir$nn_idx), n_loc, nn_regional),
-    nn_dist_regional           = matrix(as.numeric(nir$nn_dist), n_loc, nn_regional),
-    nn_neighbor_dist_regional  = as.numeric(aperm(nir$nn_neighbor_dist, c(3, 2, 1))),
-    nn_order_regional          = as.integer(nir$nn_order) - 1L,
-    nn_order_inv_regional      = as.integer(nir$nn_order_inv %||% seq_len(n_loc)) - 1L,
+    coords                    = .coords_2col(uc, "the multiscale GP sampler spec")),
+    .nngp_sampler_neighbours(nil, n_loc, spatial$nn_local, suffix = "_local"),
+    .nngp_sampler_neighbours(nir, n_loc, spatial$nn_regional, suffix = "_regional"),
+    list(
     obs_to_loc                = as.integer(spatial$obs_to_loc) - 1L,
     cov_type                  = gp_cov_type(spatial),
     range_local_lower         = as.numeric(spatial$range_local[1]) / .SPATIAL_RANGE_FACTOR,
@@ -466,7 +474,7 @@
     # gp_parameterization / svc_parameterization document, independently per
     # scale.
     msgp_parameterization = if (noncentered) 1L else 0L
-  )
+  ))
 }
 
 
@@ -573,6 +581,7 @@
                   sigma_prior_alpha = spatial$sigma_prior_alpha)
 
   if (identical(tolower(spatial$approx %||% "nngp"), "hsgp")) {
+    lp <- .hsgp_range_prior(cm)
     return(c(list(
       approx      = "hsgp",
       coords      = .coords_2col(cm, "svc(approx = 'hsgp') under a sampler mode"),
@@ -582,8 +591,8 @@
       m           = as.integer(spatial$m),
       c           = as.numeric(spatial$c_boundary),
       kernel      = .hsgp_kernel_code(.hsgp_spec_kernel(spatial)),
-      phi_prior_U     = .hsgp_range_prior(cm)[1L] / .SPATIAL_RANGE_FACTOR,
-      phi_prior_alpha = .hsgp_range_prior(cm)[2L]
+      phi_prior_U     = lp[1L] / .SPATIAL_RANGE_FACTOR,
+      phi_prior_alpha = lp[2L]
     ), anchors))
   }
 
@@ -595,18 +604,13 @@
   # The NNGP field lives on the distinct locations; rows sharing one read it
   # through obs_to_loc (0-based across the boundary). X_svc stays per row.
   cm <- as.matrix(spatial$unique_coords %||% cm)
-  n_obs <- nrow(cm)
-  nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
   lp <- .nl_default_range_prior(cm)
   c(list(
     approx          = "nngp",
     coords          = .coords_2col(cm, "svc() under a sampler mode"),
-    n_svc           = length(idx),
-    nn              = nn,
-    nn_idx          = matrix(as.integer(ni$nn_idx), n_obs, nn),
-    nn_dist         = matrix(as.numeric(ni$nn_dist), n_obs, nn),
-    nn_order        = as.integer(ni$nn_order) - 1L,
-    nn_order_inv    = as.integer(ni$nn_order_inv %||% seq_len(n_obs)) - 1L,
+    n_svc           = length(idx)),
+    .nngp_sampler_neighbours(ni, nrow(cm), spatial$nn, neighbor_dist = FALSE),
+    list(
     svc_indices     = idx,
     X_svc           = as.numeric(t(Xs)),            # row-major [n_rows x n_svc]
     obs_to_loc      = if (!is.null(spatial$obs_to_loc))

@@ -188,27 +188,18 @@
 # `diagnostic_summary()`. Same reason codes as the outer k-hat, read in the
 # inner layer's terms.
 .inner_k_decline_note <- function(label) {
-    if (is.null(label) || !length(label) || is.na(label)) return(NULL)
-    reason <- sub(":.*$", "", label)
-    detail <- if (grepl(":", label, fixed = TRUE)) sub("^[^:]*:\\s*", "", label) else NULL
-    with_detail <- function(txt) {
-        if (is.null(detail)) txt else paste0(txt, " (", detail, ")")
-    }
-    switch(reason,
+    .decline_note(label, list(
         not_requested = "the inner diagnostic was not requested (control$diagnose_skew = FALSE)",
-        not_applicable = with_detail("this fit exposes no inner importance curve to score"),
+        not_applicable = .decline_with_detail("this fit exposes no inner importance curve to score"),
         draws_too_few = paste("too few finite joint-density evaluations along the probed",
                               "curve to fit the GPD tail"),
-        degenerate_proposal = with_detail(paste(
+        degenerate_proposal = .decline_with_detail(paste(
             "the inner Gaussian could not be used as a proposal (the probed",
             "conditional variance was not positive)")),
-        internal_inconsistency = with_detail(paste(
-            "an internal bookkeeping mismatch stopped the diagnostic;",
-            "this indicates an engine bug -- please report it")),
-        not_converged = with_detail(paste(
+        internal_inconsistency = .decline_internal_inconsistency(),
+        not_converged = .decline_with_detail(paste(
             "the inner Newton solve did not reach a mode, so there is no",
-            "Gaussian at a mode to score as a proposal")),
-        NULL)
+            "Gaussian at a mode to score as a proposal"))))
 }
 
 # Per-probed-index inner k-hat from the engine's importance curve. `z` are the
@@ -771,21 +762,25 @@
   out
 }
 
-# gamma_3 per FIXED EFFECT, from the per-probed-index vector the kernel attached.
-.nl_skew_by_fixed <- function(fit, p) {
-  g <- fit[["inner_skew"]]
+# A per-probed-index vector the kernel attached as `fit[[field]]`, read per
+# FIXED EFFECT through the probe correspondence `inner_skew_idx`. A fit that
+# carries no such vector reads NA on every coefficient -- "not computable".
+.nl_probe_field_by_fixed <- function(fit, p, field) {
+  g <- fit[[field]]
   if (is.null(g) || !length(g) || p <= 0L) return(rep(NA_real_, max(p, 0L)))
   .nl_probe_to_fixed(as.numeric(g), fit[["inner_skew_idx"]], p)
 }
 
-# gamma_1 per FIXED EFFECT, read through the same probe
-# correspondence. A fit whose kernel declined the location term carries none, so
-# every coefficient is NA -- "not computable", which the correction reads as a
+# gamma_3 per FIXED EFFECT.
+.nl_skew_by_fixed <- function(fit, p) {
+  .nl_probe_field_by_fixed(fit, p, "inner_skew")
+}
+
+# gamma_1 per FIXED EFFECT. A fit whose kernel declined the location term
+# carries none, so every coefficient is NA, which the correction reads as a
 # decline rather than as a zero shift.
 .nl_gamma1_by_fixed <- function(fit, p) {
-  g <- fit[["inner_skew_gamma1"]]
-  if (is.null(g) || !length(g) || p <= 0L) return(rep(NA_real_, max(p, 0L)))
-  .nl_probe_to_fixed(as.numeric(g), fit[["inner_skew_idx"]], p)
+  .nl_probe_field_by_fixed(fit, p, "inner_skew_gamma1")
 }
 
 # The COMBINED inner band per fixed effect: the worse of gamma_3's band and the

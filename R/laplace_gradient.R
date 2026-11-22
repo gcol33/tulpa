@@ -117,16 +117,26 @@
 # would double-count. Returns NULL rather than a non-finite vector.
 .laplace_obs_delta <- function(y, n_trials, eta, family, phi, phi2 = NULL,
                                weights = NULL, has_zi = FALSE) {
-  delta <- tryCatch(
-    cpp_family_obs_curvature_delta_vec(
-      as.numeric(y), as.integer(n_trials), as.numeric(eta),
-      family, phi, phi2 %||% NA_real_),
+  .laplace_obs_vec(cpp_family_obs_curvature_delta_vec, y, n_trials, eta,
+                   family, phi, phi2, weights, has_zi)
+}
+
+
+# One per-observation curvature-correction vector from the compiled `export`
+# (`cpp_family_obs_curvature_delta_vec` or its eta-derivative), zeroed at y = 0
+# under a zero-inflation process, scaled by the observation weights, and NULL
+# when the export errors or any entry is non-finite.
+.laplace_obs_vec <- function(export, y, n_trials, eta, family, phi, phi2,
+                             weights, has_zi) {
+  v <- tryCatch(
+    export(as.numeric(y), as.integer(n_trials), as.numeric(eta),
+           family, phi, phi2 %||% NA_real_),
     error = function(e) NULL)
-  if (is.null(delta)) return(NULL)
-  if (isTRUE(has_zi)) delta[y == 0] <- 0
-  if (!is.null(weights)) delta <- delta * as.numeric(weights)
-  if (any(!is.finite(delta))) return(NULL)
-  delta
+  if (is.null(v)) return(NULL)
+  if (isTRUE(has_zi)) v[y == 0] <- 0
+  if (!is.null(weights)) v <- v * as.numeric(weights)
+  if (any(!is.finite(v))) return(NULL)
+  v
 }
 
 
@@ -167,16 +177,8 @@
                                     weights = NULL, has_zi = FALSE) {
   if (!isTRUE(tryCatch(cpp_family_has_obs_curvature_delta_derivative(family),
                        error = function(e) FALSE))) return(NULL)
-  dd <- tryCatch(
-    cpp_family_obs_curvature_delta_deta_vec(
-      as.numeric(y), as.integer(n_trials), as.numeric(eta),
-      family, phi, phi2 %||% NA_real_),
-    error = function(e) NULL)
-  if (is.null(dd)) return(NULL)
-  if (isTRUE(has_zi)) dd[y == 0] <- 0
-  if (!is.null(weights)) dd <- dd * as.numeric(weights)
-  if (any(!is.finite(dd))) return(NULL)
-  dd
+  .laplace_obs_vec(cpp_family_obs_curvature_delta_deta_vec, y, n_trials, eta,
+                   family, phi, phi2, weights, has_zi)
 }
 
 

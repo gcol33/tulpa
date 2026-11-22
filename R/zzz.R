@@ -16,37 +16,46 @@
 # hook -- so tulpa neither depends on them nor forces them into memory.
 # ============================================================================
 
-# Register `method` for `class` on a generic owned by another package, now if
-# that package is loaded and on its next load otherwise. The method is looked up
-# lazily inside tulpa's namespace so registration works during load, before the
-# namespace is sealed.
-.s3_register <- function(generic, class) {
+# Run `step(ns, gen, self)` against the generic `generic` ("package::generic")
+# now if that package is loaded and on its next load otherwise, skipping a
+# generic the package does not carry (nlme and lme4 do not carry identical
+# surfaces, and posterior's shape variants have come and gone; a missing generic
+# is a non-event, not an error). `ns` is the owner's namespace, `gen` the bare
+# generic name, and `self` our own namespace, taken from `frame` (the caller's
+# calling frame) rather than by name, so this keeps working under load_all() and
+# does not carry a hardcoded package name.
+.s3_on_load <- function(generic, step, frame) {
   parts <- strsplit(generic, "::", fixed = TRUE)[[1L]]
   if (length(parts) != 2L) {
     stop("`generic` must be of the form 'package::generic'.", call. = FALSE)
   }
   pkg <- parts[[1L]]
   gen <- parts[[2L]]
-  method_name <- paste0(gen, ".", class)
-  # Our own namespace, taken from the calling frame rather than by name, so this
-  # keeps working under load_all() and does not carry a hardcoded package name.
-  self <- topenv(parent.frame())
+  self <- topenv(frame)
 
   register <- function(...) {
     ns <- asNamespace(pkg)
-    # The other package may not export this generic (nlme and lme4 do not carry
-    # identical surfaces, and posterior's shape variants have come and gone).
-    # A missing generic is a non-event, not an error.
     if (!exists(gen, envir = ns, inherits = FALSE)) return(invisible(NULL))
-    method <- get0(method_name, envir = self, inherits = FALSE)
-    if (is.null(method)) return(invisible(NULL))
-    registerS3method(gen, class, method, envir = ns)
+    step(ns, gen, self)
     invisible(NULL)
   }
 
   if (isNamespaceLoaded(pkg)) register()
   setHook(packageEvent(pkg, "onLoad"), register)
   invisible(NULL)
+}
+
+
+# Register `method` for `class` on a generic owned by another package, now if
+# that package is loaded and on its next load otherwise. The method is looked up
+# lazily inside tulpa's namespace so registration works during load, before the
+# namespace is sealed.
+.s3_register <- function(generic, class) {
+  frame <- parent.frame()
+  .s3_on_load(generic, function(ns, gen, self) {
+    method <- get0(paste0(gen, ".", class), envir = self, inherits = FALSE)
+    if (!is.null(method)) registerS3method(gen, class, method, envir = ns)
+  }, frame)
 }
 
 
@@ -62,31 +71,16 @@
 # makes the two generics interchangeable at the call site; it is registered
 # rather than exported, so it never masks the owner's own default in return.
 .s3_borrow_default <- function(generic) {
-  parts <- strsplit(generic, "::", fixed = TRUE)[[1L]]
-  if (length(parts) != 2L) {
-    stop("`generic` must be of the form 'package::generic'.", call. = FALSE)
-  }
-  pkg <- parts[[1L]]
-  gen <- parts[[2L]]
-  self <- topenv(parent.frame())
-
-  register <- function(...) {
-    ns <- asNamespace(pkg)
-    if (!exists(gen, envir = ns, inherits = FALSE)) return(invisible(NULL))
+  frame <- parent.frame()
+  .s3_on_load(generic, function(ns, gen, self) {
     tbl <- get0(".__S3MethodsTable__.", envir = ns, inherits = FALSE)
     method <- if (is.null(tbl)) NULL
               else get0(paste0(gen, ".default"), envir = tbl, inherits = FALSE)
     if (is.null(method)) {
       method <- get0(paste0(gen, ".default"), envir = ns, inherits = FALSE)
     }
-    if (is.null(method)) return(invisible(NULL))
-    registerS3method(gen, "default", method, envir = self)
-    invisible(NULL)
-  }
-
-  if (isNamespaceLoaded(pkg)) register()
-  setHook(packageEvent(pkg, "onLoad"), register)
-  invisible(NULL)
+    if (!is.null(method)) registerS3method(gen, "default", method, envir = self)
+  }, frame)
 }
 
 

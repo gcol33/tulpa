@@ -464,6 +464,28 @@
     is.finite(d_axes) && d_axes >= 4L
 }
 
+# The geometry every local-CCD pass reads off the grid: the latent axes'
+# columns, the grid in the proposal coordinate `U` (`.joint_pareto_fwd()` per
+# axis, where the posterior is closest to Gaussian), and each cell's up / down
+# neighbour per axis. NULL when the grid declines whole: no transform tags, an
+# axis name the grid does not carry, fewer than `min_d` latent axes, or fewer
+# than three cells.
+.joint_local_ccd_geometry <- function(joint_grid, latent_axes, tags,
+                                      min_d = 1L) {
+    if (is.null(tags)) return(NULL)
+    latent_cols <- match(latent_axes, colnames(joint_grid))
+    if (anyNA(latent_cols)) return(NULL)
+    d <- length(latent_cols)
+    n <- nrow(joint_grid)
+    if (d < min_d || n < 3L) return(NULL)
+
+    U <- matrix(0, n, d)
+    for (j in seq_len(d))
+        U[, j] <- .joint_pareto_fwd(tags[j], joint_grid[, latent_cols[j]])
+    nb <- .joint_local_ccd_neighbors(U, joint_grid, latent_cols)
+    list(latent_cols = latent_cols, d = d, U = U, up = nb$up, dn = nb$dn)
+}
+
 # Per-axis up / down grid-neighbour row index for every cell. Two rows are
 # neighbours along axis j when they are identical in every OTHER column (other
 # latent axes AND phi columns) and adjacent in the sorted unique levels of axis
@@ -868,19 +890,13 @@
                 declined_reasons =
                     .joint_local_ccd_reason_tally(character(0),
                                                   .LCCD_BOX_REASONS))
-    if (is.null(tags)) return(out)
-    latent_cols <- match(latent_axes, colnames(joint_grid))
-    if (anyNA(latent_cols)) return(out)
-    d <- length(latent_cols)
-    if (d < 1L || n < 3L) return(out)
-
-    U <- matrix(0, n, d)
-    for (j in seq_len(d))
-        U[, j] <- .joint_pareto_fwd(tags[j], joint_grid[, latent_cols[j]])
-    nb <- .joint_local_ccd_neighbors(U, joint_grid, latent_cols)
+    geo <- .joint_local_ccd_geometry(joint_grid, latent_axes, tags)
+    if (is.null(geo)) return(out)
+    d <- geo$d
 
     for (c in seq_len(n)) {
-        st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, nb$up, nb$dn)
+        st <- .joint_local_ccd_cell_stencil(c, geo$U, log_marginal, geo$up,
+                                            geo$dn)
         if (is.null(st)) {
             out$declined_reasons[["boundary"]] <-
                 out$declined_reasons[["boundary"]] + d
@@ -1116,19 +1132,14 @@
                 declined_reasons =
                     .joint_local_ccd_reason_tally(character(0),
                                                   .LCCD_BARY_REASONS))
-    if (is.null(tags)) return(out)
-    latent_cols <- match(latent_axes, colnames(joint_grid))
-    if (anyNA(latent_cols)) return(out)
-    d <- length(latent_cols)
-    if (d < 1L || n < 3L) return(out)
-
-    U <- matrix(0, n, d)
-    for (j in seq_len(d))
-        U[, j] <- .joint_pareto_fwd(tags[j], joint_grid[, latent_cols[j]])
-    nb <- .joint_local_ccd_neighbors(U, joint_grid, latent_cols)
+    geo <- .joint_local_ccd_geometry(joint_grid, latent_axes, tags)
+    if (is.null(geo)) return(out)
+    d <- geo$d
+    latent_cols <- geo$latent_cols
+    U <- geo$U
 
     for (c in seq_len(n)) {
-        st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, nb$up, nb$dn)
+        st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, geo$up, geo$dn)
         if (is.null(st)) {
             out$declined_reasons[["boundary"]] <-
                 out$declined_reasons[["boundary"]] + d
@@ -1365,12 +1376,12 @@
                                      verbose = FALSE, cell_lists = NULL,
                                      skew_max = .nl_diag("gamma3_ok"),
                                      rank = "weight") {
-    if (is.null(tags)) return(NULL)
-    latent_cols <- match(latent_axes, colnames(joint_grid))
-    if (anyNA(latent_cols)) return(NULL)
-    d <- length(latent_cols)
+    geo <- .joint_local_ccd_geometry(joint_grid, latent_axes, tags,
+                                     min_d = 2L)
+    if (is.null(geo)) return(NULL)
+    latent_cols <- geo$latent_cols
+    d <- geo$d
     n <- nrow(joint_grid)
-    if (d < 2L || n < 3L) return(NULL)
 
     dn_w <- dnode %||% rep(1, n)
     w    <- .joint_integration_weights(log_marginal, dnode)
@@ -1378,10 +1389,8 @@
 
     # u-space latent coordinates (the curvature / CCD scale live on the
     # unconstrained axis where the posterior is closest to Gaussian).
-    U <- matrix(0, n, d)
-    for (j in seq_len(d)) U[, j] <- .joint_pareto_fwd(tags[j], joint_grid[, latent_cols[j]])
-
-    nb <- .joint_local_ccd_neighbors(U, joint_grid, latent_cols)
+    U  <- geo$U
+    nb <- list(up = geo$up, dn = geo$dn)
 
     ccd   <- ccd_grid(d, f_0 = sqrt(d) * f0)
     delta <- ccd_weights(ccd)
