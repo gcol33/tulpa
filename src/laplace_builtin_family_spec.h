@@ -27,35 +27,6 @@
 
 namespace tulpa {
 
-// Which branch of the AD likelihood ladder (builtin_family_ll_ad.h) a family
-// code selects. That ladder runs once per observation per reverse-mode sweep,
-// so comparing the code against up to twelve std::strings there is per-obs work
-// on a quantity fixed for the whole fit. This is the same classification
-// FamilyKind performs for the double path, over the AD ladder's own branches.
-enum class AdFamily : int {
-    UNRESOLVED,
-    GAUSSIAN, POISSON, BINOMIAL, NEG_BINOMIAL_2, NEG_BINOMIAL_1,
-    TRUNCATED_POISSON, TRUNCATED_NEG_BINOMIAL_2, BETA_BINOMIAL, STUDENT_T,
-    GAMMA, INVERSE_GAUSSIAN, LOGNORMAL, BETA
-};
-
-inline AdFamily ad_family_kind(const std::string& code) {
-    if (code == "poisson")                  return AdFamily::POISSON;
-    if (code == "binomial")                 return AdFamily::BINOMIAL;
-    if (code == "neg_binomial_2")           return AdFamily::NEG_BINOMIAL_2;
-    if (code == "neg_binomial_1")           return AdFamily::NEG_BINOMIAL_1;
-    if (code == "truncated_poisson")        return AdFamily::TRUNCATED_POISSON;
-    if (code == "truncated_neg_binomial_2") return AdFamily::TRUNCATED_NEG_BINOMIAL_2;
-    if (code == "beta_binomial")            return AdFamily::BETA_BINOMIAL;
-    if (code == "t")                        return AdFamily::STUDENT_T;
-    if (code == "gaussian")                 return AdFamily::GAUSSIAN;
-    if (code == "lognormal")                return AdFamily::LOGNORMAL;
-    if (code == "gamma")                    return AdFamily::GAMMA;
-    if (code == "inverse_gaussian")         return AdFamily::INVERSE_GAUSSIAN;
-    if (code == "beta")                     return AdFamily::BETA;
-    return AdFamily::UNRESOLVED;
-}
-
 // Per-observation response payload for a single-process built-in family.
 // The arrays are borrowed; they must outlive the fit. n_trials may be null
 // (treated as 1 everywhere), which is the non-binomial case.

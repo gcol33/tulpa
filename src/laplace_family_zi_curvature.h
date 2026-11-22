@@ -32,8 +32,11 @@
 #define TULPA_LAPLACE_FAMILY_ZI_CURVATURE_H
 
 #include <cmath>
+#include <cstddef>
+#include <cstring>
 #include <limits>
 #include <string>
+#include <type_traits>
 
 #include "builtin_family_zi.h"
 #include "laplace_family_curvature.h"
@@ -56,9 +59,25 @@ struct MixtureCurvatureDeriv {
     bool ok = true;
 };
 
-inline MixtureCurvatureDeriv mixture_curvature_deriv_declined() {
+// The answer for an observation that could not be evaluated: every double
+// field a quiet NaN and `ok` false. S is a derivative struct whose fields are
+// doubles up to a trailing `bool ok`, so the NaN slots are counted from the
+// layout rather than by hand.
+template <typename S>
+inline S declined() {
+    static_assert(std::is_standard_layout<S>::value,
+                  "declined<S>() needs a standard-layout struct");
+    constexpr std::size_t n_values = offsetof(S, ok) / sizeof(double);
+    static_assert(offsetof(S, ok) == n_values * sizeof(double),
+                  "declined<S>() needs only double fields before `ok`");
+    S s{};
     const double nan = std::numeric_limits<double>::quiet_NaN();
-    return MixtureCurvatureDeriv{nan, nan, nan, nan, nan, nan, false};
+    unsigned char* bytes = reinterpret_cast<unsigned char*>(&s);
+    for (std::size_t k = 0; k < n_values; ++k) {
+        std::memcpy(bytes + k * sizeof(double), &nan, sizeof(double));
+    }
+    s.ok = false;
+    return s;
 }
 
 // Whether mixture_curvature_deriv() is exact for this family. See the header
@@ -85,7 +104,7 @@ inline MixtureCurvatureDeriv mixture_curvature_deriv(
     const double q  = 1.0 - pi_z;
     const double pq = pi_z * q;
 
-    MixtureCurvatureDeriv d{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    MixtureCurvatureDeriv d{};
 
     // dW_zz/dz is the same in every branch: W_zz = pi (1 - pi) throughout, and
     // d(pi(1-pi))/dz = pi(1-pi)(1-2pi).
@@ -134,7 +153,7 @@ inline MixtureCurvatureDeriv mixture_curvature_deriv(
     // underflowed with it, or one of them is NaN -- so the answer is that this
     // observation could not be evaluated, not that its derivatives are zero.
     const double D     = pi_z + q * P0;
-    if (!(D > 0.0)) return mixture_curvature_deriv_declined();
+    if (!(D > 0.0)) return declined<MixtureCurvatureDeriv>();
     const double D_e   = q * P0_1;
     const double D_z   = pq * (1.0 - P0);
     const double D_ee  = q * P0_2;
@@ -186,11 +205,6 @@ struct MixtureCurvatureDeriv2 {
     bool ok = true;   // see MixtureCurvatureDeriv::ok
 };
 
-inline MixtureCurvatureDeriv2 mixture_curvature_deriv2_declined() {
-    const double nan = std::numeric_limits<double>::quiet_NaN();
-    return MixtureCurvatureDeriv2{nan, nan, nan, nan, nan, false};
-}
-
 // The coupled y = 0 branch differentiates P(Y = 0) a FOURTH time, so on top of
 // what the gradient's gate already requires it needs the second eta-derivative
 // of the observed curvature -- which is what has_curvature_2nd_derivative()
@@ -212,7 +226,7 @@ inline MixtureCurvatureDeriv2 mixture_curvature_deriv2(
     // number built from a wrong fourth-derivative input, and the closed outer
     // Hessian reports it as exact.
     if (!has_zi_curvature_2nd_derivative(family)) {
-        return mixture_curvature_deriv2_declined();
+        return declined<MixtureCurvatureDeriv2>();
     }
 
     const double pi_z = pi_from_logit(logit_zi);
@@ -220,7 +234,7 @@ inline MixtureCurvatureDeriv2 mixture_curvature_deriv2(
     const double pq = pi_z * q;
     const double m1 = 1.0 - 2.0 * pi_z;
 
-    MixtureCurvatureDeriv2 d{0.0, 0.0, 0.0, 0.0, 0.0};
+    MixtureCurvatureDeriv2 d{};
 
     // The logistic block's own fourth-order term, d2 W_zz / dz2. W_zz is
     // pi (1 - pi) in every separable branch and at y != 0 of a coupled one.
@@ -259,7 +273,7 @@ inline MixtureCurvatureDeriv2 mixture_curvature_deriv2(
     const double P0_4 = P0d[4];
 
     const double Dv = pi_z + q * P0;
-    if (!(Dv > 0.0)) return mixture_curvature_deriv2_declined();
+    if (!(Dv > 0.0)) return declined<MixtureCurvatureDeriv2>();
 
     // pi is logistic in z alone; p0 depends on eta alone. Writing
     // D = p0 + pi (1 - p0), a pure eta-derivative is (1 - pi) p0^(m), a pure

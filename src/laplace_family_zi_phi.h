@@ -46,6 +46,7 @@
 #include "builtin_family_zi.h"
 #include "laplace_family_curvature.h"
 #include "laplace_family_link.h"
+#include "laplace_family_zi_curvature.h"
 
 namespace tulpa {
 namespace zi {
@@ -158,12 +159,6 @@ struct MixturePhiDeriv {
     bool ok = true;
 };
 
-inline MixturePhiDeriv mixture_phi_deriv_declined() {
-    const double n = std::numeric_limits<double>::quiet_NaN();
-    return MixturePhiDeriv{n, n, n, n, n, n, n, n,
-                           n, n, n, n, n, n, n, n, false};
-}
-
 // The y = 0 branch of a GENUINELY zero-inflated mixture. Returns all-zero for
 // y != 0 and for a hurdle's y = 0, because both are additively separable and
 // their dispersion derivatives are the base registry's, applied on the R side.
@@ -171,8 +166,7 @@ inline MixturePhiDeriv mixture_phi_deriv(
     double y, int n_trials, double eta_count, double logit_zi,
     const std::string& family, double phi, double phi2
 ) {
-    MixturePhiDeriv d{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    MixturePhiDeriv d{};
     if (y != 0.0 || is_zero_truncated(family)) return d;
 
     // The two checks below are has_zi_phi_deriv(family) evaluated at this
@@ -180,7 +174,7 @@ inline MixturePhiDeriv mixture_phi_deriv(
     // what makes the pure-eta column the true log-P0 ladder, and a registered
     // phi column.
     if (!has_zi_curvature_derivative(family)) {
-        return mixture_phi_deriv_declined();
+        return declined<MixturePhiDeriv>();
     }
 
     // zero_prob_log_derivs returns false for a family with no registered phi
@@ -189,7 +183,7 @@ inline MixturePhiDeriv mixture_phi_deriv(
     // family contribute nothing to the dispersion column.
     double Lam[5][3];
     if (!zero_prob_log_derivs(family, eta_count, n_trials, phi, phi2, Lam)) {
-        return mixture_phi_deriv_declined();
+        return declined<MixturePhiDeriv>();
     }
 
     const double pi_z = pi_from_logit(logit_zi);
@@ -236,7 +230,7 @@ inline MixturePhiDeriv mixture_phi_deriv(
     }
 
     const double Dv = Dd[0][0][0];
-    if (!(Dv > 0.0)) return mixture_phi_deriv_declined();
+    if (!(Dv > 0.0)) return declined<MixturePhiDeriv>();
 
     // Alphabet: 0 = eta, 1 = z, 2 = phi. R(a) = D_a / D; L is the cumulant
     // recursion off the first listed index. Depth is at most four.

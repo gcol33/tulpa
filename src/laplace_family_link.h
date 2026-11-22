@@ -91,42 +91,41 @@ struct FamilyLink {
     std::string link;
 };
 
-inline FamilyLink parse_family_link(const std::string& code) {
-    FamilyLink fl;
-    static const std::pair<std::string, std::string> defaults[] = {
-        {"gaussian", "identity"},
-        {"binomial", "logit"},
-        {"poisson", "log"},
-        {"neg_binomial_2", "log"},
-        {"gamma", "log"},
-        {"inverse_gaussian", "log"},
-        {"beta", "logit"},
-        {"lognormal", "identity"},
-    };
-    for (auto& [fam, def_link] : defaults) {
-        if (code == fam) { fl.family = fam; fl.link = def_link; return fl; }
-        std::string prefix = fam + "_";
-        if (code.substr(0, prefix.size()) == prefix && code.size() > prefix.size()) {
-            std::string suffix = code.substr(prefix.size());
-            static const char* links[] = {
-                "identity", "log", "inverse", "logit", "probit",
-                "cauchit", "cloglog", "sqrt", "1mu2", nullptr
-            };
-            for (int i = 0; links[i]; i++) {
-                if (suffix == links[i]) {
-                    fl.family = fam;
-                    fl.link = suffix;
-                    return fl;
-                }
-            }
-        }
+// Every link the mu-space route carries, with whether it is fitted on the open
+// half-line eta > 0:
+//
+//   inverse   mu = 1/eta          singular at eta = 0
+//   1mu2      mu = 1/sqrt(eta)    singular at eta = 0
+//   sqrt      mu = eta^2          finite at eta = 0, but folds the two branches
+//                                 of the parabola onto the same mean: eta and
+//                                 -eta are observationally identical, so the
+//                                 mode comes in mirror pairs and mu_eta(0) = 0
+//                                 makes the Hessian singular between them.
+//
+// All three are fitted on eta > 0 -- for the first two because mu is undefined
+// otherwise, for sqrt because that is the branch that is identified. This is the
+// branch glm()'s starting values put you on for each of them.
+struct LinkRow {
+    const char* name;
+    bool positive_eta_domain;
+};
+
+inline constexpr LinkRow kLinkRows[] = {
+    {"identity", false}, {"log", false},     {"inverse", true},
+    {"logit", false},    {"probit", false},  {"cauchit", false},
+    {"cloglog", false},  {"sqrt", true},     {"1mu2", true},
+};
+
+inline const LinkRow* link_row(const std::string& link) {
+    for (const LinkRow& r : kLinkRows) {
+        if (link == r.name) return &r;
     }
-    fl.family = code;
-    for (auto& [fam, def_link] : defaults) {
-        if (code == fam) { fl.link = def_link; return fl; }
-    }
-    fl.link = "log";
-    return fl;
+    return nullptr;
+}
+
+inline bool link_has_positive_eta_domain(const std::string& link) {
+    const LinkRow* r = link_row(link);
+    return r != nullptr && r->positive_eta_domain;
 }
 
 // Which branch of the per-observation family ladder a family code selects.
@@ -136,6 +135,123 @@ enum class FamilyKind : int {
     TRUNCATED_POISSON, TRUNCATED_NEG_BINOMIAL_2, BETA_BINOMIAL,
     STUDENT_T, TWEEDIE, GENERIC
 };
+
+// Which branch of the AD likelihood ladder (builtin_family_ll_ad.h) a family
+// code selects. That ladder runs once per observation per reverse-mode sweep,
+// so comparing the code against up to twelve std::strings there is per-obs work
+// on a quantity fixed for the whole fit. This is the same classification
+// FamilyKind performs for the double path, over the AD ladder's own branches.
+enum class AdFamily : int {
+    UNRESOLVED,
+    GAUSSIAN, POISSON, BINOMIAL, NEG_BINOMIAL_2, NEG_BINOMIAL_1,
+    TRUNCATED_POISSON, TRUNCATED_NEG_BINOMIAL_2, BETA_BINOMIAL, STUDENT_T,
+    GAMMA, INVERSE_GAUSSIAN, LOGNORMAL, BETA
+};
+
+// Properties a family code carries, one bit each in FamilyRow::props.
+//
+//   kFamObservedCurvature  obs_grad_hess_for_family has an explicit branch for
+//                          the code returning the exact observed curvature
+//                          (the generic mu-space route is exact separately,
+//                          through generic_mu_route_exact).
+//   kFamWorkingIsObserved  the explicit branch's Newton working weight already
+//                          is the observed curvature.
+//   kFamDiscreteMass       a discrete count distribution, so the density at
+//                          y = 0 is a log probability.
+//   kFamZeroTruncated      P(Y = 0) is exactly zero.
+//   kFamReadsBounds        the density reads a per-observation bound rather
+//                          than the point response.
+constexpr unsigned kFamObservedCurvature = 1u << 0;
+constexpr unsigned kFamWorkingIsObserved = 1u << 1;
+constexpr unsigned kFamDiscreteMass      = 1u << 2;
+constexpr unsigned kFamZeroTruncated     = 1u << 3;
+constexpr unsigned kFamReadsBounds       = 1u << 4;
+
+// One row per compiled family code: the branch each likelihood ladder selects,
+// the default link of a family the mu-space ladders carry (null for a family
+// they do not), and the property bits above. Adding a family is adding a row.
+struct FamilyRow {
+    const char* code;
+    FamilyKind kind;
+    AdFamily ad;
+    const char* mu_space_default_link;
+    unsigned props;
+};
+
+inline constexpr FamilyRow kFamilyRows[] = {
+    {"poisson", FamilyKind::POISSON, AdFamily::POISSON, "log",
+     kFamObservedCurvature | kFamWorkingIsObserved | kFamDiscreteMass},
+    {"binomial", FamilyKind::BINOMIAL, AdFamily::BINOMIAL, "logit",
+     kFamObservedCurvature | kFamWorkingIsObserved | kFamDiscreteMass},
+    {"neg_binomial_2", FamilyKind::NEG_BINOMIAL_2, AdFamily::NEG_BINOMIAL_2, "log",
+     kFamObservedCurvature | kFamWorkingIsObserved | kFamDiscreteMass},
+    {"neg_binomial_1", FamilyKind::NEG_BINOMIAL_1, AdFamily::NEG_BINOMIAL_1, nullptr,
+     kFamObservedCurvature | kFamDiscreteMass},
+    {"beta_binomial", FamilyKind::BETA_BINOMIAL, AdFamily::BETA_BINOMIAL, nullptr,
+     kFamObservedCurvature | kFamDiscreteMass},
+    {"truncated_poisson", FamilyKind::TRUNCATED_POISSON,
+     AdFamily::TRUNCATED_POISSON, nullptr,
+     kFamObservedCurvature | kFamWorkingIsObserved | kFamDiscreteMass |
+         kFamZeroTruncated},
+    {"truncated_neg_binomial_2", FamilyKind::TRUNCATED_NEG_BINOMIAL_2,
+     AdFamily::TRUNCATED_NEG_BINOMIAL_2, nullptr,
+     kFamObservedCurvature | kFamDiscreteMass | kFamZeroTruncated},
+    {"t", FamilyKind::STUDENT_T, AdFamily::STUDENT_T, nullptr,
+     kFamObservedCurvature},
+    {"tweedie", FamilyKind::TWEEDIE, AdFamily::UNRESOLVED, nullptr,
+     kFamObservedCurvature},
+    {"gaussian", FamilyKind::GENERIC, AdFamily::GAUSSIAN, "identity", 0u},
+    {"lognormal", FamilyKind::GENERIC, AdFamily::LOGNORMAL, "identity", 0u},
+    {"gamma", FamilyKind::GENERIC, AdFamily::GAMMA, "log", 0u},
+    {"inverse_gaussian", FamilyKind::GENERIC, AdFamily::INVERSE_GAUSSIAN, "log", 0u},
+    {"beta", FamilyKind::GENERIC, AdFamily::BETA, "logit", 0u},
+    {"interval_gaussian", FamilyKind::GENERIC, AdFamily::UNRESOLVED, nullptr,
+     kFamReadsBounds},
+    {"truncated_gaussian", FamilyKind::GENERIC, AdFamily::UNRESOLVED, nullptr,
+     kFamReadsBounds},
+};
+
+// The row whose code is exactly `code`, or null. Allocation-free.
+inline const FamilyRow* family_row(const std::string& code) {
+    for (const FamilyRow& r : kFamilyRows) {
+        if (code == r.code) return &r;
+    }
+    return nullptr;
+}
+
+// Whether the code's row carries any of the property bits in `prop`.
+inline bool family_has(const std::string& code, unsigned prop) {
+    const FamilyRow* r = family_row(code);
+    return r != nullptr && (r->props & prop) != 0u;
+}
+
+// A code is either a mu-space family's bare name (its default link) or that
+// name, an underscore and a link from kLinkRows. Anything else is read as a
+// family of its own on the log link.
+inline FamilyLink parse_family_link(const std::string& code) {
+    FamilyLink fl;
+    for (const FamilyRow& r : kFamilyRows) {
+        if (!r.mu_space_default_link) continue;
+        if (code == r.code) {
+            fl.family = r.code;
+            fl.link = r.mu_space_default_link;
+            return fl;
+        }
+        const std::size_t len = std::char_traits<char>::length(r.code);
+        if (code.size() > len + 1 && code.compare(0, len, r.code) == 0 &&
+            code[len] == '_') {
+            const std::string suffix = code.substr(len + 1);
+            if (link_row(suffix)) {
+                fl.family = r.code;
+                fl.link = suffix;
+                return fl;
+            }
+        }
+    }
+    fl.family = code;
+    fl.link = "log";
+    return fl;
+}
 
 // A family code resolved once, so the per-observation entry points below carry
 // no string work at all. The ladders they replace compared
@@ -151,38 +267,19 @@ struct FamilyResolved {
     bool positive_eta_domain = false;   // link_has_positive_eta_domain(fl.link)
 };
 
-// Links carried on the open half-line eta > 0:
-//
-//   inverse   mu = 1/eta          singular at eta = 0
-//   1mu2      mu = 1/sqrt(eta)    singular at eta = 0
-//   sqrt      mu = eta^2          finite at eta = 0, but folds the two branches
-//                                 of the parabola onto the same mean: eta and
-//                                 -eta are observationally identical, so the
-//                                 mode comes in mirror pairs and mu_eta(0) = 0
-//                                 makes the Hessian singular between them.
-//
-// All three are fitted on eta > 0 -- for the first two because mu is undefined
-// otherwise, for sqrt because that is the branch that is identified. This is the
-// branch glm()'s starting values put you on for each of them.
-inline bool link_has_positive_eta_domain(const std::string& link) {
-    return link == "inverse" || link == "1mu2" || link == "sqrt";
+// Which branch of the ladders below a family code selects. Allocation-free, so
+// a caller that classifies once and then evaluates per observation pays one
+// table scan, and a caller that still passes a string pays it per call.
+inline FamilyKind family_kind(const std::string& code) {
+    const FamilyRow* r = family_row(code);
+    return r ? r->kind : FamilyKind::GENERIC;
 }
 
-// Which branch of the ladders below a family code selects. Allocation-free:
-// this is the same sequence of string comparisons the ladders opened with, so a
-// caller that classifies once and then evaluates per observation pays it once,
-// and a caller that still passes a string pays exactly what it paid before.
-inline FamilyKind family_kind(const std::string& code) {
-    if (code == "binomial")                      return FamilyKind::BINOMIAL;
-    if (code == "poisson")                       return FamilyKind::POISSON;
-    if (code == "neg_binomial_2")                return FamilyKind::NEG_BINOMIAL_2;
-    if (code == "neg_binomial_1")                return FamilyKind::NEG_BINOMIAL_1;
-    if (code == "truncated_poisson")             return FamilyKind::TRUNCATED_POISSON;
-    if (code == "truncated_neg_binomial_2")      return FamilyKind::TRUNCATED_NEG_BINOMIAL_2;
-    if (code == "beta_binomial")                 return FamilyKind::BETA_BINOMIAL;
-    if (code == "t")                             return FamilyKind::STUDENT_T;
-    if (code == "tweedie")                       return FamilyKind::TWEEDIE;
-    return FamilyKind::GENERIC;
+// The AD-ladder branch a family code selects; UNRESOLVED for a code the AD
+// ladder does not carry.
+inline AdFamily ad_family_kind(const std::string& code) {
+    const FamilyRow* r = family_row(code);
+    return r ? r->ad : AdFamily::UNRESOLVED;
 }
 
 inline FamilyResolved resolve_family(const std::string& code) {
@@ -280,107 +377,71 @@ inline double linkinv(double eta, const std::string& link) {
     return tulpa_linalg::safe_exp(eta);
 }
 
-inline double mu_eta(double eta, const std::string& link) {
-    if (link == "identity") return 1.0;
+// d^K mu / d eta^K for K = 1..4, one link dispatch over every order. mu_eta()
+// is the first derivative; the higher orders serve the generic mu-space routes
+// of curvature_deta_for_family() / curvature_deta2_for_family() and the observed
+// curvature's eta-derivatives, whose K-th eta-derivative of the log density
+// reads d^K mu / d eta^K.
+template <int K>
+inline double mu_eta_deriv(double eta, const std::string& link) {
+    static_assert(K >= 1 && K <= 4, "mu_eta_deriv<K>: K must be 1..4");
+    if (link == "identity") return K == 1 ? 1.0 : 0.0;
     if (link == "log") return tulpa_linalg::safe_exp(eta);
-    if (link == "inverse") { double e = safe_pos_eta(eta); return -1.0 / (e * e); }
-    if (link == "logit") {
-        double p;
-        if (eta > 0) {
-            double e = std::exp(-eta);
-            p = 1.0 / (1.0 + e);
-        } else {
-            double e = std::exp(eta);
-            p = e / (1.0 + e);
-        }
-        return p * (1.0 - p);
+    if (link == "inverse") {
+        double e = safe_pos_eta(eta);
+        if constexpr (K == 1) return -1.0 / (e * e);
+        else if constexpr (K == 2) return 2.0 / (e * e * e);
+        else if constexpr (K == 3) return -6.0 / (e * e * e * e);
+        else return 24.0 / (e * e * e * e * e);
     }
-    if (link == "probit") return tulpa::math::portable_dnorm(eta);
-    if (link == "cauchit") return 1.0 / (M_PI * (1.0 + eta * eta));
-    if (link == "cloglog") return std::exp(eta - std::exp(eta));
-    if (link == "sqrt") return 2.0 * eta;
-    if (link == "1mu2") { double e = safe_pos_eta(eta); return -0.5 / (e * std::sqrt(e)); }
-    return tulpa_linalg::safe_exp(eta);
-}
-
-// d2 mu / d eta2, the companion to mu_eta() above.
-inline double mu_eta2(double eta, const std::string& link) {
-    if (link == "identity") return 0.0;
-    if (link == "log") return tulpa_linalg::safe_exp(eta);
-    if (link == "inverse") { double e = safe_pos_eta(eta); return 2.0 / (e * e * e); }
     if (link == "logit") {
         double p;
         if (eta > 0) { double e = std::exp(-eta); p = 1.0 / (1.0 + e); }
         else         { double e = std::exp(eta);  p = e / (1.0 + e); }
-        return p * (1.0 - p) * (1.0 - 2.0 * p);
+        if constexpr (K == 1) return p * (1.0 - p);
+        else if constexpr (K == 2) return p * (1.0 - p) * (1.0 - 2.0 * p);
+        else if constexpr (K == 3) return (1.0 - 6.0 * p + 6.0 * p * p) * p * (1.0 - p);
+        else return (1.0 - 2.0 * p) * (1.0 - 12.0 * p + 12.0 * p * p) * p * (1.0 - p);
     }
-    if (link == "probit") return -eta * tulpa::math::portable_dnorm(eta);
+    if (link == "probit") {
+        if constexpr (K == 1) return tulpa::math::portable_dnorm(eta);
+        else if constexpr (K == 2) return -eta * tulpa::math::portable_dnorm(eta);
+        else if constexpr (K == 3) return (eta * eta - 1.0) * tulpa::math::portable_dnorm(eta);
+        else return eta * (3.0 - eta * eta) * tulpa::math::portable_dnorm(eta);
+    }
     if (link == "cauchit") {
         const double d = 1.0 + eta * eta;
-        return -2.0 * eta / (M_PI * d * d);
+        if constexpr (K == 1) return 1.0 / (M_PI * d);
+        else if constexpr (K == 2) return -2.0 * eta / (M_PI * d * d);
+        else if constexpr (K == 3) return 2.0 * (3.0 * eta * eta - 1.0) / (M_PI * d * d * d);
+        else return 24.0 * eta * (1.0 - eta * eta) / (M_PI * d * d * d * d);
     }
     if (link == "cloglog") {
         const double ee = std::exp(eta);
-        return std::exp(eta - ee) * (-std::expm1(eta));
+        if constexpr (K == 1) return std::exp(eta - ee);
+        else if constexpr (K == 2) return std::exp(eta - ee) * (-std::expm1(eta));
+        else if constexpr (K == 3) return std::exp(eta - ee) * (1.0 - 3.0 * ee + ee * ee);
+        else return std::exp(eta - ee) * (1.0 - 7.0 * ee + 6.0 * ee * ee - ee * ee * ee);
     }
-    if (link == "sqrt") return 2.0;
-    if (link == "1mu2") { double e = safe_pos_eta(eta); return 0.75 / (e * e * std::sqrt(e)); }
+    if (link == "sqrt") {
+        if constexpr (K == 1) return 2.0 * eta;
+        else if constexpr (K == 2) return 2.0;
+        else return 0.0;
+    }
+    if (link == "1mu2") {
+        double e = safe_pos_eta(eta);
+        if constexpr (K == 1) return -0.5 / (e * std::sqrt(e));
+        else if constexpr (K == 2) return 0.75 / (e * e * std::sqrt(e));
+        else if constexpr (K == 3) return -1.875 / (e * e * e * std::sqrt(e));
+        else return 6.5625 / (e * e * e * e * std::sqrt(e));
+    }
     return tulpa_linalg::safe_exp(eta);
 }
 
-// d3 mu / d eta3, the companion to mu_eta2() above. Needed by the generic
-// mu-space routes of curvature_deta2_for_family() and the observed curvature's
-// eta-derivative.
-inline double mu_eta3(double eta, const std::string& link) {
-    if (link == "identity") return 0.0;
-    if (link == "log") return tulpa_linalg::safe_exp(eta);
-    if (link == "inverse") { double e = safe_pos_eta(eta); return -6.0 / (e * e * e * e); }
-    if (link == "logit") {
-        double p;
-        if (eta > 0) { double e = std::exp(-eta); p = 1.0 / (1.0 + e); }
-        else         { double e = std::exp(eta);  p = e / (1.0 + e); }
-        return (1.0 - 6.0 * p + 6.0 * p * p) * p * (1.0 - p);
-    }
-    if (link == "probit") return (eta * eta - 1.0) * tulpa::math::portable_dnorm(eta);
-    if (link == "cauchit") {
-        const double d = 1.0 + eta * eta;
-        return 2.0 * (3.0 * eta * eta - 1.0) / (M_PI * d * d * d);
-    }
-    if (link == "cloglog") {
-        const double ee = std::exp(eta);
-        return std::exp(eta - ee) * (1.0 - 3.0 * ee + ee * ee);
-    }
-    if (link == "sqrt") return 0.0;
-    if (link == "1mu2") { double e = safe_pos_eta(eta); return -1.875 / (e * e * e * std::sqrt(e)); }
-    return tulpa_linalg::safe_exp(eta);
-}
-
-// d4 mu / d eta4, the companion to mu_eta3() above. Needed where the generic
-// mu-space route's Newton weight is the observed curvature, whose second
-// eta-derivative is the fourth derivative of the log density.
-inline double mu_eta4(double eta, const std::string& link) {
-    if (link == "identity") return 0.0;
-    if (link == "log") return tulpa_linalg::safe_exp(eta);
-    if (link == "inverse") { double e = safe_pos_eta(eta); return 24.0 / (e * e * e * e * e); }
-    if (link == "logit") {
-        double p;
-        if (eta > 0) { double e = std::exp(-eta); p = 1.0 / (1.0 + e); }
-        else         { double e = std::exp(eta);  p = e / (1.0 + e); }
-        return (1.0 - 2.0 * p) * (1.0 - 12.0 * p + 12.0 * p * p) * p * (1.0 - p);
-    }
-    if (link == "probit") return eta * (3.0 - eta * eta) * tulpa::math::portable_dnorm(eta);
-    if (link == "cauchit") {
-        const double d = 1.0 + eta * eta;
-        return 24.0 * eta * (1.0 - eta * eta) / (M_PI * d * d * d * d);
-    }
-    if (link == "cloglog") {
-        const double ee = std::exp(eta);
-        return std::exp(eta - ee) * (1.0 - 7.0 * ee + 6.0 * ee * ee - ee * ee * ee);
-    }
-    if (link == "sqrt") return 0.0;
-    if (link == "1mu2") { double e = safe_pos_eta(eta); return 6.5625 / (e * e * e * e * std::sqrt(e)); }
-    return tulpa_linalg::safe_exp(eta);
-}
+inline double mu_eta(double eta, const std::string& link)  { return mu_eta_deriv<1>(eta, link); }
+inline double mu_eta2(double eta, const std::string& link) { return mu_eta_deriv<2>(eta, link); }
+inline double mu_eta3(double eta, const std::string& link) { return mu_eta_deriv<3>(eta, link); }
+inline double mu_eta4(double eta, const std::string& link) { return mu_eta_deriv<4>(eta, link); }
 
 // A family name that reaches the mu-space dispatch below without matching a
 // branch is a programming error, not a data condition: every fitting path is
@@ -402,9 +463,8 @@ inline double mu_eta4(double eta, const std::string& link) {
 // branches and calls unknown_family_stop on anything else, so the list lives
 // here rather than being restated by each caller that has to ask in advance.
 inline bool mu_space_family_supported(const std::string& base) {
-    return base == "gaussian" || base == "lognormal" || base == "binomial" ||
-           base == "poisson" || base == "neg_binomial_2" || base == "gamma" ||
-           base == "inverse_gaussian" || base == "beta";
+    const FamilyRow* r = family_row(base);
+    return r != nullptr && r->mu_space_default_link != nullptr;
 }
 
 // The WORKING variance: the V for which dmu^2 / V is the Fisher information per
@@ -730,8 +790,7 @@ struct TruncationTerm {
 };
 
 inline bool is_zero_truncated(const std::string& family) {
-    return family == "truncated_poisson" ||
-           family == "truncated_neg_binomial_2";
+    return family_has(family, kFamZeroTruncated);
 }
 
 inline TruncationTerm truncation_term(double a, double da, double d2a) {
@@ -1042,10 +1101,7 @@ inline double log_lik_for_family(
 inline bool generic_mu_route_exact(const std::string& family) {
     FamilyLink fl = parse_family_link(family);
     const bool fam_ok = mu_space_family_supported(fl.family);
-    const bool link_ok =
-        fl.link == "identity" || fl.link == "log" || fl.link == "inverse" ||
-        fl.link == "logit" || fl.link == "probit" || fl.link == "cauchit" ||
-        fl.link == "cloglog" || fl.link == "sqrt" || fl.link == "1mu2";
+    const bool link_ok = link_row(fl.link) != nullptr;
     return fam_ok && link_ok;
 }
 
@@ -1065,12 +1121,8 @@ inline bool generic_mu_route_exact(const std::string& family) {
 // the true curvature at the mode -- positive definite there because the mode is
 // a local maximum, whatever individual observations contribute.
 inline bool has_observed_curvature(const std::string& family) {
-    return family == "poisson" || family == "binomial" ||
-           family == "neg_binomial_2" || family == "neg_binomial_1" ||
-           family == "truncated_poisson" ||
-           family == "truncated_neg_binomial_2" ||
-           family == "beta_binomial" || family == "tweedie" ||
-           family == "t" || generic_mu_route_exact(family);
+    return family_has(family, kFamObservedCurvature) ||
+           generic_mu_route_exact(family);
 }
 
 // Whether the Newton working weight grad_hess_for_family returns already IS the
@@ -1084,10 +1136,7 @@ inline bool has_observed_curvature(const std::string& family) {
 // the others: gaussian_log has a y-carrying observed curvature where
 // gaussian_identity does not.
 inline bool working_weight_is_observed(const std::string& family) {
-    if (family == "poisson" || family == "binomial" ||
-        family == "neg_binomial_2" || family == "truncated_poisson") {
-        return true;
-    }
+    if (family_has(family, kFamWorkingIsObserved)) return true;
     FamilyLink fl = parse_family_link(family);
     if (mu_route_weight_is_observed(fl.family)) return true;
     return (fl.family == "gaussian" && fl.link == "identity") ||
@@ -1112,16 +1161,18 @@ inline bool working_weight_is_observed(const std::string& family) {
 // restating it. Everything zero inflation can be compiled over is in here by
 // construction, since compiled_zi_supported() requires has_discrete_mass().
 inline const std::vector<std::string>& discrete_mass_families() {
-    static const std::vector<std::string> bases = {
-        "poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
-        "beta_binomial", "truncated_poisson", "truncated_neg_binomial_2"};
+    static const std::vector<std::string> bases = [] {
+        std::vector<std::string> out;
+        for (const FamilyRow& r : kFamilyRows) {
+            if (r.props & kFamDiscreteMass) out.emplace_back(r.code);
+        }
+        return out;
+    }();
     return bases;
 }
 
 inline bool has_discrete_mass(const std::string& family) {
-    const std::string base = parse_family_link(family).family;
-    const std::vector<std::string>& bases = discrete_mass_families();
-    return std::find(bases.begin(), bases.end(), base) != bases.end();
+    return family_has(parse_family_link(family).family, kFamDiscreteMass);
 }
 
 // Score plus OBSERVED curvature -d2 log f / d eta2 at the realized y.
@@ -1158,7 +1209,7 @@ inline bool family_has_compiled_impl(const std::string& code) {
 // mu-space ladder, answers false for them. A caller that reaches the closed
 // forms through the response payload's bound arrays asks this instead.
 inline bool family_reads_response_bounds(const std::string& code) {
-    return code == "interval_gaussian" || code == "truncated_gaussian";
+    return family_has(code, kFamReadsBounds);
 }
 
 inline GradHess obs_grad_hess_for_family(

@@ -127,6 +127,19 @@ inline T log_sum_exp_fn(const T& a, const T& b) {
     return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
 }
 
+// log(sigmoid(x)) and log(1 - sigmoid(x)) = log(sigmoid(-x)), as
+// -log(1 + exp(-x)) and -log(1 + exp(x)): the log-probabilities a logit-scale
+// inflation or hurdle parameter assigns to its two components.
+template<typename T>
+inline T log_sigmoid(const T& x) {
+    return -safe_log(T(1.0) + safe_exp(-x));
+}
+
+template<typename T>
+inline T log1m_sigmoid(const T& x) {
+    return -safe_log(T(1.0) + safe_exp(x));
+}
+
 
 // ============================================================================
 // Dot product that works with all types
@@ -234,8 +247,8 @@ inline T log_lik_binomial(int y, int n, const T& p) {
 // Zero-inflated binomial: P(Y=0) = zi + (1-zi) * Binom(0|n,p)
 template<typename T>
 inline T log_lik_zi_binomial(int y, int n, const T& p, const T& logit_zi) {
-    T log_zi = -safe_log(T(1.0) + safe_exp(-logit_zi));  // log(sigmoid(logit_zi))
-    T log_1m_zi = -safe_log(T(1.0) + safe_exp(logit_zi)); // log(1 - sigmoid(logit_zi))
+    T log_zi = log_sigmoid(logit_zi);
+    T log_1m_zi = log1m_sigmoid(logit_zi);
 
     if (y == 0) {
         // log(zi + (1-zi) * (1-p)^n)
@@ -253,8 +266,8 @@ inline T log_lik_zi_binomial(int y, int n, const T& p, const T& logit_zi) {
 // One-inflated binomial: P(Y=n) = oi + (1-oi) * Binom(n|n,p)
 template<typename T>
 inline T log_lik_oi_binomial(int y, int n, const T& p, const T& logit_oi) {
-    T log_oi = -safe_log(T(1.0) + safe_exp(-logit_oi));  // log(sigmoid(logit_oi))
-    T log_1m_oi = -safe_log(T(1.0) + safe_exp(logit_oi)); // log(1 - sigmoid(logit_oi))
+    T log_oi = log_sigmoid(logit_oi);
+    T log_1m_oi = log1m_sigmoid(logit_oi);
 
     if (y == n) {
         // log(oi + (1-oi) * p^n)
@@ -271,10 +284,10 @@ inline T log_lik_oi_binomial(int y, int n, const T& p, const T& logit_oi) {
 // Zero-and-one inflated binomial (ZOIB)
 template<typename T>
 inline T log_lik_zoib(int y, int n, const T& p, const T& logit_zi, const T& logit_oi) {
-    T log_zi = -safe_log(T(1.0) + safe_exp(-logit_zi));
-    T log_1m_zi = -safe_log(T(1.0) + safe_exp(logit_zi));
-    T log_oi = -safe_log(T(1.0) + safe_exp(-logit_oi));
-    T log_1m_oi = -safe_log(T(1.0) + safe_exp(logit_oi));
+    T log_zi = log_sigmoid(logit_zi);
+    T log_1m_zi = log1m_sigmoid(logit_zi);
+    T log_oi = log_sigmoid(logit_oi);
+    T log_1m_oi = log1m_sigmoid(logit_oi);
 
     if (y == 0) {
         // P(Y=0) = zi + (1-zi) * (1-oi) * Binom(0|n,p)
@@ -297,8 +310,8 @@ inline T log_lik_zoib(int y, int n, const T& p, const T& logit_zi, const T& logi
 // Hurdle binomial: separate zero vs non-zero
 template<typename T>
 inline T log_lik_hurdle_binomial(int y, int n, const T& p, const T& logit_theta) {
-    T log_theta = -safe_log(T(1.0) + safe_exp(-logit_theta));  // P(Y > 0)
-    T log_1m_theta = -safe_log(T(1.0) + safe_exp(logit_theta)); // P(Y = 0)
+    T log_theta = log_sigmoid(logit_theta);  // P(Y > 0)
+    T log_1m_theta = log1m_sigmoid(logit_theta); // P(Y = 0)
 
     if (y == 0) {
         return log_1m_theta;
@@ -317,8 +330,8 @@ inline T log_lik_hurdle_binomial(int y, int n, const T& p, const T& logit_theta)
 // Zero-inflated Poisson log-PMF (logit scale for zi)
 template<typename T>
 inline T log_lik_zi_poisson(int y, const T& mu, const T& logit_zi) {
-    T log_zi = -safe_log(T(1.0) + safe_exp(-logit_zi));    // log(sigmoid(logit_zi))
-    T log_1m_zi = -safe_log(T(1.0) + safe_exp(logit_zi));  // log(1 - sigmoid(logit_zi))
+    T log_zi = log_sigmoid(logit_zi);
+    T log_1m_zi = log1m_sigmoid(logit_zi);
 
     if (y == 0) {
         // log(zi + (1-zi) * exp(-mu))
@@ -333,8 +346,8 @@ inline T log_lik_zi_poisson(int y, const T& mu, const T& logit_zi) {
 // Zero-inflated NegBin log-PMF (logit scale for zi)
 template<typename T>
 inline T log_lik_zi_negbin(int y, const T& mu, const T& phi, const T& logit_zi) {
-    T log_zi = -safe_log(T(1.0) + safe_exp(-logit_zi));
-    T log_1m_zi = -safe_log(T(1.0) + safe_exp(logit_zi));
+    T log_zi = log_sigmoid(logit_zi);
+    T log_1m_zi = log1m_sigmoid(logit_zi);
 
     if (y == 0) {
         // log(zi + (1-zi) * (phi/(phi+mu))^phi)
@@ -350,8 +363,8 @@ inline T log_lik_zi_negbin(int y, const T& mu, const T& phi, const T& logit_zi) 
 // Hurdle Poisson log-PMF (logit scale for hurdle theta)
 template<typename T>
 inline T log_lik_hurdle_poisson(int y, const T& mu, const T& logit_theta) {
-    T log_theta = -safe_log(T(1.0) + safe_exp(-logit_theta));    // P(Y > 0)
-    T log_1m_theta = -safe_log(T(1.0) + safe_exp(logit_theta));  // P(Y = 0)
+    T log_theta = log_sigmoid(logit_theta);    // P(Y > 0)
+    T log_1m_theta = log1m_sigmoid(logit_theta);  // P(Y = 0)
 
     if (y == 0) {
         return log_1m_theta;
@@ -365,8 +378,8 @@ inline T log_lik_hurdle_poisson(int y, const T& mu, const T& logit_theta) {
 // Hurdle NegBin log-PMF (logit scale for hurdle theta)
 template<typename T>
 inline T log_lik_hurdle_negbin(int y, const T& mu, const T& phi, const T& logit_theta) {
-    T log_theta = -safe_log(T(1.0) + safe_exp(-logit_theta));
-    T log_1m_theta = -safe_log(T(1.0) + safe_exp(logit_theta));
+    T log_theta = log_sigmoid(logit_theta);
+    T log_1m_theta = log1m_sigmoid(logit_theta);
 
     if (y == 0) {
         return log_1m_theta;

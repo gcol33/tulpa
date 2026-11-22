@@ -24,6 +24,8 @@
 #include <Rcpp.h>
 #include "tulpa_stop.h"
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "laplace_family_link.h"
 #include "laplace_family_curvature.h"
@@ -34,6 +36,48 @@
 #include "builtin_family_ll_ad.h"
 #include "density_probe.h"
 #include "probe_lengths.h"
+
+// One scalar per observation from `eval(y, n_trials, eta)`, after the length
+// contract of probe_lengths.h; `n_trials` recycles from length 1.
+template <typename F>
+Rcpp::NumericVector family_probe_vec(const char* fn,
+                                     const Rcpp::NumericVector& y,
+                                     const Rcpp::IntegerVector& n_trials,
+                                     const Rcpp::NumericVector& eta, F eval) {
+  const R_xlen_t n = eta.size();
+  check_probe_lengths(fn, n, y, n_trials, nullptr);
+  const bool recycle_nt = (n_trials.size() == 1);
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; i++) {
+    out[i] = eval(y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i]);
+  }
+  return out;
+}
+
+// One row per observation of the struct `eval(y, n_trials, eta, logit_zi)`
+// returns, one named column per listed field, after the same length contract
+// with logit_zi read to the length of eta.
+template <typename S, typename F>
+Rcpp::NumericMatrix zi_mixture_probe(
+    const char* fn, const Rcpp::NumericVector& y,
+    const Rcpp::IntegerVector& n_trials, const Rcpp::NumericVector& eta,
+    const Rcpp::NumericVector& logit_zi,
+    const std::vector<std::pair<const char*, double S::*>>& cols, F eval) {
+  const R_xlen_t n = eta.size();
+  check_probe_lengths(fn, n, y, n_trials, &logit_zi);
+  const bool recycle_nt = (n_trials.size() == 1);
+  const int n_cols = static_cast<int>(cols.size());
+  Rcpp::NumericMatrix out(n, n_cols);
+  Rcpp::CharacterVector names(n_cols);
+  for (int j = 0; j < n_cols; ++j) names[j] = cols[j].first;
+  Rcpp::colnames(out) = names;
+  for (R_xlen_t i = 0; i < n; i++) {
+    const S d = eval(y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i],
+                     logit_zi[i]);
+    for (int j = 0; j < n_cols; ++j) out(i, j) = d.*(cols[j].second);
+  }
+  return out;
+}
 
 // Log likelihood at each column of a matrix of observation predictors.
 // [[Rcpp::export]]
@@ -170,15 +214,10 @@ Rcpp::NumericVector cpp_family_curvature_deta_vec(Rcpp::NumericVector y,
                                                   Rcpp::NumericVector eta,
                                                   std::string family, double phi,
                                                   double phi2 = NA_REAL) {
-  const R_xlen_t n = eta.size();
-  check_probe_lengths("cpp_family_curvature_deta_vec", n, y, n_trials, nullptr);
-  const bool recycle_nt = (n_trials.size() == 1);
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; i++) {
-    out[i] = tulpa::curvature_deta_for_family(
-        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], family, phi, phi2);
-  }
-  return out;
+  return family_probe_vec("cpp_family_curvature_deta_vec", y, n_trials, eta,
+      [&](double yi, int nt, double ei) {
+        return tulpa::curvature_deta_for_family(yi, nt, ei, family, phi, phi2);
+      });
 }
 
 // Whether curvature_deta2_for_family() is exact for this family, so the exact
@@ -220,19 +259,14 @@ Rcpp::NumericVector cpp_family_obs_curvature_delta_vec(Rcpp::NumericVector y,
                                                        Rcpp::NumericVector eta,
                                                        std::string family, double phi,
                                                        double phi2 = NA_REAL) {
-  const R_xlen_t n = eta.size();
-  check_probe_lengths("cpp_family_obs_curvature_delta_vec", n, y, n_trials, nullptr);
-  const bool recycle_nt = (n_trials.size() == 1);
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; i++) {
-    const int nt = recycle_nt ? n_trials[0] : n_trials[i];
-    const double w_obs =
-        tulpa::obs_grad_hess_for_family(y[i], nt, eta[i], family, phi, phi2).neg_hess;
-    const double w =
-        tulpa::grad_hess_for_family(y[i], nt, eta[i], family, phi, phi2).neg_hess;
-    out[i] = w_obs - w;
-  }
-  return out;
+  return family_probe_vec("cpp_family_obs_curvature_delta_vec", y, n_trials, eta,
+      [&](double yi, int nt, double ei) {
+        const double w_obs =
+            tulpa::obs_grad_hess_for_family(yi, nt, ei, family, phi, phi2).neg_hess;
+        const double w =
+            tulpa::grad_hess_for_family(yi, nt, ei, family, phi, phi2).neg_hess;
+        return w_obs - w;
+      });
 }
 
 // Vectorized d(W_obs - w)/deta, the eta-derivative of the vector above. The
@@ -245,15 +279,11 @@ Rcpp::NumericVector cpp_family_obs_curvature_delta_deta_vec(
     Rcpp::NumericVector y, Rcpp::IntegerVector n_trials,
     Rcpp::NumericVector eta, std::string family, double phi,
     double phi2 = NA_REAL) {
-  const R_xlen_t n = eta.size();
-  check_probe_lengths("cpp_family_obs_curvature_delta_deta_vec", n, y, n_trials, nullptr);
-  const bool recycle_nt = (n_trials.size() == 1);
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; i++) {
-    out[i] = tulpa::obs_curvature_delta_deta_for_family(
-        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], family, phi, phi2);
-  }
-  return out;
+  return family_probe_vec("cpp_family_obs_curvature_delta_deta_vec", y, n_trials,
+      eta, [&](double yi, int nt, double ei) {
+        return tulpa::obs_curvature_delta_deta_for_family(yi, nt, ei, family,
+                                                          phi, phi2);
+      });
 }
 
 // Whether the derivative above is exact for this family. False for
@@ -278,15 +308,10 @@ Rcpp::NumericVector cpp_family_curvature_deta2_vec(Rcpp::NumericVector y,
                                                    Rcpp::NumericVector eta,
                                                    std::string family, double phi,
                                                    double phi2 = NA_REAL) {
-  const R_xlen_t n = eta.size();
-  check_probe_lengths("cpp_family_curvature_deta2_vec", n, y, n_trials, nullptr);
-  const bool recycle_nt = (n_trials.size() == 1);
-  Rcpp::NumericVector out(n);
-  for (R_xlen_t i = 0; i < n; i++) {
-    out[i] = tulpa::curvature_deta2_for_family(
-        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], family, phi, phi2);
-  }
-  return out;
+  return family_probe_vec("cpp_family_curvature_deta2_vec", y, n_trials, eta,
+      [&](double yi, int nt, double ei) {
+        return tulpa::curvature_deta2_for_family(yi, nt, ei, family, phi, phi2);
+      });
 }
 
 // The six partials of the zero-inflation mixture's 2 x 2 curvature block, one
@@ -300,21 +325,16 @@ Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv(Rcpp::NumericVector y,
                                                    Rcpp::NumericVector logit_zi,
                                                    std::string family, double phi,
                                                    double phi2 = NA_REAL) {
-  const R_xlen_t n = eta.size();
-  check_probe_lengths("cpp_zi_mixture_curvature_deriv", n, y, n_trials, &logit_zi);
-  const bool recycle_nt = (n_trials.size() == 1);
-  Rcpp::NumericMatrix out(n, 6);
-  Rcpp::colnames(out) = Rcpp::CharacterVector::create(
-      "dWee_deta", "dWee_dz", "dWez_deta", "dWez_dz", "dWzz_deta", "dWzz_dz");
-  for (R_xlen_t i = 0; i < n; i++) {
-    const tulpa::zi::MixtureCurvatureDeriv d = tulpa::zi::mixture_curvature_deriv(
-        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], logit_zi[i],
-        family, phi, phi2);
-    out(i, 0) = d.dWee_deta; out(i, 1) = d.dWee_dz;
-    out(i, 2) = d.dWez_deta; out(i, 3) = d.dWez_dz;
-    out(i, 4) = d.dWzz_deta; out(i, 5) = d.dWzz_dz;
-  }
-  return out;
+  using S = tulpa::zi::MixtureCurvatureDeriv;
+  return zi_mixture_probe<S>("cpp_zi_mixture_curvature_deriv", y, n_trials, eta,
+      logit_zi,
+      {{"dWee_deta", &S::dWee_deta}, {"dWee_dz", &S::dWee_dz},
+       {"dWez_deta", &S::dWez_deta}, {"dWez_dz", &S::dWez_dz},
+       {"dWzz_deta", &S::dWzz_deta}, {"dWzz_dz", &S::dWzz_dz}},
+      [&](double yi, int nt, double ei, double z) {
+        return tulpa::zi::mixture_curvature_deriv(yi, nt, ei, z, family, phi,
+                                                  phi2);
+      });
 }
 
 // Whether the six partials above are exact for this family, so the outer
@@ -337,20 +357,15 @@ Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv2(Rcpp::NumericVector y,
                                                     Rcpp::NumericVector logit_zi,
                                                     std::string family, double phi,
                                                     double phi2 = NA_REAL) {
-  const R_xlen_t n = eta.size();
-  check_probe_lengths("cpp_zi_mixture_curvature_deriv2", n, y, n_trials, &logit_zi);
-  const bool recycle_nt = (n_trials.size() == 1);
-  Rcpp::NumericMatrix out(n, 5);
-  Rcpp::colnames(out) = Rcpp::CharacterVector::create(
-      "d4_e4", "d4_e3z", "d4_e2z2", "d4_ez3", "d4_z4");
-  for (R_xlen_t i = 0; i < n; i++) {
-    const tulpa::zi::MixtureCurvatureDeriv2 d = tulpa::zi::mixture_curvature_deriv2(
-        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], logit_zi[i],
-        family, phi, phi2);
-    out(i, 0) = d.d4_e4;   out(i, 1) = d.d4_e3z; out(i, 2) = d.d4_e2z2;
-    out(i, 3) = d.d4_ez3;  out(i, 4) = d.d4_z4;
-  }
-  return out;
+  using S = tulpa::zi::MixtureCurvatureDeriv2;
+  return zi_mixture_probe<S>("cpp_zi_mixture_curvature_deriv2", y, n_trials, eta,
+      logit_zi,
+      {{"d4_e4", &S::d4_e4}, {"d4_e3z", &S::d4_e3z}, {"d4_e2z2", &S::d4_e2z2},
+       {"d4_ez3", &S::d4_ez3}, {"d4_z4", &S::d4_z4}},
+      [&](double yi, int nt, double ei, double z) {
+        return tulpa::zi::mixture_curvature_deriv2(yi, nt, ei, z, family, phi,
+                                                   phi2);
+      });
 }
 
 // Whether the closed-form outer Hessian's curvature input is exact under a
@@ -374,28 +389,20 @@ Rcpp::NumericMatrix cpp_zi_mixture_phi_deriv(Rcpp::NumericVector y,
                                              Rcpp::NumericVector logit_zi,
                                              std::string family, double phi,
                                              double phi2 = NA_REAL) {
-  const R_xlen_t n = eta.size();
-  check_probe_lengths("cpp_zi_mixture_phi_deriv", n, y, n_trials, &logit_zi);
-  const bool recycle_nt = (n_trials.size() == 1);
-  Rcpp::NumericMatrix out(n, 16);
-  Rcpp::colnames(out) = Rcpp::CharacterVector::create(
-      "dl_dp", "dsc_e_dp", "dsc_z_dp", "dWee_dp", "dWez_dp", "dWzz_dp",
-      "dWee_dp_de", "dWee_dp_dz", "dWez_dp_dz", "dWzz_dp_dz",
-      "dl_dp2", "dsc_e_dp2", "dsc_z_dp2", "dWee_dp2", "dWez_dp2", "dWzz_dp2");
-  for (R_xlen_t i = 0; i < n; i++) {
-    const tulpa::zi::MixturePhiDeriv d = tulpa::zi::mixture_phi_deriv(
-        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], logit_zi[i],
-        family, phi, phi2);
-    out(i, 0)  = d.dl_dp;      out(i, 1)  = d.dsc_e_dp;
-    out(i, 2)  = d.dsc_z_dp;   out(i, 3)  = d.dWee_dp;
-    out(i, 4)  = d.dWez_dp;    out(i, 5)  = d.dWzz_dp;
-    out(i, 6)  = d.dWee_dp_de; out(i, 7)  = d.dWee_dp_dz;
-    out(i, 8)  = d.dWez_dp_dz; out(i, 9)  = d.dWzz_dp_dz;
-    out(i, 10) = d.dl_dp2;     out(i, 11) = d.dsc_e_dp2;
-    out(i, 12) = d.dsc_z_dp2;  out(i, 13) = d.dWee_dp2;
-    out(i, 14) = d.dWez_dp2;   out(i, 15) = d.dWzz_dp2;
-  }
-  return out;
+  using S = tulpa::zi::MixturePhiDeriv;
+  return zi_mixture_probe<S>("cpp_zi_mixture_phi_deriv", y, n_trials, eta,
+      logit_zi,
+      {{"dl_dp", &S::dl_dp}, {"dsc_e_dp", &S::dsc_e_dp},
+       {"dsc_z_dp", &S::dsc_z_dp}, {"dWee_dp", &S::dWee_dp},
+       {"dWez_dp", &S::dWez_dp}, {"dWzz_dp", &S::dWzz_dp},
+       {"dWee_dp_de", &S::dWee_dp_de}, {"dWee_dp_dz", &S::dWee_dp_dz},
+       {"dWez_dp_dz", &S::dWez_dp_dz}, {"dWzz_dp_dz", &S::dWzz_dp_dz},
+       {"dl_dp2", &S::dl_dp2}, {"dsc_e_dp2", &S::dsc_e_dp2},
+       {"dsc_z_dp2", &S::dsc_z_dp2}, {"dWee_dp2", &S::dWee_dp2},
+       {"dWez_dp2", &S::dWez_dp2}, {"dWzz_dp2", &S::dWzz_dp2}},
+      [&](double yi, int nt, double ei, double z) {
+        return tulpa::zi::mixture_phi_deriv(yi, nt, ei, z, family, phi, phi2);
+      });
 }
 
 // Whether the dispersion coordinate is exact alongside a zero-inflation
