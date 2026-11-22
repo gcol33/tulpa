@@ -36,10 +36,8 @@
 
 #include <Rcpp.h>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
-#include <filesystem>
-#include <system_error>
-#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -249,6 +247,41 @@ struct CkptReader {
     }
 };
 
+// The on-disk side of a checkpoint, independent of the payload type. `read`
+// returns every record whose checksum holds, in file order, each with the byte
+// offset just past it, stopping at the first short read or checksum mismatch
+// (a torn tail). It errors on a bad magic, a truncated header or a fingerprint
+// mismatch, and reports a missing or zero-byte file as `exists = false`: an
+// interrupted run cannot leave a zero-byte file, since the header is flushed
+// on create. `open` then either creates the file with its header or truncates
+// it to `keep_bytes` and appends from there.
+class CheckpointFile {
+public:
+    struct Record {
+        std::string   key;
+        std::string   payload;
+        std::uint64_t end;
+    };
+
+    static std::vector<Record> read(const std::string& path, const char* magic,
+                                    std::uint64_t fingerprint, bool& exists,
+                                    std::uint64_t& header_bytes);
+
+    CheckpointFile() = default;
+    CheckpointFile(const CheckpointFile&) = delete;
+    CheckpointFile& operator=(const CheckpointFile&) = delete;
+    ~CheckpointFile();
+
+    void create(const std::string& path, const char* magic,
+                std::uint64_t fingerprint);
+    void reopen(const std::string& path, std::uint64_t keep_bytes);
+    void append(const std::string& key, const std::string& payload);
+
+private:
+    std::FILE*  f_ = nullptr;
+    std::string path_;
+};
+
 // Customization points: each payload header provides a non-template overload
 // (`ckpt_serialize(const LaplaceResult&)`, etc.) found by overload resolution at
 // instantiation. These primary templates make the names visible at the template
@@ -274,59 +307,27 @@ public:
     CheckpointLog(const std::string& path,
                   std::uint64_t fingerprint,
                   std::vector<std::string> keys)
-        : path_(path), keys_(std::move(keys)) {
-        std::ifstream in(path_, std::ios::binary);
-        // A zero-byte file at the path (an editor / AV artifact, or `touch`) is
-        // treated as fresh rather than errored on bad magic: an interrupted run
-        // cannot produce one, since the header is flushed on create.
-        bool has_content = false;
-        if (in.good()) {
-            in.seekg(0, std::ios::end);
-            has_content = in.tellg() > 0;
-            in.seekg(0, std::ios::beg);
+        : keys_(std::move(keys)) {
+        bool exists = false;
+        std::uint64_t good_bytes = 0;
+        std::vector<CheckpointFile::Record> records =
+            CheckpointFile::read(path, MAGIC, fingerprint, exists, good_bytes);
+        if (!exists) {
+            file_.create(path, MAGIC, fingerprint);
+            return;
         }
-        if (in.good() && has_content) {
-            std::uintmax_t good_bytes = load_existing(in, fingerprint);
-            in.close();
-            // Drop any torn tail (a partial record from a killed write) by
-            // truncating to the last fully-valid record before appending; else
-            // new records would be written AFTER the orphaned bytes and a later
-            // load would stop at the torn boundary and never see them.
-            //
-            // A failed truncation is reported through `ec` rather than thrown,
-            // and the append stream opens fine either way, so an unread `ec`
-            // leaves every record this run appends past the orphaned bytes --
-            // written, invisible to the next load, and recomputed with no
-            // message. Error instead, the way a bad magic and a truncated
-            // header already do.
-            std::error_code ec;
-            const std::uintmax_t cur_bytes = std::filesystem::file_size(path_, ec);
-            if (!ec && cur_bytes > good_bytes) {
-                std::filesystem::resize_file(path_, good_bytes, ec);
-            }
-            if (ec) {
-                Rcpp::stop("checkpoint: cannot truncate the torn tail of '%s' "
-                           "to %s bytes (%s). Every record appended after an "
-                           "untruncated tail is invisible to the next resume; "
-                           "remove the file or point `checkpoint$path` "
-                           "elsewhere.",
-                           path_.c_str(),
-                           std::to_string(good_bytes).c_str(),
-                           ec.message().c_str());
-            }
-            out_.open(path_, std::ios::binary | std::ios::app);
-        } else {
-            out_.open(path_, std::ios::binary | std::ios::trunc);
-            if (out_) {
-                out_.write(MAGIC, sizeof(MAGIC));
-                out_.write(reinterpret_cast<const char*>(&fingerprint),
-                           sizeof(fingerprint));
-                out_.flush();
-            }
+        // A record that does not parse ends the log like a torn one: it and
+        // everything after it is dropped and re-run.
+        for (CheckpointFile::Record& rec : records) {
+            CkptReader rd(rec.payload.data(), rec.payload.size());
+            Payload r;
+            if (!ckpt_deserialize(rd, r)) break;
+            loaded_[std::move(rec.key)] = std::move(r);
+            good_bytes = rec.end;
         }
-        if (!out_) {
-            Rcpp::stop("checkpoint: cannot open '%s' for writing.", path_.c_str());
-        }
+        // Appending after a torn tail would leave every new record past the
+        // orphaned bytes, where the next load stops before reaching them.
+        file_.reopen(path, good_bytes);
     }
 
     // Every accessor takes mu_, not save() alone: an emplace that rehashes
@@ -352,84 +353,16 @@ public:
         if (k < 0 || k >= static_cast<int>(keys_.size())) return;
         const std::string& key = keys_[k];
         std::string payload = ckpt_serialize(res);
-        std::uint64_t chk = fnv1a64(payload.data(), payload.size(),
-                                    fnv1a64(key.data(), key.size()));
         std::lock_guard<std::mutex> lock(mu_);
         if (loaded_.find(key) != loaded_.end()) return;  // idempotent
-        std::uint32_t key_len = static_cast<std::uint32_t>(key.size());
-        std::uint32_t pay_len = static_cast<std::uint32_t>(payload.size());
-        out_.write(reinterpret_cast<const char*>(&key_len), sizeof(key_len));
-        out_.write(key.data(), key.size());
-        out_.write(reinterpret_cast<const char*>(&pay_len), sizeof(pay_len));
-        out_.write(payload.data(), payload.size());
-        out_.write(reinterpret_cast<const char*>(&chk), sizeof(chk));
-        out_.flush();
+        file_.append(key, payload);
         loaded_.emplace(key, res);
     }
 
 private:
-    // Reads the header (validating magic + fingerprint) and every intact
-    // record, stopping at EOF or a torn tail. Returns the byte offset just past
-    // the last fully-valid record (the truncation point), so the caller can drop
-    // a partial trailing record before appending.
-    std::uintmax_t load_existing(std::ifstream& in, std::uint64_t fingerprint) {
-        char magic[8];
-        in.read(magic, sizeof(magic));
-        if (!in || std::memcmp(magic, MAGIC, sizeof(MAGIC)) != 0) {
-            Rcpp::stop("checkpoint: '%s' is not a tulpa checkpoint file "
-                       "(bad magic). Point `checkpoint$path` at a fresh "
-                       "location or remove the file.", path_.c_str());
-        }
-        std::uint64_t stored_fp = 0;
-        in.read(reinterpret_cast<char*>(&stored_fp), sizeof(stored_fp));
-        if (!in) Rcpp::stop("checkpoint: '%s' header is truncated.", path_.c_str());
-        if (stored_fp != fingerprint) {
-            Rcpp::stop("checkpoint: '%s' was written for different data or "
-                       "solver settings (fingerprint mismatch). Resume needs "
-                       "the same inputs + grid + control; use a fresh path "
-                       "or set checkpoint$resume = FALSE to start over.",
-                       path_.c_str());
-        }
-        // File size, so a torn/garbage record length cannot drive a multi-GiB
-        // string allocation before the short read is detected as a torn tail.
-        std::streampos after_hdr = in.tellg();
-        in.seekg(0, std::ios::end);
-        std::uintmax_t file_size = static_cast<std::uintmax_t>(in.tellg());
-        in.seekg(after_hdr);
-        std::uintmax_t good_bytes = sizeof(MAGIC) + sizeof(stored_fp);
-        while (true) {
-            std::uint32_t key_len = 0, pay_len = 0;
-            in.read(reinterpret_cast<char*>(&key_len), sizeof(key_len));
-            if (!in) break;
-            if (key_len > file_size - static_cast<std::uintmax_t>(in.tellg())) break;
-            std::string key(key_len, '\0');
-            in.read(&key[0], key_len);
-            if (!in) break;
-            in.read(reinterpret_cast<char*>(&pay_len), sizeof(pay_len));
-            if (!in) break;
-            if (pay_len > file_size - static_cast<std::uintmax_t>(in.tellg())) break;
-            std::string payload(pay_len, '\0');
-            in.read(&payload[0], pay_len);
-            if (!in) break;
-            std::uint64_t chk = 0;
-            in.read(reinterpret_cast<char*>(&chk), sizeof(chk));
-            if (!in) break;
-            std::uint64_t want = fnv1a64(payload.data(), payload.size(),
-                                         fnv1a64(key.data(), key.size()));
-            if (chk != want) break;  // torn / corrupt tail
-            CkptReader rd(payload.data(), payload.size());
-            Payload r;
-            if (!ckpt_deserialize(rd, r)) break;
-            loaded_[key] = std::move(r);
-            good_bytes = static_cast<std::uintmax_t>(in.tellg());
-        }
-        return good_bytes;
-    }
-
-    std::string                              path_;
     std::vector<std::string>                 keys_;
     std::unordered_map<std::string, Payload> loaded_;
-    std::ofstream                            out_;
+    CheckpointFile                           file_;
     mutable std::mutex                       mu_;
 };
 

@@ -54,6 +54,7 @@ all: $(SHLIB)
 unity_core.o: \
   unity_core.cpp \
   array_utils.cpp \
+  checkpoint_io.cpp \
   cholmod_stub_resolve.cpp \
   cornish_fisher.cpp \
   cov_kernel_export.cpp \
@@ -76,6 +77,7 @@ unity_core.o: \
   tgmrf_registry.cpp \
   tulpa_init.cpp \
   array_utils.h \
+  checkpoint_io.h \
   sparse_cholesky.h \
   cornish_fisher.h \
   crt_rng.h \
