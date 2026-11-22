@@ -28,7 +28,7 @@ simulate_gp_binomial <- function(n_spatial = 50L, n_obs_per_site = 6L,
 # Build a simple NNGP neighbor structure (k nearest among earlier nodes
 # in the supplied coord ordering). Returns nn_idx as 1-based indices into
 # the NNGP-ordered list, nn_dist as the corresponding distances, and a
-# 0-based nn_order ready to feed cpp_nested_laplace_nngp directly.
+# 0-based nn_order (the registry block takes it 1-based).
 make_nngp_neighbors <- function(coords, n_neighbors = 10L) {
   n <- nrow(coords)
   order_idx <- order(coords[, 1], coords[, 2])
@@ -110,26 +110,22 @@ test_that("HSGP rejects mismatched basis dimensions", {
   N <- 25
   y <- rbinom(N, 1L, 0.5)
   expect_error(
-    cpp_nested_laplace_hsgp(
-      y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
-      re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-      phi_basis = matrix(0, N - 1L, 4L),  # wrong N
-      lambda_eig = c(1, 2, 3, 4), kernel = 0L,
-      sigma2_grid = c(1), lengthscale_grid = c(1),
-      family = "binomial"
-    ),
-    "phi_basis must have N rows"
+    .nl_cells(as.integer(y),
+    matrix(1, N, 1),
+    list(type = "hsgp", phi_basis = matrix(0, N - 1L, 4L), lambda_eig = c(1, 2, 3, 4), cov = "squared_exponential"),
+    cbind(sigma2 = c(1), lengthscale = c(1)),
+    n_trials = rep(1L, N),
+    family = "binomial"),
+    "N_k [(]24[)] != arm.N [(]25[)]"
   )
 
   expect_error(
-    cpp_nested_laplace_hsgp(
-      y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
-      re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-      phi_basis = matrix(0, N, 4L),
-      lambda_eig = c(1, 2, 3), kernel = 0L,  # wrong M
-      sigma2_grid = c(1), lengthscale_grid = c(1),
-      family = "binomial"
-    ),
+    .nl_cells(as.integer(y),
+    matrix(1, N, 1),
+    list(type = "hsgp", phi_basis = matrix(0, N, 4L), lambda_eig = c(1, 2, 3), cov = "squared_exponential"),
+    cbind(sigma2 = c(1), lengthscale = c(1)),
+    n_trials = rep(1L, N),
+    family = "binomial"),
     "lambda_eig must have length"
   )
 })
@@ -145,18 +141,16 @@ test_that("nested_laplace NNGP runs on a 2D (sigma2, phi_gp) grid", {
   pg <- c(0.2, 0.4, 0.8)
   gr <- expand.grid(sigma2 = s2, phi_gp = pg)
 
-  res <- cpp_nested_laplace_nngp(
-    y = d$y, n = d$n_trials, X = d$X,
-    re_idx = rep(0, d$n_spatial), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = seq_len(d$n_spatial),
-    coords = nb$coords_ord, nn_idx = nb$nn_idx, nn_dist = nb$nn_dist,
-    nn_order = nb$nn_order_0,
-    n_spatial = d$n_spatial, nn = nb$n_neighbors,
-    sigma2_grid = gr$sigma2, phi_gp_grid = gr$phi_gp,
-    cov_type = 0L,    # exponential — matches simulation
-    family = "binomial", phi = 1.0,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  res <- .nl_cells(d$y,
+    d$X,
+    list(type = "nngp", coords = nb$coords_ord, nn_idx = nb$nn_idx, nn_dist = nb$nn_dist, n_spatial = d$n_spatial, nn = nb$n_neighbors, cov_type = 0L, spatial_idx = seq_len(d$n_spatial), nn_order = (nb$nn_order_0) + 1L),
+    cbind(sigma2 = gr$sigma2, phi_gp = gr$phi_gp),
+    n_trials = d$n_trials,
+    family = "binomial",
+    phi = 1.0,
+    max_iter = 50L,
+    tol = 1e-6,
+    phi_scale = "kernel")
 
   expect_equal(res$n_grid, 9L)
   expect_cells_solved(res)
@@ -203,14 +197,16 @@ test_that("nested_laplace HSGP runs on a 2D (sigma2, lengthscale) grid", {
   ls <- c(0.1, 0.3, 0.7)
   gr <- expand.grid(sigma2 = s2, ell = ls)
 
-  res <- cpp_nested_laplace_hsgp(
-    y = as.integer(y), n = rep(1L, N), X = matrix(1, N, 1),
-    re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-    phi_basis = basis$phi_basis, lambda_eig = basis$lambda_eig, kernel = 0L,
-    sigma2_grid = gr$sigma2, lengthscale_grid = gr$ell,
-    family = "binomial", phi = 1.0,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  res <- .nl_cells(as.integer(y),
+    matrix(1, N, 1),
+    list(type = "hsgp", phi_basis = basis$phi_basis, lambda_eig = basis$lambda_eig, cov = "squared_exponential"),
+    cbind(sigma2 = gr$sigma2, lengthscale = gr$ell),
+    n_trials = rep(1L, N),
+    family = "binomial",
+    phi = 1.0,
+    max_iter = 50L,
+    tol = 1e-6,
+    phi_scale = "kernel")
 
   expect_equal(res$n_grid, 9L)
   expect_cells_solved(res)

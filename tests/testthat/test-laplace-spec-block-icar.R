@@ -1,7 +1,6 @@
-# Single-point ICAR Laplace (cpp_laplace_fit_spatial) vs the nested ICAR kernel
-# at one hyperparameter cell. Since B2-live, the single-point export builds the
-# same ICAR LatentBlock and routes through the same unified spec inner solve as
-# the nested grid kernel (cpp_nested_laplace_icar), so at a tau_grid of length 1:
+# Single-point ICAR Laplace (cpp_laplace_fit_spatial) vs the nested grid's cell
+# solve (.nl_solve_cells()) at one hyperparameter cell, so at a tau_grid of
+# length 1:
 #   * the mode must match (full gradient: likelihood cross-terms + block prior
 #     gradient + centering),
 #   * the Laplace log-marginal must match exactly -- both fold in the beta-prior
@@ -24,16 +23,19 @@ expect_icar_match <- function(family, y, n_trials, X, spatial_idx, K, adj,
                               tau_spatial, phi = 1.0,
                               re_idx = integer(0), n_re_groups = 0L,
                               sigma_re = 1.0, tol = 1e-5) {
-  ref <- tulpa:::cpp_nested_laplace_icar(
-    y = y, n = n_trials, X = X,
+  ref <- .nl_cells(y,
+    X,
+    list(type = "icar", n_spatial_units = K, spatial_idx = as.integer(spatial_idx), adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors),
+    cbind(tau = tau_spatial),
+    n_trials = n_trials,
+    family = family,
+    phi = phi,
+    max_iter = 300L,
+    tol = 1e-11,
     re_idx = if (n_re_groups > 0L) as.numeric(re_idx) else numeric(0),
-    n_re_groups = n_re_groups, sigma_re = sigma_re,
-    spatial_idx = as.integer(spatial_idx), n_spatial_units = K,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    tau_grid = tau_spatial, family = family, phi = phi,
-    max_iter = 300L, tol = 1e-11, n_threads = 1L
-  )
+    n_re_groups = n_re_groups,
+    sigma_re = sigma_re,
+    phi_scale = "kernel")
   # cpp_laplace_fit_spatial fixes the beta ridge at sigma_beta = 100 internally,
   # matching the nested kernel's; re_idx is the numeric per-obs group index.
   fit <- tulpa:::cpp_laplace_fit_spatial(

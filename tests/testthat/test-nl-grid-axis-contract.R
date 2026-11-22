@@ -1,10 +1,9 @@
-# The outer-grid axis contract shared by every kernel in nested_laplace.cpp
+# The outer-grid axis contract of a registry block's paired grids
 # (gcol33/tulpa#421).
 #
-# Each kernel takes one NumericVector per hyperparameter axis, all indexed by
-# the same cell number, and hands them to block factories that index them
-# unchecked. cpp_nested_laplace_bym2 was the one entry that never compared its
-# second axis against its first: a short rho_grid was read past the end of the
+# A block's per-axis grids are indexed by the same cell number and handed to
+# block factories that index them unchecked. The BYM2 entry once never compared
+# its second axis against its first: a short rho_grid was read past the end of the
 # R vector for every cell beyond its length, and a rho outside [0, 1] took
 # sqrt(1 - rho) to NaN, which reached the inner Newton through eta and returned
 # a NaN cell rather than an error.
@@ -19,47 +18,40 @@
   list(adj = adj, dat = dat, n_units = as.integer(n_side * n_side))
 }
 
+.axis_ctl <- list(auto_recenter = FALSE, axis_refine = "none", progress = FALSE,
+                  diagnose_k = FALSE, diagnose_skew = FALSE)
+
+.areal_prior <- function(fx, type, ...) {
+  list(type = type, spatial_idx = fx$dat$spatial_idx,
+       n_spatial_units = fx$n_units, adj_row_ptr = fx$adj$adj_row_ptr,
+       adj_col_idx = fx$adj$adj_col_idx, n_neighbors = fx$adj$n_neighbors, ...)
+}
+
 .fit_bym2 <- function(fx, sigma_grid, rho_grid) {
-  tulpa:::cpp_nested_laplace_bym2(
-    y = fx$dat$y, n = fx$dat$n_trials, X = fx$dat$X,
-    re_idx = rep(0L, length(fx$dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = fx$dat$spatial_idx, n_spatial_units = fx$n_units,
-    adj_row_ptr = fx$adj$adj_row_ptr, adj_col_idx = fx$adj$adj_col_idx,
-    n_neighbors = fx$adj$n_neighbors, scale_factor = 1.0,
-    sigma_spatial_grid = sigma_grid, rho_grid = rho_grid,
-    family = "binomial", phi = 1.0,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  tulpa_nested_laplace(fx$dat$y, fx$dat$n_trials, fx$dat$X,
+    prior = .areal_prior(fx, "bym2", scale_factor = 1.0,
+                         sigma_grid = sigma_grid, rho_grid = rho_grid),
+    family = "binomial", control = .axis_ctl)
 }
 
 test_that("BYM2 rejects a rho grid that does not pair with the sigma grid", {
   fx <- .axis_fixture()
-  expect_error(
-    .fit_bym2(fx, c(0.4, 0.7, 1.0), 0.5),
-    "rho_grid.*length 1.*sigma_spatial_grid.*length 3"
-  )
-  expect_error(
-    .fit_bym2(fx, 0.7, c(0.2, 0.5)),
-    "rho_grid.*length 2.*sigma_spatial_grid.*length 1"
-  )
+  expect_error(.fit_bym2(fx, c(0.4, 0.7, 1.0), c(0.2, 0.5)), "PAIRED.*3 / 2")
+  # A length-1 axis is a value held fixed across every cell.
+  res <- .fit_bym2(fx, c(0.4, 0.7, 1.0), 0.5)
+  expect_equal(as.numeric(res$theta_grid[, "b1.rho"]), rep(0.5, 3))
 })
 
 test_that("the paired-length rule is one rule across the grid kernels", {
   fx <- .axis_fixture()
-  # Same message shape from a sibling entry, which is what says the check is
-  # stated once rather than restated per kernel.
+  # Same message shape from a sibling family, which is what says the check is
+  # stated once rather than restated per family.
   expect_error(
-    tulpa:::cpp_nested_laplace_car_proper(
-      y = fx$dat$y, n = fx$dat$n_trials, X = fx$dat$X,
-      re_idx = rep(0L, length(fx$dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-      spatial_idx = fx$dat$spatial_idx, n_spatial_units = fx$n_units,
-      adj_row_ptr = fx$adj$adj_row_ptr, adj_col_idx = fx$adj$adj_col_idx,
-      n_neighbors = fx$adj$n_neighbors,
-      tau_grid = c(1, 2, 3), rho_grid = 0.5,
-      family = "binomial", phi = 1.0,
-      max_iter = 20L, tol = 1e-6, n_threads = 1L
-    ),
-    "rho_grid.*length 1.*tau_grid.*length 3"
+    tulpa_nested_laplace(fx$dat$y, fx$dat$n_trials, fx$dat$X,
+      prior = .areal_prior(fx, "car_proper", tau_grid = c(1, 2, 3),
+                           rho_grid = c(0.3, 0.5)),
+      family = "binomial", control = .axis_ctl),
+    "PAIRED.*3 / 2"
   )
 })
 
@@ -81,6 +73,6 @@ test_that("both mixing-weight endpoints stay in domain and finite", {
   skip_on_cran_budget()
   fx <- .axis_fixture()
   res <- .fit_bym2(fx, c(0.7, 0.7), c(0, 1))
-  expect_equal(res$n_grid, 2L)
+  expect_equal(nrow(res$theta_grid), 2L)
   expect_cells_solved(res)
 })

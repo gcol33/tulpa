@@ -55,8 +55,7 @@ skip_on_cran()
   ns_args$spatial_idx <- extra$obs_to_loc_nullable %||%
     seq_len(length(args$y))
   extra$obs_to_loc_nullable <- NULL
-  ns <- do.call(tulpa:::cpp_nested_laplace_nngp,
-                c(ns_args, list(sigma2_grid = sigma2, phi_gp_grid = phi_gp),
+  ns <- .nl_args_cells("nngp", c(ns_args, list(sigma2_grid = sigma2, phi_gp_grid = phi_gp),
                   extra))
   expect_equal(as.numeric(sp$mode), as.numeric(ns$modes[1, ]), tolerance = 0)
   expect_equal(sp$log_marginal, as.numeric(ns$log_marginal)[1], tolerance = 0)

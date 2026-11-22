@@ -386,9 +386,9 @@ test_that("two intrinsic fields on the same rows give the exact log-determinant 
   fx <- .st_icar_fixture(n_s = n_s, n_t = n_t, N = 400L, seed = 13L)
   args <- modifyList(fx$args, list(store_Q = TRUE, force_sparse = TRUE))
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "0")
-  folded <- do.call(cpp_nested_laplace_st_icar, args)
+  folded <- .nl_args_cells("icar", args)
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "100000")
-  stored <- do.call(cpp_nested_laplace_st_icar, args)
+  stored <- .nl_args_cells("icar", args)
   # The densified ICAR pin is factored with the precision, so the two log
   # marginals differ only by how the pins enter the determinant.
   expect_equal(folded$log_marginal, stored$log_marginal, tolerance = 1e-12)

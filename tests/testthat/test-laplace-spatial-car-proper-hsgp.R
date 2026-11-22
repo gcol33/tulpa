@@ -31,8 +31,7 @@ test_that("CAR_proper single-point == nested kernel at one (tau, rho) cell", {
                family = "binomial")
   sp <- do.call(tulpa:::cpp_laplace_fit_car_proper,
                 c(args, list(tau_spatial = tau, rho = rho)))
-  ns <- do.call(tulpa:::cpp_nested_laplace_car_proper,
-                c(args, list(tau_grid = tau, rho_grid = rho)))
+  ns <- .nl_args_cells("car_proper", c(args, list(tau_grid = tau, rho_grid = rho)))
   expect_equal(as.numeric(sp$mode), as.numeric(ns$modes[1, ]), tolerance = 1e-8)
   expect_equal(sp$log_marginal, as.numeric(ns$log_marginal)[1], tolerance = 1e-8)
 })
@@ -53,8 +52,7 @@ test_that("HSGP single-point matches nested mode and a brute-force Laplace", {
                family = "binomial")
   sp <- do.call(tulpa:::cpp_laplace_fit_hsgp,
                 c(args, list(sigma2 = sig2, lengthscale = ell)))
-  ns <- do.call(tulpa:::cpp_nested_laplace_hsgp,
-                c(args, list(sigma2_grid = sig2, lengthscale_grid = ell)))
+  ns <- .nl_args_cells("hsgp", c(args, list(sigma2_grid = sig2, lengthscale_grid = ell)))
   expect_equal(as.numeric(sp$mode), as.numeric(ns$modes[1, ]), tolerance = 1e-7)
 
   # Brute-force Laplace log p(y | theta) at the fitted mode, under the kernel's

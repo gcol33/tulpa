@@ -69,8 +69,7 @@ skip_on_cran()
 test_that("st_icar reports the variance its dense precision implies", {
   skip_on_cran()
   fx <- .st_icar_fixture(n_s = 12L, n_t = 6L, N = 150L, seed = 7L)
-  fit <- do.call(cpp_nested_laplace_st_icar,
-                 modifyList(fx$args, list(store_Q = TRUE)))
+  fit <- .nl_args_cells("icar", modifyList(fx$args, list(store_Q = TRUE)))
   V <- fit$fitted_eta_var
   expect_true(is.matrix(V))
   expect_equal(dim(V), c(length(fit$log_marginal), nrow(fx$A)))
@@ -84,7 +83,7 @@ test_that("a folded sum-to-zero pin gives the variance of the stored one", {
   args <- modifyList(fx$args, list(store_Q = TRUE, force_sparse = TRUE))
 
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "100000")
-  stored <- do.call(cpp_nested_laplace_st_icar, args)
+  stored <- .nl_args_cells("icar", args)
   # Even densified, the RW1 chain's pin stays off the stored precision (an RW
   # block always folds), so the reference adds it back; the variance is then
   # the inverse of the full precision to 1e-15.
@@ -94,7 +93,7 @@ test_that("a folded sum-to-zero pin gives the variance of the stored one", {
                tolerance = 1e-6)
 
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "0")
-  folded <- do.call(cpp_nested_laplace_st_icar, args)
+  folded <- .nl_args_cells("icar", args)
   # The fold is what this run exercises: its stored precision no longer holds
   # the pin, so inverting it alone gives a different answer.
   expect_false(isTRUE(all.equal(folded$Q_csc_x_per_grid,
@@ -108,7 +107,7 @@ test_that("two folded intrinsic pins read the exact constrained variance and blo
   fx <- .st_icar_fixture(n_s = n_s, n_t = n_t, N = 400L, seed = 13L)
   args <- modifyList(fx$args, list(store_Q = TRUE, force_sparse = TRUE))
   withr::local_envvar(TULPA_S2Z_DENSIFY_MAX = "0")
-  fit <- do.call(cpp_nested_laplace_st_icar, args)
+  fit <- .nl_args_cells("icar", args)
 
   # With both pins folded, the stored precision holds the opposite shift of the
   # two fields (+c on every ICAR node, -c on every RW1 node, eta unchanged)
@@ -176,8 +175,7 @@ test_that("two folded intrinsic pins read the exact constrained variance and blo
 test_that("nngp reports the variance its precision implies, one solve per location", {
   skip_on_cran()
   fx <- .jev_nngp()
-  fit <- do.call(cpp_nested_laplace_nngp,
-                 modifyList(fx$args, list(store_Q = TRUE)))
+  fit <- .nl_args_cells("nngp", modifyList(fx$args, list(store_Q = TRUE)))
   V <- fit$fitted_eta_var
   expect_equal(dim(V), c(4L, nrow(fx$A)))
   expect_true(all(is.finite(V)) && all(V > 0))
@@ -196,13 +194,13 @@ test_that("hsgp carries a per-row variance that follows the basis row", {
   phi_basis[31:60, ] <- phi_basis[1:30, ]
   X <- cbind(1, rep(rnorm(30), 2L))
   lambda_eig <- sort(abs(rnorm(M)) + 0.1, decreasing = TRUE)
-  fit <- cpp_nested_laplace_hsgp(
+  fit <- .nl_args_cells("hsgp", list(
     y = as.numeric(rbinom(N, 1L, 0.5)), n = rep(1L, N), X = X,
     re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1,
     phi_basis = phi_basis, lambda_eig = lambda_eig, kernel = 0L,
     sigma2_grid = c(0.5, 1), lengthscale_grid = c(0.5, 1),
     family = "binomial", phi = 1, max_iter = 100L, tol = 1e-10,
-    n_threads = 1L, store_Q = TRUE)
+    n_threads = 1L, store_Q = TRUE))
   V <- fit$fitted_eta_var
   expect_equal(dim(V), c(2L, N))
   expect_true(all(is.finite(V)) && all(V > 0))
@@ -214,7 +212,7 @@ test_that("hsgp carries a per-row variance that follows the basis row", {
   # squared-exponential spectral density at the cell's (sigma2, lengthscale):
   # the dense-row case, against the cell's stored precision inverted here.
   for (k in seq_len(2L)) {
-    s2 <- fit$sigma2_grid[k]; ell <- fit$lengthscale_grid[k]
+    s2 <- fit$theta_grid[k, "b1.sigma2"]; ell <- fit$theta_grid[k, "b1.lengthscale"]
     S <- s2 * 2 * pi * ell^2 * exp(-0.5 * ell^2 * lambda_eig)
     A <- cbind(X, sweep(phi_basis, 2L, sqrt(S), "*"))
     cell <- fit
@@ -231,8 +229,8 @@ test_that("a resumed joint-driver grid reproduces fitted_eta_var", {
   path <- tempfile(fileext = ".ckpt")
   on.exit(unlink(path), add = TRUE)
   args <- modifyList(fx$args, list(checkpoint_path = path))
-  first <- do.call(cpp_nested_laplace_nngp, args)
-  resumed <- do.call(cpp_nested_laplace_nngp, args)
+  first <- .nl_args_cells("nngp", args)
+  resumed <- .nl_args_cells("nngp", args)
   expect_identical(resumed$fitted_eta_var, first$fitted_eta_var)
   expect_identical(resumed$log_marginal, first$log_marginal)
 })

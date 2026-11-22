@@ -39,6 +39,15 @@
   and agree to 1e-12; the 24 the placement pass or refinement lays differently
   move a hyperparameter mean by at most 7% of its value and a coefficient by
   at most 0.4% (#1195).
+* The single-block and spatio-temporal `cpp_nested_laplace_*` grid entries
+  (`icar`, `bym2`, `car_proper`, `temporal`, `nngp`, `hsgp`, `st_icar`,
+  `st_car_proper`, `st_bym2`, `st_hsgp`, `st_nngp`) and their registered C
+  callables `tulpa_nested_laplace_*` are removed; every nested-Laplace grid fit
+  runs on the joint driver. `TULPA_ABI_VERSION` is 65. A temporal block carries
+  panel data (`n_groups` walks sharing its hyperparameters) on the joint
+  driver, so a grouped temporal field fits again. The registry door checks a
+  BYM2 mixing weight in [0, 1], every scale and precision grid as positive and
+  `sigma_re` as positive before any solve (#1202, #1254, #1255, #1201).
 * The copy scale is identified by its role, not its name: a `tgmrf()` block
   whose hyperparameter is called `alpha` keeps it on its own coordinate
   (#1262).

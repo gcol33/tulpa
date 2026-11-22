@@ -6,13 +6,11 @@ test_that("a random-effect scale reaching a logarithm must be positive", {
   y <- rpois(n_obs, 3)
   ti <- rep(1:5, 8L)
   expect_error(
-    cpp_nested_laplace_temporal(
-      y = as.numeric(y), n = rep(1L, n_obs), X = X,
-      re_idx = as.numeric(rep(1:4, each = 10L)), n_re_groups = 4L,
-      sigma_re = 0, temporal_idx = ti, n_times = 5L,
-      temporal_type = "rw1", tau_grid = c(1, 2), rho_grid = numeric(0),
-      cyclic = FALSE, family = "poisson"
-    ),
+    tulpa_nested_laplace(as.numeric(y), rep(1L, n_obs), X,
+      prior = list(type = "rw1", temporal_idx = ti, n_times = 5L,
+                   tau_grid = c(1, 2)),
+      re_idx = rep(1:4, each = 10L), n_re_groups = 4L, sigma_re = 0,
+      family = "poisson", control = list(progress = FALSE)),
     "sigma_re"
   )
 })
@@ -81,12 +79,12 @@ test_that("a scale or precision grid axis must be positive", {
   y <- rpois(n_obs, 3)
   ti <- rep(1:5, 6L)
   call_temporal <- function(tau_grid) {
-    cpp_nested_laplace_temporal(
-      y = as.numeric(y), n = rep(1L, n_obs), X = X, re_idx = numeric(0),
-      n_re_groups = 0L, sigma_re = 1, temporal_idx = ti, n_times = 5L,
-      temporal_type = "rw1", tau_grid = tau_grid, rho_grid = numeric(0),
-      cyclic = FALSE, family = "poisson"
-    )
+    tulpa_nested_laplace(as.numeric(y), rep(1L, n_obs), X,
+      prior = list(type = "rw1", temporal_idx = ti, n_times = 5L,
+                   tau_grid = tau_grid),
+      family = "poisson",
+      control = list(progress = FALSE, auto_recenter = FALSE,
+                     axis_refine = "none"))
   }
   expect_error(call_temporal(c(1, 0, 4)), "positive")
   expect_error(call_temporal(c(1, -2, 4)), "positive")

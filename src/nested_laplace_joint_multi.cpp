@@ -261,6 +261,15 @@ inline std::function<double(int, int)> make_per_arm_row_weight_fn(
 // 0-based index of that coefficient within the arm's beta block, or -1 (== no
 // fixed-effect counterpart) when the covariate has no main effect. Absent field
 // => -1. Uniform blocks (no svc_weight) ignore it and keep the intercept fold.
+// The number of walks a temporal block carries (panel data), 1 when the spec
+// names none.
+inline int joint_temporal_groups(const Rcpp::List& bs) {
+    if (!bs.containsElementNamed("n_groups")) return 1;
+    const int g = Rcpp::as<int>(bs["n_groups"]);
+    if (g < 1) tulpa::stop("A temporal block's n_groups must be at least 1.");
+    return g;
+}
+
 inline int read_svc_beta_offset(const Rcpp::List& bs) {
     if (!bs.containsElementNamed("svc_beta_offset") ||
         Rf_isNull(bs["svc_beta_offset"])) {
@@ -839,7 +848,9 @@ int build_joint_blocks_of_type(
     }
 
     if (type == "rw1" || type == "rw2") {
-        int size = Rcpp::as<int>(bs["n_times"]);
+        const int n_times = Rcpp::as<int>(bs["n_times"]);
+        const int n_groups = joint_temporal_groups(bs);
+        int size = n_groups * n_times;
         bool cyclic = (type == "rw1" || type == "rw2") &&
                       bs.containsElementNamed("cyclic") &&
                       Rcpp::as<bool>(bs["cyclic"]);
@@ -876,12 +887,12 @@ int build_joint_blocks_of_type(
                 block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
             }
         }
-        // One walk (n_groups = 1); the field entry points carry the sum-to-zero
+        // One walk per group; the field entry points carry the sum-to-zero
         // pin that identifies the level against the intercept. A copy block
         // pins at tau = 1 like the rest of its precision, the scale riding on
         // the copy coefficient.
         tulpa::set_temporal_block_priors(
-            block, type, start, /*n_groups=*/1, size,
+            block, type, start, n_groups, n_times,
             [is_copy_block, theta_grid, axis0](int k) {
                 return is_copy_block ? 1.0 : theta_grid(k, axis0);
             },
@@ -900,7 +911,9 @@ int build_joint_blocks_of_type(
     }
 
     if (type == "ar1") {
-        int size = Rcpp::as<int>(bs["n_times"]);
+        const int n_times = Rcpp::as<int>(bs["n_times"]);
+        const int n_groups = joint_temporal_groups(bs);
+        int size = n_groups * n_times;
         int start = latent_offset;
         const auto projector = read_joint_block_projector(bs, n_arms, size,
                                                           block_index, type, arms_ptr);
@@ -936,7 +949,7 @@ int build_joint_blocks_of_type(
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         tulpa::set_temporal_block_priors(
-            block, type, start, /*n_groups=*/1, size,
+            block, type, start, n_groups, n_times,
             [is_copy_block, theta_grid, axis0](int k) {
                 return is_copy_block ? 1.0 : theta_grid(k, axis0);
             },

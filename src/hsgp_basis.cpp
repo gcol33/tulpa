@@ -3,7 +3,7 @@
 //
 // Thin wrapper over tulpa_hsgp::setup_hsgp_2d (src/hmc_hsgp.h) so the front
 // door can assemble the (phi_basis, lambda_eig) pair the nested-Laplace HSGP
-// kernel (cpp_nested_laplace_hsgp) consumes, WITHOUT reimplementing the basis
+// block (make_hsgp_block) consumes, WITHOUT reimplementing the basis
 // math in R. setup_hsgp_2d is the single source of truth for the
 // eigenfunctions / eigenvalues (Riutort-Mayol et al. 2023); the R test fixture
 // make_hsgp_basis_2d in test-nested-laplace-gp.R is an independent oracle that

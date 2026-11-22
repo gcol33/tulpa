@@ -1,4 +1,4 @@
-# A Poisson st_icar fit (cpp_nested_laplace_st_icar): an ICAR chain over n_s
+# A Poisson spatio-temporal ICAR fit (.nl_args_cells()): an ICAR chain over n_s
 # units plus an RW1 over n_t times, both intrinsic and loading every row, on
 # a two-cell (tau_spatial, tau_temporal) grid. `A` is the loading matrix of
 # eta on the latent vector [beta, ICAR, RW1]; `constr` the two fields' level

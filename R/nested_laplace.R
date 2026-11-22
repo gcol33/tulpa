@@ -599,6 +599,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   n_trials <- vd$n_trials
   if (is.null(re_idx)) re_idx <- rep(0L, N)
   re_idx <- .validate_re_idx(re_idx, n_re_groups, N, "tulpa_nested_laplace")
+  if (n_re_groups > 0L && !(length(sigma_re) == 1L && is.finite(sigma_re) &&
+                           sigma_re > 0)) {
+    stop("`sigma_re` must be a positive number (the random-intercept SD).",
+         call. = FALSE)
+  }
 
   if (!is.null(offset)) {
     offset <- as.numeric(offset)
@@ -839,7 +844,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                     joint = .NL_REQ_AREAL,
                     projected = .NL_REQ_AREAL_GRAPH,
                     joint_single = .NL_REQ_AREAL_GRAPH),
-    defaults = function(p, a) .nl_fill_family_axes(p, "bym2"),
+    defaults = function(p, a) {
+      # The mixing weight enters as sqrt(rho) and sqrt(1 - rho).
+      .nl_check_axis_interval(p, "rho_grid", 0, 1, "a BYM2 mixing weight",
+                              closed = TRUE)
+      .nl_fill_family_axes(p, "bym2")
+    },
     theta = function(p) list(
       grid  = cbind(sigma = p$sigma_grid, rho = p$rho_grid),
       names = c("sigma", "rho")
@@ -1057,8 +1067,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     defaults = function(p, a) {
       # The temporal kernel takes rho as given, so an AR1 correlation outside
       # (-1, 1) -- a non-stationary process -- is refused here, by name.
-      .nl_check_axis_open_interval(p, "rho_grid", -1, 1,
-                                   "an AR1 correlation")
+      .nl_check_axis_interval(p, "rho_grid", -1, 1, "an AR1 correlation")
       .nl_fill_family_axes(p, "ar1")
     },
     theta = function(p) list(
@@ -2032,6 +2041,13 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
       !is.null(p$n_spatial)) {
     p$spatial_idx <- seq_len(as.integer(p$n_spatial))
   }
+  # A scale or precision axis reaches a logarithm. A copy scale's zero level is
+  # a declared point mass, not a node of its log continuum.
+  for (f in setdiff(grep("_grid$", names(p), value = TRUE), "alpha_grid")) {
+    if (isTRUE(.hyper_axis_scale(sub("_grid$", "", f))) && is.numeric(p[[f]])) {
+      .nl_check_axis_interval(p, f, 0, Inf, "a scale or precision")
+    }
+  }
   .nl_check_block_fields(
     p, c("axis", if (.nl_block_is_projected(p)) "projected" else "multi"),
     block_index)
@@ -2046,6 +2062,10 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   if (type == "hsgp" && is.null(p[["phi"]])) {
     phi <- as.matrix(p$phi_basis)
     storage.mode(phi) <- "double"
+    if (length(p$lambda_eig) != ncol(phi)) {
+      stop("HSGP block: lambda_eig must have length ncol(phi_basis) (",
+           ncol(phi), "), got ", length(p$lambda_eig), ".", call. = FALSE)
+    }
     return(list(phi = list(phi), m_total = ncol(phi), n_obs_per_arm = nrow(phi),
                 eigenvalues = as.numeric(p$lambda_eig)))
   }
@@ -2363,10 +2383,11 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # precision, and a custom block's log marginal at a set of points read this; a
 # grid fit is the joint door's. `compute_skew` / `skew_idx` request the
 # inner-skew terms at the cells, `debias` / `cila` the kernel-facing correction
-# requests.
+# requests; `force_sparse` takes the joint sparse Newton whatever the latent
+# size (a dense == sparse check).
 .nl_solve_cells <- function(cargs, prior_list, theta, likelihood = NULL,
                             compute_skew = FALSE, skew_idx = NULL,
-                            debias = NULL, cila = NULL) {
+                            debias = NULL, cila = NULL, force_sparse = FALSE) {
   prior_list <- .nl_tgmrf_default_obs_idx(prior_list, length(cargs$y))
 
   per_block <- lapply(prior_list, .nl_block_axis_grid)
@@ -2423,6 +2444,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     x_init_nullable = cargs$x_init_nullable,
     store_Q     = isTRUE(cargs$store_Q),
     prune_tol   = 0,
+    force_sparse = isTRUE(force_sparse),
     progress          = isTRUE(progress$progress),
     progress_every    = as.integer(progress$progress_every),
     progress_throttle = as.numeric(progress$progress_throttle),

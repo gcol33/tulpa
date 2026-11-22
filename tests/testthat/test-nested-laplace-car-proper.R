@@ -14,16 +14,16 @@ test_that("proper-CAR nested Laplace runs on a 2D grid", {
   rho_vals <- c(0.2, 0.6, 0.9)
   gr <- expand.grid(tau = tau_vals, rho = rho_vals)
 
-  result <- cpp_nested_laplace_car_proper(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    tau_grid = gr$tau, rho_grid = gr$rho,
-    family = "binomial", phi = 1.0,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  result <- .nl_cells(dat$y,
+    dat$X,
+    list(type = "car_proper", n_spatial_units = 25L, spatial_idx = dat$spatial_idx, adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors),
+    cbind(tau = gr$tau, rho = gr$rho),
+    n_trials = dat$n_trials,
+    family = "binomial",
+    phi = 1.0,
+    max_iter = 50L,
+    tol = 1e-6,
+    phi_scale = "kernel")
 
   expect_equal(result$n_grid, 9L)
   expect_cells_solved(result)
@@ -41,28 +41,27 @@ test_that("proper-CAR collapses to ICAR as rho -> 1", {
   )
 
   tau_grid <- c(1, 4)
-  res_proper <- cpp_nested_laplace_car_proper(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 16L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    # rho slightly below 1 — Q nearly singular but still PD
-    tau_grid = tau_grid, rho_grid = rep(0.999, 2),
-    family = "binomial", phi = 1.0,
-    max_iter = 80L, tol = 1e-6, n_threads = 1L
-  )
+  res_proper <- .nl_cells(dat$y,
+    dat$X,
+    list(type = "car_proper", n_spatial_units = 16L, spatial_idx = dat$spatial_idx, adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors),
+    cbind(tau = tau_grid, rho = rep(0.999, 2)),
+    n_trials = dat$n_trials,
+    family = "binomial",
+    phi = 1.0,
+    max_iter = 80L,
+    tol = 1e-6,
+    phi_scale = "kernel")
 
-  res_icar <- cpp_nested_laplace_icar(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 16L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    tau_grid = tau_grid,
-    family = "binomial", phi = 1.0,
-    max_iter = 80L, tol = 1e-6, n_threads = 1L
-  )
+  res_icar <- .nl_cells(dat$y,
+    dat$X,
+    list(type = "icar", n_spatial_units = 16L, spatial_idx = dat$spatial_idx, adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors),
+    cbind(tau = tau_grid),
+    n_trials = dat$n_trials,
+    family = "binomial",
+    phi = 1.0,
+    max_iter = 80L,
+    tol = 1e-6,
+    phi_scale = "kernel")
 
   # At rho≈1, proper-CAR Q is full rank (smallest eigenvalue ≈ 1-rho) while
   # ICAR's Q has rank n-1. Proper-CAR therefore lightly shrinks its mode

@@ -162,7 +162,7 @@ LatentBlock make_nngp_block(
         //   log p(w_focal | w_neighbors) = -0.5*log(2*pi*cv_i)
         //                                  - 0.5*(w_focal - sum_k alpha_k * w_k)^2 / cv_i
         // summed over the n_spatial sites in nn_order. Matches the legacy
-        // formula in cpp_nested_laplace_nngp.
+        // formula in the nested NNGP grid fit.
         double lp = 0.0;
         const double* alpha_data = st.alpha.data();
         for (int i_nngp = 0; i_nngp < n_spatial; i_nngp++) {

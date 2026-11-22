@@ -1,13 +1,13 @@
 
 skip_on_cran_budget()
 # test-nested-laplace-cpp.R
-# Tests for C++ nested Laplace grid loop (Feature 3b)
+# The joint driver's outer-grid loop on an ICAR block (.nl_solve_cells()).
 
 # =====================================================================
 # Test: C++ grid loop produces valid results
 # =====================================================================
 
-test_that("cpp_nested_laplace_icar runs and returns correct structure", {
+test_that("the joint driver solves an ICAR grid and returns its structure", {
   skip_on_cran_budget()
   adj <- make_grid_adjacency(5, 5)  # 25 sites
   dat <- simulate_spatial_data(
@@ -17,15 +17,8 @@ test_that("cpp_nested_laplace_icar runs and returns correct structure", {
 
   tau_grid <- exp(seq(log(0.5), log(10), length.out = 7))
 
-  result <- cpp_nested_laplace_icar(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    tau_grid = tau_grid,
-    family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  result <- .nl_cells(dat$y, dat$X, .icar_blk(adj, dat, 25),
+    cbind(tau = tau_grid), n_trials = dat$n_trials, tol = 1e-6)
 
   expect_equal(result$n_grid, 7L)
   expect_equal(length(result$log_marginal), 7L)
@@ -52,21 +45,13 @@ test_that("C++ grid loop matches R single-point calls", {
   n_x <- 1L + 25L
 
   # C++ grid loop
-  cpp_result <- cpp_nested_laplace_icar(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    tau_grid = tau_grid,
-    family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  cpp_result <- .nl_cells(dat$y, dat$X, .icar_blk(adj, dat, 25),
+    cbind(tau = tau_grid), n_trials = dat$n_trials, tol = 1e-6)
 
-  # Both the nested grid kernel and cpp_laplace_fit_spatial now route their inner
-  # solve through the one unified spec path (B2-live), so each folds the same
-  # beta-prior log-density (tau_beta = 1e-4 = DEFAULT_TAU_BETA) into the
-  # log-marginal. They therefore agree exactly -- a test of grid-vs-single-point
-  # agreement of the shared mode + likelihood + Hessian + prior.
+  # The grid solve and cpp_laplace_fit_spatial fold the same fixed-effect prior
+  # into the log marginal, so they agree at each cell -- a test of
+  # grid-vs-single-point agreement of the shared mode, likelihood, Hessian and
+  # prior.
   for (k in seq_along(tau_grid)) {
     r_result <- cpp_laplace_fit_spatial(
       y = dat$y, n = dat$n_trials, X = dat$X,
@@ -98,15 +83,8 @@ test_that("warm-start chain in C++ grid uses fewer total iterations", {
   tau_grid <- exp(seq(log(1), log(10), length.out = 9))
 
   # C++ grid (warm-started chain)
-  result_warm <- cpp_nested_laplace_icar(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    tau_grid = tau_grid,
-    family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  result_warm <- .nl_cells(dat$y, dat$X, .icar_blk(adj, dat, 25),
+    cbind(tau = tau_grid), n_trials = dat$n_trials, tol = 1e-6)
 
   # Cold-start each point separately
   cold_iters <- integer(length(tau_grid))
@@ -134,7 +112,7 @@ skip_on_cran()
 # Test: C++ grid loop at large scale (sparse path)
 # =====================================================================
 
-test_that("cpp_nested_laplace_icar works with sparse Cholesky (300 sites)", {
+test_that("an ICAR grid of 300 sites solves on the sparse route", {
   skip_on_cran()
   adj <- make_grid_adjacency(15, 20)  # 300 sites
   dat <- simulate_spatial_data(
@@ -144,15 +122,8 @@ test_that("cpp_nested_laplace_icar works with sparse Cholesky (300 sites)", {
 
   tau_grid <- exp(seq(log(0.5), log(8), length.out = 9))
 
-  result <- cpp_nested_laplace_icar(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 300L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    tau_grid = tau_grid,
-    family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  result <- .nl_cells(dat$y, dat$X, .icar_blk(adj, dat, 300),
+    cbind(tau = tau_grid), n_trials = dat$n_trials, tol = 1e-6)
 
   expect_equal(result$n_grid, 9L)
   expect_cells_solved(result)
@@ -180,15 +151,8 @@ test_that("C++ grid is faster than R loop (benchmark)", {
 
   # Time C++ version
   t_cpp <- system.time({
-    cpp_result <- cpp_nested_laplace_icar(
-      y = dat$y, n = dat$n_trials, X = dat$X,
-      re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-      spatial_idx = dat$spatial_idx, n_spatial_units = 100L,
-      adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-      n_neighbors = adj$n_neighbors,
-      tau_grid = tau_grid,
-      family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L
-    )
+    cpp_result <- .nl_cells(dat$y, dat$X, .icar_blk(adj, dat, 100),
+    cbind(tau = tau_grid), n_trials = dat$n_trials, tol = 1e-6)
   })
 
   # Time R-level loop

@@ -136,35 +136,6 @@ struct NlEntryRun {
     }
 };
 
-// LatentBlock outer-grid driver (icar / bym2 / car_proper / temporal).
-inline Rcpp::List nl_run_multi_block_entry(
-    const NlEntryInputs& in,
-    int n_grid,
-    std::uint64_t struct_seed,
-    const std::vector<Rcpp::NumericVector>& ckpt_axes,
-    const std::vector<LatentBlock>& blocks,
-    const NlAxisOut& out_axes
-) {
-    NlEntryRun run(in, n_grid, struct_seed, ckpt_axes);
-    Rcpp::List out = run_multi_block_nested_laplace(
-        n_grid, in.y, in.n_trials, in.X, in.re_idx,
-        in.N(), in.p(), in.n_re_groups, in.sigma_re,
-        blocks,
-        in.family, in.phi, in.max_iter, in.tol, in.n_threads,
-        /*store_modes=*/true, in.x_init,
-        in.store_Q, in.n_threads_outer, in.prune_tol,
-        /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
-        run.progress.get(), run.ckpt.get(),
-        in.compute_skew, run.skew_idx_ptr,
-        run.debias_req.ptr, run.cila_req.ptr,
-        in.screen_iters, in.compute_fitted_var,
-        tulpa::as_obs_vec(in.offset, in.N(), "offset"),
-        in.screen_offset(), &in.beta_prior
-    );
-    nl_attach_axes(out, out_axes);
-    return out;
-}
-
 // Joint-sparse outer-grid driver at one arm (nngp / hsgp): neither field's
 // eta / scatter shape fits the INDEXED_SINGLE LatentBlock path, so each builds
 // its own arm and reaches the sparse impl directly.

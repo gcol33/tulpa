@@ -53,7 +53,7 @@ Rcpp::List cpp_laplace_fit_spatial(
 ) {
     // Fixed effects + optional iid RE + a single ICAR latent block, through the
     // unified spec solver. The block is built exactly as
-    // cpp_nested_laplace_icar's, so the mode + log-marginal match the nested
+    // the joint driver's ICAR block, so the mode + log-marginal match the nested
     // kernel at one tau cell.
     const int N = y.size();
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
@@ -127,7 +127,7 @@ Rcpp::List cpp_laplace_fit_bym2(
 ) {
     // Fixed effects + optional iid RE + BYM2's two latent blocks (phi:
     // ICAR-structured & centered, theta: IID) through the unified spec solver.
-    // Blocks built exactly as cpp_nested_laplace_bym2's, with the
+    // Blocks built exactly as the joint driver's BYM2 pair, with the
     // grid-dependent d_fac.
     const int N = y.size();
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,

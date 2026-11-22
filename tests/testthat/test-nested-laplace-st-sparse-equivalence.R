@@ -1,15 +1,14 @@
 # Sparse-path numerical equivalence for spatio-temporal nested Laplace
 # (gcol33/tulpa: Stage 1.4b ST coverage).
 #
-# Each cpp_nested_laplace_st_<spatial> kernel takes a force_sparse parameter
+# The cell solve (.nl_args_cells()) takes a force_sparse parameter
 # that routes the inner Newton through SparseHessianBuilder + CHOLMOD instead
 # of the dense DenseMat path. At small n_x both paths build mathematically
 # identical Hessians, so log_marginal and modes must agree to machine epsilon
 # up to Newton-step quantization.
 #
-# Coverage: ICAR / CAR_proper / BYM2 x {AR1, RW1, RW2}. The temporal kernel is
-# selected at call time via temporal_type ("ar1" / "rw1" / "rw2"); five typed
-# spatial entries replace the former 15 spatial-x-temporal functions.
+# Coverage: ICAR / CAR_proper / BYM2 x {AR1, RW1, RW2}: a spatial and a
+# temporal block solved together on the joint driver.
 #
 # Both paths factor `H + LAPLACE_UNIFORM_RIDGE * I` (1.4e: uniform
 # upstream diagonal ridge), so even doubly rank-deficient combos
@@ -117,10 +116,8 @@ test_that("sparse ST: ICAR x AR1 matches dense", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_icar,
-                     c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_icar,
-                     c(args, list(force_sparse = TRUE)))
+    fit_d <- .nl_args_cells("icar", c(args, list(force_sparse = FALSE)))
+    fit_s <- .nl_args_cells("icar", c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
@@ -142,10 +139,8 @@ test_that("sparse ST: ICAR x RW1 finite + bounded vs dense (rank-deficient)", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
-                     c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
-                     c(args, list(force_sparse = TRUE))))
+    fit_d <- suppressWarnings(.nl_args_cells("icar", c(args, list(force_sparse = FALSE))))
+    fit_s <- suppressWarnings(.nl_args_cells("icar", c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
 
@@ -167,10 +162,8 @@ test_that("sparse ST: ICAR x RW2 finite + bounded vs dense (rank-deficient)", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
-                     c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
-                     c(args, list(force_sparse = TRUE))))
+    fit_d <- suppressWarnings(.nl_args_cells("icar", c(args, list(force_sparse = FALSE))))
+    fit_s <- suppressWarnings(.nl_args_cells("icar", c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
 
@@ -195,10 +188,8 @@ test_that("sparse ST: CAR_proper x AR1 matches dense", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_car_proper,
-                     c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_car_proper,
-                     c(args, list(force_sparse = TRUE)))
+    fit_d <- .nl_args_cells("car_proper", c(args, list(force_sparse = FALSE)))
+    fit_s <- .nl_args_cells("car_proper", c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
@@ -221,10 +212,8 @@ test_that("sparse ST: CAR_proper x RW1 matches dense", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_car_proper,
-                     c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_car_proper,
-                     c(args, list(force_sparse = TRUE)))
+    fit_d <- .nl_args_cells("car_proper", c(args, list(force_sparse = FALSE)))
+    fit_s <- .nl_args_cells("car_proper", c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
@@ -247,10 +236,8 @@ test_that("sparse ST: CAR_proper x RW2 matches dense", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_car_proper,
-                     c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_car_proper,
-                     c(args, list(force_sparse = TRUE)))
+    fit_d <- .nl_args_cells("car_proper", c(args, list(force_sparse = FALSE)))
+    fit_s <- .nl_args_cells("car_proper", c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
@@ -276,10 +263,8 @@ test_that("sparse ST: BYM2 x AR1 matches dense", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_bym2,
-                     c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_bym2,
-                     c(args, list(force_sparse = TRUE)))
+    fit_d <- .nl_args_cells("bym2", c(args, list(force_sparse = FALSE)))
+    fit_s <- .nl_args_cells("bym2", c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
@@ -303,10 +288,8 @@ test_that("sparse ST: BYM2 x RW1 finite + bounded vs dense (rank-deficient)", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
-                     c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
-                     c(args, list(force_sparse = TRUE))))
+    fit_d <- suppressWarnings(.nl_args_cells("bym2", c(args, list(force_sparse = FALSE))))
+    fit_s <- suppressWarnings(.nl_args_cells("bym2", c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
 
@@ -330,10 +313,8 @@ test_that("sparse ST: BYM2 x RW2 finite + bounded vs dense (rank-deficient)", {
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
-                     c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
-                     c(args, list(force_sparse = TRUE))))
+    fit_d <- suppressWarnings(.nl_args_cells("bym2", c(args, list(force_sparse = FALSE))))
+    fit_s <- suppressWarnings(.nl_args_cells("bym2", c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
 
@@ -352,7 +333,7 @@ test_that("ST: HSGP x AR1 runs through the joint sparse path (finite)", {
     lambda_eig <- sort(abs(rnorm(M)) + 0.1, decreasing = TRUE)
     t_idx <- sample(seq_len(n_t), N, replace = TRUE)
     y <- rbinom(N, 1L, 0.5)
-    fit <- cpp_nested_laplace_st_hsgp(
+    fit <- .nl_args_cells("hsgp", list(
         y = as.numeric(y), n = rep(1L, N), X = X, re_idx = rep(0, N),
         n_re_groups = 0L, sigma_re = 1.0,
         phi_basis = phi_basis, lambda_eig = lambda_eig, kernel = 0L,
@@ -365,7 +346,7 @@ test_that("ST: HSGP x AR1 runs through the joint sparse path (finite)", {
         cyclic = FALSE,
         family = "binomial", phi = 1.0,
         max_iter = 40L, tol = 1e-7, n_threads = 1L
-    )
+    ))
     expect_equal(length(as.numeric(fit$log_marginal)), 2L)
     expect_cells_solved(fit)
 })
@@ -387,7 +368,7 @@ test_that("ST: NNGP x RW1 runs through the joint sparse path (finite)", {
     X <- matrix(1, N, 1)
     t_idx <- sample(seq_len(n_t), N, replace = TRUE)
     y <- rbinom(N, 1L, 0.5)
-    fit <- cpp_nested_laplace_st_nngp(
+    fit <- .nl_args_cells("nngp", list(
         y = as.numeric(y), n = rep(1L, N), X = X, re_idx = rep(0, N),
         n_re_groups = 0L, sigma_re = 1.0,
         spatial_idx = seq_len(n_s), n_spatial = n_s,
@@ -402,7 +383,7 @@ test_that("ST: NNGP x RW1 runs through the joint sparse path (finite)", {
         cyclic = FALSE,
         family = "binomial", phi = 1.0,
         max_iter = 40L, tol = 1e-7, n_threads = 1L
-    )
+    ))
     expect_equal(length(as.numeric(fit$log_marginal)), 2L)
     expect_cells_solved(fit)
 })

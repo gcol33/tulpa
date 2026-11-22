@@ -225,7 +225,7 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
 // =====================================================================
 // Nested Laplace for SPDE: paired (range, sigma) grid, v10 ABI
 // =====================================================================
-// Mirrors the NNGP v10 entry (cpp_nested_laplace_nngp) so downstream
+// Mirrors the joint driver's grid output so downstream
 // glue can dispatch on the shared output shape:
 //   - paired range_grid / sigma_grid (no Cartesian product)
 //   - formula-side RE block (length n_re_groups, sigma_re prior)

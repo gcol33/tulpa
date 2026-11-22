@@ -16,16 +16,16 @@ test_that("BYM2 nested Laplace runs with 2D grid", {
   rho_vals <- c(0.3, 0.5, 0.8)
   grid <- expand.grid(sigma = sigma_vals, rho = rho_vals)
 
-  result <- cpp_nested_laplace_bym2(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors, scale_factor = 1.0,
-    sigma_spatial_grid = grid$sigma, rho_grid = grid$rho,
-    family = "binomial", phi = 1.0,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  result <- .nl_cells(dat$y,
+    dat$X,
+    list(type = "bym2", n_spatial_units = 25L, spatial_idx = dat$spatial_idx, adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors, scale_factor = 1.0),
+    cbind(sigma = grid$sigma, rho = grid$rho),
+    n_trials = dat$n_trials,
+    family = "binomial",
+    phi = 1.0,
+    max_iter = 50L,
+    tol = 1e-6,
+    phi_scale = "kernel")
 
   expect_equal(result$n_grid, 9L)
   expect_cells_solved(result)
@@ -48,16 +48,16 @@ test_that("BYM2 nested Laplace warm-start works", {
   sigma_vals <- exp(seq(log(0.2), log(1.5), length.out = 5))
   rho_vals <- rep(0.5, 5)
 
-  result <- cpp_nested_laplace_bym2(
-    y = dat$y, n = dat$n_trials, X = dat$X,
-    re_idx = rep(0L, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors, scale_factor = 1.0,
-    sigma_spatial_grid = sigma_vals, rho_grid = rho_vals,
-    family = "binomial", phi = 1.0,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L
-  )
+  result <- .nl_cells(dat$y,
+    dat$X,
+    list(type = "bym2", n_spatial_units = 25L, spatial_idx = dat$spatial_idx, adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors, scale_factor = 1.0),
+    cbind(sigma = sigma_vals, rho = rho_vals),
+    n_trials = dat$n_trials,
+    family = "binomial",
+    phi = 1.0,
+    max_iter = 50L,
+    tol = 1e-6,
+    phi_scale = "kernel")
 
   expect_cells_solved(result)
   # Warm-start should help later points converge faster

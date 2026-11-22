@@ -74,13 +74,11 @@ debias, or outer integration), not as standalone alternatives.
    (gcol33/tulpa#684).
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
 5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions. Conventions that keep this single-sourced: log-prior helpers are named `log_prior_*` (e.g. `log_prior_car_proper`, `log_prior_sigma2_pc`); the column-major Rcpp matrix builder `build_matrix_colmajor` is one template over the element type; the spatially-/temporally-varying-coefficient `print`/`summary` methods delegate to `.print_varying_coef` / `.summary_varying_coef` in `R/varying_coef.R`; multi-block prior detection is the single `.is_multi_block_prior` predicate;
-   and every `cpp_nested_laplace_*` outer-grid entry hands its shared response
-   and control arguments to its driver as one `tulpa::NlEntryInputs`, collected
-   by the argument-free `TULPA_NL_ENTRY_INPUTS` macro and consumed by one runner
-   per driver (`src/nl_entry_inputs.h`), so a knob added to a driver is added to
-   the bundle and the runner rather than to eleven entry tails.
-   `test-nl-entry-forwarding.R` asserts every shared argument is observable in
-   the fit at all eleven entries; and `check_arg_length` (`laplace_spec_fit.h`)
+   and the SPDE grid entry, `cpp_nested_laplace_spde` (the one
+   `cpp_nested_laplace_*` entry beside the joint driver's), hands its shared
+   response and control arguments to its driver as one `tulpa::NlEntryInputs`,
+   collected by the argument-free `TULPA_NL_ENTRY_INPUTS` macro
+   (`src/nl_entry_inputs.h`); and `check_arg_length` (`laplace_spec_fit.h`)
    is the one place an entry refuses an R argument whose length does not match
    the one it will be indexed by; and every Polya-Gamma areal kernel (binomial
    ICAR / BYM2 / restricted ICAR, negative-binomial ICAR) reads its intrinsic
@@ -358,19 +356,19 @@ block's own `alpha` (in `.nl_linear_axes()`) keeps its natural coordinate and
 carries no name-keyed scale, bound or atom (`spec$block_declared`,
 gcol33/tulpa#1262). A
 tgmrf block's per-cell precision is evaluated from its closures at the cells of
-every joint solve (`.joint_tgmrf_at_cells()`). `run_multi_block_nested_laplace`, which every
-single-block `cpp_nested_laplace_*` entry reaches, is
-`run_single_arm_block_joint`: the response, the
-fixed-effect design and the RE block on one arm, a model-supplied likelihood
-on the arm's spec, and `fitted_eta` / `fitted_eta_var` / `constraint_cols`
-back per cell. The joint driver takes its sparse Newton past
+every joint solve (`.joint_tgmrf_at_cells()`). The single-block and
+spatio-temporal `cpp_nested_laplace_*` entries and their C-ABI shims are gone
+(ABI 65): the response, the fixed-effect design and the RE block are one arm,
+a model-supplied likelihood rides the arm's spec, and `fitted_eta` /
+`fitted_eta_var` / `constraint_cols` come back per cell. The joint driver takes its sparse Newton past
 `SPARSE_THRESHOLD` latents or with a block whose prior has only
 `add_prior_sparse` (`blocks_have_sparse_only_prior()`, an NNGP block), and its
 dense Newton otherwise. The registry driver's own dense inner solve gave
 bit-identical grids, log marginals and coefficients on the cases it was
-checked against and was deleted. The spatio-temporal entries
-(`run_st_spatial_entry`) pass R's `force_sparse` (a dense == sparse test
-knob). The joint sparse Newton is the one that folds an intrinsic field's
+checked against and was deleted. `.nl_solve_cells(force_sparse = TRUE)` takes
+the sparse Newton whatever the latent size (a dense == sparse test knob;
+`helper-nl-cells.R` builds the blocks from a kernel-style argument list). The
+joint sparse Newton is the one that folds an intrinsic field's
 sum-to-zero pin at solve time and reads `add_prior_pattern`. Every areal and
 temporal block fills all four prior callbacks from one setter --
 `set_icar_block_priors`, `set_temporal_block_priors` (`field_block_priors.h`)

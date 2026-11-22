@@ -337,13 +337,18 @@
         }
         out
     } else if (type %in% .NL_PROJECTABLE_TEMPORAL) {
+        # Panel data: one walk per group sharing the hyperparameters, the
+        # node of (group g, time t) at (g - 1) * n_times + t.
+        n_groups <- max(as.integer(p$n_groups %||% 1L), 1L)
         temporal_idx <- if (!projected)
             .multi_block_per_arm_idx(p$temporal_idx, n_arms, block_index,
-                                     "temporal_idx", arm_n_obs, p$n_times)
+                                     "temporal_idx", arm_n_obs,
+                                     as.integer(p$n_times) * n_groups)
         out <- list(
             type         = type,
             temporal_idx = temporal_idx,
-            n_times      = as.integer(p$n_times)
+            n_times      = as.integer(p$n_times),
+            n_groups     = n_groups
         )
         if (projected) {
             out$projector <- .nl_block_projector(p, n_arms, block_index,

@@ -741,9 +741,9 @@
 # (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
 # converter (.joint_block_spec_for_cpp) both consume: `type` selects the temporal
 # Q-builder, the per-observation time index becomes `temporal_idx`, and the
-# registry fills the tau (and AR1 rho) grids. The same block drives both the
-# lone-field temporal kernel (cpp_nested_laplace_temporal) and the temporal half
-# of a spatio-temporal joint prior (a LatentBlock stacked on the spatial block).
+# registry fills the tau (and AR1 rho) grids. The same block is a lone
+# temporal field or the temporal half of a spatio-temporal prior (a block
+# stacked on the spatial block).
 # RW1 penalises first differences (the intrinsic CAR on a 1D chain), RW2 second
 # differences, and AR1 carries a free correlation -- all three share the tested
 # temporal kernel rather than a per-type path.
@@ -2718,11 +2718,9 @@ tulpa <- function(formula, data,
            "temporal_multiscale(); for '", temporal_spec$type,
            "' call the temporal fitter directly.", call. = FALSE)
     }
-    # Panel (grouped) temporal: a separate walk per group sharing one tau, routed
-    # as a single grouped temporal block through cpp_nested_laplace_temporal. The
-    # multi-block joint path does not carry the per-group temporal layout yet, so
-    # panel must be the only latent structure -- reject it alongside a spatial or
-    # latent block rather than silently fit one chain over the flattened nodes.
+    # Panel (grouped) temporal: a separate walk per group sharing one tau, one
+    # grouped temporal block (`n_groups`). It is fitted as the only latent
+    # structure; alongside a spatial or latent block it is refused.
     if (!is.null(temporal_spec$group_var) && (has_spatial || has_latent)) {
       stop("A grouped (panel) temporal field cannot be combined with a spatial ",
            "or latent(...) field through tulpa() yet (the joint path has no ",

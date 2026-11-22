@@ -197,8 +197,15 @@ namespace tulpa {
 // kernel whose spectral density an HSGP basis carries; HSGPData sits in
 // ModelData four times, and the nested-Laplace HSGP shims take the kernel code
 // as an argument.
+//
+// 64 -> 65: removed the registered callables `tulpa_nested_laplace_{icar,
+// bym2, car_proper, temporal, nngp, hsgp, st_icar, st_car_proper, st_bym2,
+// st_hsgp, st_nngp}` and their `get_nested_laplace_*_fn` getters in
+// nested_laplace_api.h: every nested-Laplace grid fit runs on the joint
+// driver. `tulpa_nested_laplace_spde` and NestedLaplaceShimResult are
+// unchanged; no struct layout moves.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 64;
+constexpr int TULPA_ABI_VERSION = 65;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

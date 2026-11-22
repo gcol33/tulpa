@@ -164,28 +164,6 @@ void tulpa_register_shims(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_laplace_spec_dense",
         (DL_FUNC)&tulpa_laplace_spec_dense_impl);
 
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_icar",
-        (DL_FUNC)&tulpa_nested_laplace_icar_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_bym2",
-        (DL_FUNC)&tulpa_nested_laplace_bym2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_car_proper",
-        (DL_FUNC)&tulpa_nested_laplace_car_proper_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_temporal",
-        (DL_FUNC)&tulpa_nested_laplace_temporal_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_nngp",
-        (DL_FUNC)&tulpa_nested_laplace_nngp_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_hsgp",
-        (DL_FUNC)&tulpa_nested_laplace_hsgp_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_icar",
-        (DL_FUNC)&tulpa_nested_laplace_st_icar_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_car_proper",
-        (DL_FUNC)&tulpa_nested_laplace_st_car_proper_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_bym2",
-        (DL_FUNC)&tulpa_nested_laplace_st_bym2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_hsgp",
-        (DL_FUNC)&tulpa_nested_laplace_st_hsgp_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_nngp",
-        (DL_FUNC)&tulpa_nested_laplace_st_nngp_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_spde",
         (DL_FUNC)&tulpa_nested_laplace_spde_impl);
 

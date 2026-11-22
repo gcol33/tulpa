@@ -39,7 +39,7 @@ test_that("fit_spde accepts the screening knobs its entry can now reach", {
 
 skip_on_cran()
 
-test_that("the spec and joint entry families agree on log_marginal", {
+test_that("the registry cell solve and the joint door agree on log_marginal", {
   skip_on_cran()
   set.seed(11)
   S <- 12L
@@ -53,17 +53,17 @@ test_that("the spec and joint entry families agree on log_marginal", {
 
   sigma_grid <- c(0.5, 1.0, 1.5)
 
-  # The same ICAR model at the same grid, through both entry families: the
-  # single-block spec kernel and the one-arm joint driver. The kernel returns
-  # the inner marginal alone, so the joint fit folds no hyperprior into its own.
-  spec <- cpp_nested_laplace_icar(
+  # The same ICAR model at the same grid, through the registry arm's cell solve
+  # and the single-block joint door. The cell solve returns the inner marginal
+  # alone, so the joint fit folds no hyperprior into its own.
+  spec <- .nl_args_cells("icar", list(
     y = y, n = rep(1L, n), X = X,
     re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1,
     spatial_idx = site,
     adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
     n_neighbors = adj$n_neighbors,
-    n_spatial = S, tau_grid = 1 / sigma_grid^2,
-    family = "poisson", phi = 1)
+    n_spatial_units = S, tau_grid = 1 / sigma_grid^2,
+    family = "poisson", phi = 1))
 
   joint <- tulpa_nested_laplace_joint(
     responses = list(a = list(y = y, X = X, family = "poisson",
@@ -92,8 +92,8 @@ test_that("every nested-Laplace grid entry takes the shared control knobs", {
   # their control through their own list arguments.
   entries <- setdiff(entries, c(
     "cpp_nested_laplace_joint_multi", "cpp_nested_laplace_joint_multi_batch"))
-  # icar / bym2 / car_proper / temporal / nngp / hsgp / the five st_* / spde.
-  expect_identical(length(entries), 12L)
+  # The SPDE grid entry is the one per-field grid entry.
+  expect_identical(entries, "cpp_nested_laplace_spde")
 
   for (e in entries) {
     fm <- names(formals(get(e, envir = ns)))

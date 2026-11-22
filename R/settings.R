@@ -588,19 +588,23 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     p
 }
 
-# A supplied grid axis whose values must lie inside an open interval (an AR1
-# correlation in (-1, 1)). Checked on the block before it is filled, where the
+# A supplied grid axis whose values must lie inside an interval: an AR1
+# correlation in (-1, 1), a BYM2 mixing weight in [0, 1] (`closed`), a scale or
+# precision in (0, Inf). Checked on the block before it is filled, where the
 # message can name the field the user set; a kernel that is handed a value
 # outside it does not refuse it.
-.nl_check_axis_open_interval <- function(p, field, lo, hi, what) {
+.nl_check_axis_interval <- function(p, field, lo, hi, what, closed = FALSE) {
     v <- p[[field]]
     if (is.null(v)) return(invisible(TRUE))
-    bad <- which(!is.finite(v) | v <= lo | v >= hi)
+    out <- if (closed) v < lo | v > hi else v <= lo | v >= hi
+    bad <- which(!is.finite(v) | out)
     if (length(bad)) {
-        stop(sprintf(paste0(
-            "`%s[%d]` is %s; %s must lie strictly inside (%s, %s)."),
-            field, bad[1L], format(v[bad[1L]]), what, format(lo), format(hi)),
-            call. = FALSE)
+        stop(sprintf("`%s[%d]` is %s; %s must lie %s.", field, bad[1L],
+                     format(v[bad[1L]]), what,
+                     if (closed) sprintf("in [%s, %s]", format(lo), format(hi))
+                     else if (is.infinite(hi)) sprintf("above %s (positive)", format(lo))
+                     else sprintf("strictly inside (%s, %s)", format(lo), format(hi))),
+             call. = FALSE)
     }
     invisible(TRUE)
 }

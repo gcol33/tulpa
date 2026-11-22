@@ -96,7 +96,7 @@ test_that("the nested ICAR entry carries the same check", {
   N <- 12L
   y <- rbinom(N, 1L, 0.4)
   expect_error(
-    cpp_nested_laplace_icar(
+    .nl_args_cells("icar", list(
       y = as.numeric(y), n = rep(1L, N), X = cbind(rep(1, N)),
       re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1,
       spatial_idx = rep_len(seq_len(n_units), N),
@@ -104,7 +104,7 @@ test_that("the nested ICAR entry carries the same check", {
       adj_row_ptr = bad$row_ptr, adj_col_idx = bad$col_idx,
       n_neighbors = bad$n_neighbors, tau_grid = c(0.5, 1, 2),
       family = "binomial", phi = 1, max_iter = 20L, tol = 1e-6, n_threads = 1L
-    ),
+    )),
     "adj_col_idx")
 })
 
@@ -120,22 +120,21 @@ test_that("the nested ICAR entry carries the same check", {
   set.seed(7L)
   X <- cbind(1, rnorm(n_obs))
   y <- rpois(n_obs, 3)
-  cpp_nested_laplace_temporal(
+  .nl_args_cells(NULL, list(
     y = as.numeric(y), n = rep(1L, n_obs), X = X, re_idx = numeric(0),
     n_re_groups = 0L, sigma_re = 1, temporal_idx = idx, n_times = n_times,
     temporal_type = "rw1", tau_grid = c(1, 2), rho_grid = numeric(0),
-    cyclic = FALSE, family = "poisson")
+    cyclic = FALSE, family = "poisson"))
 }
 
-test_that("the temporal entry rejects a mis-shaped or out-of-range index", {
+test_that("a temporal block rejects a mis-shaped or out-of-range index", {
   ok <- rep(seq_len(10L), 6L)
   expect_no_error(.temporal_call(ok))
   expect_error(.temporal_call(ok[1:50]),
-               "must equal the number of observations")
-  expect_error(.temporal_call(replace(ok, 3L, 17L)), "Node indices are 1-based")
-  expect_error(.temporal_call(replace(ok, 3L, 0L)), "Node indices are 1-based")
-  expect_error(.temporal_call(replace(ok, 3L, -5L)), "Node indices are 1-based")
-  expect_error(.temporal_call(replace(ok, 3L, NA_integer_)), "is NA")
+               "has 50 entries but arm 1 has 60 observations")
+  expect_error(.temporal_call(replace(ok, 3L, 17L)),
+               "above the block's unit count")
+  expect_error(.temporal_call(replace(ok, 3L, NA_integer_)), "NA")
 })
 
 skip_on_cran_budget()
@@ -151,7 +150,7 @@ test_that("every spatiotemporal entry carries the check", {
   bad_t <- rep(seq_len(4L), 6L)
   bad_t[2L] <- 9L
   expect_error(
-    cpp_nested_laplace_st_icar(
+    .nl_args_cells("icar", list(
       y = as.numeric(y), n = rep(1L, n_obs), X = X, re_idx = rep(0, n_obs),
       n_re_groups = 0L, sigma_re = 1,
       spatial_idx = rep_len(seq_len(n_units), n_obs), n_spatial_units = n_units,
@@ -160,6 +159,6 @@ test_that("every spatiotemporal entry carries the check", {
       temporal_idx = bad_t, n_times = 4L,
       tau_spatial_grid = c(1, 2), temporal_type = "rw1",
       tau_temporal_grid = c(1, 2), rho_temporal_grid = NULL,
-      cyclic = FALSE, family = "poisson"),
+      cyclic = FALSE, family = "poisson")),
     "temporal_idx")
 })

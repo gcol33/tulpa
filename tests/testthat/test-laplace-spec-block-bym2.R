@@ -1,8 +1,7 @@
-# Single-point BYM2 Laplace (cpp_laplace_fit_bym2) vs the nested BYM2 kernel at
-# one (sigma_spatial, rho) cell. Since B2-live the single-point export builds the
-# same phi (ICAR, centered) + theta (IID) LatentBlocks with the grid-dependent
-# d_fac and routes through the same unified spec inner solve as
-# cpp_nested_laplace_bym2. This exercises the paths the single ICAR block does
+# Single-point BYM2 Laplace (cpp_laplace_fit_bym2) vs the nested grid's cell
+# solve (.nl_solve_cells()) at one (sigma_spatial, rho) cell: the same phi
+# (ICAR, centered) + theta (IID) blocks with the grid-dependent d_fac. This
+# exercises the paths the single ICAR block does
 # not: d_fac != 1 on the eta mixing and the block x block likelihood cross-term
 # (both blocks active at the same observation). The modes match and -- both
 # folding in the beta-prior log-density (L3 convention) -- so do the log-marginals.
@@ -21,17 +20,19 @@ expect_bym2_match <- function(family, y, n_trials, X, spatial_idx, K, adj,
                               scale_factor, sigma_spatial, rho, phi = 1.0,
                               re_idx = integer(0), n_re_groups = 0L,
                               sigma_re = 1.0, tol = 1e-5) {
-  ref <- tulpa:::cpp_nested_laplace_bym2(
-    y = y, n = n_trials, X = X,
+  ref <- .nl_cells(y,
+    X,
+    list(type = "bym2", n_spatial_units = K, spatial_idx = as.integer(spatial_idx), adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors, scale_factor = scale_factor),
+    cbind(sigma = sigma_spatial, rho = rho),
+    n_trials = n_trials,
+    family = family,
+    phi = phi,
+    max_iter = 300L,
+    tol = 1e-11,
     re_idx = if (n_re_groups > 0L) as.numeric(re_idx) else numeric(0),
-    n_re_groups = n_re_groups, sigma_re = sigma_re,
-    spatial_idx = as.integer(spatial_idx), n_spatial_units = K,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    scale_factor = scale_factor,
-    sigma_spatial_grid = sigma_spatial, rho_grid = rho,
-    family = family, phi = phi, max_iter = 300L, tol = 1e-11, n_threads = 1L
-  )
+    n_re_groups = n_re_groups,
+    sigma_re = sigma_re,
+    phi_scale = "kernel")
   # cpp_laplace_fit_bym2 fixes the beta ridge at sigma_beta = 100 internally,
   # matching the nested kernel's, and takes the (sigma_spatial, rho) cell as scalars.
   fit <- tulpa:::cpp_laplace_fit_bym2(

@@ -1,7 +1,7 @@
 // laplace_core_gp.cpp
 // GP (NNGP) Laplace at a FIXED (sigma2_gp, phi_gp).
 //
-// The conditional counterpart of cpp_nested_laplace_nngp: it builds the SAME
+// The conditional counterpart of a nested NNGP grid fit: it builds the SAME
 // single arm (make_single_arm) and the SAME NNGP LatentBlock (make_nngp_block)
 // at a one-row (sigma2, phi_gp) grid and runs the shared joint multi-block
 // driver, so the mode and log-marginal equal the nested kernel evaluated at that
@@ -48,7 +48,7 @@ Rcpp::List cpp_laplace_fit_gp(
     const int N = y.size();
     const int p = X.ncol();
     // Layout [beta (p), re (n_re_groups), w_gp (n_spatial)], matching the
-    // nested NNGP entry (cpp_nested_laplace_nngp).
+    // nested NNGP grid fit on the joint driver.
     const int n_x = p + n_re_groups + n_spatial;
     const int gp_start = p + n_re_groups;
 

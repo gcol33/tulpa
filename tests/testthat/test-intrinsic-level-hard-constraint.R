@@ -139,12 +139,12 @@ test_that("the ICAR fit on the sparse joint route is the same constrained model"
   y <- as.numeric(rbinom(N, 1, plogis(0.3 + 0.7 * X[, 2] + u[unit])))
   adj <- tulpa:::adjacency_to_csr_tulpa(W)
   tau <- 0.8
-  ns <- tulpa:::cpp_nested_laplace_icar(
+  ns <- .nl_args_cells("icar", list(
     y = y, n = rep(1L, N), X = X, re_idx = rep(0, N), n_re_groups = 0L,
     sigma_re = 1, spatial_idx = as.integer(unit), n_spatial_units = J,
     adj_row_ptr = adj$row_ptr, adj_col_idx = adj$col_idx,
     n_neighbors = adj$n_neighbors, tau_grid = tau, family = "binomial",
-    max_iter = 300L, tol = 1e-12)
+    max_iter = 300L, tol = 1e-12))
 
   Z <- matrix(0, N, J); Z[cbind(seq_len(N), unit)] <- 1
   P <- as.matrix(Matrix::bdiag(diag(.tau_b(), 2), .icar_aug_precision(W, tau)))
@@ -203,13 +203,13 @@ test_that("the subspace debias walks the Gaussian conditioned on the level", {
   adj <- tulpa:::adjacency_to_csr_tulpa(W)
   tau <- 0.05
   set.seed(4)
-  ns <- tulpa:::cpp_nested_laplace_icar(
+  ns <- .nl_args_cells("icar", list(
     y = y, n = rep(1L, N), X = X, re_idx = rep(0, N), n_re_groups = 0L,
     sigma_re = 1, spatial_idx = as.integer(unit), n_spatial_units = J,
     adj_row_ptr = adj$row_ptr, adj_col_idx = adj$col_idx,
     n_neighbors = adj$n_neighbors, tau_grid = tau, family = "gaussian",
     phi = 1, max_iter = 300L, tol = 1e-12,
-    debias = list(idx = c(1L, 3L), n_iter = 20000L, warmup = 2000L))
+    debias = list(idx = c(1L, 3L), n_iter = 20000L, warmup = 2000L)))
   expect_true(is.na(ns$debias_declined))
   Z <- outer(unit, seq_len(J), "==") * 1
   P <- as.matrix(Matrix::bdiag(diag(.tau_b(), 2), .icar_aug_precision(W, tau)))
