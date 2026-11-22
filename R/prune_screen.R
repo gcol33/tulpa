@@ -162,3 +162,95 @@
     "the screened grid left no curvature for the outer grid placement"
   full
 }
+
+# --- cheap-pass prune safety gate --------------------------------------------
+#
+# After a pruned kernel run, decide whether the kept set can be trusted. The
+# screen ranked every cell; the full inner Newton ran on the kept cells only, so
+# on those the screen's error is measured and on the dropped ones it is not.
+# What the gate bounds is the posterior MASS the prune may have dropped
+# (`.nl_prune_dropped_mass()`), taking a dropped cell's error to be no worse
+# than the worst one measured on a kept cell. Past `.nl_screen("gate_mass")`
+# it warns and falls back to the full grid.
+#
+# The mass, not the ranking, is the question. On a grid placed around its mode
+# the neighbouring cells sit within a few nats of each other, so which of them
+# the screen puts first says nothing about whether a cell it dropped carried
+# weight; and a screen that is off by the same amount on every cell ranks them
+# exactly as the full pass does, however large that amount is
+# (gcol33/tulpa#925).
+#
+# `res` is the pruned kernel result (already carries the prune_* fields).
+# `resolve_full` is a zero-argument thunk re-running the SAME kernel call with
+# `prune_tol = 0` (the full grid). `fn` is the front door the fit came in
+# through, so the warning names the function whose `control` the reader set.
+# Returns either `res` (gate passed) or the full-grid result (gate tripped),
+# each carrying the bound in `prune_dropped_mass_bound`; a tripped gate adds
+# `prune_fallback_triggered = TRUE` and `prune_fallback_reason`.
+.joint_prune_safety_gate <- function(res, resolve_full,
+                                      gate_mass = .nl_screen("gate_mass"),
+                                      fn = "tulpa_nested_laplace_joint()") {
+    # No prune ran (prune off, prune_tol = 0, or single-cell grid): nothing
+    # to gate. The kernel only emits prune_mask when it actually screened.
+    if (is.null(res$prune_mask)) return(res)
+    # A screened read (a placement pilot's detecting grid) has no full pass to
+    # compare the screen against, and is never integrated.
+    if (isTRUE(res$prune_screen_only)) return(res)
+
+    bound <- .nl_prune_dropped_mass(res)
+    if (is.finite(bound) && bound <= gate_mass) {
+        res$prune_dropped_mass_bound <- bound
+        return(res)
+    }
+    reason <- if (is.na(bound)) {
+        "the screened result carries no per-cell screen to bound the dropped mass"
+    } else if (is.infinite(bound)) {
+        "the screen kept no cell with a finite log-marginal"
+    } else sprintf(paste0(
+        "the cells the screen dropped may carry up to %s of the posterior ",
+        "mass, taking their screening error to be the worst one measured on ",
+        "the cells it kept"), format(signif(bound, 3)))
+    warning(sprintf(paste0(
+        "%s: cheap-pass prune is unreliable for this fit (%s); falling back to ",
+        "the full grid. Set control$prune = FALSE to skip the screen, or leave ",
+        "it -- the full grid is correct."), fn, reason), call. = FALSE)
+
+    full <- resolve_full()
+    full$prune_fallback_triggered <- TRUE
+    full$prune_fallback_reason    <- reason
+    full$prune_dropped_mass_bound <- bound
+    full
+}
+
+# The share of the posterior a screened grid's dropped cells may carry. With c
+# a cell's screened and f its full log-posterior -- the kernel's log-marginal
+# plus the hyperprior and cell measure the screen ranked with -- and
+# e_max = max over kept cells the screen saw of (f - c), the worst error
+# measured,
+#
+#   B = D / (R + sum_{k kept} exp(f_k) + D),  D = sum_{j dropped} exp(c_j + e_max),
+#
+# the share of the whole grid (`.nl_prune_lifted()`). A constant error cancels
+# (B is then the screened share of the dropped cells, which the tolerance
+# already bounds); an error that varies across the kept cells lifts every dropped cell by the worst of it. A kept cell no screen saw
+# (a single-cell refinement call) is mass in the denominator with no error to
+# read. R is the mass of the grid a refinement call's cells joined
+# (`prune_screen_log_ref`), 0 for a call that is the whole grid. `Inf` when
+# nothing was kept, `NA` when the result carries no screen to read.
+.nl_prune_dropped_mass <- function(res) {
+    mask  <- as.logical(res$prune_mask)
+    lm    <- as.numeric(res$log_marginal)
+    cheap <- as.numeric(res$prune_cheap_log_marginal)
+    n <- length(lm)
+    if (length(mask) != n || length(cheap) != n) return(NA_real_)
+    mask[is.na(mask)] <- FALSE
+    folded <- .nl_log_hyperprior_folded(res, n)
+    if (!is.null(folded)) lm <- lm - folded
+    off <- res$prune_screen_log_offset
+    if (length(off) == n) {
+        lm    <- lm + off
+        cheap <- cheap + off
+    }
+    .nl_prune_lifted(lm, cheap, mask,
+                     as.numeric(res$prune_screen_log_ref %||% -Inf))$bound
+}

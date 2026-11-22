@@ -259,6 +259,14 @@ test_that("the reported SD holds across grids on a skewed axis", {
   expect_lt(max(wtd) / min(wtd), 1.05)
 })
 
+# One precision axis of one icar block, read by the joint moment builder.
+.ase_moments <- function(v, lm, w) {
+  tg <- matrix(v, ncol = 1L, dimnames = list(NULL, "b1.tau"))
+  .joint_posterior_moments_multi(
+    list(theta_grid = tg, log_marginal = lm, weights = w),
+    list(list(type = "icar")), c(0L, 1L), tg)
+}
+
 test_that("an axis collapsed onto its boundary node reports the SD its interval is read off", {
   skip_on_cran_budget()
   # gcol33/tulpa#919: `sd = 0` beside a 95% interval spanning the top node's
@@ -268,12 +276,11 @@ test_that("an axis collapsed onto its boundary node reports the SD its interval 
   v  <- exp(seq(log(0.1), log(3), length.out = 5L))
   lm <- -1e4 * (log(v) - log(3))^2
   w  <- exp(lm - max(lm))
-  res <- .nl_posterior_moments(
-    list(theta_grid = v, log_marginal = lm, weights = w / sum(w)), "icar")
-  expect_identical(res$theta_sd_stencil_declined, "mode_at_edge")
-  expect_identical(res$theta_sd_source, "within_cell")
+  res <- .ase_moments(v, lm, w / sum(w))
+  expect_identical(unname(res$theta_sd_stencil_declined), "mode_at_edge")
+  expect_identical(unname(res$theta_sd_source), "within_cell")
   expect_gt(res$theta_ci_hi[[1L]], 3)
-  expect_equal(res$theta_sd,
+  expect_equal(unname(res$theta_sd),
                (res$theta_ci_hi[[1L]] - res$theta_ci_lo[[1L]]) /
                  (0.95 * sqrt(12)), tolerance = 1e-5)
 
@@ -281,20 +288,17 @@ test_that("an axis collapsed onto its boundary node reports the SD its interval 
   # untouched.
   lm2 <- -0.5 * ((log(v) - log(0.6)) / 1.5)^2
   w2  <- exp(lm2 - max(lm2))
-  res2 <- .nl_posterior_moments(
-    list(theta_grid = v, log_marginal = lm2, weights = w2 / sum(w2)), "icar")
-  expect_identical(res2$theta_sd_source, "weighted")
+  res2 <- .ase_moments(v, lm2, w2 / sum(w2))
+  expect_identical(unname(res2$theta_sd_source), "weighted")
 })
 
 test_that("every nested path reports the estimator it used", {
   skip_on_cran_budget()
-  # The choice is made inside `.nl_posterior_moments()`, which every nested
-  # driver goes through, rather than at each driver.
-  res <- .nl_posterior_moments(
-    list(theta_grid = seq(0.2, 4, length.out = 9L),
-         log_marginal = -0.5 * ((seq(0.2, 4, length.out = 9L) - 2) / 0.6)^2,
-         weights = rep(1 / 9, 9L)),
-    "icar")
+  # The choice is made inside `.nl_attach_axis_sd()`, which every nested
+  # moment builder goes through, rather than at each driver.
+  res <- .ase_moments(seq(0.2, 4, length.out = 9L),
+                      -0.5 * ((seq(0.2, 4, length.out = 9L) - 2) / 0.6)^2,
+                      rep(1 / 9, 9L))
   expect_true(res$theta_sd_source %in% .NL_AXIS_SD_SOURCE)
   expect_true(is.finite(res$theta_sd_ess))
   expect_true(is.finite(res$theta_sd))

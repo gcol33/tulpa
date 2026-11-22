@@ -296,17 +296,15 @@ mass, which reaches the driver as the `log_ref` attribute of the screen offset
 (`ScreenOffset`, `nested_laplace_grid.h`), and `.nl_prune_merged_record()`
 re-reads the bound over the merged grid (gcol33/tulpa#948).
 
-**Both joint doors refine through one runner.** `.joint_refine_outer_grid()`
+**The joint driver refines through one runner.** `.joint_refine_outer_grid()`
 (`R/nested_laplace_joint_helpers.R`) runs the opt-in boundary / interior pass
-and then the var-of-means consistency pass over the specs and a `kernel_fn`
-closure; the single-block driver supplies `.joint_make_kernel_fn()` and the
-multi-block one `.joint_multi_make_kernel_fn()`. The refinable axes are a
+and then the var-of-means consistency pass over the specs and the driver's
+`kernel_fn` closure (`.joint_multi_make_kernel_fn()`). The refinable axes are a
 field SD (`sigma` or `tau`), the copy scale and the per-arm dispersions
 (`.joint_axis_refine_eligible()`, by bare name, so `b2.sigma` is one and
 `b1.phi_gp` is not). How far each moves follows from who wrote its nodes, one
-rule (`.joint_axis_refine_modes_by()`) with a provenance reader per door
-(`.joint_axis_is_stated()`, `.joint_multi_axis_is_stated()`). A multi-block
-CCD design, the adaptive lattice and a locally CCD-refined grid keep their
+rule (`.joint_axis_refine_modes_by()`) reading provenance through
+`.joint_multi_axis_is_stated()`. A CCD design, the adaptive lattice and a locally CCD-refined grid keep their
 nodes. The specs behind a refined grid's measure are built from its BASE cells
 and carry the `refining` tags (`.joint_multi_attach_integration()`), since an
 axis's declared nodes fix a prior read off them. The registry door,
@@ -345,10 +343,25 @@ the result. A cell solved outside a grid fit (a conditional fit's one cell, a
 cell solved again for its precision, a tgmrf log marginal) goes through
 `.nl_solve_cells()`, the same driver.
 
+**A bare single-block joint prior is the length-1 block list too.**
+`tulpa_nested_laplace_joint()` called with one unwrapped areal block (`icar`,
+`bym2`, `car_proper`), each arm's map on its own `spatial_idx` and a copy
+declared on an arm's `field_coef`, is translated ONCE at the front door
+(`.joint_bare_prior_as_blocks()`, `.joint_bare_field_axes()`): the maps move to
+the block, a `field_coef` axis becomes the copy spec on block 1, a non-copy
+icar / car_proper `sigma_grid` becomes `tau_grid = 1 / sigma^2` and two stated
+axes the bare spelling crosses become paired cells. There is no second driver,
+placement family or predict route behind it. Measured against the deleted
+single-block driver on identical stated grids (icar, car_proper, two arms
+sharing a car_proper field, an icar copy, a `field_coef = 0.5` arm): log
+evidence, coefficients and intervals identical to the printed digits after
+`sigma = tau^(-1/2)`. A door-level `prior_sigma` reaches a precision axis by
+the change of variables (`.hp_role_density_on()`), so the role covers every
+field-scale axis, `b<k>.sigma` and `b<k>.tau` alike.
+
 **One outer-axis label rule** (`R/axis_label.R`, gcol33/tulpa#1195): a block
-axis is `b<k>.<hyper>` whatever the block count, a per-arm dispersion
-`phi_<arm>`, a block-free axis of the single-block joint path bare (`sigma`,
-`alpha`). `.axis_label()` / `.axis_prefix()` write it and `.axis_bare()`,
+axis is `b<k>.<hyper>` whatever the block count, and a per-arm dispersion
+`phi_<arm>`. `.axis_label()` / `.axis_prefix()` write it and `.axis_bare()`,
 `.axis_block()`, `.axis_has_block()`, `.axis_is_dispersion()` read it; no
 other code builds or parses the prefix. The copy scale is a role, not a name
 (`.axis_is_copy()`): an `alpha` axis no block declares itself, so a tgmrf
@@ -356,7 +369,7 @@ block's own `alpha` (in `.nl_linear_axes()`) keeps its natural coordinate and
 carries no name-keyed scale, bound or atom (`spec$block_declared`,
 gcol33/tulpa#1262). A
 tgmrf block's per-cell precision is evaluated from its closures at the cells of
-every joint solve (`.joint_tgmrf_at_cells()`). The single-block and
+every joint solve (`.joint_tgmrf_at_cells()`). The registry single-block and
 spatio-temporal `cpp_nested_laplace_*` entries and their C-ABI shims are gone
 (ABI 65): the response, the fixed-effect design and the RE block are one arm,
 a model-supplied likelihood rides the arm's spec, and `fitted_eta` /

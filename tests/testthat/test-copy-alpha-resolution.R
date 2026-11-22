@@ -78,18 +78,16 @@ test_that("a named field_coef is not read as a resolution request", {
     # spec that names its coefficient -- which fed a character into the integer
     # check and errored every existing `field_coef = list(name = , grid = )`
     # fixture. The reads are `[[`.
-    a <- list(field_coef = list(name = "alpha", grid = c(0, 0.5, 1)))
-    got <- tulpa:::.normalise_arm_field_coef(a, 1L)
-    expect_identical(got$field_coef_axis$name, "alpha")
-    expect_identical(got$field_coef_axis$grid, c(0, 0.5, 1))
-    expect_null(got$field_coef_axis$alpha_n)
+    copy_of <- function(fc) tulpa:::.joint_bare_prior_as_blocks(
+        list(y = list(spatial_idx = 1:3, field_coef = fc)),
+        list(type = "icar"), NULL)$copy
+    got <- copy_of(list(name = "alpha", grid = c(0, 0.5, 1)))
+    expect_identical(got$alpha_grid, c(0, 0.5, 1))
+    expect_null(got$alpha_n)
 
     # and a genuine resolution request still lands
-    b <- list(field_coef = list(name = "alpha", n = 9L))
-    expect_identical(tulpa:::.normalise_arm_field_coef(b, 1L)$field_coef_axis$alpha_n,
-                     9L)
-    expect_error(tulpa:::.normalise_arm_field_coef(
-        list(field_coef = list(name = "alpha", n = 0L)), 1L), "integer >= 1")
+    expect_identical(copy_of(list(name = "alpha", n = 9L))$alpha_n, 9L)
+    expect_error(copy_of(list(name = "alpha", n = 0L)), "integer >= 1")
 })
 
 skip_on_cran()

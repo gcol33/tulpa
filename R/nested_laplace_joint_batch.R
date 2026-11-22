@@ -373,7 +373,7 @@ tulpa_joint_grid_batch <- function(fits) {
   prior_list <- if (.is_multi_block_prior(prior)) prior else list(prior)
   n_arms <- length(responses)
   arms <- lapply(seq_along(responses),
-                 function(k) .normalise_joint_arm_multi(responses[[k]], k))
+                 function(k) .normalise_joint_arm(responses[[k]], k))
   arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
   cp <- .resolve_copy_multi(copy, responses, prior_list)
   B <- length(prior_list)

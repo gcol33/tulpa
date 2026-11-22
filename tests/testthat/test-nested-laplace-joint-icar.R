@@ -188,6 +188,6 @@ test_that("joint ICAR recovers per-arm betas and locates the alpha mode", {
     # alpha = 1.0. Over-stating phi (gcol33/tulpa#17 previously masked)
     # makes alpha unidentifiable; pass the true noise scale here. Alpha is
     # a direct outer-grid axis after gcol33/tulpa#22 — no post-hoc ratio.
-    alpha_mean <- fit$theta_mean[["alpha"]]
+    alpha_mean <- fit$theta_mean[["b1.alpha"]]
     expect_lt(abs(alpha_mean - 1.0), 0.6)
 })

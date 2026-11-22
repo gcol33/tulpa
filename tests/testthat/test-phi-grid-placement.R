@@ -21,11 +21,11 @@
     list(
         theta_grid = matrix(coarse, ncol = 1L, dimnames = list(NULL, "phi_pos")),
         log_marginal = -0.5 * ((log(coarse) - log(7.7)) / 0.01)^2,
-        pareto_k_regime = "collapsed_edge", pareto_k_grid_edge_axes = "sigma",
+        pareto_k_regime = "collapsed_edge", pareto_k_grid_edge_axes = "b1.sigma",
         outer_mode_u = c(log(3), log(7.7)),
         outer_mode_cov_u = diag(c(0.25, 0.04)),
         outer_mode_axis_tags = c("log", "log"),
-        outer_mode_axis_names = c("sigma", "phi_pos"),
+        outer_mode_axis_names = c("b1.sigma", "phi_pos"),
         outer_grid_placement = "fixed")
 }
 .pgp_resolved_refit <- function(calls) function(st, from) {
@@ -188,8 +188,8 @@ test_that("the whole-fit decline reduces over the passes that wrote it", {
 
 test_that("a held default axis is refined as a statement, not as a placement", {
     skip_on_cran_budget()
-    stated <- function(v) .joint_axis_is_stated(
-        "phi_pos", list(), list(pos = v), "pos")
+    stated <- function(v) .joint_phi_axis_is_stated(
+        "phi_pos", list(pos = v), "pos")
     expect_true(stated(c(1, 2, 4)))
     expect_false(stated(auto_grid(c(1, 2, 4))))
     expect_true(stated(auto_grid(c(1, 2, 4), place = FALSE)))
@@ -198,15 +198,16 @@ test_that("a held default axis is refined as a statement, not as a placement", {
     # markers are stripped -- as they are before the first fit. Reading the
     # stripped grid instead made every dispersion axis "stated" whoever wrote
     # it, so a declared default was densified where it should be followed out.
-    rec <- function(auto) .joint_axis_is_stated(
-        "phi_pos", list(), list(pos = c(1, 2, 4)), "pos", phi_auto = auto)
+    rec <- function(auto) .joint_phi_axis_is_stated(
+        "phi_pos", list(pos = c(1, 2, 4)), "pos", phi_auto = auto)
     expect_true(rec(logical(0)))
     expect_false(rec(c(pos = TRUE)))
     expect_true(rec(c(pos = FALSE)))
 
-    modes <- function(auto) .joint_axis_refine_modes(
-        list(phi_pos = c(1, 2, 4)), list(has_copy = FALSE), list(),
-        phi_grid = list(pos = c(1, 2, 4)), arm_names = "pos", phi_auto = auto)
+    modes <- function(auto) .joint_axis_refine_modes_by("phi_pos", function(a)
+        .joint_multi_axis_is_stated(a, list(), list(),
+                                    phi_grid = list(pos = c(1, 2, 4)),
+                                    arm_names = "pos", phi_auto = auto))
     expect_identical(modes(c(pos = TRUE))[["phi_pos"]],
                      tulpa:::.nl_axis_refine("placed"))
     expect_identical(modes(c(pos = FALSE))[["phi_pos"]],
@@ -256,19 +257,21 @@ test_that("one attempt lays a field SD and a dispersion from the one mode", {
     skip_on_cran_budget()
     calls <- new.env(parent = emptyenv())
     calls$n <- 0L
-    st <- list(prior = list(type = "icar"), prior_sigma = NULL,
+    st <- list(prior = list(list(type = "icar")), prior_sigma = NULL,
+               cp = list(has_copy = TRUE, copy_blocks_zero = 0L),
                phi_grid = list(pos = exp(seq(log(1), log(60), length.out = 4))))
-    fams <- .joint_placement_families(phi_auto = c(pos = TRUE))[c("sigma", "phi")]
+    fams <- .joint_placement_families(phi_auto = c(pos = TRUE))[c("copy_sigma",
+                                                                    "phi")]
     out <- .joint_place_axes(.pgp_two_axis_stub(), st,
                              refit = .pgp_resolved_refit(calls), families = fams)
     # One refit, both axes laid in it, both off the same mode.
     expect_identical(calls$n, 1L)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(out$res$outer_grid_recenter_attempts, 1L)
-    expect_identical(out$res$outer_grid_recenter_axes, c("sigma", "phi_pos"))
+    expect_identical(out$res$outer_grid_recenter_axes, c("b1.sigma", "phi_pos"))
     expect_setequal(names(out$res$outer_grid_recenter_sd_used),
-                    c("sigma", "phi_pos"))
-    expect_length(calls$st$prior$sigma_grid, 5L)
+                    c("b1.sigma", "phi_pos"))
+    expect_length(calls$st$prior[[1L]]$sigma_grid, 5L)
     expect_equal(log(calls$st$phi_grid$pos[3L]), log(7.7))
     # Both moved and neither still fires, so neither declines.
     expect_null(out$res$outer_grid_axis_declined)
@@ -279,20 +282,24 @@ test_that("a field-SD decline survives a dispersion placement (#720)", {
     skip_on_cran_budget()
     calls <- new.env(parent = emptyenv())
     calls$n <- 0L
-    st <- list(prior = list(type = "icar", sigma_grid = c(0.1, 0.5, 1, 2, 3)),
+    st <- list(prior = list(list(type = "icar", sigma_grid = c(0.1, 0.5, 1, 2, 3))),
                prior_sigma = NULL,
+               cp = list(has_copy = TRUE, copy_blocks_zero = 0L),
                phi_grid = list(pos = exp(seq(log(1), log(60), length.out = 4))))
-    fams <- .joint_placement_families(phi_auto = c(pos = TRUE))[c("sigma", "phi")]
+    fams <- .joint_placement_families(phi_auto = c(pos = TRUE))[c("copy_sigma",
+                                                                    "phi")]
     out <- .joint_place_axes(.pgp_two_axis_stub(), st,
                              refit = .pgp_resolved_refit(calls), families = fams)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(out$res$outer_grid_recenter_axes, "phi_pos")
     expect_null(out$res$outer_grid_recenter_declined)
-    expect_identical(out$res$outer_grid_axis_declined, c(sigma = "axis_pinned"))
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(b1.sigma = "axis_pinned"))
     expect_identical(.tulpa_grid_axis_lever(
-        list(coarsest = "sigma", axis_declined = out$res$outer_grid_axis_declined)),
+        list(coarsest = "b1.sigma",
+             axis_declined = out$res$outer_grid_axis_declined)),
         .tulpa_grid_axis_lever(
-            list(coarsest = "sigma", axis_declined = c(sigma = "axis_pinned"))))
+            list(coarsest = "b1.sigma", axis_declined = c(b1.sigma = "axis_pinned"))))
 })
 
 # --------------------------------------------------------------------------- #
@@ -360,8 +367,8 @@ test_that("a marked dispersion axis is placed onto its own posterior", {
     expect_false("phi_pos" %in% names(placed$outer_grid_axis_declined))
     # The field SD axis is pinned at truth and stayed put next to the moved
     # dispersion axis; its reason is still on the fit (gcol33/tulpa#720).
-    expect_false("sigma" %in% placed$outer_grid_recenter_axes)
-    expect_identical(placed$outer_grid_axis_declined[["sigma"]], "axis_pinned")
+    expect_false("b1.sigma" %in% placed$outer_grid_recenter_axes)
+    expect_identical(placed$outer_grid_axis_declined[["b1.sigma"]], "axis_pinned")
 
     # The placement is the estimate, not only the report. On the declared span
     # the dispersion posterior sits between nodes and comes back at roughly
@@ -415,6 +422,6 @@ test_that("a fit with no dispersion axis carries no per-axis decline", {
     # The placement pass speaks about the axes the fit carries: the pinned field
     # SD, the copy scale and the BYM2 mixing weight this fixture states.
     expect_identical(fit$outer_grid_axis_declined,
-                     c(sigma = "axis_pinned", alpha = "axis_pinned",
-                       rho = "axis_pinned"))
+                     c(b1.sigma = "axis_pinned", b1.alpha = "axis_pinned",
+                       b1.rho = "axis_pinned"))
 })

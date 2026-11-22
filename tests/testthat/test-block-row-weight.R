@@ -56,7 +56,7 @@
 }
 
 .rw_fit <- function(block, y, X, theta_grid) {
-    arm <- tulpa:::.normalise_joint_arm_multi(
+    arm <- tulpa:::.normalise_joint_arm(
         list(y = y, X = X, family = "gaussian", phi = 1.0), 1L)
     tulpa:::cpp_nested_laplace_joint_multi(
         arms_list = list(arm), copy_arms = integer(0), copy_blocks = integer(0),

@@ -70,13 +70,26 @@ test_that("a pinned axis the multi-block path cannot read is refused", {
     expect_match(msg, "tau_grid = 1 / sigma_grid^2", fixed = TRUE)
 })
 
-test_that("the refusal is symmetric: a precision axis on the joint areal path", {
+test_that("an unwrapped icar block states its scale once, as an SD or a precision", {
     sim <- .axc_sim(seed = 24L)
+    arm <- .axc_arm(sim)
+    # The SD spelling is written as the precision the block integrates, at the
+    # same nodes in the caller's order; a precision passes through as given.
+    sd <- tulpa:::.joint_bare_prior_as_blocks(
+        list(occ = arm), .axc_icar_block(sim, sigma_grid = c(0.5, 1, 2)), NULL)
+    expect_equal(sd$prior[[1L]]$tau_grid, c(4, 1, 0.25))
+    expect_null(sd$prior[[1L]]$sigma_grid)
+    expect_identical(sd$prior[[1L]]$spatial_idx, list(as.integer(sim$sidx)))
+    expect_null(sd$responses$occ$spatial_idx)
+    prec <- tulpa:::.joint_bare_prior_as_blocks(
+        list(occ = arm), .axc_icar_block(sim, tau_grid = c(1, 4, 9)), NULL)
+    expect_equal(prec$prior[[1L]]$tau_grid, c(1, 4, 9))
     expect_error(
         tulpa_nested_laplace_joint(
-            responses = list(occ = .axc_arm(sim)),
-            prior = .axc_icar_block(sim, tau_grid = c(1, 4, 9))),
-        "tau_grid.*single-block joint areal backend.*sigma_grid = 1 / sqrt")
+            responses = list(occ = arm),
+            prior = .axc_icar_block(sim, tau_grid = c(1, 4, 9),
+                                    sigma_grid = c(0.5, 1))),
+        "give `sigma_grid` or `tau_grid`, not both", fixed = TRUE)
 })
 
 test_that("a field no binding names is not this check's business", {
@@ -175,8 +188,6 @@ test_that("a family with no path entry reads exactly its registry binding", {
     }
     # And the deviating families deviate in the documented direction.
     expect_identical(tulpa:::.nl_path_axis_fields("icar", "registry"), "tau_grid")
-    expect_identical(tulpa:::.nl_path_axis_fields("icar", "joint_single"),
-                     "sigma_grid")
     expect_setequal(tulpa:::.nl_path_axis_fields("icar", "copy"),
                     c("sigma_grid", "alpha_grid"))
 })
@@ -218,8 +229,13 @@ test_that("an axis the path DOES read passes untouched", {
     sim <- .axc_sim(seed = 25L)
     expect_null(tulpa:::.nl_check_axis_fields(
         .axc_icar_block(sim, tau_grid = c(1, 4)), "registry"))
+    # An unwrapped block's SD spelling reaches the check already written as the
+    # precision its block reads.
     expect_null(tulpa:::.nl_check_axis_fields(
-        .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "joint"))
+        tulpa:::.joint_bare_prior_as_blocks(
+            list(occ = .axc_arm(sim)),
+            .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), NULL)$prior,
+        "joint"))
     # A copy block leads with (sigma, alpha), so sigma is read there.
     expect_length(tulpa:::.nl_check_block_axis_fields(
         .axc_icar_block(sim, sigma_grid = c(0.4, 0.9)), "copy", 1L), 0L)
@@ -263,12 +279,11 @@ test_that("every path binding resolves to real fields of real families", {
 
 test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
     skip_on_cran()
-    # The single-block joint areal backend hands its kernel `tau = 1 / sigma^2`
-    # from the `sigma` axis it reads; the multi-block driver hands the SAME
-    # kernel the registry's `tau` axis directly. So a one-block multi fit at
-    # `tau_grid = 1 / s^2` must reproduce the single-block fit at
-    # `sigma_grid = s` cell by cell. This is what makes rewriting a fixture's
-    # `sigma_grid` into `tau_grid` preserve the grid it meant to pin.
+    # An unwrapped icar block's `sigma_grid = s` is written as the precision
+    # its block integrates, `tau_grid = 1 / s^2` (`.joint_bare_field_axes()`),
+    # so it must reproduce the one-block list fit at `tau_grid = 1 / s^2` cell
+    # by cell. This is what makes rewriting a fixture's `sigma_grid` into
+    # `tau_grid` preserve the grid it meant to pin.
     #
     # `hyperprior = "flat"` isolates that kernel-level claim: nothing is folded,
     # so the two fits agree cell by cell on the number the kernel produced.
@@ -288,7 +303,7 @@ test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
             hyperprior = hp, control = list(diagnose_k = FALSE)))
 
     f <- axc_fit("flat")
-    # Both doors run the same refinement passes, so a field SD the base grid
+    # Both calls run the same refinement passes, so a field SD the base grid
     # leaves collapsed gains the same nodes on either, and the cells still agree
     # one by one.
     expect_length(f$prec$log_marginal, length(f$sd$log_marginal))
@@ -302,17 +317,15 @@ test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
 test_that("the default hyperprior is one belief recorded on two coordinates", {
     skip_on_cran()
     # `log_marginal` is a density on the axis's own INTEGRATION coordinate
-    # (`R/hyperprior_default.R`'s convention header), so declaring the same
-    # icar field as `sigma_grid = s` or as `tau_grid = 1 / s^2` must move it by
-    # the log-Jacobian |d log sigma / d log tau| = 1/2 and by nothing else --
-    # while every coordinate-free quantity stays put, because the cell's
-    # absolute measure carries the same factor the other way.
+    # (`R/hyperprior_default.R`'s convention header). An unwrapped icar block
+    # stating `sigma_grid = s` is integrated on the precision its block
+    # carries, so it records exactly what `tau_grid = 1 / s^2` records.
     #
-    # gcol33/tulpa#835 read the log(2) as `.hp_axis_default()` folding a
-    # DIFFERENT prior belief for a `tau`-named axis than for a `sigma`-named
-    # one. It is not: the sd / variance / precision densities are the one sigma
-    # PC prior carried to three coordinates, which is what the last block here
-    # pins directly.
+    # gcol33/tulpa#835 read a log(2) between an SD and a precision record as
+    # `.hp_axis_default()` folding a DIFFERENT prior belief for a `tau`-named
+    # axis than for a `sigma`-named one. It is not: the sd / variance /
+    # precision densities are the one sigma PC prior carried to three
+    # coordinates, which is what the last block here pins directly.
     sim <- .axc_sim(seed = 21L)
     s <- c(0.4, 0.7, 1.3)
     arm <- .axc_arm(sim)
@@ -327,13 +340,11 @@ test_that("the default hyperprior is one belief recorded on two coordinates", {
                                      spatial_idx = list(sim$sidx))),
         hyperprior = "proper", control = list(diagnose_k = FALSE))
 
-    # The record moves by the Jacobian, at every cell.
+    expect_identical(colnames(fit_sd$theta_grid), "b1.tau")
     expect_lt(max(abs(as.numeric(fit_sd$log_marginal) -
-                          as.numeric(fit_prec$log_marginal) - log(2))), 1e-8)
+                          as.numeric(fit_prec$log_marginal))), 1e-8)
     expect_lt(max(abs(as.numeric(fit_sd$log_hyperprior) -
-                          as.numeric(fit_prec$log_hyperprior) - log(2))), 1e-8)
-    # The model does not: the evidence integrates the density against the cell
-    # measure on the same coordinate, so the factor cancels.
+                          as.numeric(fit_prec$log_hyperprior))), 1e-8)
     expect_lt(abs(as.numeric(fit_sd$log_evidence) -
                       as.numeric(fit_prec$log_evidence)), 1e-8)
     expect_lt(max(abs(as.numeric(fit_sd$weights) -

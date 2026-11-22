@@ -748,10 +748,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #   multi  extra fields .nl_block_as_arm() indexes to write a registry block
 #          in the one-arm form the joint converter reads.
 #   joint  extra fields .joint_block_spec_for_cpp() indexes.
-#   joint_single
-#          extra fields .joint_call_kernel_via_multi() indexes on the
-#          single-block joint path, where the per-observation index lives on
-#          each arm rather than on the block.
 #   projected
 #          the fields a projected block carries on a multi-block path: an areal
 #          block's graph or an NNGP block's neighbour structure, with
@@ -833,8 +829,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   icar = list(
     required = list(multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
-                    projected = .NL_REQ_AREAL_GRAPH,
-                    joint_single = .NL_REQ_AREAL_GRAPH),
+                    projected = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) .nl_fill_family_axes(p, "icar"),
     theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
   ),
@@ -842,8 +837,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   bym2 = list(
     required = list(multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
-                    projected = .NL_REQ_AREAL_GRAPH,
-                    joint_single = .NL_REQ_AREAL_GRAPH),
+                    projected = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) {
       # The mixing weight enters as sqrt(rho) and sqrt(1 - rho).
       .nl_check_axis_interval(p, "rho_grid", 0, 1, "a BYM2 mixing weight",
@@ -859,8 +853,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   car_proper = list(
     required = list(multi = .NL_REQ_AREAL,
                     joint = .NL_REQ_AREAL,
-                    projected = .NL_REQ_AREAL_GRAPH,
-                    joint_single = .NL_REQ_AREAL_GRAPH),
+                    projected = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) {
       # `rho_car_grid` is the joint-API spelling of the correlation axis; accept
       # it as an alias so a grid passed under either name is honoured.
@@ -1678,23 +1671,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
     !is.null(p$projector)
 }
 
-# A block `projector` is read by the two multi-block drivers, the single-arm
-# one behind tulpa_nested_laplace() and the joint one. The single-block joint
-# path would gather the field through `spatial_idx` and drop the projector, so
-# it refuses it.
-.nl_refuse_projector <- function(prior, door) {
-  blocks <- if (is.list(prior) && !is.null(prior$type)) list(prior) else prior
-  if (!is.list(blocks)) return(invisible(NULL))
-  has <- vapply(blocks, function(b) is.list(b) && !is.null(b$projector),
-                logical(1))
-  if (any(has)) {
-    stop(door, " does not read a block `projector`; a projected field ",
-         "is fitted by tulpa_nested_laplace_joint() with a list of blocks, ",
-         "`prior = list(<block>)`.", call. = FALSE)
-  }
-  invisible(NULL)
-}
-
 # A projected block's per-arm projectors as the column-compressed triple
 # the C++ block builders read (0-based `A_i` / `A_p`, the SPDE projector's
 # layout). `p$projector` is a list of n_arms matrices, each N_k x n_units
@@ -2168,7 +2144,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # arm a joint fit reads: every multi-block registry fit is a one-arm fit on the
 # joint driver, its latent blocks owning their observation maps.
 .nl_registry_arm <- function(cargs, likelihood = NULL) {
-  .normalise_joint_arm_multi(list(
+  .normalise_joint_arm(list(
     y           = cargs$y,
     n_trials    = cargs$n,
     X           = cargs$X,

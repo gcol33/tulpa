@@ -48,7 +48,7 @@ test_that("a collapsed outer grid reports its regime through diagnostics()", {
     note <- attr(d, "outer_regime_note")
     expect_true(is.character(note) && nzchar(note))
     expect_match(note, "collapsed against a boundary node")
-    expect_match(note, "sigma")
+    expect_match(note, "b1.tau", fixed = TRUE)
 })
 
 test_that("printing the diagnostics of a collapsed fit says so", {
@@ -94,7 +94,7 @@ test_that("the approximation summary row carries the regime's reading, not only 
     expect_identical(srow$outer_regime, "collapsed_edge")
     expect_true(is.character(srow$outer_regime_note))
     expect_match(srow$outer_regime_note, "collapsed against a boundary node")
-    expect_match(srow$outer_regime_note, "sigma")
+    expect_match(srow$outer_regime_note, "b1.tau", fixed = TRUE)
     expect_true(is.finite(srow$ess_grid))
     expect_true(is.finite(srow$max_weight))
 })

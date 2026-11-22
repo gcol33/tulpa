@@ -179,11 +179,11 @@ test_that("alpha hyperprior gently reduces small-n_pos bias without corrupting s
                           prior_alpha = list("pc.prec", c(4.0, 0.01)))
         f_hn   <- .fit_pp(sim, adj,
                           prior_alpha = list("half_normal", 1.0))
-        alpha_flat[i] <- f_flat$theta_median[["alpha"]]
-        alpha_pc[i]   <- f_pc$theta_median[["alpha"]]
-        alpha_hn[i]   <- f_hn$theta_median[["alpha"]]
-        sig_flat[i]   <- f_flat$theta_mean[["sigma"]]
-        sig_pc[i]     <- f_pc$theta_mean[["sigma"]]
+        alpha_flat[i] <- f_flat$theta_median[["b1.alpha"]]
+        alpha_pc[i]   <- f_pc$theta_median[["b1.alpha"]]
+        alpha_hn[i]   <- f_hn$theta_median[["b1.alpha"]]
+        sig_flat[i]   <- f_flat$theta_mean[["b1.sigma"]]
+        sig_pc[i]     <- f_pc$theta_mean[["b1.sigma"]]
     }
 
     geom_bias <- function(hat, truth) {
@@ -277,5 +277,5 @@ test_that("alpha = 0 grid cell is not zeroed by the prior", {
     # With alpha_truth = 0, the alpha posterior median should be small
     # (well below 0.2). Pre-fix the median jumped to ~0.5 because the
     # zero cell was eliminated. 0.2 is generous headroom for one seed.
-    expect_lt(fit$theta_median[["alpha"]], 0.2)
+    expect_lt(fit$theta_median[["b1.alpha"]], 0.2)
 })

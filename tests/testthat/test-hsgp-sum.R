@@ -225,7 +225,7 @@ test_that("summed HSGP loadings validate their observation rows", {
   blocks <- lapply(c(9L, 16L), function(m) list(type = "hsgp",
     phi = list(matrix(1, 6, m)), m_total = m, n_obs_per_arm = 6L,
     eigenvalues = seq_len(m), kernel = 1L))
-  arm <- tulpa:::.normalise_joint_arm_multi(
+  arm <- tulpa:::.normalise_joint_arm(
     list(y = rep(0, 7), X = matrix(1, 7, 1), family = "gaussian"), 1L)
   expect_error(tulpa:::cpp_nested_laplace_joint_multi(
     arms_list = list(arm), copy_arms = integer(0), copy_blocks = integer(0),

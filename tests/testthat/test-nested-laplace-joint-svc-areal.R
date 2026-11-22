@@ -59,7 +59,7 @@ test_that("joint log-posterior gradient matches central FD with areal svc_weight
     arms_list <- list(arm(y1, X1, s1), arm(y2, X2, s2))
     # normalise the way the dispatcher does (fills field_coef / cell-coupling).
     arms_norm <- lapply(seq_along(arms_list), function(k)
-        tulpa:::.normalise_joint_arm_multi(arms_list[[k]], k))
+        tulpa:::.normalise_joint_arm(arms_list[[k]], k))
 
     block_spec_R <- list(
         type = "icar",

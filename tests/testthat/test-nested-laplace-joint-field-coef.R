@@ -191,7 +191,7 @@ test_that("field_coef = list(name='alpha', grid=) runs; single-block copy= error
         prior = prior
     )
     expect_s3_class(fit_new, "tulpa_nested_laplace_joint")
-    expect_true("alpha" %in% colnames(fit_new$theta_grid))
+    expect_true("b1.alpha" %in% colnames(fit_new$theta_grid))
 
     # The single-block `copy =` back-compat shim was removed (pre-release: no
     # shims). Passing it now errors, pointing at the per-arm field_coef spec.

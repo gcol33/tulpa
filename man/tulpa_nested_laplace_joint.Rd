@@ -33,7 +33,9 @@ tulpa_nested_laplace_joint(
 \item \code{y}           -- numeric \verb{[N_arm]} response.
 \item \code{n_trials}    -- integer \verb{[N_arm]} (use \code{rep(1L, N_arm)} for non-binomial).
 \item \code{X}           -- numeric matrix \verb{[N_arm x p_arm]} fixed-effects design.
-\item \code{spatial_idx} -- integer \verb{[N_arm]}, 1-based map obs -> spatial unit.
+\item \code{spatial_idx} -- integer \verb{[N_arm]}, 1-based map obs -> spatial unit,
+read only with an unwrapped single-block \code{prior} (a
+block list carries each arm's map on the block).
 \item \code{re_idx}      -- optional numeric \verb{[N_arm]} 1-based RE group index;
 defaults to \code{rep(0, N_arm)} (no RE).
 \item \code{n_re_groups} -- optional integer (default \code{0L}).
@@ -78,37 +80,40 @@ amplitude. One of:
 * numeric scalar (default \code{1}) -- constant
 multiplier. \code{0} means the arm carries NO field
 at all (the per-row scatter \verb{eta += field_coef * sigma * z} is skipped for that arm).
-* character of length 1 -- names an outer-grid
-hyperparam axis (currently \code{"alpha"}); the
-coefficient varies across the grid.
-* \code{list(name = , grid = )} -- embedded axis
-declaration, equivalent to declaring the axis
-and naming it on this arm.
-At most one arm may declare a hyperparam-driven
-axis (the cover hurdle and
-occu_cover both need only one). Shared axes
-across multiple arms are deferred. A single-block
-copy coefficient is declared here, on the arm --
-not through a separate \code{copy} argument.
+* with an unwrapped single-block \code{prior} only: a
+character of length 1, or \code{list(name = , grid = , n = )}, declaring this arm the copy arm of the
+block. It is the copy spec
+\verb{list(arm = <this arm>, block = 1, alpha_grid = grid, alpha_n = n)} (see \code{copy}), and the fit
+names the axis \code{b1.alpha}. At most one arm may
+declare one.
 }}
 
-\item{prior}{A list describing the shared latent prior block. Required
-field \code{type}. Backend-specific fields:
+\item{prior}{A list of block specs, each with a \code{type} field, or one
+unwrapped areal block spec. The areal blocks' fields:
 \itemize{
 \item \strong{bym2}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
 \code{n_neighbors}, \code{scale_factor} (default \code{1}); optional \code{sigma_grid}
-(donor-arm field amplitude, default 5 log-spaced values in
-\verb{[0.1, 3]}), \code{rho_grid} (default
-\code{c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)}).
+(field SD) and \code{rho_grid} (mixing weight).
 \item \strong{icar}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
-\code{n_neighbors}; optional \code{sigma_grid} (default 5 log-spaced values
-in \verb{[0.1, 3]}).
-\item \strong{car_proper}: same as icar plus \code{rho_car_grid}
-(default \code{c(0.5, 0.8, 0.95, 0.99)}).
+\code{n_neighbors}; optional \code{tau_grid} (precision), or \code{sigma_grid} on a
+copy block (donor amplitude).
+\item \strong{car_proper}: same as icar plus \code{rho_grid} / \code{rho_car_grid}
+(correlation).
+Within a block list each block also carries its per-arm observation map
+(\code{spatial_idx}, a list of \code{n_arms} integer vectors). A non-copy block's
+grid fields are paired cells (the i-th entries of each form one cell); a
+copy block's are axes the driver crosses.
 }
 
-\code{sigma_grid}'s default is a starting axis, not a hard ceiling: when the
-fitted field-SD posterior mode rails the top node (the axis's own
+An unwrapped single block reads its fields in the field-SD spelling:
+\code{sigma_grid} is the field SD and is crossed with \code{rho_grid} (bym2) or
+\code{rho_car_grid} (car_proper). It is translated once into the block it
+spells -- a non-copy icar / car_proper SD to the precision
+\code{tau_grid = 1 / sigma_grid^2}, crossed axes to paired cells -- so the fit
+integrates the same nodes and reports them as \code{b1.tau} (or \code{b1.sigma}).
+
+A default axis is a starting axis, not a hard ceiling: when the
+fitted posterior mode rails an end node (the axis's own
 marginal is maximal there, or the whole grid collapsed onto it:
 \code{pareto_k_regime = "collapsed_edge"}, see below), the driver finds the
 outer posterior mode -- a damped Newton search over every outer axis,
@@ -125,7 +130,7 @@ attempts is named in a warning, with the reason it stayed, in
 \code{outer_grid_axis_declined} (gcol33/tulpa#919). The mode the placement
 was laid around is on the fit as \code{outer_mode_u} / \code{outer_mode_cov_u} (in
 each axis's \code{outer_mode_axis_tags} coordinate), with \code{outer_mode_status},
-\code{outer_mode_rounds} and \code{outer_mode_evals}. A \code{sigma_grid} the caller
+\code{outer_mode_rounds} and \code{outer_mode_evals}. A grid the caller
 PINNED always wins: auto-recenter
 engages when the field is left \code{NULL}, when it is marked with
 \code{\link[=auto_grid]{auto_grid()}} (how a wrapper package declares an axis it defaulted rather
@@ -236,28 +241,26 @@ each field's standard deviation \verb{b<k>.sigma_i}, each correlation
 summarized over the cell weights, in the hyperparameter table of
 \code{summary()}.
 
-A block type the single-block path does not list above (\code{iid}, \code{mcar},
-\code{miid}, \code{lf}, \code{hsgp}, ...) is read on the list-of-blocks path only, so a
-single such block is passed as a one-block list,
+Any other block type (\code{iid}, \code{mcar}, \code{miid}, \code{lf}, \code{hsgp}, ...) is passed
+in a list, a single one as a one-block list,
 \code{prior = list(list(type = "iid", n_units = , obs_idx = ))}; passed
-unwrapped it is read as a single-block prior and refused.
+unwrapped it is refused.
 
 An empty \code{prior = list()} is a list of zero blocks: the model carries no
 latent field, each arm's predictor is its fixed effects, and the outer
 grid is spanned by the per-arm dispersion axes of \code{phi_grid} alone (one
 cell when there are none).}
 
-\item{copy}{Multi-block copy specification (multi-block \code{prior} only). For a
-single-block fit there is no \code{copy} argument: declare the copy coefficient
-on the arm via \code{responses[[X]]$field_coef = list(name = "alpha", grid = G)}.
-On the multi-block path \code{copy} is an unnamed list of specs --
+\item{copy}{Copy specification for a list-of-blocks \code{prior}: one spec
+\code{list(arm, block, alpha_grid)} or an unnamed list of specs --
 \code{list(list(arm, block, alpha_grid),...)} -- coupling N distinct shared
 latent fields, each onto its own arm with its own \eqn{\alpha} axis,
 integrated over the product outer grid. Each spec must name a distinct
-block.
+block. With an unwrapped single-block \code{prior} the copy is declared on the
+arm instead (\code{field_coef}, see \code{responses}).
 
 The \eqn{\alpha} axis takes EITHER \code{alpha_grid}, which states its nodes, OR
-\code{alpha_n} (\code{field_coef$n} on the single-block path), which re-reads the
+\code{alpha_n} (\code{field_coef$n} on an unwrapped prior), which re-reads the
 engine's own axis at a higher RESOLUTION -- more nodes between the same
 bounds, keeping the atom at 0 that gives the "no copy" base model posterior
 mass. They are different requests and supplying both is an error. Use
@@ -267,9 +270,8 @@ restates the prior structure it carries (gcol33/tulpa#633).
 The copy block may be any of \code{icar} / \code{bym2} / \code{car_proper} / \code{rw1}
 / \code{rw2} / \code{ar1} / \code{iid}; blocks with their own per-arm scaling (\code{lf},
 \code{hsgp_mo}) or a precomputed precision (\code{tgmrf}) do not take a copy. A
-copy block's own \code{sigma_grid} (the donor field amplitude, same default
-ceiling as the single-block \code{prior$sigma_grid} above) auto-recenters on
-\code{collapsed_edge} the same way, one block per attempt.}
+copy block's own \code{sigma_grid} (the donor field amplitude) auto-recenters
+on \code{collapsed_edge} the same way, one block per attempt.}
 
 \item{phi_grid}{Optional list specifying per-arm dispersion axes on the
 outer grid. Accepts either a named list (keys = arm names) or a
@@ -349,7 +351,9 @@ var-of-means consistency) see the regularized posterior. When the
 data identifies the parameter (e.g. \code{n_pos >= ~200}) the prior is
 essentially harmless -- the lever is tail-shrinkage at small
 \code{n_pos}. \code{prior_alpha} only applies when \code{copy} is active;
-\code{prior_sigma} applies on any \code{sigma}-named axis.
+\code{prior_sigma} applies on every block's field-scale axis, a field SD
+\verb{b<k>.sigma} or a precision \verb{b<k>.tau}, carried to the precision by
+the change of variables \code{tau = sigma^-2}.
 }
 
 WHICH AXES ONE SPEC REACHES. A list-of-blocks \code{prior} can carry the same
@@ -369,8 +373,7 @@ by block the way a multi-block \code{copy} spec does:
 
 A block the list does not name carries no prior on that axis. An entry
 naming a block that carries no such axis is an error, and the message
-names the blocks that do. The per-block shape is a multi-block one: on a
-single-block \code{prior}, where the axis is unique, pass the spec itself.
+names the blocks that do; an unwrapped single-block \code{prior} is block 1.
 A fit reports what it applied in \code{hyperprior_axes}: one record per role
 with the scope the caller stated it at (\code{"every_block"} / \code{"per_block"}),
 the block indices reached, and the grid columns those are.
@@ -560,9 +563,8 @@ holds the posterior -- at most \code{n_new_points * n_rows} kernel solves. The
 edge score is \verb{max(marginal_weight_at_boundary, exp(max_log_marginal_at _boundary - max_log_marginal_overall))}, catching both boundary pile-up
 and integrand truncation; \code{0.02} is ~4 log units of decay.
 \code{adaptive_grid_max_passes} caps the passes (one usually suffices). Fixes
-posterior CI under-coverage when truth sits near a grid edge. Both the
-single-block and the multi-block driver run the passes on a tensor grid;
-a CCD design, the adaptive lattice and a locally CCD-refined grid keep the
+posterior CI under-coverage when truth sits near a grid edge. The
+passes run on a tensor grid; a CCD design, the adaptive lattice and a locally CCD-refined grid keep the
 nodes they were laid on.
 
 How far a given axis may be moved depends on where its nodes came from.
@@ -787,8 +789,8 @@ the quadrature-ESS fallback (\code{pareto_k = NA}). \code{FALSE} skips the diagn
 \code{"by_arm"} additionally computes a k-hat restricted to each arm's
 hyperparameter axes (the other arms held at their posterior mean), reported
 in \code{pareto_k_by_arm}, to localise which arm drives a tail-heavy joint k; the
-joint k itself is unchanged. Per-arm k is defined for the multi-block layout
-with two or more arms and declines for the single-block shared-field layout.
+joint k itself is unchanged. Per-arm k is defined with two or more arms
+and declines when fewer than two arms carry an axis.
 \item \code{k_threads} (\code{NULL}) -- outer-thread width for the diagnostic's importance
 batch. The \code{k_samples} re-solves are independent and run after the grid
 (every core free), each solved single-threaded once the batch saturates the
@@ -845,10 +847,7 @@ carry neither reports \code{NaN}, not a silently wrong 0, and
 layer could not score at all, distinct from a diagnostic that was simply
 switched off -- while \verb{$inner_skew_arms_declined} names the arms with no
 oracle, including on a partially scored fit. See
-\code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Wired
-for both the single-block backends (icar/bym2/car_proper) and the
-multi-block path (a per-group RE, a trend field, or an arm-specific
-field block).
+\code{\link[=diagnostics]{diagnostics()}} for the combined verdict.
 \item \code{within_cell} (\code{"log_quadratic"}) -- the WITHIN-CELL construction the
 reported per-axis hyperparameter intervals are read with. The outer
 grid's weights say how much mass each cell holds; they do not say how it
@@ -1003,11 +1002,11 @@ resumed onto a stale result.
 A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")} with:
 \itemize{
 \item \code{theta_grid}, \code{theta_names} -- outer-grid hyperparameter values
-(includes the \code{alpha} axis when \code{copy} is set).
+(includes a copy block's \verb{b<k>.alpha} axis when \code{copy} is set).
 \item \code{log_marginal}, \code{weights} -- per-grid-point log-marginal and integration
 weights (sum to 1).
 \item \code{theta_mean}, \code{theta_sd} -- posterior moments per hyperparameter,
-including \code{alpha} when \code{copy} is set.
+including \verb{b<k>.alpha} when \code{copy} is set.
 Divergent range and precision moments are \code{Inf}; \code{moment_existence}
 records the prior tail, likelihood boundary decay and the reason.
 \code{theta_log_mean} and \code{theta_log_sd} retain finite log-range moments.
@@ -1093,8 +1092,8 @@ axis's integration coordinate, so 2x at two nodes and 1.125x at nine),
 same interval \code{axis_support} reports), \code{refine} (the mode refinement
 ran under: \code{"none"} / \code{"densify"} / \code{"extend"}) and \code{n_nodes} (initial
 and final continuum node counts).
-\item \code{outer_grid_placement} -- \code{"fixed"} (the default \code{sigma_grid} axis was
-used as-is) or \code{"auto_recentered"} when a railed \code{sigma} axis
+\item \code{outer_grid_placement} -- \code{"fixed"} (the default axes were used as-is)
+or \code{"auto_recentered"} when a railed or unresolved axis
 triggered the mode-Hessian recenter-and-refit (see the \code{prior}
 argument above). \code{outer_grid_recenter_attempts} (integer)
 and \code{outer_grid_prior_added} (logical: whether the light default
@@ -1104,7 +1103,7 @@ but the caller's pinned \code{prior_sigma} held that prior back.
 \item \code{outer_grid_recenter_declined} -- on a \code{"fixed"} placement, why the
 recenter did not run: \code{"grid_not_collapsed"} (the grid already brackets
 the mode -- the common case, no refit needed), \code{"axis_pinned"} (the
-caller pinned \code{sigma_grid}; mark it with \code{\link[=auto_grid]{auto_grid()}} if it is a
+caller pinned the axis's grid; mark it with \code{\link[=auto_grid]{auto_grid()}} if it is a
 default rather than a choice), \code{"default_axis_pinned"} (a wrapper
 package declared the nodes with \code{auto_grid(place = FALSE)} and asked
 for them as written -- nothing you pinned), or \code{"no_usable_curvature"}
@@ -1121,8 +1120,8 @@ character vector. The slot above holds one reason for the whole fit and
 is written only while the fit is unplaced, so on a fit where one axis
 moved and another did not it says \code{auto_recentered} and nothing about
 the axis that stayed -- which is the axis \code{grid_coarsest_axis} then
-names. Written by the field-SD passes for \code{sigma} (\verb{b<k>.sigma} on a
-copy block) and by the per-arm dispersion pass for \verb{phi_<arm>}, and
+names. Written for every block axis the pass walks (\verb{b<k>.sigma},
+\verb{b<k>.tau}, ...) and for each per-arm dispersion \verb{phi_<arm>}, and
 carried across a later pass placing a different axis; absent on a fit
 no pass declined an axis of. An axis a pass DID move that still rails
 reads \code{"attempts_exhausted"} (or the reason its last attempt could not be
@@ -1234,7 +1233,7 @@ quadratic and still be read at a point that is not representative of it
 (\code{offset} / \code{mode_gain}), and refining it can still move how much mass it
 competes for against its unrefined neighbours (\code{log_mass_ratio}, the
 embedded-rule local error indicator of adaptive cubature). NULL when
-local CCD was off or declined (single-block, \verb{< 4} axes, an active
+local CCD was off or declined (\verb{< 4} axes, an active
 \code{phi_grid}, or no peaked interior cell).
 \item \code{integration_requested}, \code{integration_declined} -- what \code{integration}
 asked for, and why the requested CCD or adaptive lattice did not run. \verb{$integration} names the
@@ -1390,39 +1389,36 @@ mass gate the fit warns.
 }
 }
 \description{
-Outer-grid nested Laplace driver for \emph{joint} models -- multiple response
-arms sharing one latent prior block, parameterized as a per-arm field
-amplitude (sigma) on a unit-precision latent.
+Outer-grid nested Laplace driver for \emph{joint} models -- one or more response
+arms sharing a list of latent blocks, each block's hyperparameters an axis
+of the outer grid, named \verb{b<k>.<hyper>} for block \code{k} (\code{b1.tau},
+\code{b2.sigma}, ...) and \verb{phi_<arm>} for an arm's dispersion.
 
-Supported priors:
-\itemize{
-\item \code{"bym2"}       -- outer grid over \verb{(sigma, rho [, alpha])}.
-Latent: \code{phi (n_s) | theta (n_s)} with unit-precision
-ICAR + iid components.
-\item \code{"icar"}       -- outer grid over \code{(sigma [, alpha])}.
-Latent: \code{phi (n_s)} with unit-precision ICAR.
-\item \code{"car_proper"} -- outer grid over \verb{(sigma, rho_car [, alpha])}.
-Latent: \code{phi (n_s)} with \code{Q = D - rho_car * W}.
+\code{prior} is a list of block specs. A single areal block (\code{"icar"},
+\code{"bym2"}, \code{"car_proper"}) may also be passed unwrapped, with each arm's
+observation map on the arm's \code{spatial_idx} and a copy coefficient declared
+on an arm's \code{field_coef}; it is fitted as the one-block list it spells, so
+its axes carry the same \code{b1.} names (see \code{prior}).
 }
+\section{Copy blocks, (sigma, alpha) parameterization}{
 
-Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
-land under Phase 3.
-}
-\section{(sigma, alpha) parameterization}{
-
-Each arm's linear predictor reads
+A copy block couples one field into a second arm. Each arm's linear
+predictor reads
 \deqn{\eta_{arm} = X_{arm} \beta_{arm} + \sigma_{arm} \cdot z_s,}
 where \eqn{z_s} is a unit-precision latent (ICAR(tau=1) for ICAR/BYM2,
 or the BYM2 mix; CAR_proper uses the structure of
-\eqn{D - \rho_{car} W}). All arms share the donor amplitude
-\eqn{\sigma} from the outer-grid \code{sigma_grid} axis. The copy arm's
-amplitude is \eqn{\sigma_{arm} = \alpha \cdot \sigma}, where \eqn{\alpha}
-is a direct outer-grid axis taken from \code{copy$alpha_grid}. The Cartesian
-product is over \verb{(sigma, [rho/rho_car,] alpha[, phi])}. Direct \eqn{\alpha}
+\eqn{D - \rho_{car} W}). The donor arm carries the block's amplitude
+\eqn{\sigma} from its \code{sigma_grid} axis (\verb{b<k>.sigma}), the copy arm
+\eqn{\sigma_{arm} = \alpha \cdot \sigma}, where \eqn{\alpha} is a direct
+outer-grid axis (\verb{b<k>.alpha}) taken from \code{copy$alpha_grid}. The block's
+grid crosses \verb{(sigma, alpha [, rho / rho_car])}. Direct \eqn{\alpha}
 as an outer-grid axis (rather than a post-hoc ratio
 \eqn{\alpha = \sigma_{pos} / \sigma_{occ}}) avoids plug-in bias on the
 weakly-identified ratio at small \code{n_pos} and lets a regularizing
-hyperprior land on \eqn{\alpha} directly.
+hyperprior land on \eqn{\alpha} directly. A non-copy block keeps its own
+parameterization: an \code{icar} field on its precision \verb{b<k>.tau}, a
+\code{car_proper} field on \verb{(b<k>.tau, b<k>.rho)}, a \code{bym2} field on
+\verb{(b<k>.sigma, b<k>.rho)}.
 }
 
 \section{Computation device}{

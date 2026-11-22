@@ -216,7 +216,7 @@ test_that("the default construction is log-quadratic, and one setting decides it
   dflt <- .nl_diag("within_cell")
   expect_identical(dflt, "log_quadratic")
   expect_identical(.nl_within_cell_mode(NULL), dflt)
-  for (fn in list(.nl_posterior_moments, .nl_summary_quantile,
+  for (fn in list(.nl_summary_quantile,
                   .nl_summary_quantile_read, .nl_read_sd, .nl_axis_quantiles,
                   .joint_posterior_moments_multi)) {
     expect_null(formals(fn)$within)

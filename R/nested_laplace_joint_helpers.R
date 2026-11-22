@@ -5,62 +5,6 @@
 
 # --- helpers -----------------------------------------------------------------
 
-# Cartesian product over a named list of spatial axes plus an optional
-# alpha axis (copy coefficient) and optional per-arm phi axes.
-# `phi_axes` is a list keyed by arm name; entries are either NULL/empty (no
-# axis for that arm) or numeric vectors that become a new outer-grid axis
-# named `phi_<arm>`. Returns a named list of paired vectors of identical
-# length, ready to feed the C++ kernel. Phi axes vary slowest (added last)
-# so within-spatial-block warm-starts stay good.
-.joint_cartesian <- function(axes, has_copy, alpha_axis, phi_axes = NULL) {
-    full <- if (has_copy) c(axes, list(alpha = alpha_axis)) else axes
-    if (!is.null(phi_axes)) {
-        active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
-        if (length(active) > 0L) {
-            names(active) <- paste0("phi_", names(active))
-            full <- c(full, active)
-        }
-    }
-    gr <- do.call(expand.grid,
-                  c(full, list(KEEP.OUT.ATTRS = FALSE,
-                                stringsAsFactors = FALSE)))
-    out <- as.list(gr)
-    if (!has_copy) out$alpha <- numeric(0)
-    out
-}
-
-# Append any `phi_<arm>` columns from `grids` onto a backend's spatial
-# theta_grid matrix so downstream posterior-moment helpers see phi as a
-# regular hyperparameter axis.
-.append_phi_columns <- function(base, grids) {
-    phi_cols <- grep("^phi_", names(grids), value = TRUE)
-    if (length(phi_cols) == 0L) return(base)
-    extra <- do.call(cbind, lapply(phi_cols, function(c) {
-        out <- as.numeric(grids[[c]]); attr(out, "name") <- c; out
-    }))
-    colnames(extra) <- phi_cols
-    cbind(base, extra)
-}
-
-# Build the `phi_grid_per_arm` argument for the C++ kernels from a
-# Cartesian-product `grids` list and arm names. Returns a list of length
-# `n_arms`: entry k is either `NULL` (no phi axis for that arm -- kernel
-# uses the parse-time scalar phi) or a NumericVector of length n_grid
-# matching the flat outer-grid size. Phi columns in `grids` follow the
-# `phi_<arm_name>` convention produced by `.joint_cartesian`.
-.joint_phi_grid_per_arm <- function(grids, arm_names) {
-    out <- vector("list", length(arm_names))
-    any_active <- FALSE
-    for (k in seq_along(arm_names)) {
-        col <- paste0("phi_", arm_names[k])
-        if (!is.null(grids[[col]])) {
-            out[[k]] <- as.numeric(grids[[col]])
-            any_active <- TRUE
-        }
-    }
-    if (!any_active) NULL else out
-}
-
 # Compute a tile partition for the outer-grid loop's three-tier warm-start.
 # A tile groups all
 # outer-grid cells that share every hyperparameter coordinate except the
@@ -156,21 +100,15 @@
     out
 }
 
-# Validate one arm spec and fill in defaults. `spatial_idx` selects the
-# policy for the arm-level spatial index: "required" (single-block path:
-# a mandatory field) or "optional" (multi-block path: per-arm idx vectors
-# live inside each block spec, so a missing spatial_idx gets a length-N
-# placeholder of zeros -- it satisfies parse_joint_arms' length check
-# without contributing to eta).
-.normalise_joint_arm_core <- function(a, k,
-                                      spatial_idx = c("required", "optional")) {
-    spatial_idx <- match.arg(spatial_idx)
+# Validate one arm spec and fill in defaults. Per-arm index vectors live in
+# each block spec, so an arm without `spatial_idx` gets a length-N placeholder
+# of zeros -- it satisfies parse_joint_arms' length check without contributing
+# to eta.
+.normalise_joint_arm <- function(a, k) {
     if (!is.list(a)) {
         stop("Arm ", k, ": expected a list of arm spec fields.", call. = FALSE)
     }
-    must_have <- if (spatial_idx == "required") c("y", "X", "spatial_idx", "family")
-                 else c("y", "X", "family")
-    missing <- setdiff(must_have, names(a))
+    missing <- setdiff(c("y", "X", "family"), names(a))
     if (length(missing)) {
         stop("Arm ", k, ": missing fields ", paste(shQuote(missing), collapse = ", "),
              ".", call. = FALSE)
@@ -184,7 +122,7 @@
         stop("Arm ", k, ": nrow(X) (", nrow(a$X), ") must equal length(y) (",
              N, ").", call. = FALSE)
     }
-    if (spatial_idx == "optional" && is.null(a$spatial_idx)) {
+    if (is.null(a$spatial_idx)) {
         a$spatial_idx <- rep(0L, N)
     }
     if (length(a$spatial_idx) != N) {
@@ -278,12 +216,6 @@
     a
 }
 
-# Validate one arm spec and fill in defaults (single-block path:
-# arm-level `spatial_idx` is required).
-.normalise_joint_arm <- function(a, k) {
-    .normalise_joint_arm_core(a, k, spatial_idx = "required")
-}
-
 # Parse per-arm `coupled` / `cell_obs_map`. When `coupled` is TRUE, the
 # inner Newton routes this arm's per-cell contribution through the
 # registered CellCouplingSpec; `cell_obs_map[i]` is the 1-based cell id
@@ -313,29 +245,16 @@
     a
 }
 
-# Parse the per-arm `field_coef` spec into resolved fields. Each arm carries
-# one of: numeric scalar (constant), character (named outer-grid hyperparam
-# axis), or list(name = , grid = ) (embedded axis declaration). The default
-# is `field_coef = 1` (donor behaviour -- existing non-copy arms).
-#
-# Resolves to two fields on the arm spec:
-#   * `field_coef_const` numeric scalar (default 1) -- the constant per-arm
-#     multiplier always applied to that arm's field amplitude. For arms with
-#     a hyperparam-driven coefficient this is 1 (the hyperparam carries the
-#     coefficient).
-#   * `field_coef_axis` NULL or list(name = , grid = , n = ) -- when set, this
-#     arm declares a hyperparam-driven field coefficient. The driver maps that
-#     declaration to the existing `copy = list(arm, alpha_grid)` plumbing
-#     (at most one such axis is supported). `grid` states the axis's nodes; `n`
-#     re-reads the engine's own axis at a higher resolution instead
-#     (gcol33/tulpa#633), keeping its atom at 0 and its slab bounds.
-#     `grid_auto` records whether a stated `grid` carried the `auto_grid()`
-#     marker, which is the provenance the refinement rule reads.
+# The per-arm constant `field_coef` (default 1): the multiplier always applied
+# to that arm's field amplitude, `0` an arm that carries no field. Resolved to
+# `field_coef_const`, which the kernel reads. A copy coefficient varying over
+# the outer grid is a copy spec (`copy`); an unwrapped single-block prior
+# declares it on an arm's `field_coef`, which the front door turns into that
+# spec before any arm is normalised (`.joint_bare_prior_as_blocks()`).
 .normalise_arm_field_coef <- function(a, k) {
     fc <- a$field_coef
     if (is.null(fc)) {
         a$field_coef_const <- 1.0
-        a$field_coef_axis  <- NULL
         return(a)
     }
     if (is.numeric(fc) && length(fc) == 1L) {
@@ -344,109 +263,17 @@
                  "non-negative number (got ", fc, ").", call. = FALSE)
         }
         a$field_coef_const <- as.numeric(fc)
-        a$field_coef_axis  <- NULL
         return(a)
     }
-    if (is.character(fc) && length(fc) == 1L) {
-        a$field_coef_const <- 1.0
-        a$field_coef_axis  <- list(name = fc, grid = NULL, alpha_n = NULL,
-                                   grid_auto = FALSE)
-        return(a)
-    }
-    if (is.list(fc)) {
-        nm <- fc$name
-        if (is.null(nm) || !is.character(nm) || length(nm) != 1L) {
-            stop("Arm ", k, ": `field_coef` list must carry a single character ",
-                 "`name`.", call. = FALSE)
-        }
-        gr <- fc$grid
-        # `as.numeric()` drops attributes, so the `auto_grid()` marker -- a
-        # wrapper package declaring these nodes a default of its own rather than
-        # a user's choice -- is read off the value before it is coerced and
-        # carried on the resolved axis, where the refinement provenance rule
-        # reads it. A declaration asking for the nodes AS WRITTEN
-        # (`auto_grid(place = FALSE)`) is a statement about where the fit
-        # integrates like a pin is, so refinement treats it as one.
-        gr_auto <- is_auto_grid(gr) && auto_grid_place(gr)
-        if (!is.null(gr)) {
-            gr <- as.numeric(gr)
-            if (length(gr) == 0L || any(!is.finite(gr)) || any(gr < 0)) {
-                stop("Arm ", k, ": `field_coef$grid` must be a non-empty ",
-                     "numeric vector of finite non-negative values.",
-                     call. = FALSE)
-            }
-        }
-        # `[[` and not `$`: `$` PARTIAL-matches on a list, so `fc$n` resolves
-        # to `fc$name` on every spec that names its coefficient and feeds a
-        # character into the integer check below.
-        an <- fc[["n"]]
-        if (!is.null(an)) {
-            an <- suppressWarnings(as.integer(an))
-            if (length(an) != 1L || is.na(an) || an < 1L) {
-                stop("Arm ", k, ": `field_coef$n` must be a single integer ",
-                     ">= 1.", call. = FALSE)
-            }
-        }
-        a$field_coef_const <- 1.0
-        a$field_coef_axis  <- list(name = as.character(nm), grid = gr,
-                                   alpha_n = an, grid_auto = gr_auto)
-        return(a)
-    }
-    stop("Arm ", k, ": `field_coef` must be NULL, a numeric scalar, a single ",
-         "character name, or `list(name = , grid = )`.", call. = FALSE)
-}
-
-
-# Decide which arm (if any) is the copy arm and what the alpha grid is.
-# Single-block path: the copy coefficient's outer-grid axis lives on the arm
-# that declares it.
-#
-# Source of truth: `arms` already carries the resolved per-arm `field_coef_axis`
-# / `field_coef_const` from `.normalise_joint_arm`. When any arm declared a
-# hyperparam axis, the resolved axis arm + grid are returned as the kernel-facing
-# copy spec.
-#
-# `field_coef_const` carries the per-arm constant multipliers (default 1 for
-# every arm). Arms with `field_coef = 0` get const 0; arms with `field_coef =
-# c` get c. These multipliers ride alongside any hyperparam axis on the same
-# arm (axis multiplied by const), so they are returned to the caller and
-# threaded down to the kernel via `arms[k].field_coef` (see the C++ side).
-.resolve_copy <- function(responses, prior, type) {
-    n_arms <- length(responses)
-    consts <- vapply(responses, function(a) {
-        if (is.null(a$field_coef_const)) 1.0 else as.numeric(a$field_coef_const)
-    }, numeric(1))
-    axes <- lapply(responses, function(a) a$field_coef_axis)
-    has_axis_per_arm <- !vapply(axes, is.null, logical(1))
-    if (sum(has_axis_per_arm) > 1L) {
-        stop("At most one arm may declare a hyperparam `field_coef` axis. Got ",
-             sum(has_axis_per_arm), ".", call. = FALSE)
-    }
-    if (!any(has_axis_per_arm)) {
-        return(list(has_copy = FALSE, copy_arm_zero = -1L,
-                    alpha_grid = numeric(0),
-                    field_coef_const = consts))
-    }
-    k_axis <- which(has_axis_per_arm)
-    spec   <- axes[[k_axis]]
-    alpha_axis <- .nl_copy_alpha_axis(spec[["grid"]], spec[["alpha_n"]],
-                                      what = paste0("Arm ", k_axis))
-    if (length(alpha_axis) == 0L) {
-        stop("Arm ", k_axis, ": `field_coef$grid` must have at least one ",
-             "non-negative value.", call. = FALSE)
-    }
-    if (any(alpha_axis < 0)) {
-        stop("Arm ", k_axis, ": `field_coef$grid` values must be non-negative.",
-             call. = FALSE)
-    }
-    list(has_copy = TRUE, copy_arm_zero = as.integer(k_axis - 1L),
-         alpha_grid = as.numeric(alpha_axis),
-         field_coef_const = consts)
+    stop("Arm ", k, ": `field_coef` must be NULL or a numeric scalar. A copy ",
+         "coefficient on the outer grid is declared through `copy` (on an ",
+         "unwrapped single-block prior: `field_coef = list(name = \"alpha\", ",
+         "grid = )`).", call. = FALSE)
 }
 
 # Weighted-quantile median + 2.5/97.5 empirical CI for every hyperparameter
 # axis are produced generically by `.nl_axis_quantiles` (defined in
-# nested_laplace.R) and attached by `.nl_posterior_moments`. No alpha-
+# nested_laplace.R) and attached by the driver's moment pass. No alpha-
 # specific helper is needed: median/CI are the recommended summary for
 # right-skewed scale-like axes (alpha = sigma_pos/sigma_occ, sigma,
 # range, phi at small n), while mean +/- SD remains available on the
@@ -475,8 +302,8 @@
 # field SD, a GP variance, lengthscale or range), its correlation, the copy
 # coefficient and the per-arm dispersions are the axes its passes know how to
 # propose on, each on a coordinate the transform registry names -- not of where
-# the nodes came from, which is the separate question `.joint_axis_is_stated()`
-# answers.
+# the nodes came from, which is the separate question
+# `.joint_multi_axis_is_stated()` answers.
 #
 # A multi-block grid prefixes the axes a block owns (`b2.sigma`) and leaves the
 # per-arm dispersions bare (`phi_<arm>`), so a `phi_`-prefixed name is a
@@ -539,45 +366,6 @@
     phi_grid[[k]]
 }
 
-# Did the CALLER write this axis's nodes down?
-#
-# A stated axis is a statement about where the fit integrates, so refinement
-# resolves it more finely and does not leave it; an axis the engine placed
-# carries no such statement. Three things count as engine-placed, matching the
-# provenance vocabulary the recentring pass already uses
-# (`.nl_axis_hold()`): no nodes given at all (the copy axis resolved from
-# `alpha_n`, or from the engine default), nodes marked with `auto_grid()` by a
-# wrapper package that computed a default of its own, and nodes that ARE the
-# engine's own default axis, which carry nothing a statement would add. A
-# package default marked `auto_grid(place = FALSE)` is NOT among them: asking
-# for the nodes as written is the statement, whoever made it.
-.joint_axis_is_stated <- function(axis, arms, phi_grid = NULL,
-                                  arm_names = NULL, phi_auto = NULL,
-                                  prior = NULL, grid_auto = logical(0)) {
-    if (identical(axis, "sigma")) {
-        return(!is.null(.nl_axis_hold(prior, "sigma_grid",
-                                      .nl_auto_fields_at(grid_auto),
-                                      type = ".joint_areal")))
-    }
-    if (axis %in% c("rho", "rho_car")) {
-        return(!is.null(.nl_axis_hold(prior, paste0(axis, "_grid"),
-                                      .nl_auto_fields_at(grid_auto),
-                                      type = tolower(prior$type %||% ""))))
-    }
-    if (identical(axis, "alpha")) {
-        for (a in arms) {
-            fc <- a$field_coef_axis
-            if (is.null(fc)) next
-            g <- fc$grid
-            if (is.null(g) || !length(g)) return(FALSE)
-            if (isTRUE(fc$grid_auto)) return(FALSE)
-            return(!.nl_axis_matches_default(g, "alpha_grid", ".copy"))
-        }
-        return(FALSE)
-    }
-    .joint_phi_axis_is_stated(axis, phi_grid, arm_names, phi_auto)
-}
-
 # Did the caller write down the nodes of a per-arm dispersion axis
 # (`phi_<arm>`)? Anything else is not this helper's business and reads FALSE.
 .joint_phi_axis_is_stated <- function(axis, phi_grid = NULL, arm_names = NULL,
@@ -615,20 +403,11 @@
     out
 }
 
-.joint_axis_refine_modes <- function(grids, cp, arms, phi_grid = NULL,
-                                     arm_names = NULL, user = NULL,
-                                     phi_auto = NULL, prior = NULL,
-                                     grid_auto = logical(0)) {
-    .joint_axis_refine_modes_by(
-        .joint_spec_axis_names(grids, cp),
-        function(a) .joint_axis_is_stated(a, arms, phi_grid, arm_names,
-                                          phi_auto, prior, grid_auto),
-        user)
-}
-
-# The multi-block counterpart of `.joint_axis_is_stated()`: the same question,
-# asked of the prior's blocks and the copy specs instead of one prior and the
-# arms' `field_coef`. A block's field SD is stated when the block carries the
+# Did the CALLER write this axis's nodes down? A stated axis is a statement
+# about where the fit integrates, so refinement resolves it more finely and
+# does not leave it; an axis the engine placed carries no such statement. Asked
+# of the prior's blocks and the copy specs. A block's field SD is stated when
+# the block carries the
 # grid field it is laid on -- `sigma_grid` or `tau_grid` -- as something other
 # than the engine's own default (`.nl_axis_hold()`), compared against the axis
 # the block's path defaults: a copy block's `sigma_grid` is the copy convention,
@@ -747,7 +526,7 @@
 # one place. `axis_refine` carries the one piece of metadata that is NOT a
 # property of the axis's name: how far each axis may be refined, which follows
 # from where its nodes came from and so is resolved by
-# `.joint_axis_refine_modes()` at the front door.
+# `.joint_axis_refine_modes_by()` in the driver.
 # `user_priors` carries the caller's regularizing hyperpriors, named by the axis
 # each applies to (`sigma`, `alpha`, `phi` -- the last matching every `phi_<arm>`
 # axis), matching how `.joint_hp_vec_for_grids()` folds them into
@@ -1289,134 +1068,6 @@ tulpa_joint_axis_specs_from_grid <- function(
     invisible(res)
 }
 
-# Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint
-# kernel's paired-vector `grids` representation. When `cp$has_copy = FALSE`
-# the alpha entry stays `numeric(0)` (the no-copy contract the backend expects).
-.joint_grids_from_cells <- function(new_cells, cp) {
-    axes <- colnames(new_cells)
-    out <- stats::setNames(lapply(axes, function(a)
-        as.numeric(new_cells[, a])), axes)
-    if (!cp$has_copy) out$alpha <- numeric(0)
-    out
-}
-
-# Build the generic `kernel_fn(new_cells, warm_start, store_extras)` closure
-# refinement passes around `backend$call_kernel`. Packs the joint kernel's
-# per-cell side data (`.JOINT_CELL_FIELDS`) into a list of per-cell `extras` so
-# the generic helpers can carry them along across refinement appends (and the
-# warm-start chain still reads `extras[[idx0]]$mode`).
-.joint_make_kernel_fn <- function(arms, prior, cp, backend, max_iter, tol,
-                                  n_threads, x_init_default, store_Q,
-                                  arm_names, cell_coupling = "separable",
-                                  hessian_pd_mode = 0L,
-                                  step_curvature_mode = 0L,
-                                  inner_refresh = 1L,
-                                  fixed_block_p = 0L,
-                                  screen_tol = 0, screen_hp = NULL) {
-    function(new_cells, warm_start = NULL, store_extras = FALSE,
-             max_iter_override = NULL, n_threads_outer = 1L,
-             inner_refresh_override = NULL, tol_override = NULL,
-             x_init_per_cell = NULL,
-             # Inner-Laplace skewness diagnostic, opt-in
-             # like `store_extras`. Off by default so every existing caller
-             # (adaptive-grid refinement, the outer Pareto-k re-evaluation)
-             # is unaffected; .nlj_inner_skew_at_theta() is the only caller
-             # that sets it, at a single (MAP) row of `new_cells`.
-             compute_skew = FALSE, skew_idx = NULL,
-             # Subspace debias: the kernel-facing request
-             # list. Off by default, so every existing caller re-solves exactly
-             # what it did; `.nl_subspace_debias_attach()` is the only caller
-             # that sets it, over the fit's whole settled grid.
-             debias = NULL,
-             # Corrected integrated Laplace: the
-             # kernel-facing request list, off by default for the same reason.
-             cila = NULL,
-             # A refinement round's cells screened against the grid they join
-             # (`.hyper_refine_screen()`), at the fit's own tolerance.
-             screen = NULL) {
-        new_grids <- .joint_grids_from_cells(new_cells, cp)
-        scr <- .nl_refine_screen_offset(new_cells, screen, screen_tol, screen_hp)
-        slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
-                        as.numeric(warm_start$mode) else x_init_default
-        x_init_per_cell <- .joint_warm_start_per_cell(warm_start, x_init_per_cell,
-                                                      nrow(new_cells))
-        mi <- if (is.null(max_iter_override)) max_iter
-              else as.integer(max_iter_override)
-        # Per-call Shamanskii reuse override for the outer Pareto-k diagnostic
-        #: the diagnostic re-solves only need the converged
-        # log-marginal, so they run with factor reuse (grad-only scatter on the
-        # off-factor steps) even when the fit itself keeps refresh = 1.
-        ir <- if (is.null(inner_refresh_override)) inner_refresh
-              else as.integer(inner_refresh_override)
-        # Per-call inner-tol override for the diagnostic:
-        # loosened to .K_DIAG_TOL since the Laplace log-marginal error is
-        # O(tol^2). Never tighter than the fit's own tol.
-        tl <- if (is.null(tol_override)) tol else max(as.numeric(tol_override), tol)
-        # A call with n_threads_outer left at 1 solves its cells one after
-        # another, each on the fit's whole thread grant (`n_threads`,
-        # gcol33/tulpa#924); the refinement rounds and the outer Pareto-k
-        # re-evaluation pass the fit's outer width, so their independent cells
-        # run concurrently, each warm-started from the broadcast mode. Tiling is left off:
-        # the IS batch is not a per-axis alpha lattice, so there is no tile
-        # structure for the three-tier warm-start to exploit.
-        # The precision, the per-cell fixed-effect block and the per-row
-        # predictive variance leave this closure only inside `extras`, so a
-        # call that asks for no extras requests none of them. That keeps the
-        # outer Pareto-k batch -- hundreds of cells, `store_extras` off -- from
-        # paying for any.
-        solve <- function() backend$call_kernel(arms, prior, cp, new_grids,
-                                      mi, tl, n_threads,
-                                      slice_x_init,
-                                      isTRUE(store_Q) && isTRUE(store_extras),
-                                      fixed_block_p = if (isTRUE(store_extras))
-                                          as.integer(fixed_block_p) else 0L,
-                                      arm_names = arm_names,
-                                      n_threads_outer = as.integer(n_threads_outer),
-                                      tile_warm = FALSE,
-                                      cell_coupling = cell_coupling,
-                                      hessian_pd_mode = hessian_pd_mode,
-                                      step_curvature_mode = step_curvature_mode,
-                                      inner_refresh = ir,
-                                      x_init_per_cell = x_init_per_cell,
-                                      compute_skew = compute_skew,
-                                      skew_idx = skew_idx,
-                                      debias = debias,
-                                      cila = cila,
-                                      prune_tol = if (is.null(scr)) 0 else screen_tol,
-                                      screen_log_offset = scr)
-        res_x <- if (isTRUE(store_extras)) solve() else .nl_without_fitted_var(solve())
-        extras <- NULL
-        if (isTRUE(store_extras)) {
-            extras <- .joint_extras_from_res(res_x, nrow(new_cells))
-        }
-        list(log_marginal = res_x$log_marginal, extras = extras,
-             modes = res_x$modes,
-             inner_skew = res_x$inner_skew,
-             inner_skew_gamma1 = res_x$inner_skew_gamma1,
-             inner_skew_gamma1_declined = res_x$inner_skew_gamma1_declined,
-             inner_skew_idx = res_x$inner_skew_idx,
-             inner_skew_dropped = res_x$inner_skew_dropped,
-             inner_skew_declined = res_x$inner_skew_declined,
-             inner_skew_arms_declined = res_x$inner_skew_arms_declined,
-             inner_is_z = res_x$inner_is_z,
-             inner_is_sigma = res_x$inner_is_sigma,
-             inner_is_log_joint = res_x$inner_is_log_joint,
-             inner_is_declined = res_x$inner_is_declined,
-             debias_draws_per_grid = res_x$debias_draws_per_grid,
-             debias_importance_per_grid = res_x$debias_importance_per_grid,
-             debias_importance_log_weights_per_grid = res_x$debias_importance_log_weights_per_grid,
-             debias_idx = res_x$debias_idx,
-             debias_accept = res_x$debias_accept,
-             debias_declined = res_x$debias_declined,
-             cila_log_w_per_grid = res_x$cila_log_w_per_grid,
-             cila_fixed_per_grid = res_x$cila_fixed_per_grid,
-             cila_log_marginal = res_x$cila_log_marginal,
-             cila_variant = res_x$cila_variant,
-             cila_declined = res_x$cila_declined,
-             cila_fallback = res_x$cila_fallback)
-    }
-}
-
 # The per-cell start matrix a kernel call hands its driver: the one it was
 # given, else the `modes` a refinement round laid in `warm_start`
 # (`.hyper_row_warm_starts()`) when it has a row per cell of the call.
@@ -1487,8 +1138,8 @@ tulpa_joint_axis_specs_from_grid <- function(
 
 # Per-cell extras for the first `n` cells of a joint kernel result: the fields
 # it actually carries, under their `extras` names. Built for the initial
-# cartesian pass (`.joint_init_extras_from_res`) and for every refinement
-# append (`.joint_make_kernel_fn`) through the same walk.
+# grid solve (`.joint_init_extras_from_res`) and for every refinement append
+# (`.joint_multi_make_kernel_fn`) through the same walk.
 .joint_extras_from_res <- function(res, n) {
     if (n == 0L) return(vector("list", 0L))
     lapply(seq_len(n), function(k) {
@@ -1508,8 +1159,7 @@ tulpa_joint_axis_specs_from_grid <- function(
 }
 
 # Build the initial per-cell extras list from the initial joint kernel result,
-# matching what `.joint_make_kernel_fn` would have produced for the cartesian
-# pass. Refinement extends this list; `.joint_glue_extras_to_res` puts the
+# matching what `.joint_multi_make_kernel_fn` produces for a refinement append. Refinement extends this list; `.joint_glue_extras_to_res` puts the
 # refined extras back into `res` once integration is done.
 .joint_init_extras_from_res <- function(res) {
     .joint_extras_from_res(res, length(res$log_marginal))
@@ -1530,8 +1180,8 @@ tulpa_joint_axis_specs_from_grid <- function(
 }
 
 # Glue refined extras + log_marginal + refining_axis back into the joint
-# kernel result. Downstream `.nl_posterior_moments` / `.nl_attach_axis_sd`
-# read `res$modes`,
+# kernel result. The downstream moment reads (`.nl_attach_axis_sd`) read
+# `res$modes`,
 # `res$log_marginal`, `res$refining_axis` directly; this keeps them in sync
 # after refinement without touching their implementations.
 #
@@ -1745,12 +1395,11 @@ tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
 # mode and marginal precision. `tulpa_nested_laplace()` fills that pair from the
 # stored per-cell precision; without it every reported interval is NA. This is
 # the joint counterpart, filling the SAME pair so both tiers reach the one
-# marginalizer -- and it is called from both the single-block and the multi-block
-# joint driver, which is why it lives here rather than in either of them.
+# marginalizer.
 #
-# Both joint layouts stack every arm's coefficients as a contiguous prefix of the
-# latent vector (`.joint_layout()` / `.joint_multi_layout()` both start
-# `beta_start` at 0 and run the arms consecutively), so the fixed-effect block is
+# The joint layout stacks every arm's coefficients as a contiguous prefix of the
+# latent vector (`.joint_multi_layout()` starts `beta_start` at 0 and runs the
+# arms consecutively), so the fixed-effect block is
 # latent indices `1:n_fixed` -- the same span `.joint_fixed_layout()` names.
 #
 # The per-cell block arrives on `$cov_block_per_grid`, extracted by the inner
@@ -1857,8 +1506,7 @@ tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
 # Resolve `control$force_sparse` to the boolean the kernels take. TRUE / FALSE
 # pass through; "auto" compares the threshold against the latent dimension the
 # kernel will actually build, supplied by the caller as a thunk because the
-# single-block and multi-block paths reach it through different layouts
-# (`.joint_layout` vs `.joint_multi_layout`) at different points. A thunk that
+# size is known only once the blocks are prepared. A thunk that
 # fails or yields no finite n_x falls back to dense: the sparse path is the
 # specialized one, so an unknown size should not silently opt into it.
 .resolve_force_sparse <- function(force_sparse, n_x_fn) {
@@ -1899,48 +1547,6 @@ tulpa_joint_inner_vcov_mixture <- function(Q_p_per_grid, Q_i_per_grid,
     res$y <- lapply(responses, function(r) r$y)
     res$N <- sum(lengths(res$y))
     res
-}
-
-# Compute per-arm latent offsets so callers can decode `modes` back into
-# per-arm (beta, re) blocks plus the shared spatial block(s). For BYM2 the
-# spatial block is two sub-blocks (phi, theta); for ICAR/CAR_proper it's
-# just phi.
-.joint_layout <- function(arms, n_spatial_units, n_spatial_blocks,
-                          spatial_block_names) {
-    n_arms <- length(arms)
-    p_arm  <- vapply(arms, function(a) ncol(a$X),     integer(1))
-    n_re   <- vapply(arms, function(a) a$n_re_groups, integer(1))
-
-    beta_start <- integer(n_arms)
-    cur <- 0L
-    for (k in seq_len(n_arms)) {
-        beta_start[k] <- cur
-        cur <- cur + p_arm[k]
-    }
-    re_start <- integer(n_arms)
-    for (k in seq_len(n_arms)) {
-        re_start[k] <- cur
-        cur <- cur + n_re[k]
-    }
-    spatial_starts <- integer(n_spatial_blocks)
-    for (b in seq_len(n_spatial_blocks)) {
-        spatial_starts[b] <- cur
-        cur <- cur + n_spatial_units
-    }
-    n_x <- cur
-
-    out <- list(
-        n_arms     = n_arms,
-        p          = p_arm,
-        n_re       = n_re,
-        beta_start = beta_start,
-        re_start   = re_start,
-        n_x        = n_x
-    )
-    for (b in seq_len(n_spatial_blocks)) {
-        out[[spatial_block_names[b]]] <- spatial_starts[b]
-    }
-    out
 }
 
 # The one R -> compiled-kernel dispersion boundary for the joint tier. Every

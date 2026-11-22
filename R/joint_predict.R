@@ -157,8 +157,8 @@
 # ---- the kernel's inputs at new rows -------------------------------------------
 
 # The inputs the fit's grid was solved with, rebuilt from what the fit keeps:
-# the normalised arms, the blocks (the multi-block door's prepared blocks, or
-# the single-block door's prior), the copy map and the outer grid's cells.
+# the normalised arms, the prepared blocks, the copy map and the outer grid's
+# cells.
 #' @keywords internal
 .joint_eta_inputs <- function(object) {
   lay <- object$eta_layout
@@ -168,43 +168,25 @@
          "of tulpa.", call. = FALSE)
   }
   responses <- object$responses
-  tg <- as.matrix(object$theta_grid)
-  if (identical(lay$door, "multi")) {
-    arms <- lapply(seq_along(responses), function(k)
-      .normalise_joint_arm_multi(responses[[k]], k))
-    return(list(door = "multi", arms = arms, blocks = object$blocks,
-                cp = lay$cp, axis_offsets = lay$axis_offsets, theta = tg))
-  }
   arms <- lapply(seq_along(responses), function(k)
     .normalise_joint_arm(responses[[k]], k))
-  list(door = "single", arms = arms, prior = object$prior, type = lay$type,
-       cp = lay$cp, theta = tg)
+  list(arms = arms, blocks = object$blocks, cp = lay$cp,
+       axis_offsets = lay$axis_offsets, theta = as.matrix(object$theta_grid))
 }
 
 # The kernel arguments of `inp` (`.joint_eta_inputs()`), packed by the code the
 # fit's own kernel call packs them with.
 #' @keywords internal
 .joint_eta_kernel_args <- function(inp) {
-  if (identical(inp$door, "multi")) {
-    B <- length(inp$blocks)
-    return(list(
-      arms_list = inp$arms,
-      copy_arms = as.integer(inp$cp$copy_arms_zero),
-      copy_blocks = as.integer(inp$cp$copy_blocks_zero),
-      blocks_spec = .joint_blocks_spec_for_cpp(inp$blocks, length(inp$arms),
-                                               arms = inp$arms),
-      theta_grid = .joint_multi_cpp_grid(inp$theta, inp$axis_offsets, B,
-                                         inp$cp),
-      axis_offsets = as.integer(inp$axis_offsets)))
-  }
-  grids <- lapply(seq_len(ncol(inp$theta)), function(j) inp$theta[, j])
-  names(grids) <- colnames(inp$theta)
-  ki <- .joint_single_kernel_inputs(inp$type, inp$arms, inp$prior, inp$cp,
-                                    grids)
-  list(arms_list = inp$arms, copy_arms = as.integer(inp$cp$copy_arm_zero),
-       copy_blocks = as.integer(ki$copy_block),
-       blocks_spec = list(ki$block_spec), theta_grid = ki$theta_grid,
-       axis_offsets = as.integer(ki$axis_offsets))
+  B <- length(inp$blocks)
+  list(
+    arms_list = inp$arms,
+    copy_arms = as.integer(inp$cp$copy_arms_zero),
+    copy_blocks = as.integer(inp$cp$copy_blocks_zero),
+    blocks_spec = .joint_blocks_spec_for_cpp(inp$blocks, length(inp$arms),
+                                             arms = inp$arms),
+    theta_grid = .joint_multi_cpp_grid(inp$theta, inp$axis_offsets, B, inp$cp),
+    axis_offsets = as.integer(inp$axis_offsets))
 }
 
 # `inp` with arm `k` carrying the new rows `nd` in place of its own: the arm's
@@ -241,25 +223,17 @@
     a$re_idx <- as.numeric(r)
   }
   off <- .joint_arm_field_off(object, k)
-  if (identical(inp$door, "single")) {
-    if (length(a$spatial_idx)) {
-      a$spatial_idx <- .joint_rows_index(nd, 1L, NULL, n, off, arm_name,
-                                         sprintf("block 1 (%s)", inp$type))
+  n_arms <- length(inp$arms)
+  inp$blocks <- lapply(inp$blocks, function(p) {
+    if (identical(tolower(p$type %||% ""), "hsgp") && is.list(p$phi)) {
+      p$training_phi <- p$phi
+      if (!is.null(p$svc_column)) p$training_phi <- lapply(seq_len(n_arms),
+        function(j) p$phi[[j]] * as.numeric(inp$arms[[j]]$X[, p$svc_column]))
     }
-  } else {
-    n_arms <- length(inp$arms)
-    inp$blocks <- lapply(inp$blocks, function(p) {
-      if (identical(tolower(p$type %||% ""), "hsgp") && is.list(p$phi)) {
-        p$training_phi <- p$phi
-        if (!is.null(p$svc_column)) p$training_phi <- lapply(seq_len(n_arms),
-          function(j) p$phi[[j]] * as.numeric(inp$arms[[j]]$X[, p$svc_column]))
-      }
-      p
-    })
-    inp$blocks <- lapply(seq_along(inp$blocks), function(b)
-      .joint_block_at_rows(inp$blocks[[b]], b, k, n_arms, N, nd, off,
-                           arm_name))
-  }
+    p
+  })
+  inp$blocks <- lapply(seq_along(inp$blocks), function(b)
+    .joint_block_at_rows(inp$blocks[[b]], b, k, n_arms, N, nd, off, arm_name))
   inp$arms[[k]] <- a
   inp
 }

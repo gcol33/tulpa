@@ -90,24 +90,21 @@ test_that("an unknown inner_factorization is refused by name", {
     expect_error(.if_fit(fx, "cholmod"), "inner_factorization")
 })
 
-test_that("the override is refused where it would not be applied", {
+test_that("an unwrapped single-block prior takes the override too", {
     fx <- .if_fixture()
-    # A single-block prior takes the other dispatch, which does not thread the
-    # override; a knob that silently does nothing reads as a setting that was
-    # honoured.
+    # An unwrapped block is the one-block list on the same driver, so the
+    # override reaches its inner Newton like any other fit's.
     prior_single <- list(
         type = "icar",
         n_spatial_units = fx$adj$n_spatial_units,
         adj_row_ptr = fx$adj$adj_row_ptr, adj_col_idx = fx$adj$adj_col_idx,
         n_neighbors = fx$adj$n_neighbors,
         sigma_grid = c(0.4, 0.7, 1.0))
-    expect_error(
-        tulpa_nested_laplace_joint(
-            responses = fx$responses, prior = prior_single,
-            control = list(verbose = FALSE, inner_factorization = "sparse")
-        ),
-        "multi-block joint path"
-    )
+    fit <- tulpa_nested_laplace_joint(
+        responses = fx$responses, prior = prior_single,
+        control = list(verbose = FALSE, inner_factorization = "sparse",
+                       diagnose_k = FALSE))
+    expect_true(all(is.finite(fit$log_marginal[fit$weights > 0])))
 })
 
 test_that("a healthy joint grid reports no sum-to-zero log-determinant fallback", {

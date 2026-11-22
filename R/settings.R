@@ -382,21 +382,15 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
                       sigma_grid = "spde_registry"),
     tgmrf      = list(theta_grid_built = "tgmrf_axis"),
 
-    # PATH pseudo-types (leading dot, so they cannot collide with a prior
-    # `type`). The same family reaches the outer grid through more than one
-    # driver, and the drivers do not always parameterize it the same way, so the
-    # binding is per PATH-and-family rather than per family alone:
+    # PATH pseudo-type (leading dot, so it cannot collide with a prior `type`).
+    # A family reaches the outer grid through more than one path, and the paths
+    # do not always parameterize it the same way, so the binding is per
+    # PATH-and-family rather than per family alone:
     #
-    #   * `.joint_areal` -- the single-block joint backends
-    #     (`R/nested_laplace_joint_backends.R`) integrate icar / bym2 /
-    #     car_proper over the field SD, where the registry integrates icar and
-    #     car_proper over the PRECISION. A rescue on the joint path must compare
-    #     against `field_sd`, not against that family's registry axis.
-    #   * `.copy` -- the donor SD axis and copy coefficient the multi-block
-    #     driver defaults on a copy block (`.joint_block_axis_grid()`), which is
-    #     the same convention whatever the block's own family is.
-    .joint_areal = list(sigma_grid = "field_sd"),
-    .copy        = list(sigma_grid = "field_sd", alpha_grid = "copy_alpha")
+    #   * `.copy` -- the donor SD axis and copy coefficient the joint driver
+    #     defaults on a copy block (`.joint_block_axis_grid()`), which is the
+    #     same convention whatever the block's own family is.
+    .copy = list(sigma_grid = "field_sd", alpha_grid = "copy_alpha")
 )
 
 # --- which grid fields each PATH reads ----------------------------------------
@@ -418,22 +412,16 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # Paths:
 #   registry     `.nl_block_axis_grid()` -- every
 #                `tulpa_nested_laplace()` fit and every non-copy block of a
-#                multi-block joint fit.
-#   joint_single the single-block joint areal backends
-#                (`R/nested_laplace_joint_backends.R`), which read the field SD.
-#   copy         a copy block on the joint multi-block path
-#                (`.joint_block_axis_grid()`), which leads with (sigma, alpha).
+#                joint fit.
+#   copy         a copy block of a joint fit (`.joint_block_axis_grid()`),
+#                which leads with (sigma, alpha).
 .NL_PATH_AXES <- list(
     registry = list(
         # car_proper's `defaults()` accepts the joint-API spelling of the
         # correlation axis as an alias, so the registry path reads both.
         car_proper = c(".registry", "rho_car_grid")
     ),
-    joint_single = list(
-        icar       = ".joint_areal",
-        bym2       = c(".joint_areal", "rho_grid"),
-        car_proper = c(".joint_areal", "rho_car_grid")
-    ),
+
     copy = list(
         icar       = ".copy",
         rw1        = ".copy",
@@ -452,14 +440,13 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # Whether a path CROSSES the axis fields above itself, or takes them already
 # paired. The registry stores a family's axes PRE-PAIRED -- `.nl_fill_family_axes()`
 # expands them into one row per tuple and every field then has length n_cells --
-# while the joint backends (`.joint_cartesian()`) and the copy block
-# (`.joint_block_axis_grid()`'s `expand.grid`) take one axis per field and cross
-# them. The difference is invisible in the field values: two length-20 vectors
+# while the copy block (`.joint_block_axis_grid()`'s `expand.grid`) takes one
+# axis per field and crosses them. The difference is invisible in the field values: two length-20 vectors
 # are a 20-cell paired grid on one path and a 400-cell crossed one on another.
 # Anything rewriting a field per axis has to know which (`.nl_pilot_block()`),
 # so the property is declared beside the fields rather than inferred at each
 # call site.
-.NL_PATH_CROSSES <- c(registry = FALSE, joint_single = TRUE, copy = TRUE)
+.NL_PATH_CROSSES <- c(registry = FALSE, copy = TRUE)
 
 .nl_path_crosses <- function(path) {
     path <- as.character(path %||% "")
@@ -471,8 +458,8 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # `.nl_path_axis_fields()`, which names the fields but not where their defaults
 # come from. Path pseudo-types are consulted in the order the path declares
 # them, then the family's own binding, so a field a path re-parameterizes
-# (`.joint_areal`'s `sigma_grid`) resolves to the path's axis and not the
-# family's. NULL when no table binds the field.
+# (`.copy`'s `sigma_grid`) resolves to the path's axis and not the family's.
+# NULL when no table binds the field.
 .nl_path_axis_key <- function(type, path = "registry", field) {
     type <- tolower(type %||% "")
     spec <- .NL_PATH_AXES[[path]][[type]]
@@ -489,10 +476,9 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 
 # Exact conversions between two spellings of ONE axis, for the paths that
 # parameterize a family differently. Only pairs the ENGINE ITSELF converts are
-# listed: `.joint_call_kernel_via_multi()`
-# (`R/nested_laplace_joint_backends.R`) hands the single-block joint icar
-# kernel `b1.tau = 1 / sigma^2` from its own `sigma` axis, so the two spellings
-# name the same set of physical grids and either can be written as the other.
+# listed: `.joint_bare_field_axes()` writes a bare icar block's `sigma_grid` as
+# the `tau_grid = 1 / sigma^2` its block integrates, so the two spellings name
+# the same set of physical grids and either can be written as the other.
 # A family whose conversion is not established in engine code is absent, and
 # its unread axis is refused with the consumed axis named and no conversion
 # offered -- a guessed relation would be worse than none.

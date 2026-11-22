@@ -546,7 +546,7 @@ test_that("both doors apply a stated density under hyperprior = \"flat\"", {
                                    hyperprior = "flat",
                                    control = list(n_threads = 1L, diagnose_k = FALSE))
   expect_identical(jf$theta_grid, jp$theta_grid)
-  expect_true("sigma" %in% jf$log_hyperprior_axes)
+  expect_true("b1.tau" %in% jf$log_hyperprior_axes)
   expect_equal(jf$log_hyperprior, jp$log_hyperprior, tolerance = 1e-12)
   expect_equal(jf$log_marginal, jp$log_marginal, tolerance = 1e-12)
 })

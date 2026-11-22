@@ -1,22 +1,19 @@
 # Outer-axis labels and the roles they carry.
 #
 # An outer axis plays one of three roles: a hyperparameter of a latent block,
-# the dispersion of a response arm, or the copy scale coupling a block (or the
-# field of the single-block joint path) into a second arm. The label grammar is
-# one rule and these helpers are the only code that writes or reads it:
+# the dispersion of a response arm, or the copy scale coupling a block into a
+# second arm. The label grammar is one rule and these helpers are the only code
+# that writes or reads it:
 #
 #   b<k>.<hyper>   hyperparameter `hyper` of latent block k (1-based); every
 #                  block axis carries its block, a single block included, so
 #                  a label never depends on how many blocks the fit holds
 #   phi_<arm>      the dispersion of response arm `arm`
-#   <hyper>        an axis of the single-block joint path (`sigma`, the arm
-#                  copy scale `alpha`), which holds no block list
 #
-# The copy scale is a role, never a name: it is the `alpha` axis the copy
-# machinery lays on a copy block (or on the field of the single-block joint
-# path). A block that declares its own axes on its own coordinate (a `tgmrf()`
-# block, `.nl_linear_axes()`) may call one of them `alpha`, and that axis is the
-# block's coordinate (`.axis_is_copy()`).
+# The copy scale is a role, never a name: it is the `b<k>.alpha` axis the copy
+# machinery lays on copy block k. A block that declares its own axes on its own
+# coordinate (a `tgmrf()` block, `.nl_linear_axes()`) may call one of them
+# `alpha`, and that axis is the block's coordinate (`.axis_is_copy()`).
 
 .AXIS_BLOCK_RE <- "^b([0-9]+)[.]"
 

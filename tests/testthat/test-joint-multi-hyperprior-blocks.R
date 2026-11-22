@@ -11,8 +11,10 @@
 #     and no unnamed block;
 #   * an entry naming a block that carries no axis of that role errors, and the
 #     message names the blocks that do, so the caller can see what to key by;
-#   * a grid carrying ONE axis of a role folds exactly what the whole-view fold
-#     produced, so the single-copy-block fit -- the common case -- is unmoved.
+#   * a grid carrying ONE axis of a role folds exactly the density written out
+#     per axis, so the single-copy-block fit -- the common case -- is unmoved;
+#   * `prior_sigma` is a density on a field's SD, so it reaches a block that
+#     carries the field's scale as its precision, carried to `tau = sigma^-2`.
 
 # --- fixtures --------------------------------------------------------------
 
@@ -30,7 +32,7 @@ hpb_grid_two <- function() {
 }
 
 # A grid carrying (sigma, alpha) on block 1 only; block 2 is a non-copy
-# temporal block whose axis is a precision, named by neither role.
+# temporal block whose field scale is a precision.
 hpb_grid_one <- function() {
     g <- as.matrix(expand.grid(b1.sigma = c(0.5, 1.0),
                                b1.alpha = c(0, 0.8, 1.6),
@@ -52,6 +54,13 @@ hpb_pc_contrib <- function(x, U, a, atom = FALSE) {
     out
 }
 
+# The same SD density carried to a precision axis tau = sigma^-2 on its log
+# integration coordinate: |d sigma / d tau| = tau^(-3/2) / 2, times tau.
+hpb_pc_contrib_tau <- function(x, U, a) {
+    lambda <- -log(a) / U
+    log(lambda) - lambda * x^(-1 / 2) + log(0.5) - 0.5 * log(x)
+}
+
 hpb_pc <- function(U, a) list("pc.prec", c(U, a))
 
 test_that("each block's copy-scale atom is read on its own axis", {
@@ -59,8 +68,7 @@ test_that("each block's copy-scale atom is read on its own axis", {
     # mass, so the density is not read there -- on EVERY block, not only the
     # first.
     fx <- hpb_grid_two()
-    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha",
-                                          multi_block = TRUE)
+    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha")
     got <- tulpa:::.joint_multi_add_hp(numeric(nrow(fx$grid)), fx$grid,
                                        fx$axis_offsets, fx$B,
                                        fn_sigma = NULL, fn_alpha = fn,
@@ -75,28 +83,19 @@ test_that("a grid carrying one axis of a role folds what the whole view did", {
     # The single-copy-block case, the common one: the per-axis fold must
     # reproduce the whole-view call to the bit, so an existing fit is unmoved.
     fx <- hpb_grid_one()
-    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma",
-                                          multi_block = TRUE)
-    fa <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha",
-                                          multi_block = TRUE)
+    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma")
+    fa <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha")
     lm0 <- as.numeric(seq_len(nrow(fx$grid)))
 
-    view <- fx$grid[, c("b1.sigma", "b1.alpha"), drop = FALSE]
-    colnames(view) <- c("sigma", "alpha")
-    ref <- lm0 + tulpa:::.joint_hp_vec_for_grids(view, fs, fa, NULL)
+    g <- fx$grid
+    ref <- lm0 + hpb_pc_contrib(g[, "b1.sigma"], 3, 0.01) +
+        hpb_pc_contrib(g[, "b1.alpha"], 4, 0.01, atom = TRUE) +
+        hpb_pc_contrib_tau(g[, "b2.tau"], 3, 0.01)
 
-    got <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
+    got <- tulpa:::.joint_multi_add_hp(lm0, g, fx$axis_offsets, fx$B,
                                        fn_sigma = fs, fn_alpha = fa,
-        declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid)))
-    expect_identical(got, ref)
-
-    # The block-2 tau axis is named by neither role and stays flat.
-    fx2 <- fx
-    fx2$grid[, "b2.tau"] <- fx$grid[, "b2.tau"] * 10
-    got2 <- tulpa:::.joint_multi_add_hp(lm0, fx2$grid, fx$axis_offsets, fx$B,
-                                        fn_sigma = fs, fn_alpha = fa,
-        declared = tulpa:::.hp_declare(fx2$grid, colnames(fx2$grid)))
-    expect_identical(got2, got)
+        declared = tulpa:::.hp_declare(g, colnames(g)))
+    expect_equal(got, unname(ref), tolerance = 1e-12)
 })
 
 test_that("no hyperprior leaves log_marginal untouched", {
@@ -108,8 +107,7 @@ test_that("no hyperprior leaves log_marginal untouched", {
         declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid))),
         lm0)
     # A prior whose role no block carries reaches nothing.
-    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma",
-                                          multi_block = TRUE)
+    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma")
     g <- fx$grid[, c("b1.alpha", "b2.alpha"), drop = FALSE]
     expect_identical(
         tulpa:::.joint_multi_add_hp(lm0, g, c(0L, 1L, 2L), 2L,
@@ -124,7 +122,7 @@ test_that("a per-block entry naming a block with no such axis is refused", {
     fx <- hpb_grid_two()
     fn <- tulpa:::.joint_parse_hyperprior(
         list(list(block = 3, prior = hpb_pc(4, 0.01))),
-        "prior_alpha", multi_block = TRUE)
+        "prior_alpha")
     err <- expect_error(
         tulpa:::.joint_check_multi_hyperpriors(fx$axis_names, fx$axis_offsets,
                                                fx$B, NULL, fn),
@@ -139,7 +137,7 @@ test_that("a per-block entry naming a block with no such axis is refused", {
     # Same refusal on the sigma side; the two roles are not handled apart.
     fs <- tulpa:::.joint_parse_hyperprior(
         list(list(block = 5, prior = hpb_pc(3, 0.01))),
-        "prior_sigma", multi_block = TRUE)
+        "prior_sigma")
     expect_error(
         tulpa:::.joint_check_multi_hyperpriors(fx$axis_names, fx$axis_offsets,
                                                fx$B, fs, NULL),
@@ -210,15 +208,14 @@ test_that("the per-block shape is told from the family spec", {
 
 test_that("one spec parses to one density, a per-block list to one per block", {
     skip_on_cran_budget()
-    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha",
-                                          multi_block = TRUE)
+    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha")
     expect_true(is.function(fn))
     expect_equal(fn(1.0), log(-log(0.01) / 4) - (-log(0.01) / 4))
 
     by_b <- tulpa:::.joint_parse_hyperprior(
         list(list(block = 1, prior = hpb_pc(4, 0.01)),
              list(block = 3, prior = hpb_pc(2, 0.05))),
-        "prior_alpha", multi_block = TRUE)
+        "prior_alpha")
     expect_s3_class(by_b, "tulpa_block_hyperprior")
     expect_equal(sort(names(by_b)), c("1", "3"))
     expect_true(all(vapply(by_b, is.function, logical(1))))
@@ -243,40 +240,32 @@ test_that("a malformed per-block hyperprior is refused where it is written", {
     expect_error(
         tulpa:::.joint_parse_hyperprior(
             list(list(block = 0, prior = hpb_pc(4, 0.01))),
-            "prior_alpha", multi_block = TRUE),
+            "prior_alpha"),
         "1-based block index")
     expect_error(
         tulpa:::.joint_parse_hyperprior(
             list(list(block = c(1, 2), prior = hpb_pc(4, 0.01))),
-            "prior_alpha", multi_block = TRUE),
+            "prior_alpha"),
         "1-based block index")
     expect_error(
         tulpa:::.joint_parse_hyperprior(
             list(list(block = 1, prior = hpb_pc(4, 0.01)),
                  list(block = 1, prior = hpb_pc(2, 0.01))),
-            "prior_alpha", multi_block = TRUE),
+            "prior_alpha"),
         "names block 1 twice")
     expect_error(
         tulpa:::.joint_parse_hyperprior(
-            list(list(block = 1)), "prior_alpha", multi_block = TRUE),
+            list(list(block = 1)), "prior_alpha"),
         "no `prior` field")
     # The family spec inside an entry goes through the same family parser.
     expect_error(
         tulpa:::.joint_parse_hyperprior(
             list(list(block = 1, prior = list("nope", 1))),
-            "prior_alpha", multi_block = TRUE),
+            "prior_alpha"),
         "Unknown hyperprior family")
-    # A per-block list names blocks of a list-of-blocks prior.
-    expect_error(
-        tulpa:::.joint_parse_hyperprior(
-            list(list(block = 1, prior = hpb_pc(4, 0.01))),
-            "prior_alpha", multi_block = FALSE),
-        "single-block joint")
-    # The single spec is unchanged on either path.
     expect_true(is.function(tulpa:::.joint_parse_hyperprior(
-        hpb_pc(4, 0.01), "prior_alpha", multi_block = FALSE)))
-    expect_null(tulpa:::.joint_parse_hyperprior(NULL, "prior_alpha",
-                                                multi_block = TRUE))
+        hpb_pc(4, 0.01), "prior_alpha")))
+    expect_null(tulpa:::.joint_parse_hyperprior(NULL, "prior_alpha"))
 })
 
 test_that("a block with no axes of its own contributes no column", {
@@ -303,8 +292,7 @@ test_that("a block with no axes of its own contributes no column", {
 test_that("one spec reaches every block carrying the axis, not the first", {
     skip_on_cran_budget()
     fx <- hpb_grid_two()
-    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha",
-                                          multi_block = TRUE)
+    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha")
     ent <- tulpa:::.joint_multi_hp_cols(fx$grid, fx$axis_offsets, fx$B,
                                         fn_sigma = NULL, fn_alpha = fn)
     expect_length(ent, 2L)
@@ -316,8 +304,7 @@ test_that("one spec reaches every block carrying the axis, not the first", {
                            logical(1))))
 
     # Both roles at once: sigma entries first (block order), then alpha.
-    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma",
-                                          multi_block = TRUE)
+    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma")
     ent2 <- tulpa:::.joint_multi_hp_cols(fx$grid, fx$axis_offsets, fx$B,
                                          fn_sigma = fs, fn_alpha = fn)
     expect_equal(colnames(fx$grid)[vapply(ent2, function(e) e[["col"]],
@@ -330,7 +317,7 @@ test_that("a per-block spec reaches only the blocks it names", {
     fx <- hpb_grid_two()
     fn <- tulpa:::.joint_parse_hyperprior(
         list(list(block = 2, prior = hpb_pc(4, 0.01))),
-        "prior_alpha", multi_block = TRUE)
+        "prior_alpha")
     ent <- tulpa:::.joint_multi_hp_cols(fx$grid, fx$axis_offsets, fx$B,
                                         fn_sigma = NULL, fn_alpha = fn)
     expect_length(ent, 1L)
@@ -343,8 +330,7 @@ test_that("a per-block spec reaches only the blocks it names", {
 test_that("one spec on two copy blocks folds BOTH alpha axes", {
     skip_on_cran_budget()
     fx <- hpb_grid_two()
-    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha",
-                                          multi_block = TRUE)
+    fn <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha")
     lm0 <- numeric(nrow(fx$grid))
     got <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                        fn_sigma = NULL, fn_alpha = fn,
@@ -366,7 +352,7 @@ test_that("a per-block spec folds each named block's own density", {
     fn <- tulpa:::.joint_parse_hyperprior(
         list(list(block = 1, prior = hpb_pc(4, 0.01)),
              list(block = 2, prior = hpb_pc(1, 0.05))),
-        "prior_alpha", multi_block = TRUE)
+        "prior_alpha")
     lm0 <- numeric(nrow(fx$grid))
     got <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                        fn_sigma = NULL, fn_alpha = fn,
@@ -378,7 +364,7 @@ test_that("a per-block spec folds each named block's own density", {
     # Naming one block leaves the other flat.
     fn1 <- tulpa:::.joint_parse_hyperprior(
         list(list(block = 2, prior = hpb_pc(1, 0.05))),
-        "prior_alpha", multi_block = TRUE)
+        "prior_alpha")
     got1 <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                         fn_sigma = NULL, fn_alpha = fn1,
         declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid)))
@@ -388,11 +374,10 @@ test_that("a per-block spec folds each named block's own density", {
 test_that("the record says which axes each hyperprior reached", {
     skip_on_cran_budget()
     fx <- hpb_grid_two()
-    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma",
-                                          multi_block = TRUE)
+    fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma")
     fa <- tulpa:::.joint_parse_hyperprior(
         list(list(block = 2, prior = hpb_pc(4, 0.01))),
-        "prior_alpha", multi_block = TRUE)
+        "prior_alpha")
     rec <- tulpa:::.joint_check_multi_hyperpriors(fx$axis_names,
                                                   fx$axis_offsets, fx$B, fs, fa)
     expect_equal(sort(names(rec)), c("alpha", "sigma"))
@@ -406,12 +391,18 @@ test_that("the record says which axes each hyperprior reached", {
     # No hyperprior, no record.
     expect_null(tulpa:::.joint_check_multi_hyperpriors(
         fx$axis_names, fx$axis_offsets, fx$B, NULL, NULL))
-    # A role no block carries is recorded as reaching nothing, not refused:
-    # `prior_alpha` on a fit with no copy is documented as inert.
+    # A field scale carried as a precision is the SD role's axis too.
     rec1 <- tulpa:::.joint_check_multi_hyperpriors(
         c("b1.tau", "b2.tau"), c(0L, 1L, 2L), 2L, fs, NULL)
-    expect_equal(rec1$sigma$blocks, integer(0))
-    expect_equal(rec1$sigma$axes, character(0))
+    expect_equal(rec1$sigma$blocks, c(1L, 2L))
+    expect_equal(rec1$sigma$axes, c("b1.tau", "b2.tau"))
+    # A role no block carries is recorded as reaching nothing, not refused:
+    # `prior_alpha` on a fit with no copy is documented as inert.
+    fa1 <- tulpa:::.joint_parse_hyperprior(hpb_pc(4, 0.01), "prior_alpha")
+    rec2 <- tulpa:::.joint_check_multi_hyperpriors(
+        c("b1.tau", "b2.tau"), c(0L, 1L, 2L), 2L, NULL, fa1)
+    expect_equal(rec2$alpha$blocks, integer(0))
+    expect_equal(rec2$alpha$axes, character(0))
 })
 
 skip_on_cran()

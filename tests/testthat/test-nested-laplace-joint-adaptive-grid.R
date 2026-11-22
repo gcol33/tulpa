@@ -103,7 +103,7 @@ test_that("adaptive_grid = FALSE leaves grid and result unchanged", {
                             adaptive_grid = FALSE)
     expect_null(fit$adaptive_grid_info)
     expect_equal(length(fit$log_marginal), 9L)         # 3 sigma x 3 alpha
-    expect_equal(max(fit$theta_grid[, "alpha"]), 0.6)  # boundary intact
+    expect_equal(max(fit$theta_grid[, "b1.alpha"]), 0.6)  # boundary intact
 })
 
 
@@ -132,23 +132,23 @@ test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
 
     # Refinement metadata is populated.
     expect_false(is.null(fit_T$adaptive_grid_info))
-    expect_true("alpha" %in%
+    expect_true("b1.alpha" %in%
                 strsplit(paste(fit_T$adaptive_grid_info$triggered_axes,
                                 collapse = ","), ",")[[1]])
     expect_gt(sum(fit_T$adaptive_grid_info$n_points_added), 0L)
 
     # Grid grew and now reaches beyond the user-supplied boundary.
     expect_gt(length(fit_T$log_marginal), length(fit_F$log_marginal))
-    expect_gt(max(fit_T$theta_grid[, "alpha"]),
-              max(fit_F$theta_grid[, "alpha"]) + 1e-6)
+    expect_gt(max(fit_T$theta_grid[, "b1.alpha"]),
+              max(fit_F$theta_grid[, "b1.alpha"]) + 1e-6)
 
     # Each extension point is a new level of the tensor, laid in every row of
     # the other axes that holds the posterior (gcol33/tulpa#932): every row
     # carrying more than `level_row_tail` of the fit's weight holds it.
-    others <- setdiff(colnames(fit_T$theta_grid), "alpha")
+    others <- setdiff(colnames(fit_T$theta_grid), "b1.alpha")
     key <- function(g) do.call(paste, lapply(others, function(a) g[, a]))
-    old_lev <- unique(fit_F$theta_grid[, "alpha"])
-    new_lev <- setdiff(unique(fit_T$theta_grid[, "alpha"]), old_lev)
+    old_lev <- unique(fit_F$theta_grid[, "b1.alpha"])
+    new_lev <- setdiff(unique(fit_T$theta_grid[, "b1.alpha"]), old_lev)
     expect_gt(length(new_lev), 0L)
     expect_lte(length(new_lev), sum(fit_T$adaptive_grid_info$n_points_added))
     w <- fit_T$weights; w[!is.finite(w)] <- 0
@@ -156,18 +156,18 @@ test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
     heavy <- names(row_w)[row_w > .nl_diag("level_row_tail")]
     expect_gt(length(heavy), 0L)
     for (lv in new_lev) {
-        at <- fit_T$theta_grid[, "alpha"] == lv
+        at <- fit_T$theta_grid[, "b1.alpha"] == lv
         expect_true(all(heavy %in% key(fit_T$theta_grid[at, , drop = FALSE])))
     }
 
     # Posterior alpha mean moves outward (FALSE truncated at alpha_max =
     # 0.6; TRUE lets mass past that ceiling toward alpha_true = 2.0).
     # 0.4 is well above MCSE for n=600, sigma=1.
-    expect_lt(fit_F$theta_mean[["alpha"]], 0.6 + 1e-6)
-    expect_gt(fit_T$theta_mean[["alpha"]], fit_F$theta_mean[["alpha"]] + 0.4)
+    expect_lt(fit_F$theta_mean[["b1.alpha"]], 0.6 + 1e-6)
+    expect_gt(fit_T$theta_mean[["b1.alpha"]], fit_F$theta_mean[["b1.alpha"]] + 0.4)
     # Placement reaches the same side on its own.
     expect_identical(fit_P$outer_grid_placement, "auto_recentered")
-    expect_gt(fit_P$theta_mean[["alpha"]], fit_F$theta_mean[["alpha"]] + 0.4)
+    expect_gt(fit_P$theta_mean[["b1.alpha"]], fit_F$theta_mean[["b1.alpha"]] + 0.4)
 })
 
 
@@ -184,7 +184,7 @@ test_that("adaptive_grid = TRUE leaves grid alone when boundary is empty", {
     sp_wide <- c(0.1, 0.3, 0.6, 1.0, 1.5, 2.5, 4.0)
     # The field SD's nodes are another stated axis the pass would visit, so it
     # is held and the test reads the copy axis alone.
-    held <- list(axis_refine = c(sigma = "none"))
+    held <- list(axis_refine = c(b1.sigma = "none"))
     fit_F <- .fit_joint_icar(sim, alpha_grid = sp_wide,
                               adaptive_grid = FALSE, control = held)
     fit_T <- .fit_joint_icar(sim, alpha_grid = sp_wide,
@@ -192,7 +192,7 @@ test_that("adaptive_grid = TRUE leaves grid alone when boundary is empty", {
 
     expect_null(fit_T$adaptive_grid_info)
     expect_equal(length(fit_T$log_marginal), length(fit_F$log_marginal))
-    expect_equal(fit_T$theta_mean[["alpha"]], fit_F$theta_mean[["alpha"]])
+    expect_equal(fit_T$theta_mean[["b1.alpha"]], fit_F$theta_mean[["b1.alpha"]])
 })
 
 test_that("refinement rounds solve the same cells on the outer team as serially", {

@@ -1,42 +1,43 @@
 #' Joint multi-likelihood nested Laplace approximation
 #'
 #' @description
-#' Outer-grid nested Laplace driver for *joint* models -- multiple response
-#' arms sharing one latent prior block, parameterized as a per-arm field
-#' amplitude (sigma) on a unit-precision latent.
+#' Outer-grid nested Laplace driver for *joint* models -- one or more response
+#' arms sharing a list of latent blocks, each block's hyperparameters an axis
+#' of the outer grid, named `b<k>.<hyper>` for block `k` (`b1.tau`,
+#' `b2.sigma`, ...) and `phi_<arm>` for an arm's dispersion.
 #'
-#' Supported priors:
-#'  * `"bym2"`       -- outer grid over `(sigma, rho [, alpha])`.
-#'                     Latent: `phi (n_s) | theta (n_s)` with unit-precision
-#'                     ICAR + iid components.
-#'  * `"icar"`       -- outer grid over `(sigma [, alpha])`.
-#'                     Latent: `phi (n_s)` with unit-precision ICAR.
-#'  * `"car_proper"` -- outer grid over `(sigma, rho_car [, alpha])`.
-#'                     Latent: `phi (n_s)` with `Q = D - rho_car * W`.
+#' `prior` is a list of block specs. A single areal block (`"icar"`,
+#' `"bym2"`, `"car_proper"`) may also be passed unwrapped, with each arm's
+#' observation map on the arm's `spatial_idx` and a copy coefficient declared
+#' on an arm's `field_coef`; it is fitted as the one-block list it spells, so
+#' its axes carry the same `b1.` names (see `prior`).
 #'
-#' Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
-#' land under Phase 3.
-#'
-#' @section (sigma, alpha) parameterization:
-#' Each arm's linear predictor reads
+#' @section Copy blocks, (sigma, alpha) parameterization:
+#' A copy block couples one field into a second arm. Each arm's linear
+#' predictor reads
 #' \deqn{\eta_{arm} = X_{arm} \beta_{arm} + \sigma_{arm} \cdot z_s,}
 #' where \eqn{z_s} is a unit-precision latent (ICAR(tau=1) for ICAR/BYM2,
 #' or the BYM2 mix; CAR_proper uses the structure of
-#' \eqn{D - \rho_{car} W}). All arms share the donor amplitude
-#' \eqn{\sigma} from the outer-grid `sigma_grid` axis. The copy arm's
-#' amplitude is \eqn{\sigma_{arm} = \alpha \cdot \sigma}, where \eqn{\alpha}
-#' is a direct outer-grid axis taken from `copy$alpha_grid`. The Cartesian
-#' product is over `(sigma, [rho/rho_car,] alpha[, phi])`. Direct \eqn{\alpha}
+#' \eqn{D - \rho_{car} W}). The donor arm carries the block's amplitude
+#' \eqn{\sigma} from its `sigma_grid` axis (`b<k>.sigma`), the copy arm
+#' \eqn{\sigma_{arm} = \alpha \cdot \sigma}, where \eqn{\alpha} is a direct
+#' outer-grid axis (`b<k>.alpha`) taken from `copy$alpha_grid`. The block's
+#' grid crosses `(sigma, alpha [, rho / rho_car])`. Direct \eqn{\alpha}
 #' as an outer-grid axis (rather than a post-hoc ratio
 #' \eqn{\alpha = \sigma_{pos} / \sigma_{occ}}) avoids plug-in bias on the
 #' weakly-identified ratio at small `n_pos` and lets a regularizing
-#' hyperprior land on \eqn{\alpha} directly.
+#' hyperprior land on \eqn{\alpha} directly. A non-copy block keeps its own
+#' parameterization: an `icar` field on its precision `b<k>.tau`, a
+#' `car_proper` field on `(b<k>.tau, b<k>.rho)`, a `bym2` field on
+#' `(b<k>.sigma, b<k>.rho)`.
 #'
 #' @param responses A named list of arm specs (length >= 1). Each arm:
 #'   * `y`           -- numeric `[N_arm]` response.
 #'   * `n_trials`    -- integer `[N_arm]` (use `rep(1L, N_arm)` for non-binomial).
 #'   * `X`           -- numeric matrix `[N_arm x p_arm]` fixed-effects design.
-#'   * `spatial_idx` -- integer `[N_arm]`, 1-based map obs -> spatial unit.
+#'   * `spatial_idx` -- integer `[N_arm]`, 1-based map obs -> spatial unit,
+#'                     read only with an unwrapped single-block `prior` (a
+#'                     block list carries each arm's map on the block).
 #'   * `re_idx`      -- optional numeric `[N_arm]` 1-based RE group index;
 #'                     defaults to `rep(0, N_arm)` (no RE).
 #'   * `n_re_groups` -- optional integer (default `0L`).
@@ -82,34 +83,39 @@
 #'                       multiplier. `0` means the arm carries NO field
 #'                       at all (the per-row scatter `eta += field_coef *
 #'                       sigma * z` is skipped for that arm).
-#'                     * character of length 1 -- names an outer-grid
-#'                       hyperparam axis (currently `"alpha"`); the
-#'                       coefficient varies across the grid.
-#'                     * `list(name = , grid = )` -- embedded axis
-#'                       declaration, equivalent to declaring the axis
-#'                       and naming it on this arm.
-#'                     At most one arm may declare a hyperparam-driven
-#'                     axis (the cover hurdle and
-#'                     occu_cover both need only one). Shared axes
-#' across multiple arms are deferred. A single-block
-#' copy coefficient is declared here, on the arm --
-#' not through a separate `copy` argument.
+#'                     * with an unwrapped single-block `prior` only: a
+#'                       character of length 1, or `list(name = , grid = ,
+#'                       n = )`, declaring this arm the copy arm of the
+#'                       block. It is the copy spec
+#'                       `list(arm = <this arm>, block = 1, alpha_grid =
+#'                       grid, alpha_n = n)` (see `copy`), and the fit
+#'                       names the axis `b1.alpha`. At most one arm may
+#'                       declare one.
 #'
-#' @param prior A list describing the shared latent prior block. Required
-#'   field `type`. Backend-specific fields:
+#' @param prior A list of block specs, each with a `type` field, or one
+#'   unwrapped areal block spec. The areal blocks' fields:
 #'   * **bym2**: `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
 #'     `n_neighbors`, `scale_factor` (default `1`); optional `sigma_grid`
-#'     (donor-arm field amplitude, default 5 log-spaced values in
-#'     `[0.1, 3]`), `rho_grid` (default
-#'     `c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)`).
+#'     (field SD) and `rho_grid` (mixing weight).
 #'   * **icar**: `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
-#'     `n_neighbors`; optional `sigma_grid` (default 5 log-spaced values
-#'     in `[0.1, 3]`).
-#'   * **car_proper**: same as icar plus `rho_car_grid`
-#'     (default `c(0.5, 0.8, 0.95, 0.99)`).
+#'     `n_neighbors`; optional `tau_grid` (precision), or `sigma_grid` on a
+#'     copy block (donor amplitude).
+#'   * **car_proper**: same as icar plus `rho_grid` / `rho_car_grid`
+#'     (correlation).
+#'   Within a block list each block also carries its per-arm observation map
+#'   (`spatial_idx`, a list of `n_arms` integer vectors). A non-copy block's
+#'   grid fields are paired cells (the i-th entries of each form one cell); a
+#'   copy block's are axes the driver crosses.
 #'
-#'   `sigma_grid`'s default is a starting axis, not a hard ceiling: when the
-#'   fitted field-SD posterior mode rails the top node (the axis's own
+#'   An unwrapped single block reads its fields in the field-SD spelling:
+#'   `sigma_grid` is the field SD and is crossed with `rho_grid` (bym2) or
+#'   `rho_car_grid` (car_proper). It is translated once into the block it
+#'   spells -- a non-copy icar / car_proper SD to the precision
+#'   `tau_grid = 1 / sigma_grid^2`, crossed axes to paired cells -- so the fit
+#'   integrates the same nodes and reports them as `b1.tau` (or `b1.sigma`).
+#'
+#'   A default axis is a starting axis, not a hard ceiling: when the
+#'   fitted posterior mode rails an end node (the axis's own
 #'   marginal is maximal there, or the whole grid collapsed onto it:
 #'   `pareto_k_regime = "collapsed_edge"`, see below), the driver finds the
 #'   outer posterior mode -- a damped Newton search over every outer axis,
@@ -126,7 +132,7 @@
 #'   `outer_grid_axis_declined` (gcol33/tulpa#919). The mode the placement
 #'   was laid around is on the fit as `outer_mode_u` / `outer_mode_cov_u` (in
 #'   each axis's `outer_mode_axis_tags` coordinate), with `outer_mode_status`,
-#'   `outer_mode_rounds` and `outer_mode_evals`. A `sigma_grid` the caller
+#'   `outer_mode_rounds` and `outer_mode_evals`. A grid the caller
 #'   PINNED always wins: auto-recenter
 #'   engages when the field is left `NULL`, when it is marked with
 #'   [auto_grid()] (how a wrapper package declares an axis it defaulted rather
@@ -235,28 +241,26 @@
 #'   summarized over the cell weights, in the hyperparameter table of
 #'   `summary()`.
 #'
-#'   A block type the single-block path does not list above (`iid`, `mcar`,
-#'   `miid`, `lf`, `hsgp`, ...) is read on the list-of-blocks path only, so a
-#'   single such block is passed as a one-block list,
+#'   Any other block type (`iid`, `mcar`, `miid`, `lf`, `hsgp`, ...) is passed
+#'   in a list, a single one as a one-block list,
 #'   `prior = list(list(type = "iid", n_units = , obs_idx = ))`; passed
-#'   unwrapped it is read as a single-block prior and refused.
+#'   unwrapped it is refused.
 #'
 #'   An empty `prior = list()` is a list of zero blocks: the model carries no
 #'   latent field, each arm's predictor is its fixed effects, and the outer
 #'   grid is spanned by the per-arm dispersion axes of `phi_grid` alone (one
 #'   cell when there are none).
 #'
-#' @param copy Multi-block copy specification (multi-block `prior` only). For a
-#' single-block fit there is no `copy` argument: declare the copy coefficient
-#' on the arm via `responses[[X]]$field_coef = list(name = "alpha", grid = G)`.
-#' On the multi-block path `copy` is an unnamed list of specs --
+#' @param copy Copy specification for a list-of-blocks `prior`: one spec
+#' `list(arm, block, alpha_grid)` or an unnamed list of specs --
 #' `list(list(arm, block, alpha_grid),...)` -- coupling N distinct shared
 #' latent fields, each onto its own arm with its own \eqn{\alpha} axis,
 #' integrated over the product outer grid. Each spec must name a distinct
-#' block.
+#' block. With an unwrapped single-block `prior` the copy is declared on the
+#' arm instead (`field_coef`, see `responses`).
 #'
 #' The \eqn{\alpha} axis takes EITHER `alpha_grid`, which states its nodes, OR
-#' `alpha_n` (`field_coef$n` on the single-block path), which re-reads the
+#' `alpha_n` (`field_coef$n` on an unwrapped prior), which re-reads the
 #' engine's own axis at a higher RESOLUTION -- more nodes between the same
 #' bounds, keeping the atom at 0 that gives the "no copy" base model posterior
 #' mass. They are different requests and supplying both is an error. Use
@@ -266,9 +270,8 @@
 #' The copy block may be any of `icar` / `bym2` / `car_proper` / `rw1`
 #' / `rw2` / `ar1` / `iid`; blocks with their own per-arm scaling (`lf`,
 #'   `hsgp_mo`) or a precomputed precision (`tgmrf`) do not take a copy. A
-#'   copy block's own `sigma_grid` (the donor field amplitude, same default
-#'   ceiling as the single-block `prior$sigma_grid` above) auto-recenters on
-#'   `collapsed_edge` the same way, one block per attempt.
+#'   copy block's own `sigma_grid` (the donor field amplitude) auto-recenters
+#'   on `collapsed_edge` the same way, one block per attempt.
 #'
 #' @param phi_grid Optional list specifying per-arm dispersion axes on the
 #'   outer grid. Accepts either a named list (keys = arm names) or a
@@ -344,7 +347,9 @@
 #'   data identifies the parameter (e.g. `n_pos >= ~200`) the prior is
 #'   essentially harmless -- the lever is tail-shrinkage at small
 #'   `n_pos`. `prior_alpha` only applies when `copy` is active;
-#'   `prior_sigma` applies on any `sigma`-named axis.
+#'   `prior_sigma` applies on every block's field-scale axis, a field SD
+#'   `b<k>.sigma` or a precision `b<k>.tau`, carried to the precision by
+#'   the change of variables `tau = sigma^-2`.
 #'
 #'   WHICH AXES ONE SPEC REACHES. A list-of-blocks `prior` can carry the same
 #'   axis on several blocks at once -- two copied fields carry `b1.alpha` and
@@ -362,8 +367,7 @@
 #'   ```
 #'   A block the list does not name carries no prior on that axis. An entry
 #'   naming a block that carries no such axis is an error, and the message
-#'   names the blocks that do. The per-block shape is a multi-block one: on a
-#'   single-block `prior`, where the axis is unique, pass the spec itself.
+#'   names the blocks that do; an unwrapped single-block `prior` is block 1.
 #'   A fit reports what it applied in `hyperprior_axes`: one record per role
 #'   with the scope the caller stated it at (`"every_block"` / `"per_block"`),
 #'   the block indices reached, and the grid columns those are.
@@ -539,9 +543,8 @@
 #'     _boundary - max_log_marginal_overall))`, catching both boundary pile-up
 #'     and integrand truncation; `0.02` is ~4 log units of decay.
 #'     `adaptive_grid_max_passes` caps the passes (one usually suffices). Fixes
-#'     posterior CI under-coverage when truth sits near a grid edge. Both the
-#'     single-block and the multi-block driver run the passes on a tensor grid;
-#'     a CCD design, the adaptive lattice and a locally CCD-refined grid keep the
+#'     posterior CI under-coverage when truth sits near a grid edge. The
+#'     passes run on a tensor grid; a CCD design, the adaptive lattice and a locally CCD-refined grid keep the
 #'     nodes they were laid on.
 #'
 #'     How far a given axis may be moved depends on where its nodes came from.
@@ -767,8 +770,8 @@
 #'     `"by_arm"` additionally computes a k-hat restricted to each arm's
 #'     hyperparameter axes (the other arms held at their posterior mean), reported
 #'     in `pareto_k_by_arm`, to localise which arm drives a tail-heavy joint k; the
-#'     joint k itself is unchanged. Per-arm k is defined for the multi-block layout
-#'     with two or more arms and declines for the single-block shared-field layout.
+#'     joint k itself is unchanged. Per-arm k is defined with two or more arms
+#'     and declines when fewer than two arms carry an axis.
 #'   * `k_threads` (`NULL`) -- outer-thread width for the diagnostic's importance
 #'     batch. The `k_samples` re-solves are independent and run after the grid
 #'     (every core free), each solved single-threaded once the batch saturates the
@@ -827,10 +830,7 @@
 #'     layer could not score at all, distinct from a diagnostic that was simply
 #'     switched off -- while `$inner_skew_arms_declined` names the arms with no
 #'     oracle, including on a partially scored fit. See
-#'     [diagnostics()] for the combined verdict. Wired
-#'     for both the single-block backends (icar/bym2/car_proper) and the
-#'     multi-block path (a per-group RE, a trend field, or an arm-specific
-#'     field block).
+#'     [diagnostics()] for the combined verdict.
 #'   * `within_cell` (`"log_quadratic"`) -- the WITHIN-CELL construction the
 #'     reported per-axis hyperparameter intervals are read with. The outer
 #'     grid's weights say how much mass each cell holds; they do not say how it
@@ -983,11 +983,11 @@
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:
 #'   * `theta_grid`, `theta_names` -- outer-grid hyperparameter values
-#'     (includes the `alpha` axis when `copy` is set).
+#'     (includes a copy block's `b<k>.alpha` axis when `copy` is set).
 #'   * `log_marginal`, `weights` -- per-grid-point log-marginal and integration
 #'      weights (sum to 1).
 #'   * `theta_mean`, `theta_sd` -- posterior moments per hyperparameter,
-#'      including `alpha` when `copy` is set.
+#'      including `b<k>.alpha` when `copy` is set.
 #'      Divergent range and precision moments are `Inf`; `moment_existence`
 #'      records the prior tail, likelihood boundary decay and the reason.
 #'      `theta_log_mean` and `theta_log_sd` retain finite log-range moments.
@@ -1073,8 +1073,8 @@
 #'      same interval `axis_support` reports), `refine` (the mode refinement
 #'      ran under: `"none"` / `"densify"` / `"extend"`) and `n_nodes` (initial
 #'      and final continuum node counts).
-#'   * `outer_grid_placement` -- `"fixed"` (the default `sigma_grid` axis was
-#'      used as-is) or `"auto_recentered"` when a railed `sigma` axis
+#'   * `outer_grid_placement` -- `"fixed"` (the default axes were used as-is)
+#'      or `"auto_recentered"` when a railed or unresolved axis
 #'      triggered the mode-Hessian recenter-and-refit (see the `prior`
 #'      argument above). `outer_grid_recenter_attempts` (integer)
 #'      and `outer_grid_prior_added` (logical: whether the light default
@@ -1084,7 +1084,7 @@
 #'   * `outer_grid_recenter_declined` -- on a `"fixed"` placement, why the
 #'      recenter did not run: `"grid_not_collapsed"` (the grid already brackets
 #'      the mode -- the common case, no refit needed), `"axis_pinned"` (the
-#'      caller pinned `sigma_grid`; mark it with [auto_grid()] if it is a
+#'      caller pinned the axis's grid; mark it with [auto_grid()] if it is a
 #'      default rather than a choice), `"default_axis_pinned"` (a wrapper
 #'      package declared the nodes with `auto_grid(place = FALSE)` and asked
 #'      for them as written -- nothing you pinned), or `"no_usable_curvature"`
@@ -1101,8 +1101,8 @@
 #'      is written only while the fit is unplaced, so on a fit where one axis
 #'      moved and another did not it says `auto_recentered` and nothing about
 #'      the axis that stayed -- which is the axis `grid_coarsest_axis` then
-#'      names. Written by the field-SD passes for `sigma` (`b<k>.sigma` on a
-#'      copy block) and by the per-arm dispersion pass for `phi_<arm>`, and
+#'      names. Written for every block axis the pass walks (`b<k>.sigma`,
+#'      `b<k>.tau`, ...) and for each per-arm dispersion `phi_<arm>`, and
 #'      carried across a later pass placing a different axis; absent on a fit
 #'      no pass declined an axis of. An axis a pass DID move that still rails
 #'      reads `"attempts_exhausted"` (or the reason its last attempt could not be
@@ -1215,7 +1215,7 @@
 #'      (`offset` / `mode_gain`), and refining it can still move how much mass it
 #'      competes for against its unrefined neighbours (`log_mass_ratio`, the
 #'      embedded-rule local error indicator of adaptive cubature). NULL when
-#'      local CCD was off or declined (single-block, `< 4` axes, an active
+#'      local CCD was off or declined (`< 4` axes, an active
 #'      `phi_grid`, or no peaked interior cell).
 #'   * `integration_requested`, `integration_declined` -- what `integration`
 #'      asked for, and why the requested CCD or adaptive lattice did not run. `$integration` names the
@@ -1419,6 +1419,10 @@ tulpa_nested_laplace_joint <- function(responses,
   .device_session <- .device_start(control)
   on.exit(cpp_device_end(.device_session), add = TRUE)
     hyperprior <- .hp_choice(match.arg(hyperprior))
+    bare <- .joint_bare_prior_as_blocks(responses, prior, copy)
+    responses <- bare$responses
+    prior     <- bare$prior
+    copy      <- bare$copy
     # An `hsgp` block given by its coordinates with `m` or `c` unset takes its
     # basis from the data: the fit runs at given bases, through the HSGP basis
     # loop that sizes them.
@@ -1883,6 +1887,139 @@ tulpa_nested_laplace_joint <- function(responses,
     .nl_attach_outer_threads(res, outer_threads)
 }
 
+# A bare `prior` -- ONE areal block spec, with each arm's observation map on the
+# arm's own `spatial_idx` and a copy coefficient declared on an arm's
+# `field_coef` -- is the length-1 block list the joint driver fits. Its spelling
+# is translated once, here, so every call reaches one driver and one axis
+# convention (`b1.<hyper>`, `R/axis_label.R`):
+#   * each arm's `spatial_idx` becomes the block's per-arm `spatial_idx` (a
+#     block carrying a `projector` maps the observations through it instead);
+#   * the arm whose `field_coef` names an axis becomes the copy spec on block 1
+#     (`alpha_grid` from its `grid`, `alpha_n` from its `n`); a numeric
+#     `field_coef` stays on its arm as that arm's constant coefficient;
+#   * the bare spelling states a field's scale as its SD (`sigma_grid`) and
+#     crosses it with the correlation axis. A copied block reads exactly that.
+#     A non-copy block's axes are paired cells, so stated axes are crossed
+#     here, and a non-copy icar or proper-CAR block integrates its precision,
+#     so its SD nodes are written as tau = 1 / sigma^2 (`.joint_bare_field_axes()`).
+.JOINT_BARE_TYPES <- c("icar", "bym2", "car_proper")
+
+.joint_bare_prior_as_blocks <- function(responses, prior, copy) {
+    same <- list(responses = responses, prior = prior, copy = copy)
+    if (!is.list(prior) || is.null(prior$type) || !is.list(responses) ||
+        !length(responses)) {
+        return(same)
+    }
+    if (!is.null(copy)) {
+        stop("`copy` names a block of a list-of-blocks `prior`. With a single ",
+             "block spec, declare the copy coefficient on the arm itself: ",
+             "field_coef = list(name = \"alpha\", grid = <grid>).", call. = FALSE)
+    }
+    type <- tolower(prior$type)
+    if (!type %in% .JOINT_BARE_TYPES) {
+        stop("tulpa_nested_laplace_joint(): a single block spec takes prior$type ",
+             paste(shQuote(.JOINT_BARE_TYPES), collapse = ", "), "; got '", type,
+             "'. Pass any other block as a list of block specs.", call. = FALSE)
+    }
+    projected <- !is.null(prior$projector)
+    missing_spi <- which(vapply(responses, function(a)
+        !projected && length(a$spatial_idx) == 0L, logical(1)))
+    if (length(missing_spi)) {
+        stop("arm(s) ", paste(missing_spi, collapse = ", "),
+             " carry no `spatial_idx`; a '", type,
+             "' field needs one per arm.", call. = FALSE)
+    }
+    axis_arm <- which(vapply(responses, function(a) {
+        fc <- a$field_coef
+        is.list(fc) || (is.character(fc) && length(fc) == 1L)
+    }, logical(1)))
+    if (length(axis_arm) > 1L) {
+        stop("At most one arm may declare a hyperparam `field_coef` axis. Got ",
+             length(axis_arm), ".", call. = FALSE)
+    }
+    blk <- prior
+    blk$type <- type
+    if (!projected) {
+        blk$spatial_idx <- unname(lapply(responses, function(a)
+            as.integer(a$spatial_idx)))
+    }
+    responses <- lapply(responses, function(a) {
+        a$spatial_idx <- NULL
+        a
+    })
+    if (length(axis_arm)) {
+        fc <- responses[[axis_arm]]$field_coef
+        if (is.character(fc)) fc <- list(name = fc)
+        nm <- fc[["name"]]
+        if (is.null(nm) || !is.character(nm) || length(nm) != 1L) {
+            stop("Arm ", axis_arm, ": `field_coef` list must carry a single ",
+                 "character `name`.", call. = FALSE)
+        }
+        gr <- fc[["grid"]]
+        if (!is.null(gr) && (length(gr) == 0L || !is.numeric(gr) ||
+                             any(!is.finite(gr)) || any(gr < 0))) {
+            stop("Arm ", axis_arm, ": `field_coef$grid` must be a non-empty ",
+                 "numeric vector of finite non-negative values.", call. = FALSE)
+        }
+        # `[[` and not `$`: `$` partial-matches on a list, so `fc$n` would
+        # resolve to `fc$name`.
+        an <- fc[["n"]]
+        if (!is.null(an)) {
+            an <- suppressWarnings(as.integer(an))
+            if (length(an) != 1L || is.na(an) || an < 1L) {
+                stop("Arm ", axis_arm, ": `field_coef$n` must be a single ",
+                     "integer >= 1.", call. = FALSE)
+            }
+        }
+        copy <- list(arm = axis_arm, block = 1L)
+        copy$alpha_grid <- gr
+        copy$alpha_n    <- an
+        responses[[axis_arm]]$field_coef <- NULL
+    } else {
+        blk <- .joint_bare_field_axes(blk, type)
+    }
+    list(responses = responses, prior = list(blk), copy = copy)
+}
+
+# A non-copy bare block's stated axes in the block-list fields: the SD a bare
+# icar / proper-CAR block states becomes the precision its block integrates,
+# and two stated axes, which the bare spelling crosses, become the paired cells
+# of their tensor. Each written field keeps the declaration its source carried:
+# a marked axis stays marked (`auto_grid()`), and an unmarked one equal to the
+# engine's own default SD axis is marked as the default it is.
+.joint_bare_field_axes <- function(blk, type) {
+    carry <- function(new, old, field, family) {
+        if (is_auto_grid(old)) return(auto_grid(new, place = auto_grid_place(old)))
+        if (.nl_axis_matches_default(old, field, family)) return(auto_grid(new))
+        new
+    }
+    levels <- function(x) unique(as.numeric(x))
+    sg <- blk$sigma_grid
+    rho_field <- switch(type, bym2 = "rho_grid", car_proper = "rho_car_grid",
+                        NULL)
+    rg <- if (!is.null(rho_field)) blk[[rho_field]]
+    if (!is.null(sg) && type %in% c("icar", "car_proper")) {
+        if (!is.null(blk$tau_grid)) {
+            stop("prior block '", type, "': give `sigma_grid` or `tau_grid`, ",
+                 "not both -- they are one axis, tau = 1 / sigma^2.",
+                 call. = FALSE)
+        }
+        blk$tau_grid <- carry(1 / levels(sg)^2, sg, "sigma_grid", "bym2")
+        blk$sigma_grid <- NULL
+    }
+    sd_field <- if (type == "bym2") "sigma_grid" else "tau_grid"
+    sd <- blk[[sd_field]]
+    if (!is.null(sd) && !is.null(rg)) {
+        gr <- expand.grid(s = levels(sd), r = levels(rg), KEEP.OUT.ATTRS = FALSE)
+        blk[[sd_field]] <- if (is_auto_grid(sd))
+            auto_grid(gr$s, place = auto_grid_place(sd)) else gr$s
+        rho_out <- carry(gr$r, rg, "rho_grid", type)
+        blk[[rho_field]] <- NULL
+        blk$rho_grid <- rho_out
+    }
+    blk
+}
+
 .tulpa_nl_joint_once <- function(responses, prior, copy = NULL, phi_grid = NULL,
                                  prior_sigma = NULL, prior_alpha = NULL,
                                  prior_phi = NULL,
@@ -1973,9 +2110,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # coarse at moderate-to-high latent dimension where a uniformly fine tensor is
     # k^d-expensive. `control$local_ccd` is TRUE (defaults) or a list(max_cells=,
     # f0=, skew_max=, rank=); NULL (the default) keeps the unrefined grid. Engages only on
-    # the multi-block tensor path at >= 4 transformable latent axes with no active
-    # phi grid; the single-block path always integrates on the tensor grid
-    # unrefined.
+    # a tensor grid at >= 4 transformable latent axes with no active phi grid.
     local_ccd                 <- control$local_ccd
     if (!is.null(local_ccd) && !isTRUE(local_ccd) && !is.list(local_ccd)) {
         stop("`control$local_ccd` must be NULL, TRUE, or a ",
@@ -2185,22 +2320,18 @@ tulpa_nested_laplace_joint <- function(responses,
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
     }
-    if (!is.list(prior)) {
+    if (!.is_multi_block_prior(prior)) {
         stop("`prior` must be a list with a `type` field, or a list of block specs (empty for none).",
              call. = FALSE)
     }
     # Parse user-specified regularizing hyperpriors on (sigma, alpha) once,
-    # at the entry point. Validation errors raised here surface to the user
-    # without going through the multi-block / single-block fork. `prior_sigma`
-    # and `prior_alpha` also take the per-block shape on a list-of-blocks
-    # `prior`; `prior_phi` names per-arm dispersion axes, which carry no block.
-    multi_block <- .is_multi_block_prior(prior)
-    fn_sigma <- .joint_parse_hyperprior(prior_sigma, "prior_sigma", multi_block)
-    fn_alpha <- .joint_parse_hyperprior(prior_alpha, "prior_alpha", multi_block)
+    # at the entry point. `prior_sigma` and `prior_alpha` also take the
+    # per-block shape; `prior_phi` names per-arm dispersion axes, which carry
+    # no block.
+    fn_sigma <- .joint_parse_hyperprior(prior_sigma, "prior_sigma")
+    fn_alpha <- .joint_parse_hyperprior(prior_alpha, "prior_alpha")
     fn_phi   <- .joint_parse_sigma_prior(prior_phi,   "prior_phi")
 
-    # Detect multi-block prior (list-of-blocks). Routed to a separate
-    # dispatch path that builds vector<LatentBlock> on the joint side.
     # Pruning toggle: the kernel takes prune_tol > 0 to mean "screen and
     # prune"; gate it here with the user-facing `prune` boolean so the toggle
     # composes cleanly (prune=FALSE always disables, prune=TRUE uses
@@ -2237,16 +2368,7 @@ tulpa_nested_laplace_joint <- function(responses,
         tulpa.nl_fitted_var = isTRUE(control$fitted_var %||% TRUE))
     on.exit(options(.op_fitted_var), add = TRUE)
 
-    # The override reaches the dense inner Newton through the multi-block
-    # driver's call factory only. Refusing it elsewhere is what keeps it from
-    # reading as a setting that was applied.
-    if (inner_sparse_override != 0L && !.is_multi_block_prior(prior)) {
-        stop("`control$inner_factorization` applies to the multi-block joint ",
-             "path; this fit takes the single-block one.", call. = FALSE)
-    }
-
-    if (.is_multi_block_prior(prior)) {
-        return(.joint_dispatch_multi(
+    .joint_dispatch_multi(
             responses = responses, prior_list = prior, copy = copy,
             phi_grid = phi_grid,
             fn_sigma = fn_sigma, fn_alpha = fn_alpha, fn_phi = fn_phi,
@@ -2291,350 +2413,28 @@ tulpa_nested_laplace_joint <- function(responses,
             axis_refine = axis_refine,
             grid_auto = grid_auto, phi_auto = phi_auto,
             timer = tm
-        ))
-    }
-    if (!is.null(copy)) {
-        stop("`copy` is not used on the single-block ",
-             "tulpa_nested_laplace_joint() path. Declare the copy coefficient on ",
-             "the arm itself: field_coef = list(name = \"alpha\", grid = <grid>). ",
-             "(`copy` remains a multi-block argument -- a list of block specs, ",
-             "each naming a distinct copy block.)", call. = FALSE)
-    }
-    if (is.null(prior$type)) {
-        stop("`prior` must be a list with a `type` field, or a list of block specs (empty for none).",
-             call. = FALSE)
-    }
-    .nl_refuse_projector(prior, "The single-block tulpa_nested_laplace_joint() path")
-    type <- tolower(prior$type)
-    backend <- .joint_backends[[type]]
-    if (is.null(backend)) {
-        stop("tulpa_nested_laplace_joint(): unsupported prior$type '", type,
-             "'. Supported: ",
-             paste(shQuote(names(.joint_backends)), collapse = ", "),
-             ".", call. = FALSE)
-    }
-
-    arms <- lapply(seq_along(responses), function(k) {
-        a <- responses[[k]]
-        .normalise_joint_arm(a, k)
-    })
-
-    # `.resolve_copy` reads the per-arm `field_coef_axis` / `field_coef_const`
-    # populated by `.normalise_joint_arm`; pass the normalised `arms` rather
-    # than the raw `responses` list.
-    cp <- .resolve_copy(arms, prior, type)
-    arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
-    phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
-    grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)
-    # How far each axis may be refined follows from where its nodes came from:
-    # an axis the caller stated is integrated more finely over exactly that
-    # range, one the engine placed may be followed out past its ends.
-    # `control$axis_refine` overrides either, per axis. Resolved here, before the
-    # first kernel call, so a mis-named axis is refused rather than reported
-    # after the grid has been solved.
-    #
-    # A dispersion axis's provenance travels as the front door's `phi_auto`
-    # record, NOT on the grid: the front door strips the markers before the
-    # first fit (`.nl_phi_provenance()`, so nothing downstream sees an
-    # attributed numeric), which left every `phi_<arm>` axis reading as stated
-    # here whoever wrote it.
-    axis_refine_modes <- .joint_axis_refine_modes(
-        grids, cp, arms, phi_grid = phi_grid, arm_names = arm_names,
-        phi_auto = phi_auto, prior = prior, grid_auto = grid_auto,
-        user = .joint_check_axis_refine(axis_refine,
-                                        .joint_spec_axis_names(grids, cp)))
-    force_sparse <- .resolve_force_sparse(force_sparse, function() {
-        lay <- if (is.function(backend$layout)) backend$layout(arms, prior)
-        if (is.list(lay)) lay$n_x else NULL
-    })
-    # Per-cell fixed-effect covariance retention. The block size follows from
-    # the latent layout, which is fixed before the first solve, so the request
-    # goes in with the kernel call and each cell's block is extracted inside
-    # that cell's own solve, under the constraint that solve carries, rather
-    # than off a grid-wide store of every precision.
-    fixed_block_p <- if (isTRUE(keep_grid_hessians))
-        as.integer(.joint_fixed_layout(responses)$n_fixed) else 0L
-    tm$mark("setup")
-
-    # The hyperprior folded into log_marginal at the kernel-call boundary: the
-    # caller's density on a role it names, the engine's default on every other
-    # axis (`R/hyperprior_default.R`). Refinement decisions (edge scores, modal
-    # cell selection, var-of-means thresholds) then all read the posterior, and
-    # cells appended in refinement passes get the same prior through `hp_fn`.
-    # Known from the grid alone, so a screened solve ranks its cells with it and
-    # with their measure.
-    hp_families <- stats::setNames(
-        vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
-        arm_names)
-    theta_grid_init <- backend$theta_grid(grids, cp$has_copy)
-    hp_declared <- .hp_declare(theta_grid_init)
-    hp_record <- function(cells) {
-        .joint_hyperprior(cells, list(c(prior, list(type = type))), hp_families,
-                          user = list(sigma = fn_sigma, alpha = fn_alpha,
-                                      phi = fn_phi),
-                          copy_atom_mass = copy_atom_mass,
-                          hyperprior = hyperprior, declared = hp_declared)
-    }
-    hp_fn <- function(new_cells) hp_record(new_cells)$lp
-    hp_init <- hp_record(theta_grid_init)
-    specs <- .joint_axis_specs(grids, cp,
-        user_priors = list(sigma = fn_sigma, alpha = fn_alpha, phi = fn_phi),
-        copy_atom_mass = copy_atom_mass, copy_slab = copy_slab,
-        axis_refine = axis_refine_modes,
-        folded_axes = hp_init$axes,
-        axis_support = hp_init$support)
-    screen_offset <- if (prune_tol_eff > 0)
-        .nl_screen_log_offset(theta_grid_init, list(hp_init), specs = specs)
-
-    # A placement pilot's detecting grid is read off the screen alone
-    # (`.nl_pilot_control()`); the full-grid fallback below never is.
-    pilot_screen <- isTRUE(getOption("tulpa.nl_pilot_screen", FALSE))
-    call_kernel_with_tol <- function(tol_prune) {
-        backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
-                            n_threads, x_init, isTRUE(store_Q),
-                            fixed_block_p = fixed_block_p,
-                            arm_names = arm_names,
-                            n_threads_outer = n_threads_outer,
-                            tile_warm = tile_warm,
-                            prune_tol = tol_prune,
-                            force_sparse = force_sparse,
-                            cell_coupling = cell_coupling,
-                            hessian_pd_mode = hessian_pd_mode,
-                            step_curvature_mode = step_curvature_mode,
-                            inner_refresh = inner_refresh,
-                            screen_log_offset = if (tol_prune > 0) screen_offset,
-                            screen_only = pilot_screen && tol_prune > 0)
-    }
-    res <- .joint_main_grid_solve(function() call_kernel_with_tol(prune_tol_eff))
-    # Safety gate: if the cheap-pass ranking is unreliable (the screen's
-    # argmax disagrees with the full-solve argmax, or the kept posterior
-    # collapses onto a cell the screen badly mis-estimated), warn and fall
-    # back to the full grid rather than silently returning a pruned answer
-    #. A silently-wrong posterior must be impossible.
-    if (prune_tol_eff > 0) {
-        res <- .joint_prune_safety_gate(
-            res, resolve_full = function() call_kernel_with_tol(0.0))
-    }
-    tm$mark("grid")
-
-    res <- .nl_fold_hyperprior(res, list(hp_init))
-
-    # --- generic-refinement glue (Step 3) -------------------
-    # Adaptive grid + var-of-means consistency are now driven by the
-    # axis-spec module in `R/hyper_grid_refine.R`. The joint driver builds:
-    #   * `specs`     -- one hyper_axis_spec per outer-grid axis (log_scale /
-    #                    bounds / refinable / refine_priority encoded once,
-    #                    from `.joint_axis_specs`).
-    #   * `kernel_fn` -- thin closure around `backend$call_kernel` that
-    #                    converts matrix new_cells <-> paired-vector grids and
-    #                    packs per-cell modes / n_iter / Q_csc_* into extras.
-    #   * `extras_list` -- per-cell side data the kernel returned; refinement
-    #                    carries it through, the warm-start chain reads
-    #                    `extras[[anchor]]$mode`.
-    # After refinement `.joint_glue_extras_to_res` puts the merged extras
-    # back into `res$modes` / `res$n_iter` / `res$Q_csc_*_per_grid` so
-    # downstream code (`.nl_posterior_moments`, `.nl_attach_axis_sd`,
-    # the modes / Q consumers) reads the refined values unchanged.
-    kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
-                                        tol, n_threads, x_init, store_Q,
-                                        arm_names,
-                                        fixed_block_p = fixed_block_p,
-                                        cell_coupling = cell_coupling,
-                                        hessian_pd_mode = hessian_pd_mode,
-                                        step_curvature_mode = step_curvature_mode,
-                                        inner_refresh = inner_refresh,
-                                        screen_tol = prune_tol_eff,
-                                        screen_hp = hp_record)
-    # `theta_grid_init` is the grid as it was declared, kept so the fit can
-    # report the span it was given apart from the span refinement left it with.
-    theta_grid_M  <- theta_grid_init
-    log_marginal  <- res$log_marginal
-    extras_list   <- .joint_init_extras_from_res(res)
-
-    # Boundary / interior refinement (opt in), then the var-of-means consistency
-    # pass. Sharply peaked axes (gaussian noise SD, beta phi at high n_pos, a
-    # field SD narrower than its placed cell) collapse joint weight onto a single
-    # grid cell, so `sum(w*x^2) - mean^2` on that axis is a floor at zero rather
-    # than a spread. The consistency pass bisects the gaps the axis's mass sits
-    # across, as levels laid in every row of the other axes that holds the
-    # posterior, until the axis marginal's
-    # ESS reaches the floor, so the merged grid carries the support the spread is
-    # read off. The outer mode a placement refit was laid from is carried in by
-    # the front door (`.joint_place_axes()`), which the pass lays a collapsed
-    # axis's points at.
-    # A round's cells are levels laid across the rows that hold the posterior,
-    # independent of each other, so a round runs on the fit's outer width: the
-    # kernel puts min(cells, width) of them in the team and gives each the
-    # rest of the grant as inner threads, a three-cell round three cells of
-    # ten threads on a 32-thread grant and a 78-cell round 32 cells of one.
-    refine_kernel <- function(new_cells, warm_start = NULL, store_extras = FALSE,
-                              ...)
-        kernel_fn(new_cells, warm_start = warm_start, store_extras = store_extras,
-                  n_threads_outer = n_threads_outer, ...)
-    deferred <- .nl_refine_deferred(res, theta_grid_M, log_marginal)
-    ref <- .joint_refine_outer_grid(
-        theta_grid_M, log_marginal, extras_list,
-        .hyper_specs_with_tags(specs, .joint_axis_tags_raw(
-            list(theta_grid = theta_grid_M, prior = prior))),
-        refine_kernel, hp_fn,
-        adaptive_grid = isTRUE(adaptive_grid) && !deferred,
-        edge_thresh   = adaptive_grid_edge_thresh,
-        max_passes    = adaptive_grid_max_passes,
-        consistency   = isTRUE(var_of_means_consistency) && !deferred,
-        axis_modes    = .nl_outer_mode_axes(getOption("tulpa.nl_outer_mode")))
-    theta_grid_M  <- ref$theta_grid
-    refining_axis <- ref$refining_axis
-    refine_info   <- ref$adaptive_info
-    # A cell whose inner Newton stopped short of a mode, on the base grid or on
-    # a level a pass added, is solved again from its nearest converged
-    # neighbour's mode before the grid is read.
-    rs <- .joint_resolve_unconverged(theta_grid_M, ref$log_marginal, ref$extras,
-                                     refine_kernel, hp_fn)
-    log_marginal  <- rs$log_marginal
-    extras_list   <- rs$extras
-    res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
-                                      extras_list, refining_axis)
-    res$nonconverged_resolve <- rs$info
-    res$outer_refine_deferred <- deferred
-    tm$mark("grid")                          # refinement inner solves
-
-    res$theta_grid  <- theta_grid_M
-    res$theta_names <- colnames(res$theta_grid)
-    res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
-                                             refining = refining_axis)
-    res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs,
-                                         refining = refining_axis)
-    res <- .joint_attach_cell_measure(res, specs, refining_axis)
-    res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
-                                                  log_quad = res$log_quad)
-    res$log_hyperprior <- hp_fn(res$theta_grid)
-    res             <- .nl_prune_merged_record(res)
-    res             <- .nl_attach_evidence(res, res$theta_grid, specs)
-    res             <- .nl_posterior_moments(res, type,
-                                             within = within_cell)
-    if (isTRUE(var_of_means_consistency)) {
-        res$var_of_means_consistency_info <- ref$consistency_info
-    }
-    tm$mark("postproc")
-    # The copy scale's point mass, reported beside the posterior mass left on
-    # it. A point mass competes against a continuum, so how much of a "no
-    # coupling" read is prior and how much is data is not visible from the
-    # posterior alone; both numbers are needed to say.
-    if ("alpha" %in% colnames(res$theta_grid)) {
-        av <- as.numeric(res$theta_grid[, "alpha"])
-        wv <- res$weights
-        wv[is.na(wv)] <- 0
-        res$copy_atom <- list(prior_mass = copy_atom_mass,
-                              posterior_mass = sum(wv[av == 0]))
-    }
-    res$arm_layout  <- backend$layout(arms, prior)
-    res$prior       <- prior
-    res$responses   <- responses
-    res             <- .joint_attach_observations(res, responses)
-    res$copy        <- copy
-    # What predict() rebuilds the kernel's inputs from at new rows
-    # (`.joint_eta_inputs()`): the block type and the resolved copy map.
-    res$eta_layout  <- list(door = "single", type = type, cp = cp)
-    res$cell_coupling      <- cell_coupling
-    res$adaptive_grid_info <- refine_info
-    # Every axis's declared nodes, whatever subset of the tensor a pilot
-    # thinning or the prune screen kept: the placement mode-find searches an
-    # axis over these (`.nl_placement_mode()`).
-    res$outer_axis_nodes <- lapply(
-        stats::setNames(nm = colnames(theta_grid_init)),
-        function(a) sort(unique(as.numeric(theta_grid_init[, a]))))
-    tm$mark("postproc")
-    # Outer Pareto-k-hat: re-evaluate the inner joint marginal at hyperparameters
-    # drawn from the integrator's Gaussian proposal (reusing the generic
-    # `kernel_fn` + `hp_fn` so no kernel-call machinery is duplicated) and
-    # PSIS-smooth. Declines (NA -> quad-ESS) when an axis has unguessable
-    # support (e.g. an hsgp_mo cross-output rho). A deferred fit is replaced by the
-    # fit its placement lays, so it leaves the k-hat to that fit as it leaves
-    # its refinement; the regime and the placement mode it is read for are
-    # attached either way.
-    res <- .joint_attach_pareto_k_single(res, kernel_fn, hp_fn,
-                                         max_iter   = max_iter,
-                                         diagnose_k = diagnose_k && !deferred,
-                                         diagnose_draws = diagnose_draws,
-                                         n_threads_outer = pareto_k_threads,
-                                         pareto_k_by_arm = pareto_k_by_arm,
-                                         k_bootstrap = k_bootstrap,
-                                         k_tail_points = k_tail_points,
-                                         k_conf_bands = k_conf_bands,
-                                         placement_axes = placement_axes)
-    res <- .nlj_inner_skew_at_theta(
-        res, function(theta_mat, warm, probe_idx) {
-            kernel_fn(theta_mat,
-                      warm_start = if (is.null(warm)) NULL else list(mode = warm),
-                      compute_skew = TRUE, skew_idx = probe_idx)
-        }, skew_idx, compute = diagnose_skew)
-    fixed <- .joint_fixed_layout(responses)
-    res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
-    tm$mark("diagnostics")
-    # Per-cell fixed-effect mode + precision for the grid marginalization,
-    # taken after every refinement pass has settled the grid so the cells it
-    # reads are the cells the weights describe.
-    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians,
-                                      keep_joint_prec)
-    # `store_Q` was turned on for the closure, not by the caller: hand back the
-    # one assembled precision, not the per-cell CSC scratch the caller never
-    # asked for and would have to carry through every downstream object.
-    if (keep_joint_prec && !isTRUE(store_Q_wanted)) {
-      res$Q_csc_p_per_grid <- NULL
-      res$Q_csc_i_per_grid <- NULL
-      res$Q_csc_x_per_grid <- NULL
-      res$Q_csc_n          <- NULL
-      res$Q_soft_cols       <- NULL
-      res$Q_soft_D_per_grid <- NULL
-    }
-    # Subspace debias, after the per-cell fixed-effect pieces
-    # are in place: the correction reports draws recombined from them, so it has
-    # to see the settled grid the weights describe.
-    res <- .nl_subspace_debias_attach(
-        res, .subspace_debias_config(control$subspace_debias, control$cila),
-        redispatch = function(req) .joint_with_quiet_opts(
-            kernel_fn(res$theta_grid, debias = req)),
-        p_fixed = fixed$n_fixed, beta_names = fixed$names,
-        remoments = function(r) .nl_posterior_moments(
-            r, type, within = within_cell))
-    # Corrected integrated Laplace, over the same settled
-    # grid and through the same kernel closure.
-    res <- .nl_cila_attach(
-        res, .cila_config(control$cila),
-        redispatch = function(req) .joint_with_quiet_opts(
-            kernel_fn(res$theta_grid, cila = req)),
-        p_fixed = fixed$n_fixed, beta_names = fixed$names,
-        remoments = function(r) .nl_posterior_moments(
-            r, type, within = within_cell))
-    res$timing <- tm$timing()
-    res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
-    .finalize_fit(res, backend = "nested_laplace_joint",
-                  n_fixed = fixed$n_fixed, fixed_names = fixed$names,
-                  extra_class = c("tulpa_nested_laplace_joint",
-                                  "tulpa_nested_laplace", "list"))
+    )
 }
 
-# Inner-Laplace skewness diagnostic for the joint driver:
-# the single-block counterpart of .nl_inner_skew_at_theta() (R/laplace_diagnostics.R),
-# reusing `kernel_fn` (the SAME closure the outer Pareto-k diagnostic and the
-# adaptive-grid refinement already call) so no separate re-dispatch machinery
-# is duplicated -- one extra deterministic Newton solve at the fitted MAP grid
-# cell, `compute_skew = TRUE`.
+# Inner-Laplace skewness diagnostic for the joint driver: the joint
+# counterpart of .nl_inner_skew_at_theta() (R/laplace_diagnostics.R), reusing
+# the driver's `kernel_fn` (the same closure the outer Pareto-k diagnostic and
+# the refinement passes call) -- one extra deterministic Newton solve at the
+# fitted MAP grid cell, `compute_skew = TRUE`.
 #
 # Default probe scope is every arm's fixed-effects coefficients, read from
-# `res$arm_layout$beta_start` / `$p` (.joint_layout(), already attached by the
-# caller): the union of `(beta_start[k]+1):(beta_start[k]+p[k])` across arms
-# k, generalizing the single-arm default (probe 1:p_fixed) to "every arm's
+# `res$arm_layout$beta_start` / `$p` (.joint_multi_layout(), already attached
+# by the caller): the union of `(beta_start[k]+1):(beta_start[k]+p[k])` across
+# arms k, generalizing the single-arm default (probe 1:p_fixed) to "every arm's
 # beta", the direct multi-arm analogue.
 #
 # A coupled arm (cell_coupling != "separable" on that arm) has no per-obs
 # oracle to score (build_joint_curvature3_fns excludes it, see
 # laplace_newton_joint.h) -- its indices come back NaN, not a silently wrong
-# 0. Both joint drivers call it: `probe(theta_mat, warm, probe_idx)` re-runs
-# the driver's own kernel at the one-row cell `theta_mat`, warm-started from
-# the modal mode `warm` (NULL when none was kept), with `compute_skew = TRUE`
-# at `probe_idx`; the multi-block driver's closure also hands the probed
-# cell's per-arm dispersions.
+# 0. `probe(theta_mat, warm, probe_idx)` re-runs the driver's own kernel at
+# the one-row cell `theta_mat`, warm-started from the modal mode `warm` (NULL
+# when none was kept), with `compute_skew = TRUE` at `probe_idx`, handing the
+# probed cell's per-arm dispersions.
 .nlj_inner_skew_at_theta <- function(res, probe, skew_idx = NULL,
                                      compute = TRUE) {
     res <- .inner_skew_decline(res, "not_requested")

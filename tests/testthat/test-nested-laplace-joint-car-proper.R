@@ -192,14 +192,15 @@ test_that("joint CAR_proper recovers per-arm betas and locates the alpha mode", 
         control = list(copy_atom_mass = 0.01)
     )
     expect_lt(fit_thin$copy_atom$posterior_mass, fit$copy_atom$posterior_mass)
-    expect_lt(abs(fit_thin$theta_mean[["alpha"]] - 1.0), 0.75)
+    expect_lt(abs(fit_thin$theta_mean[["b1.alpha"]] - 1.0), 0.75)
 })
 
-test_that("a single-block proper-CAR fit is the block-list fit of the same model", {
+test_that("an unwrapped proper-CAR block is the one-block list it spells", {
     skip_on_cran()
-    # The single-block door lays the field on its SD and the block-list door
-    # on its precision; the kernel integrates the precision either way, so
-    # the SD read is the precision read through sigma = tau^(-1/2).
+    # The unwrapped spelling states the field's SD and crosses it with the
+    # correlation; the block it spells integrates the precision on paired
+    # cells. A stated SD grid reaches the block as tau = sigma^-2 at the same
+    # nodes, so the two calls are one fit.
     sim <- .simulate_joint_car(N = 800, n_s = 30, sigma = 6, seed = 11)
     adj <- .chain_adj(sim$n_s)
     arm <- list(occ = list(y = sim$occur, n_trials = rep(1L, sim$N),
@@ -207,20 +208,23 @@ test_that("a single-block proper-CAR fit is the block-list fit of the same model
                            family = "binomial", phi = 1.0))
     car <- c(list(type = "car_proper"), adj[c("n_spatial_units", "adj_row_ptr",
                                              "adj_col_idx", "n_neighbors")])
+    sg <- c(0.3, 0.6, 1.2, 2.4)
+    rg <- c(0.5, 0.9, 0.99)
     ctl <- list(progress = FALSE, diagnose_k = FALSE)
-    single <- suppressWarnings(tulpa_nested_laplace_joint(arm, car, control = ctl))
-    blk <- car; blk$spatial_idx <- list(sim$spatial_idx)
-    multi <- suppressWarnings(tulpa_nested_laplace_joint(arm, list(blk), control = ctl))
-    sd_ci <- c(single$theta_ci_lo[["sigma"]], single$theta_median[["sigma"]],
-               single$theta_ci_hi[["sigma"]])
-    tau_ci <- c(multi$theta_ci_hi[["b1.tau"]], multi$theta_median[["b1.tau"]],
-                multi$theta_ci_lo[["b1.tau"]])^(-1 / 2)
-    expect_lt(max(abs(log(sd_ci) - log(tau_ci))), 0.02)
-    expect_lt(abs(single$log_evidence - multi$log_evidence), 0.05)
-    expect_equal(unname(coef(single)), unname(coef(multi)), tolerance = 0.01)
+    bare <- suppressWarnings(tulpa_nested_laplace_joint(
+        arm, c(car, list(sigma_grid = sg, rho_car_grid = rg)), control = ctl))
+    cells <- expand.grid(tau = 1 / sg^2, rho = rg)
+    blk <- c(car, list(spatial_idx = list(sim$spatial_idx),
+                       tau_grid = cells$tau, rho_grid = cells$rho))
+    listed <- suppressWarnings(tulpa_nested_laplace_joint(arm, list(blk),
+                                                          control = ctl))
+    expect_identical(colnames(bare$theta_grid), c("b1.tau", "b1.rho"))
+    expect_equal(bare$log_evidence, listed$log_evidence, tolerance = 1e-10)
+    expect_equal(bare$theta_median, listed$theta_median, tolerance = 1e-10)
+    expect_equal(coef(bare), coef(listed), tolerance = 1e-10)
 })
 
-test_that("a single-block BYM2 mixing weight reports an interval inside (0, 1)", {
+test_that("an unwrapped BYM2 block's mixing weight reports an interval inside (0, 1)", {
     skip_on_cran()
     sim <- .simulate_joint_car(N = 800, n_s = 30, sigma = 6, seed = 11)
     adj <- .chain_adj(sim$n_s)
@@ -231,7 +235,7 @@ test_that("a single-block BYM2 mixing weight reports an interval inside (0, 1)",
              adj[c("n_spatial_units", "adj_row_ptr", "adj_col_idx", "n_neighbors")])
     fit <- suppressWarnings(tulpa_nested_laplace_joint(
         arm, bym, control = list(progress = FALSE, diagnose_k = FALSE)))
-    expect_identical(unname(fit$theta_cell_edge_coord[["rho"]]), "unit")
-    expect_gt(fit$theta_ci_lo[["rho"]], 0)
-    expect_lt(fit$theta_ci_hi[["rho"]], 1)
+    expect_identical(unname(fit$theta_cell_edge_coord[["b1.rho"]]), "unit")
+    expect_gt(fit$theta_ci_lo[["b1.rho"]], 0)
+    expect_lt(fit$theta_ci_hi[["b1.rho"]], 1)
 })

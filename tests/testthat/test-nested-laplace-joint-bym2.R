@@ -187,7 +187,7 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
 
     # alpha posterior mean should land near the true 1.0. alpha is a
     # direct outer-grid axis after gcol33/tulpa#22 — no post-hoc ratio.
-    alpha_mean <- fit$theta_mean[["alpha"]]
+    alpha_mean <- fit$theta_mean[["b1.alpha"]]
     expect_lt(abs(alpha_mean - 1.0), 0.6)
 })
 
@@ -252,7 +252,7 @@ test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true 
     # alpha = 0 was the pathological winner. Restrict to the original grid
     # so var-of-means refinement cells (gcol33/tulpa#21) at off-grid alpha
     # values don't mask the bug being tested here.
-    df <- data.frame(alpha = fit$theta_grid[, "alpha"],
+    df <- data.frame(alpha = fit$theta_grid[, "b1.alpha"],
                      log_marginal = fit$log_marginal)
     df_grid <- df[df$alpha %in% alpha_grid, , drop = FALSE]
     best_a <- df_grid$alpha[which.max(df_grid$log_marginal)]

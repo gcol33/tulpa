@@ -13,14 +13,6 @@
 # block; copy (alpha-coupling) is supported on areal spatial (icar / bym2 /
 # car_proper), temporal (rw1 / rw2 / ar1), and unstructured (iid) blocks.
 
-# Validate one arm spec for the multi-block path. Same core as
-# `.normalise_joint_arm` *except* `spatial_idx` is no longer required at
-# the arm level -- per-arm idx vectors live inside each block spec instead,
-# and a missing spatial_idx gets a length-N placeholder of zeros so the
-# existing JointArm packaging path doesn't complain.
-.normalise_joint_arm_multi <- function(a, k) {
-    .normalise_joint_arm_core(a, k, spatial_idx = "optional")
-}
 
 # Detect whether `copy` is a LIST of copy specs (one coupled field each)
 # rather than a single spec. A list-of-specs is an unnamed list whose
@@ -221,7 +213,7 @@
 # of length n_arms.
 #
 # `arms` is the list of normalised arm specs produced by
-# `.normalise_joint_arm_multi()`. It is consumed by block types that need
+# `.normalise_joint_arm()`. It is consumed by block types that need
 # to read covariate columns at fit-time (HSGP with `svc_column`). Pass
 # NULL only from contexts where no such block can appear.
 .joint_block_spec_for_cpp <- function(p, n_arms, block_index, arms = NULL) {
@@ -859,8 +851,8 @@
 #
 #   * ONE spec, `list(<family>, <params>)`: the density applies to EVERY block
 #     axis of that role. That is the reading `prior_phi` already takes across
-#     the per-arm dispersion axes, and the one a single-block grid's single
-#     axis cannot distinguish. Each axis carries its own copy of the density
+#     the per-arm dispersion axes, and the one a grid with a single axis of
+#     the role cannot distinguish. Each axis carries its own copy of the density
 #     and each axis's atom / continuum split is normalised against that axis's
 #     own cell widths -- `.hyper_atom_fold_scale()` reads one spec's own
 #     `log_prior` against its own continuum -- so N axes take N independent
@@ -887,20 +879,11 @@
                logical(1)))
 }
 
-# Parse a `prior_sigma` / `prior_alpha` argument. `multi_block` says whether
-# the fit's `prior` is a list of blocks: the per-block shape names blocks of
-# such a list, so on the single-block path it is refused rather than read as a
-# malformed family spec.
-.joint_parse_hyperprior <- function(spec, axis_label, multi_block = FALSE) {
+# Parse a `prior_sigma` / `prior_alpha` argument.
+.joint_parse_hyperprior <- function(spec, axis_label) {
     if (is.null(spec)) return(NULL)
     if (!.joint_is_block_hyperprior(spec)) {
         return(.joint_parse_sigma_prior(spec, axis_label))
-    }
-    if (!isTRUE(multi_block)) {
-        stop("`", axis_label, "` is a per-block list, which names blocks of a ",
-             "list-of-blocks `prior`; this fit takes the single-block joint ",
-             "path, where the axis is unique. Pass the spec itself, e.g. ",
-             "list(\"pc.prec\", c(U, alpha)).", call. = FALSE)
     }
     out <- list()
     for (i in seq_along(spec)) {
@@ -957,7 +940,7 @@
         n_b <- axis_offsets[b_idx + 1L] - axis_offsets[b_idx]
         if (n_b <= 0L) next
         cols_b <- seq.int(axis_offsets[b_idx] + 1L, length.out = n_b)
-        i <- match(role, .axis_bare(axis_names[cols_b]))
+        i <- match(TRUE, .axis_bare(axis_names[cols_b]) %in% .hp_role_axes(role))
         if (is.na(i)) next
         out[as.character(b_idx)] <- cols_b[i]
     }
@@ -982,8 +965,10 @@
             b_idx <- as.integer(names(cols)[k])
             fn    <- .joint_hp_fn_for_block(fns[[role]], b_idx)
             if (is.null(fn)) next
-            out[[length(out) + 1L]] <- list(col = as.integer(cols[[k]]),
-                                            role = role, block = b_idx, fn = fn)
+            col   <- as.integer(cols[[k]])
+            out[[length(out) + 1L]] <- list(
+                col = col, role = role, block = b_idx,
+                fn = .hp_role_density_on(fn, .axis_bare(cn[col])))
         }
     }
     # phi_<arm> dispersion axes are not block-prefixed; carry them straight
@@ -1137,6 +1122,9 @@
         # natural scale.
         sp$log_prior <- entries[[j]][["fn"]]
         sp$log_prior_coord <- "natural"
+        # A stated density REPLACES the copy scale's default slab: it is the
+        # axis's prior, folded into the marginal, not a second factor on it.
+        sp$slab_log_density <- NULL
         sp
     })
 }
@@ -1336,8 +1324,8 @@
 
 # The `kernel_fn(new_cells, warm_start, store_extras)` closure the refinement
 # passes drive (`R/hyper_grid_refine.R`), over this driver's own kernel call: the
-# multi-block counterpart of `.joint_make_kernel_fn()`. A refinement cell is a row
-# of the assembled joint grid, so the per-arm dispersion columns it carries go
+# one closure the refinement, the k-hat diagnostic and the skew probe share. A
+# refinement cell is a row of the assembled joint grid, so the per-arm dispersion columns it carries go
 # through the same `phi_grid_per_arm` extraction the grid solve uses. The per-cell
 # side data leaves only inside `extras`, so a call that asks for none requests
 # neither the precision nor the fixed-effect block.
@@ -1367,8 +1355,7 @@
     }
 }
 
-# Multi-block counterpart of `.joint_attach_pareto_k_single()`
-# (`R/nested_laplace_joint_pareto_k.R`). Same `diagnose_k = FALSE` behaviour:
+# The outer Pareto k-hat of a joint fit. With `diagnose_k = FALSE`,
 # `pareto_k` / `pareto_k_is_ess` stay NA, and the placement mode the
 # auto-recenter rescues read (`outer_mode_*`, `.joint_attach_placement()`) is
 # attached either way.
@@ -1431,8 +1418,7 @@
                             hyperprior = hyperprior, declared = k_declared)
     }
 
-    # The placement mode-find at the fit's own inner settings (see
-    # `.joint_attach_pareto_k_single()`).
+    # The placement mode-find at the fit's own inner settings.
     place_warm <- warm_mode
     place_fn <- function(theta_mat) {
         r <- .joint_with_quiet_opts(call_kernel(
@@ -1498,10 +1484,28 @@
     )
 }
 
-# Main multi-block joint dispatch. Mirrors the structure of the
-# single-block path (build grid, call C++, post-process) but accepts a
-# list-of-blocks `prior_list` and a `copy` spec that points at a
-# specific block.
+# Each copy scale's point mass reported beside the posterior mass left on it.
+# A point mass competes against a continuum, so how much of a "no coupling"
+# read is prior and how much is data is not visible from the posterior alone;
+# both numbers are needed to say. `posterior_mass` is named by copy axis
+# (`b<k>.alpha`); NULL on a fit without a copy.
+.joint_copy_atom <- function(res, cp, prior_mass) {
+    if (!isTRUE(cp$has_copy)) return(NULL)
+    tg  <- res$theta_grid
+    lbl <- intersect(.axis_label(as.integer(cp$copy_blocks_zero) + 1L, "alpha"),
+                     colnames(tg))
+    if (!length(lbl)) return(NULL)
+    w <- as.numeric(res$weights)
+    w[is.na(w)] <- 0
+    list(prior_mass = prior_mass,
+         posterior_mass = vapply(lbl, function(a) sum(w[tg[, a] == 0]),
+                                 numeric(1)))
+}
+
+# The joint driver: builds the outer grid of a list-of-blocks `prior_list` and
+# its `copy` specs (each pointing at one block), solves it in the compiled
+# kernel, places, refines and post-processes it. A bare single-block prior
+# reaches it as the length-1 block list (`.joint_bare_prior_as_blocks()`).
 .joint_dispatch_multi <- function(responses, prior_list, copy,
                                   phi_grid,
                                   fn_sigma = NULL,
@@ -1559,7 +1563,7 @@
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
-        .normalise_joint_arm_multi(a, k)
+        .normalise_joint_arm(a, k)
     })
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
     arm_n_obs <- vapply(arms, function(a) length(a$y), integer(1))
@@ -1648,8 +1652,8 @@
                 any(vapply(phi_axes, length, integer(1)) > 0L)
     hp_declared  <- .joint_multi_declared_axes(block_grids, axis_names, phi_axes)
 
-    # How far each axis may be refined follows from where its nodes came from,
-    # the rule the single-block driver applies (`.joint_axis_refine_modes_by()`):
+    # How far each axis may be refined follows from where its nodes came from
+    # (`.joint_axis_refine_modes_by()`):
     # nodes the caller stated are integrated more finely over exactly that range,
     # nodes the engine placed may be followed out past their ends.
     # `control$axis_refine` overrides either, per axis, and is resolved before
@@ -2134,8 +2138,8 @@
         tm$mark("grid")
     }
 
-    # Outer-grid refinement on the tensor grid, the passes the single-block
-    # driver runs (`.joint_refine_outer_grid()`): an axis whose marginal has
+    # Outer-grid refinement on the tensor grid (`.joint_refine_outer_grid()`):
+    # an axis whose marginal has
     # collapsed onto too few nodes to carry a spread is bisected in the modal
     # cell's row until it resolves, and the boundary / interior pass follows the
     # posterior past an engine-placed axis's ends when asked for. A CCD design,
@@ -2382,9 +2386,10 @@
     res$responses     <- responses
     res               <- .joint_attach_observations(res, responses)
     res$copy          <- copy
+    res$copy_atom     <- .joint_copy_atom(res, cp, copy_atom_mass)
     # What predict() rebuilds the kernel's inputs from at new rows
     # (`.joint_eta_inputs()`): the resolved copy map and the axis layout.
-    res$eta_layout    <- list(door = "multi", cp = cp, axis_offsets = axis_offsets)
+    res$eta_layout    <- list(cp = cp, axis_offsets = axis_offsets)
     res$cell_coupling <- cell_coupling
     res$local_ccd_info <- local_ccd_info
     res$adaptive_grid_info <- adaptive_info
@@ -2441,7 +2446,7 @@
     # records that reason instead.
     res <- .joint_attach_basis_block_cov(res, fixed$n_fixed, fixed_block_extra)
     # The subspace-debias coupling closure reads the modal cell's joint
-    # precision, as on the single-block driver.
+    # precision.
     res <- .joint_finalize_grid_fixed(
         res, fixed$n_fixed, keep_grid_hessians,
         keep_joint = !is.null(subspace_debias) &&
@@ -2652,12 +2657,11 @@
     list(n_fixed = length(nm), names = nm)
 }
 
-# Latent-vector layout for the multi-block joint result. Mirrors the
-# single-block `.joint_layout()` but generalised over `prepared` blocks:
-# per-arm beta, per-arm RE, then each prepared block in order. For
-# back-compat with single-block consumers (e.g. tulpaObs cover-hurdle's
-# `.joint_field_at_obs_copy_multi`), the first spatial-like block also
-# emits `phi_start` / `theta_start` aliases:
+# Latent-vector layout for the joint result over `prepared` blocks: per-arm
+# beta, per-arm RE, then each prepared block in order. For consumers that read
+# one areal field (e.g. tulpaObs cover-hurdle's
+# `.joint_field_at_obs_copy_multi`), the first spatial-like block also emits
+# `phi_start` / `theta_start` aliases:
 #
 #   * BYM2  -> phi_start, theta_start (length-2 sub-block).
 #   * ICAR / CAR_proper -> phi_start (length-1).
@@ -2875,8 +2879,7 @@
         )
     }
     res$block_moments <- per_block_moments
-    # Each axis's SD from the estimator its own resolution calls for, the rule
-    # `.nl_posterior_moments()` applies on every other nested path.
+    # Each axis's SD from the estimator its own resolution calls for.
     res <- .nl_attach_axis_sd(res)
 
     # Weighted-quantile median + 2.5/97.5 CI per axis. After the (sigma,

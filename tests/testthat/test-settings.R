@@ -248,13 +248,13 @@ test_that("provenance narrows to the family that laid the axis", {
                              rho_grid = tulpa:::.nl_grid_axis("ar1_rho")),
                         "rho_grid", type = "ar1"))
 
-    # The two PATH pseudo-types: the joint areal backends and every copy block
-    # default the field-SD axis on `sigma_grid`, where the icar REGISTRY entry
-    # defaults a precision axis instead. Narrowing to the wrong one here is what
-    # would re-break gcol33/tulpa#293 for the occu_cover shape.
+    # The PATH pseudo-type: every copy block defaults the field-SD axis on
+    # `sigma_grid`, where the icar REGISTRY entry defaults a precision axis
+    # instead. Narrowing to the wrong one here is what would re-break
+    # gcol33/tulpa#293 for the occu_cover shape.
     fsd <- tulpa:::.nl_grid_axis("field_sd")
     expect_false(pinned(list(type = "icar", sigma_grid = fsd), "sigma_grid",
-                        type = ".joint_areal"))
+                        type = ".copy"))
     expect_false(pinned(list(type = "rw1", sigma_grid = fsd), "sigma_grid",
                         type = ".copy"))
 
@@ -270,8 +270,8 @@ test_that("provenance narrows to the family that laid the axis", {
     expect_false(pinned(list(type = "icar", tau_grid = auto_grid(c(1, 2, 3))),
                         "tau_grid", type = "icar"))
 
-    # `type` is never inferred from the block. A joint areal block carries
-    # `type = "icar"` while its `sigma_grid` default comes from `.joint_areal`;
+    # `type` is never inferred from the block. A copied icar block carries
+    # `type = "icar"` while its `sigma_grid` default comes from `.copy`;
     # inferring would read the engine's own default as a pin, which is the #293
     # failure one layer down.
     expect_false(pinned(list(type = "icar", sigma_grid = fsd), "sigma_grid"))
@@ -458,7 +458,7 @@ test_that("every outer-k entry point defaults to the registry's draw budget", {
         .nested_outer_pareto_k         = "n_samples",
         .nested_is_pareto_k            = "n_samples",
         .nested_grid_pareto_k          = "n_samples",
-        .joint_attach_pareto_k_single  = "diagnose_draws",
+
         .joint_attach_pareto_k_multi   = "diagnose_draws",
         .joint_dispatch_multi          = "diagnose_draws"
     )

@@ -889,7 +889,7 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
     # densifies inside; `axis_refine = "extend"` is the per-axis opt-in to
     # growing it past its ends, which is what a grid below the support needs.
     ctrl <- list(k_quality = "good", k_samples = 800L, k_max_rounds = 3L,
-                 axis_refine = c(sigma = "extend", alpha = "extend"))
+                 axis_refine = c(b1.sigma = "extend", b1.alpha = "extend"))
 
     # k_refine = "none": the band is reported but not chased -- no escalation, the
     # grid is left untouched (k_quality_rounds stays 0).
@@ -924,7 +924,7 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
 
     # The refined grid integrates the posterior the dense grid reads.
     w <- fit1$weights
-    ls <- log(fit1$theta_grid[, "sigma"])
+    ls <- log(fit1$theta_grid[, "b1.sigma"])
     m <- sum(w * ls)
     expect_lt(abs(m - (-1.247)), 0.1)
     expect_lt(abs(sqrt(sum(w * (ls - m)^2)) - 0.349), 0.05)
@@ -947,7 +947,7 @@ test_that("the outer k-hat target is the density the grid integrates, copy slab 
     fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
                control = list(diagnose_k = FALSE, prune = FALSE,
                               var_of_means_consistency = FALSE,
-                              axis_refine = c(sigma = "none", alpha = "none")))
+                              axis_refine = c(b1.sigma = "none", b1.alpha = "none")))
     tg <- fit$theta_grid
     expect_false(is.null(fit$outer_axis_specs))
     tags <- tulpa:::.joint_pareto_axis_tags(fit)
@@ -959,11 +959,11 @@ test_that("the outer k-hat target is the density the grid integrates, copy slab 
         lev <- sort(unique(u)); h <- diff(lev)
         (c(h[1], h) + c(h, h[length(h)]))[match(u, lev)] / 2
     }
-    cont <- tg[, "alpha"] > 0
-    a_pos <- tg[cont, "alpha"]
-    keep <- cont & tg[, "sigma"] > min(tg[, "sigma"]) &
-        tg[, "sigma"] < max(tg[, "sigma"]) &
-        tg[, "alpha"] > min(a_pos) & tg[, "alpha"] < max(a_pos) &
+    cont <- tg[, "b1.alpha"] > 0
+    a_pos <- tg[cont, "b1.alpha"]
+    keep <- cont & tg[, "b1.sigma"] > min(tg[, "b1.sigma"]) &
+        tg[, "b1.sigma"] < max(tg[, "b1.sigma"]) &
+        tg[, "b1.alpha"] > min(a_pos) & tg[, "b1.alpha"] < max(a_pos) &
         fit$weights > 0
     bu <- matrix(NA_real_, nrow(tg), 2)
     bu[, 1] <- box(U[, 1])
@@ -973,5 +973,5 @@ test_that("the outer k-hat target is the density the grid integrates, copy slab 
     expect_gt(length(gap), 50L)
     expect_lt(stats::sd(gap), 0.02)
     # The same read on alpha alone: no trend left along the copy scale.
-    expect_lt(abs(stats::coef(stats::lm(gap ~ tg[keep, "alpha"]))[2]), 0.02)
+    expect_lt(abs(stats::coef(stats::lm(gap ~ tg[keep, "b1.alpha"]))[2]), 0.02)
 })

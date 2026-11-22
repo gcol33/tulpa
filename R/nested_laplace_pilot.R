@@ -159,23 +159,6 @@
     list(spec = spec, moved = TRUE)
 }
 
-# The per-arm `field_coef` counterpart, for the single-block path's inline copy
-# declaration. Same rule: a stated `grid` is kept, a marked one is thinned, a
-# resolution is lowered.
-.nl_pilot_field_coef <- function(arm, n) {
-    fc <- arm$field_coef
-    if (is.null(fc)) return(list(arm = arm, moved = FALSE))
-    if (is.numeric(fc)) return(list(arm = arm, moved = FALSE))
-    if (is.character(fc) && length(fc) == 1L) fc <- list(name = fc)
-    if (!is.list(fc)) return(list(arm = arm, moved = FALSE))
-    th <- .nl_pilot_copy_axis(fc$grid, fc[["n"]], n)
-    if (is.null(th)) return(list(arm = arm, moved = FALSE))
-    if (!is.null(th[["grid"]])) fc$grid <- th[["grid"]]
-    else fc[["n"]] <- th[["res"]]
-    arm$field_coef <- fc
-    list(arm = arm, moved = TRUE)
-}
-
 # The whole pilot: the coarsened call arguments, and the record of what it
 # thinned. `active = FALSE` means the fit runs exactly as it does with the knob
 # off -- either the knob is off, the placement pass is off (nothing would read
@@ -196,20 +179,12 @@
     moved <- character(0)
     kept  <- character(0)
 
-    multi <- .is_multi_block_prior(prior)
-    if (multi) {
-        for (b in seq_along(prior)) {
-            path <- if (b %in% copy_blocks) "copy" else "registry"
-            r <- .nl_pilot_block(prior[[b]], path, n)
-            prior[[b]] <- r$block
-            if (length(r$moved)) moved <- c(moved, .axis_label(b, r$moved))
-            if (length(r$kept))  kept  <- c(kept,  .axis_label(b, r$kept))
-        }
-    } else if (is.list(prior) && !is.null(prior$type)) {
-        r <- .nl_pilot_block(prior, "joint_single", n)
-        prior <- r$block
-        moved <- c(moved, r$moved)
-        kept  <- c(kept,  r$kept)
+    for (b in seq_along(prior)) {
+        path <- if (b %in% copy_blocks) "copy" else "registry"
+        r <- .nl_pilot_block(prior[[b]], path, n)
+        prior[[b]] <- r$block
+        if (length(r$moved)) moved <- c(moved, .axis_label(b, r$moved))
+        if (length(r$kept))  kept  <- c(kept,  .axis_label(b, r$kept))
     }
 
     if (is.list(phi_grid)) {
@@ -237,20 +212,6 @@
             else kept <- c(kept, paste0("alpha", i))
         }
         copy <- if (one) specs else specs[[1L]]
-    } else if (is.list(responses)) {
-        for (k in seq_along(responses)) {
-            r <- .nl_pilot_field_coef(responses[[k]], n)
-            responses[[k]] <- r$arm
-            # Both outcomes, the way the copy branch above records them: an
-            # axis the pilot leaves whole is what `axes_kept` exists to report,
-            # and the single-block field_coef branch recorded only the moved
-            # case, so an alpha axis left at full resolution left no trace
-            # (gcol33/tulpa#707). An unrecorded decline that a performance knob
-            # changes is gcol33/tulpa#317's defect again.
-            lbl <- paste0("alpha.", names(responses)[k] %||% k)
-            if (isTRUE(r$moved)) moved <- c(moved, lbl)
-            else kept <- c(kept, lbl)
-        }
     }
 
     if (!length(moved)) return(off)

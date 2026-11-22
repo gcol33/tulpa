@@ -123,11 +123,11 @@ test_that("(sigma, alpha) reparam recovers sigma/alpha across alpha in {0, 1, 2}
                                 info = sprintf("%s seed %d: non-finite log_marginal",
                                                r$name, seeds[i]))
 
-            sigma_hat[i] <- fit$theta_mean[["sigma"]]
-            alpha_hat[i] <- fit$theta_mean[["alpha"]]
-            alpha_med[i] <- fit$theta_median[["alpha"]]
-            alpha_lo[i]  <- fit$theta_ci_lo[["alpha"]]
-            alpha_hi[i]  <- fit$theta_ci_hi[["alpha"]]
+            sigma_hat[i] <- fit$theta_mean[["b1.sigma"]]
+            alpha_hat[i] <- fit$theta_mean[["b1.alpha"]]
+            alpha_med[i] <- fit$theta_median[["b1.alpha"]]
+            alpha_lo[i]  <- fit$theta_ci_lo[["b1.alpha"]]
+            alpha_hi[i]  <- fit$theta_ci_hi[["b1.alpha"]]
         }
 
         rel_sig <- median(abs(sigma_hat - sigma_true) / sigma_true)

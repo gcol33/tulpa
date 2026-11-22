@@ -264,111 +264,104 @@ test_that("consistency points stay inside a bounded axis's span", {
 
 test_that("a stated alpha axis is a bound and a placed one is not", {
     skip_on_cran_budget()
-    arm <- function(fc) {
-        tulpa:::.normalise_arm_field_coef(list(field_coef = fc), 1L)
+    # An arm's `field_coef` axis is the copy spec on block 1, and the provenance
+    # of its nodes is read there.
+    stated_fc <- function(fc) {
+        b <- tulpa:::.joint_bare_prior_as_blocks(
+            list(y = list(spatial_idx = 1:3), z = list(spatial_idx = 1:3,
+                                                       field_coef = fc)),
+            list(type = "icar"), NULL)
+        tulpa:::.joint_multi_axis_is_stated("b1.alpha", b$prior, list(),
+                                            b$copy, copy_blocks = 1L)
     }
-    stated <- arm(list(name = "alpha", grid = c(0.2, 0.5)))
-    marked <- arm(list(name = "alpha", grid = auto_grid(c(0.2, 0.5))))
-    by_n   <- arm(list(name = "alpha", n = 9L))
-    named  <- arm("alpha")
-    deflt  <- arm(list(name = "alpha",
-                       grid = tulpa:::.nl_grid_axis("copy_alpha")))
-
-    expect_true(tulpa:::.joint_axis_is_stated("alpha", list(stated)))
-    # `as.numeric()` drops the marker, so the normaliser has to record it.
-    expect_true(marked$field_coef_axis$grid_auto)
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(marked)))
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(by_n)))
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(named)))
+    expect_true(stated_fc(list(name = "alpha", grid = c(0.2, 0.5))))
+    expect_false(stated_fc(list(name = "alpha", grid = auto_grid(c(0.2, 0.5)))))
+    expect_false(stated_fc(list(name = "alpha", n = 9L)))
+    expect_false(stated_fc("alpha"))
     # Nodes that ARE the engine's own axis carry nothing a statement would add.
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(deflt)))
-    # No copy arm at all.
-    expect_false(tulpa:::.joint_axis_is_stated("alpha", list(list())))
+    expect_false(stated_fc(list(name = "alpha",
+                                grid = tulpa:::.nl_grid_axis("copy_alpha"))))
 })
 
 
 test_that("a phi axis is stated when the caller gave its nodes", {
     skip_on_cran_budget()
-    st <- tulpa:::.joint_axis_is_stated("phi_y", list(),
-                                        phi_grid = list(y = c(0.5, 1, 2)),
-                                        arm_names = c("y", "z"))
+    st <- tulpa:::.joint_phi_axis_is_stated("phi_y",
+                                            phi_grid = list(y = c(0.5, 1, 2)),
+                                            arm_names = c("y", "z"))
     expect_true(st)
 
-    au <- tulpa:::.joint_axis_is_stated("phi_y", list(),
-                                        phi_grid = list(y = auto_grid(c(0.5, 1, 2))),
-                                        arm_names = c("y", "z"))
+    au <- tulpa:::.joint_phi_axis_is_stated("phi_y",
+                                            phi_grid = list(y = auto_grid(c(0.5, 1, 2))),
+                                            arm_names = c("y", "z"))
     expect_false(au)
 
     # Positional `phi_grid`, the other shape `.normalise_phi_grid()` accepts.
-    pos <- tulpa:::.joint_axis_is_stated("phi_z", list(),
-                                         phi_grid = list(NULL, c(0.5, 1, 2)),
-                                         arm_names = c("y", "z"))
+    pos <- tulpa:::.joint_phi_axis_is_stated("phi_z",
+                                             phi_grid = list(NULL, c(0.5, 1, 2)),
+                                             arm_names = c("y", "z"))
     expect_true(pos)
 
     # An arm with no axis of its own.
-    expect_false(tulpa:::.joint_axis_is_stated("phi_z", list(),
-                                               phi_grid = list(y = c(0.5, 1)),
-                                               arm_names = c("y", "z")))
+    expect_false(tulpa:::.joint_phi_axis_is_stated("phi_z",
+                                                   phi_grid = list(y = c(0.5, 1)),
+                                                   arm_names = c("y", "z")))
 })
 
 
-test_that(".joint_axis_refine_modes resolves every axis of one grid", {
+test_that(".joint_axis_refine_modes_by resolves every axis of one grid", {
     skip_on_cran_budget()
-    grids <- list(sigma = c(0.5, 1), alpha = c(0, 0.2, 0.5),
-                  phi_y = c(0.5, 1, 2))
-    cp <- list(has_copy = TRUE)
-    arm_stated <- tulpa:::.normalise_arm_field_coef(
-        list(field_coef = list(name = "alpha", grid = c(0.2, 0.5))), 1L)
-    arm_placed <- tulpa:::.normalise_arm_field_coef(
-        list(field_coef = list(name = "alpha", n = 9L)), 1L)
+    axes <- c("b1.sigma", "b1.alpha", "phi_y")
+    blocks <- list(list(type = "icar"))
+    stated_copy <- list(arm = "y", block = 1L, alpha_grid = c(0.2, 0.5))
+    placed_copy <- list(arm = "y", block = 1L, alpha_n = 9L)
+    modes <- function(copy, phi_grid, user = NULL)
+        tulpa:::.joint_axis_refine_modes_by(axes, function(a)
+            tulpa:::.joint_multi_axis_is_stated(a, blocks, list(), copy,
+                                                copy_blocks = 1L,
+                                                phi_grid = phi_grid,
+                                                arm_names = "y"), user)
 
-    m <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_stated),
-                                          phi_grid = list(y = c(0.5, 1, 2)),
-                                          arm_names = "y")
-    expect_equal(m[["alpha"]], "densify")
+    m <- modes(stated_copy, list(y = c(0.5, 1, 2)))
+    expect_equal(m[["b1.alpha"]], "densify")
     expect_equal(m[["phi_y"]], "densify")
     # A field SD with no recorded provenance is the engine's own axis.
-    expect_equal(m[["sigma"]], "extend")
+    expect_equal(m[["b1.sigma"]], "extend")
 
-    p <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_placed),
-                                          phi_grid = NULL, arm_names = "y")
-    expect_equal(p[["alpha"]], "extend")
+    p <- modes(placed_copy, NULL)
+    expect_equal(p[["b1.alpha"]], "extend")
     # With no caller nodes recorded there is no statement to honour, so the
     # axis falls to the engine-placed default.
     expect_equal(p[["phi_y"]], "extend")
 
-    u <- tulpa:::.joint_axis_refine_modes(grids, cp, list(arm_stated),
-                                          phi_grid = list(y = c(0.5, 1, 2)),
-                                          arm_names = "y",
-                                          user = c(alpha = "extend",
-                                                   phi_y = "none"))
-    expect_equal(u[["alpha"]], "extend")
+    u <- modes(stated_copy, list(y = c(0.5, 1, 2)),
+               user = c(b1.alpha = "extend", phi_y = "none"))
+    expect_equal(u[["b1.alpha"]], "extend")
     expect_equal(u[["phi_y"]], "none")
-
-    # A fit with no copy arm has no alpha axis to resolve.
-    nc <- tulpa:::.joint_axis_refine_modes(grids, list(has_copy = FALSE),
-                                           list(list()))
-    expect_false("alpha" %in% names(nc))
 })
 
 
-test_that("a field SD's refinement mode follows who wrote its nodes", {
+test_that("an unwrapped block's field SD keeps who wrote its nodes", {
     skip_on_cran_budget()
-    grids <- list(sigma = c(0.5, 1, 2))
-    cp <- list(has_copy = FALSE)
-    mode <- function(prior, grid_auto = logical(0))
-        tulpa:::.joint_axis_refine_modes(grids, cp, list(list()), prior = prior,
-                                         grid_auto = grid_auto)[["sigma"]]
-    pinned <- list(type = "icar", sigma_grid = c(0.3, 0.9, 2.7))
+    # The bare spelling's `sigma_grid` reaches the block as `tau_grid`; the
+    # statement it was (pinned, marked, the engine's own nodes) travels with it.
+    mode <- function(sigma_grid) {
+        b <- tulpa:::.joint_bare_prior_as_blocks(
+            list(y = list(spatial_idx = 1:3)),
+            list(type = "icar", sigma_grid = sigma_grid), NULL)
+        prov <- tulpa:::.nl_grid_provenance(b$prior)
+        tulpa:::.joint_axis_refine_modes_by("b1.tau", function(a)
+            tulpa:::.joint_multi_axis_is_stated(a, prov$prior, prov$auto))[[1L]]
+    }
+    pinned <- c(0.3, 0.9, 2.7)
     expect_equal(mode(pinned), "densify")
     # Marked as a wrapper's default, the nodes carry no statement.
-    expect_equal(mode(pinned, c(sigma_grid = TRUE)), "extend")
+    expect_equal(mode(auto_grid(pinned)), "extend")
     # `place = FALSE` asks for the nodes as written, whoever made them.
-    expect_equal(mode(pinned, c(sigma_grid = FALSE)), "densify")
-    # The engine's own default axis is not a statement either.
-    expect_equal(mode(list(type = "icar")), "extend")
+    expect_equal(mode(auto_grid(pinned, place = FALSE)), "densify")
+    # The engine's own default SD axis is not a statement either.
+    expect_equal(mode(tulpa:::.nl_grid_axis("field_sd")), "extend")
 })
-
 
 # --------------------------------------------------------------------------- #
 # 5. The control knob                                                          #
@@ -523,7 +516,7 @@ test_that("a stated copy axis is densified, never extended, under adaptive_grid"
     stated <- c(0.2, 0.4, 0.6)
 
     fit <- .axr_fit(sim, stated)
-    lev <- sort(unique(as.numeric(fit$theta_grid[, "alpha"])))
+    lev <- sort(unique(as.numeric(fit$theta_grid[, "b1.alpha"])))
 
     # The pass still fires -- this is densify, not refusal -- and every node it
     # placed sits inside the range the caller wrote down.
@@ -535,12 +528,12 @@ test_that("a stated copy axis is densified, never extended, under adaptive_grid"
     # The same fixture with the axis declared a default extends past 0.6, so the
     # difference is provenance and nothing else.
     fit_auto <- .axr_fit(sim, auto_grid(stated))
-    expect_gt(max(fit_auto$theta_grid[, "alpha"]), max(stated) + 1e-6)
+    expect_gt(max(fit_auto$theta_grid[, "b1.alpha"]), max(stated) + 1e-6)
 
     # And the caller can restore that per axis without touching adaptive_grid.
     fit_ext <- .axr_fit(sim, stated,
-                        control = list(axis_refine = c(alpha = "extend")))
-    expect_gt(max(fit_ext$theta_grid[, "alpha"]), max(stated) + 1e-6)
+                        control = list(axis_refine = c(b1.alpha = "extend")))
+    expect_gt(max(fit_ext$theta_grid[, "b1.alpha"]), max(stated) + 1e-6)
 })
 
 
@@ -550,11 +543,11 @@ test_that("axis_refine = 'none' keeps the copy axis out of refinement entirely",
     stated <- c(0.2, 0.4, 0.6)
 
     fit <- .axr_fit(sim, stated,
-                    control = list(axis_refine = c(alpha = "none",
-                                                   sigma = "none")))
+                    control = list(axis_refine = c(b1.alpha = "none",
+                                                   b1.sigma = "none")))
     expect_null(fit$adaptive_grid_info)
     expect_equal(length(fit$log_marginal), 9L)   # 3 sigma x 3 alpha, untouched
-    expect_equal(sort(unique(as.numeric(fit$theta_grid[, "alpha"]))), stated)
+    expect_equal(sort(unique(as.numeric(fit$theta_grid[, "b1.alpha"]))), stated)
 })
 
 
@@ -564,7 +557,7 @@ test_that("a fit reports the span it worked over on a stated axis", {
     stated <- c(0.2, 0.4, 0.6)
     fit <- .axr_fit(sim, stated)
 
-    sp <- fit$axis_span[["alpha"]]
+    sp <- fit$axis_span[["b1.alpha"]]
     expect_false(is.null(sp))
     expect_equal(sp$refine, "densify")
     expect_equal(sp$nodes, range(stated))
@@ -578,7 +571,7 @@ test_that("a fit reports the span it worked over on a stated axis", {
     expect_gt(sp$n_nodes[["final"]], sp$n_nodes[["initial"]])
     expect_identical(sp$integrated, sp$declared)
     # `axis_support` is the same interval, read off the same final grid.
-    expect_equal(sp$integrated, fit$axis_support[["alpha"]])
+    expect_equal(sp$integrated, fit$axis_support[["b1.alpha"]])
 })
 
 
@@ -591,18 +584,18 @@ test_that("a refinement slice carries the log marginal a tensor cell does", {
     skip_on_cran()
     sim <- .axr_sim()
     fit <- .axr_fit(sim, c(0.2, 0.4, 0.6),
-                    control = list(axis_refine = c(sigma = "none")))
+                    control = list(axis_refine = c(b1.sigma = "none")))
     tag <- fit$refining_axis
     expect_true(any(nzchar(tag)))
 
     # The tensor is the reference, so it solves every cell; the fit's own
     # screen drops tensor cells it may, and never a slice cell.
-    tensor <- .axr_fit(sim, sort(unique(as.numeric(fit$theta_grid[, "alpha"]))),
+    tensor <- .axr_fit(sim, sort(unique(as.numeric(fit$theta_grid[, "b1.alpha"]))),
                        control = list(adaptive_grid = FALSE, prune = FALSE,
-                                      axis_refine = c(alpha = "none",
-                                                      sigma = "none")))
+                                      axis_refine = c(b1.alpha = "none",
+                                                      b1.sigma = "none")))
     expect_false(any(nzchar(tensor$refining_axis %||% "")))
-    key <- function(g) sprintf("%.12g|%.12g", g[, "sigma"], g[, "alpha"])
+    key <- function(g) sprintf("%.12g|%.12g", g[, "b1.sigma"], g[, "b1.alpha"])
     m <- match(key(fit$theta_grid), key(tensor$theta_grid))
     expect_false(anyNA(m))
     solved <- !cells_dropped(fit)
@@ -653,11 +646,11 @@ test_that("a field SD collapsed onto one node is resolved by the consistency pas
             control = c(list(diagnose_k = FALSE), control)))
     min_ess <- tulpa:::.nl_diag("axis_sd_ess")
 
-    held <- fit(list(axis_refine = c(sigma = "none")))
-    expect_lt(held$theta_sd_ess[["sigma"]], min_ess)
+    held <- fit(list(axis_refine = c(b1.sigma = "none")))
+    expect_lt(held$theta_sd_ess[["b1.sigma"]], min_ess)
 
     resolved <- fit(list())
-    expect_gte(resolved$theta_sd_ess[["sigma"]], min_ess)
+    expect_gte(resolved$theta_sd_ess[["b1.sigma"]], min_ess)
     expect_gt(length(resolved$log_marginal), length(held$log_marginal))
 })
 

@@ -211,7 +211,7 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
     # prefixes per-block axes (`b<N>.alpha`); the legacy single-block path
     # uses the bare name.
     expect_true("b1.alpha" %in% names(fit_multi$theta_mean))
-    expect_lt(abs(fit_legacy$theta_mean[["alpha"]] -
+    expect_lt(abs(fit_legacy$theta_mean[["b1.alpha"]] -
                   fit_multi$theta_mean[["b1.alpha"]]), 1e-8)
 })
 

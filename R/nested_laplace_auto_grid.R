@@ -304,11 +304,11 @@ auto_grid_place <- function(x)
 # `type` narrows the default comparison to the axis that ONE path-and-family
 # lays on the field, and must be passed EXPLICITLY -- it is deliberately not
 # inferred from `block$type`, because the block's family is not the same thing
-# as the path that defaulted the axis: a joint areal fit carries
-# `type = "icar"` on a block whose `sigma_grid` default comes from
-# `.joint_areal`, while the icar REGISTRY entry defaults a precision axis and no
-# `sigma_grid` at all. Inferring would silently answer "pinned" there, reading
-# an engine default as a user pin. Unnarrowed (`NULL`) compares against
+# as the path that defaulted the axis: a copied icar block carries
+# `type = "icar"` on a block whose `sigma_grid` default comes from `.copy`,
+# while the icar REGISTRY entry defaults a precision axis and no `sigma_grid`
+# at all. Inferring would silently answer "pinned" there, reading an engine
+# default as a user pin. Unnarrowed (`NULL`) compares against
 # every family's binding for the field, which errs toward recognising a default.
 .nl_axis_hold <- function(block, field, auto_fields = logical(0), type = NULL) {
     g <- if (is.list(block)) block[[field]] else NULL
@@ -353,8 +353,7 @@ auto_grid_place <- function(x)
 .NL_AXIS_PATH_LABEL <- c(
     registry     = paste0("the nested-Laplace registry path (`tulpa_nested_laplace()`, ",
                           "and every non-copy block of `tulpa_nested_laplace_joint()`)"),
-    joint_single = "the single-block joint areal backend",
-    copy         = "a copy block on the joint multi-block path"
+    copy         = "a copy block of `tulpa_nested_laplace_joint()`"
 )
 
 # The conversion sentence for `field` into whichever consumed axis the engine
@@ -515,8 +514,8 @@ auto_grid_place <- function(x)
 }
 
 # THE front-door check. `path` is `"registry"` (`tulpa_nested_laplace()`) or
-# `"joint"` (`tulpa_nested_laplace_joint()`, which resolves per block: the
-# single-block areal backend, a copy block, or the registry path). `auto` is the
+# `"joint"` (`tulpa_nested_laplace_joint()`, which resolves per block: a copy
+# block, or the registry path). `auto` is the
 # provenance record `.nl_grid_provenance()` just took. Returns the drop record
 # (a data.frame) or NULL, and errors on a pinned unread axis.
 .nl_check_axis_fields <- function(prior, path = "registry", auto = NULL,
@@ -541,10 +540,7 @@ auto_grid_place <- function(x)
     for (b in seq_along(blocks)) {
         blk <- blocks[[b]]
         if (!is.list(blk) || is.null(blk$type)) next
-        bpath <- if (!identical(path, "joint")) "registry"
-                 else if (!multi) "joint_single"
-                 else if (b %in% copy_at) "copy"
-                 else "registry"
+        bpath <- if (b %in% copy_at) "copy" else "registry"
         bi <- if (multi) b else NULL
         rec <- c(rec, .nl_check_block_axis_fields(
             blk, bpath, bi, .nl_auto_fields_at(auto, bi)))

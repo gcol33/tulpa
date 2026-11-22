@@ -124,9 +124,9 @@ test_that("(sigma, alpha) reparam removes the cover-arm ridge on small-n_pos BYM
             prior     = prior,
             control = list(adaptive_grid = FALSE)
         )
-        sigma_hat[i] <- fit$theta_mean[["sigma"]]
-        alpha_lo[i]  <- fit$theta_ci_lo[["alpha"]]
-        alpha_hi[i]  <- fit$theta_ci_hi[["alpha"]]
+        sigma_hat[i] <- fit$theta_mean[["b1.sigma"]]
+        alpha_lo[i]  <- fit$theta_ci_lo[["b1.alpha"]]
+        alpha_hi[i]  <- fit$theta_ci_hi[["b1.alpha"]]
     }
 
     # (1) Sigma is no longer dragged by the cover-arm ridge. Under the

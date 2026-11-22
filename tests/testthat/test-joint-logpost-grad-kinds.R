@@ -34,7 +34,7 @@
              family = "gaussian", phi = 1.0)
     })
     lapply(seq_along(arms), function(k)
-        .normalise_joint_arm_multi(arms[[k]], k))
+        .normalise_joint_arm(arms[[k]], k))
 }
 
 # Build the cpp-side block spec and its axis grid from a front-door spec, so the

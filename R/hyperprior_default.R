@@ -693,13 +693,28 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
               axes = axes, logchol = declared$logchol)
 }
 
+# A caller's `prior_sigma` is a density on a field's SD, and a field carries its
+# scale either as that SD (`sigma`) or as its precision (`tau`): one axis under
+# tau = sigma^-2 (`.JOINT_FIELD_SD_AXES`). The role reaches both spellings,
+# and on a precision the density is carried by the change of variables,
+# |d sigma / d tau| = tau^(-3/2) / 2.
+.hp_role_axes <- function(role) {
+  if (identical(role, "sigma")) .JOINT_FIELD_SD_AXES else role
+}
+
+.hp_role_density_on <- function(fn, bare) {
+  if (is.null(fn) || !identical(bare, "tau")) return(fn)
+  force(fn)
+  function(x) fn(x^(-1 / 2)) + log(0.5) - 1.5 * log(x)
+}
+
 # The default-or-user hyperprior over a joint grid. `blocks` is the block list
-# the grid's `b<k>.` prefixes index (a single-block joint grid is unprefixed and
-# passes its one block), `families` names each arm's family by the `phi_<arm>`
-# suffix, and `user` holds the caller's natural-scale densities by role
-# (`sigma`, `alpha`, `phi`), each a function or a per-block list the front door
-# parsed. A user density replaces the default on every axis of its role, and
-# `hyperprior` (`.HP_CHOICES`) sets what every other axis carries.
+# the grid's `b<k>.` prefixes index, `families` names each arm's family by the
+# `phi_<arm>` suffix, and `user` holds the caller's natural-scale densities by
+# role (`sigma`, `alpha`, `phi`), each a function or a per-block list the front
+# door parsed. A user density replaces the default on every axis of its role
+# (`.hp_role_axes()`), and `hyperprior` (`.HP_CHOICES`) sets what every other
+# axis carries.
 #
 # `declared` holds the columns the fit integrates and each free-covariance
 # block's design, read once off the grid the caller declared (`.hp_declare()` of
@@ -743,9 +758,10 @@ tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
     }
     role <- if (.axis_is_dispersion(col)) "phi"
             else if (identical(bare, "alpha")) "alpha"
-            else if (identical(bare, "sigma")) "sigma"
+            else if (bare %in% .hp_role_axes("sigma")) "sigma"
             else NA_character_
-    fn <- if (is.na(role)) NULL else user_fn(role, bo$index)
+    fn <- if (is.na(role)) NULL else
+      .hp_role_density_on(user_fn(role, bo$index), bare)
     if (!is.null(fn)) {
       log_scale <- isTRUE(.hyper_axis_scale(bare))
       is_alpha  <- identical(role, "alpha")

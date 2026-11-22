@@ -23,6 +23,10 @@
 
 skip_on_cran()
 
+# An unwrapped icar block is integrated on its precision `b1.tau`; the field SD
+# a test reads is tau^(-1/2) at each node.
+.ag_sd <- function(fit) 1 / sqrt(fit$theta_grid[, "b1.tau"])
+
 test_that("auto-recenter resolves a sigma-axis edge collapse and stays spread", {
     skip_on_cran()
     sim   <- .sparse_icar_arm()
@@ -37,7 +41,7 @@ test_that("auto-recenter resolves a sigma-axis edge collapse and stays spread", 
     expect_identical(fit$pareto_k_regime, "spread")
     expect_true(fit$outer_grid_recenter_attempts >= 1L)
     # The recentered axis sits above the retired 3.0 ceiling.
-    expect_gt(max(fit$theta_grid[, "sigma"]), 3.0)
+    expect_gt(max(.ag_sd(fit)), 3.0)
     expect_cells_solved(fit)
 })
 
@@ -55,7 +59,7 @@ test_that("the SAME data with a tiny explicit sigma_grid stays collapsed (overri
     expect_identical(fit$outer_grid_placement, "fixed")
     expect_identical(fit$outer_grid_recenter_declined, "axis_pinned")
     expect_identical(fit$pareto_k_regime, "collapsed_edge")
-    expect_true("sigma" %in% fit$pareto_k_grid_edge_axes)
+    expect_true("b1.tau" %in% fit$pareto_k_grid_edge_axes)
 })
 
 # gcol33/tulpa#293: a wrapper package (tulpaObs's occu_cover) computes the
@@ -79,7 +83,7 @@ test_that("an engine-default sigma_grid handed back in still auto-recenters", {
 
     expect_identical(fit$outer_grid_placement, "auto_recentered")
     expect_identical(fit$pareto_k_regime, "spread")
-    expect_gt(max(fit$theta_grid[, "sigma"]), 3.0)
+    expect_gt(max(.ag_sd(fit)), 3.0)
     expect_null(fit$outer_grid_recenter_declined)
 })
 
@@ -112,7 +116,7 @@ test_that("the occu_cover single-block shape (stamped default + field_coef) rece
         control = list(diagnose_k = FALSE)))
 
     expect_identical(fit$outer_grid_placement, "auto_recentered")
-    expect_gt(max(fit$theta_grid[, "sigma"]), 3.0)
+    expect_gt(max(fit$theta_grid[, "b1.sigma"]), 3.0)
     expect_null(fit$outer_grid_recenter_declined)
 })
 
@@ -130,7 +134,7 @@ test_that("an auto_grid()-marked axis auto-recenters; the same axis unmarked doe
         prior = c(base, list(sigma_grid = auto_grid(axis))),
         control = list(diagnose_k = FALSE))
     expect_identical(marked$outer_grid_placement, "auto_recentered")
-    expect_gt(max(marked$theta_grid[, "sigma"]), 3.0)
+    expect_gt(max(.ag_sd(marked)), 3.0)
 
     pinned <- tulpa_nested_laplace_joint(
         responses = list(occ = sim$arm),
@@ -138,7 +142,7 @@ test_that("an auto_grid()-marked axis auto-recenters; the same axis unmarked doe
         control = list(diagnose_k = FALSE))
     expect_identical(pinned$outer_grid_placement, "fixed")
     expect_identical(pinned$outer_grid_recenter_declined, "axis_pinned")
-    expect_identical(max(pinned$theta_grid[, "sigma"]), 3.0)
+    expect_equal(max(.ag_sd(pinned)), 3.0)
 })
 
 test_that("a copy block's engine-default donor axis auto-recenters (multi-block)", {
@@ -211,14 +215,14 @@ test_that("a well-identified fit is byte-stable across repeated calls (no rescue
 
     expect_identical(fit_a$outer_grid_placement, "fixed")
     expect_null(fit_a$outer_grid_recenter_attempts)
-    expect_identical(fit_a$outer_grid_recenter_declined, "grid_not_collapsed")
+    expect_identical(fit_a$outer_grid_recenter_declined, "grid_resolves_posterior")
     expect_identical(fit_a$theta_grid, fit_b$theta_grid)
     expect_identical(fit_a$weights, fit_b$weights)
     expect_identical(fit_a$log_marginal, fit_b$log_marginal)
     expect_identical(fit_a$theta_mean, fit_b$theta_mean)
 })
 
-test_that("BYM2's finer (sigma, rho) grid also carries the new field, untouched when unneeded", {
+test_that("BYM2's (sigma, rho) grid ends spread, with no axis on a rail", {
     skip_on_cran()
     set.seed(42)
     n_s <- 20L; n_per <- 60L
@@ -238,8 +242,8 @@ test_that("BYM2's finer (sigma, rho) grid also carries the new field, untouched 
                   n_neighbors = adj$n_neighbors, scale_factor = 1.0)
 
     fit <- tulpa_nested_laplace_joint(responses = list(occ = arm), prior = prior)
-    expect_identical(fit$outer_grid_placement, "fixed")
     expect_identical(fit$pareto_k_regime, "spread")
+    expect_length(fit$outer_grid_railed_axes %||% character(0), 0L)
 })
 
 test_that("a multi-block copy field's donor sigma axis auto-recenters on collapse", {
@@ -303,7 +307,7 @@ test_that("auto-recenter engages at diagnose_k = FALSE (single-block icar)", {
     expect_identical(fit$outer_grid_placement, "auto_recentered")
     expect_identical(fit$pareto_k_regime, "spread")
     expect_true(fit$outer_grid_recenter_attempts >= 1L)
-    expect_gt(max(fit$theta_grid[, "sigma"]), 3.0)
+    expect_gt(max(.ag_sd(fit)), 3.0)
     expect_cells_solved(fit)
     # The diagnostic itself stayed off throughout -- the recenter used only
     # the placement-only mode-Hessian, not a computed outer k-hat.
@@ -325,7 +329,7 @@ test_that("an explicit sigma_grid override is never touched at diagnose_k = FALS
     expect_identical(fit$outer_grid_placement, "fixed")
     expect_identical(fit$outer_grid_recenter_declined, "axis_pinned")
     expect_identical(fit$pareto_k_regime, "collapsed_edge")
-    expect_true("sigma" %in% fit$pareto_k_grid_edge_axes)
+    expect_true("b1.tau" %in% fit$pareto_k_grid_edge_axes)
 })
 
 test_that("a multi-block copy field's donor sigma axis auto-recenters at diagnose_k = FALSE", {
@@ -415,12 +419,13 @@ test_that("control$auto_recenter = FALSE holds the default grid where it is", {
     # `axis_refine = "none"` holds the declared grid as given.
     expect_identical(fit$outer_grid_placement, "fixed")
     expect_identical(fit$outer_grid_recenter_declined, "auto_recenter_disabled")
-    expect_gt(max(fit$theta_grid[, "sigma"]), 3.0)
+    tau0 <- min(tulpa:::.nl_grid_axis("gmrf_tau"))
+    expect_lt(min(fit$theta_grid[, "b1.tau"]), tau0)
 
     held <- tulpa_nested_laplace_joint(
         responses = list(occ = sim$arm), prior = prior,
         control = list(diagnose_k = FALSE, auto_recenter = FALSE,
                        axis_refine = "none"))
     expect_identical(held$pareto_k_regime, "collapsed_edge")
-    expect_equal(max(held$theta_grid[, "sigma"]), 3.0)
+    expect_equal(min(held$theta_grid[, "b1.tau"]), tau0)
 })

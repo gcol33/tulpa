@@ -4,15 +4,24 @@
 
 # --- the copy scale ----------------------------------------------------------
 
-# A single-block detecting fit whose copy-scale continuum sits on one node, 20
-# posterior SDs per node, with the outer mode a mode-find reached for it.
+# A detecting fit whose copy-scale continuum (block 1's `b1.alpha`) sits on one
+# node, 20 posterior SDs per node, with the outer mode a mode-find reached for
+# it.
 .pp_alpha_stub <- function() {
     a <- c(0, exp(seq(log(0.1), log(3), length.out = 9)))
-    list(theta_grid = matrix(a, ncol = 1L, dimnames = list(NULL, "alpha")),
+    list(theta_grid = matrix(a, ncol = 1L, dimnames = list(NULL, "b1.alpha")),
          log_marginal = c(-50, -0.5 * ((log(a[-1]) - log(0.358)) / 0.02)^2),
          outer_mode_u = log(0.36), outer_mode_cov_u = matrix(0.02^2, 1, 1),
-         outer_mode_axis_tags = "log", outer_mode_axis_names = "alpha",
+         outer_mode_axis_tags = "log", outer_mode_axis_names = "b1.alpha",
          outer_grid_placement = "fixed")
+}
+
+# The call state of a one-block fit whose block 1 is copied onto arm 2.
+.pp_copy_state <- function(alpha_grid) {
+    copy <- list(arm = 2L, block = 1L, alpha_grid = alpha_grid)
+    list(prior = list(list(type = "icar")), copy = copy,
+         responses = list(occ = list(), pos = list()),
+         cp = list(has_copy = TRUE, copy_blocks_zero = 0L))
 }
 
 test_that("a transported mode leaves out an axis the mode-find did not resolve", {
@@ -113,42 +122,39 @@ skip_on_cran_budget()
 test_that("an unresolved copy scale is placed with its atom kept, marked", {
     skip_on_cran_budget()
     fams <- .joint_placement_families()["alpha"]
-    fc <- list(name = "alpha",
-               grid = auto_grid(c(0, exp(seq(log(0.1), log(3), length.out = 9)))))
-    st <- list(prior = list(type = "icar"),
-               responses = list(occ = list(), pos = list(field_coef = fc)))
+    st <- .pp_copy_state(
+        auto_grid(c(0, exp(seq(log(0.1), log(3), length.out = 9)))))
     seen <- new.env(parent = emptyenv())
     out <- .joint_place_axes(.pp_alpha_stub(), st, families = fams,
                              refit = function(st, from) {
                                  seen$st <- st
-                                 g <- as.numeric(st$responses$pos$field_coef$grid)
+                                 g <- as.numeric(st$copy$alpha_grid)
                                  list(theta_grid = matrix(g, ncol = 1L,
-                                          dimnames = list(NULL, "alpha")),
+                                          dimnames = list(NULL, "b1.alpha")),
                                       log_marginal = c(-50, -0.5 * ((log(g[-1]) -
                                           log(0.36)) / 0.02)^2),
                                       outer_grid_placement = "fixed")
                              })
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
-    expect_identical(out$res$outer_grid_recenter_axes, "alpha")
-    g <- seen$st$responses$pos$field_coef$grid
+    expect_identical(out$res$outer_grid_recenter_axes, "b1.alpha")
+    g <- seen$st$copy$alpha_grid
     # The atom and five continuum nodes, the continuum at the mode, and written
     # back as the engine's own default.
     expect_identical(g[1L], 0)
     expect_length(g, 6L)
     expect_equal(log(g[4L]), log(0.36))
     expect_true(is_auto_grid(g))
-    expect_null(seen$st$responses$pos$field_coef[["n"]])
+    expect_null(seen$st$copy[["alpha_n"]])
 })
 
 test_that("a stated copy scale is held, and says so", {
     skip_on_cran_budget()
     fams <- .joint_placement_families()["alpha"]
-    fc <- list(name = "alpha", grid = c(0, 0.2, 0.5, 1, 2))
-    st <- list(prior = list(type = "icar"),
-               responses = list(occ = list(), pos = list(field_coef = fc)))
+    st <- .pp_copy_state(c(0, 0.2, 0.5, 1, 2))
     out <- .joint_place_axes(.pp_alpha_stub(), st, families = fams,
                              refit = function(st, from) stop("no refit"))
-    expect_identical(out$res$outer_grid_axis_declined, c(alpha = "axis_pinned"))
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(b1.alpha = "axis_pinned"))
     expect_identical(out$res$outer_grid_recenter_declined, "axis_pinned")
 })
 
@@ -202,14 +208,13 @@ test_that("a copy scale's atom is not read as boundary mass", {
 test_that("the pilot thins a marked copy scale and keeps a stated one", {
     skip_on_cran_budget()
     marked <- auto_grid(c(0, exp(seq(log(0.1), log(3), length.out = 9))))
-    thin <- .nl_pilot_field_coef(list(field_coef = list(name = "alpha",
-                                                          grid = marked)), 3L)
+    thin <- .nl_pilot_alpha(list(arm = 2L, block = 1L, alpha_grid = marked), 3L)
     expect_true(thin$moved)
-    g <- thin$arm$field_coef$grid
+    g <- thin$spec$alpha_grid
     expect_equal(as.numeric(g), c(0, 0.1, sqrt(0.3), 3))
     expect_true(is_auto_grid(g))
-    stated <- .nl_pilot_field_coef(list(field_coef = list(
-        name = "alpha", grid = c(0, 0.2, 0.5, 1, 2))), 3L)
+    stated <- .nl_pilot_alpha(list(arm = 2L, block = 1L,
+                                   alpha_grid = c(0, 0.2, 0.5, 1, 2)), 3L)
     expect_false(stated$moved)
 })
 

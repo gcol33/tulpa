@@ -84,7 +84,7 @@ test_that("autodiff primitives carry their exact unary chain rule", {
 test_that("joint beta arms carry raw grouped responses", {
   arm <- list(y=c(.3,.4), X=matrix(1,2,1), family="beta",phi=100,
     n_trials=c(2L,3L), beta_y=list(c(.29,.31), c(.39,.4,.41)))
-  normalise <- function(a) tulpa:::.normalise_joint_arm_core(a,1L,spatial_idx="optional")
+  normalise <- function(a) tulpa:::.normalise_joint_arm(a, 1L)
   out <- normalise(arm)
   expect_identical(out$beta_y,arm$beta_y)
   expect_error(normalise(modifyList(arm,list(n_trials=c(1L,1L)))),"group sizes")

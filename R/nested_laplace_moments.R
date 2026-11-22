@@ -3,46 +3,6 @@
 # the axis-marginal Laplace-refined SD, and the multi-block joint / per-block
 # marginal moments. Consumed by the nested-Laplace drivers in nested_laplace.R.
 
-# Compute weighted theta_mean / theta_sd / theta_median / theta_ci_lo /
-# theta_ci_hi from grid + weights. The mean and SD are produced via the
-# usual `sum(w * x)` / `sum(w * x^2)` moments; the median and 2.5/97.5
-# CI are produced via `.nl_axis_quantiles` so that asymmetric scale-like
-# hyperparameters (sigma, alpha, range, phi) have a calibrated headline
-# summary alongside mean +/- SD. Median is the recommended summary for
-# right-skewed posteriors: `mean` of a weakly-identified positive ratio
-# is pulled up by the right tail; `median` matches truth at small n.
-.nl_posterior_moments <- function(res, type, within = NULL) {
-  within <- .nl_within_cell_mode(within)
-  w <- res$weights
-  tg <- res$theta_grid
-  if (is.matrix(tg)) {
-    res$theta_mean <- as.numeric(crossprod(w, tg))
-    names(res$theta_mean) <- colnames(tg)
-    res$theta_sd <- sqrt(pmax(0, as.numeric(crossprod(w, tg^2)) -
-                                  res$theta_mean^2))
-    names(res$theta_sd) <- colnames(tg)
-  } else {
-    ms <- .nl_wtd_mean_sd(tg, w)
-    res$theta_mean <- ms$mean
-    res$theta_sd   <- ms$sd
-  }
-  # Each axis's SD then comes from the estimator its own resolution calls for.
-  # Here rather than at each driver, so one rule serves every nested path and a
-  # fit says which estimator produced its number.
-  res <- .nl_attach_axis_sd(res)
-  geo <- .nl_axis_geometry(res, type)
-  qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
-                           log_quad = res$log_quad,
-                           domains = geo$domain, within = within,
-                           atoms = geo$atom, sd = TRUE,
-                           specs = res$outer_axis_specs)
-  res$theta_median <- qs$median
-  res$theta_ci_lo  <- qs$ci_lo
-  res$theta_ci_hi  <- qs$ci_hi
-  res$within_cell_requested <- within
-  .nl_attach_interval_provenance(res, qs, tg, geo$domain, geo$atom)
-}
-
 # A fit's outer grid as a matrix with named axis columns. A single-axis grid is
 # stored as a bare vector and named by `theta_names`; every reader that keys an
 # axis by name (the domain registry, the cell measure `log_quad`, the reported
@@ -1895,8 +1855,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # Report `theta_sd` (and `block_moments[[b]]$sd` when present) per axis, each
 # from the estimator its own resolution calls for (`.nl_axis_sd_choice()`).
 #
-# Called from `.nl_posterior_moments()` (single-block, spatiotemporal, joint),
-# from the multi-block moment builder (`.joint_posterior_moments_multi()`),
+# Called from the joint moment builder (`.joint_posterior_moments_multi()`),
 # and by `tulpa_hyper_grid()`, which
 # assembles its own moments -- so every nested path reports one rule.
 #

@@ -1229,7 +1229,7 @@
 # Map each joint hyperparameter axis (theta_grid column) to the arm(s) whose
 # linear predictor it enters, for the opt-in per-arm outer Pareto-k
 # Returns a named list arm_name -> integer column indices, or
-# NULL to DECLINE (single-block layout, < 2 arms, or fewer than two arms with any
+# NULL to DECLINE (no block layout, < 2 arms, or fewer than two arms with any
 # axis) so the per-arm diagnostic is simply withheld rather than reporting a
 # mis-attributed k -- the same decline-rather-than-guess stance the joint axis
 # tags take.
@@ -1243,9 +1243,9 @@
 .joint_pareto_arm_axes <- function(res) {
     tg <- res$theta_grid
     if (is.null(tg) || !is.matrix(tg) || ncol(tg) == 0L) return(NULL)
-    # Per-arm decomposition is defined for the multi-block layout (b<b>. axis
-    # names + axis_offsets + blocks). The single-block joint shares one field
-    # across arms, so decline rather than mis-attribute its axes.
+    # Per-arm decomposition reads the block layout (b<b>. axis names +
+    # axis_offsets + blocks); a result without one declines rather than
+    # mis-attributing its axes.
     if (is.null(res$axis_offsets) || is.null(res$blocks)) return(NULL)
     cn <- colnames(tg)
     n_arms <- res$arm_layout$n_arms %||% length(res$responses)
@@ -1468,113 +1468,6 @@
             "k-hat interval crosses a band boundary; raise control$k_samples or refine the grid"
         else "k-hat confidently outside the requested band; the integration is genuinely less reliable"
     res
-}
-
-# Single-block joint wrapper. Reuses the driver's already-built generic
-# `kernel_fn` (the closure refinement passes drive, which round-trips a
-# user-facing cell matrix through `backend$call_kernel`) and `hp_fn` (the
-# baked-hyperprior closure) as the re-evaluation path, so no kernel-call
-# machinery is duplicated. The diagnostic solves are warm-started from the
-# modal latent mode and capped at `.K_DIAG_MAX_ITER`, the
-# same cost bound as the multi-block path. The whole importance batch is
-# re-solved in one `kernel_fn` call with `n_threads_outer` so the independent
-# re-solves run concurrently across cores rather than one-at-a-time using all
-# inner threads. Attaches `pareto_k` / `pareto_k_is_ess` / `pareto_k_scope`;
-# with `diagnose_k = FALSE` the fields are present but NA. The placement mode
-# the auto-recenter rescues in `R/nested_laplace_auto_grid.R` read
-# (`outer_mode_*`, `.joint_attach_placement()`) is attached either way.
-.joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
-                                          max_iter = 50L,
-                                          diagnose_k = TRUE,
-                                          diagnose_draws = .nl_diag("k_samples"),
-                                          n_threads_outer = 1L,
-                                          pareto_k_by_arm = FALSE,
-                                          k_bootstrap = .nl_diag("k_bootstrap"),
-                                          k_tail_points = NULL,
-                                          k_conf_bands = NULL,
-                                          placement_axes = character(0)) {
-    res$pareto_k        <- NA_real_
-    res$pareto_k_is_ess <- NA_real_
-    res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
-    res$pareto_k_proposal_source <- NA_character_
-    res$pareto_k_declined <- NA_character_
-    # The grid regime is read off stored weights, so it is attached even when the
-    # k-hat diagnostic is off -- a collapsed or boundary-pinned grid is worth
-    # knowing about regardless.
-    res <- .joint_attach_pareto_k_regime(res)
-
-    warm        <- .joint_modal_mode(res)
-    warm_arg    <- if (is.null(warm)) NULL else list(mode = warm)
-    modal_theta <- .joint_modal_theta(res)
-    k_max_iter  <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
-    n_to        <- as.integer(n_threads_outer)
-    knobs       <- .kdiag_knobs()
-
-    # One kernel call over the importance batch, with Shamanskii factor reuse
-    # (off-factor steps scatter grad-only) + per-cell warm start, both attacking
-    # the dominant per-iteration scatter cost on the beta cover arm
-    # `x_init_per_cell` is an [S x n_x] warm matrix or NULL.
-    # The diagnostic re-solve runs with its own cheaper knobs (k_max_iter,
-    # knobs$tol / refresh), so its checkpoint fingerprint would differ from the
-    # main grid's; run it checkpoint-free so it neither collides with nor
-    # appends to the fit's checkpoint file.
-    solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
-        r  <- .joint_with_quiet_opts(kernel_fn(theta_mat, warm_start = warm_arg,
-                        max_iter_override = k_max_iter,
-                        n_threads_outer = n_to,
-                        inner_refresh_override = knobs$refresh,
-                        tol_override = knobs$tol,
-                        x_init_per_cell = x_init_per_cell))
-        lm <- r$log_marginal
-        if (!is.null(hp_fn)) {
-            hp <- hp_fn(theta_mat)
-            if (!is.null(hp) && length(hp) == length(lm)) lm <- lm + hp
-        }
-        lm
-    }
-
-    # The placement mode-find reads the outer log-posterior itself, so it
-    # solves at the fit's own inner settings: a finite difference of a
-    # log-marginal the diagnostic's iteration cap left short of its mode is a
-    # difference of stopping points.
-    place_warm <- warm
-    place_fn <- function(theta_mat) {
-        r  <- .joint_with_quiet_opts(kernel_fn(
-            theta_mat,
-            x_init_per_cell = .joint_rows_of(place_warm, nrow(theta_mat)),
-            n_threads_outer = n_to))
-        lm <- r$log_marginal
-        if (!is.null(hp_fn)) {
-            hp <- hp_fn(theta_mat)
-            if (!is.null(hp) && length(hp) == length(lm)) lm <- lm + hp
-        }
-        if (is.matrix(r$modes)) attr(lm, "modes") <- r$modes
-        lm
-    }
-    place_set_warm <- function(mode) {
-        mode <- as.numeric(mode)
-        if (length(mode) && all(is.finite(mode))) place_warm <<- mode
-    }
-
-    if (!isTRUE(diagnose_k)) {
-        res <- .k_attach_declined(res, .k_decline("not_requested"))
-        return(.joint_attach_placement(res, place_fn, place_set_warm,
-                                       extra_axes = placement_axes))
-    }
-
-    # Per-cell warm start (each draw from its nearest stored grid mode) is the
-    # best start and works in serial AND parallel; it supersedes the chain
-    # re-order. Fall back to the near-neighbour chain re-order when modes are
-    # unavailable, else the plain broadcast warm.
-    refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
-    arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
-    res <- .joint_score_outer_k(res, function(r) {
-        .joint_pareto_k(r, refit, diagnose_draws, arm_axes = arm_axes,
-                        k_bootstrap = k_bootstrap, k_tail_points = k_tail_points,
-                        k_conf_bands = k_conf_bands)
-    })
-    .joint_attach_placement(res, place_fn, place_set_warm,
-                            extra_axes = placement_axes)
 }
 
 # The outer k-hat fields of a scored fit: the point estimate and its decline,

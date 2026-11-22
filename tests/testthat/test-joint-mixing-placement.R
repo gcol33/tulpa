@@ -16,12 +16,12 @@ test_that("auto keeps the tensor at four axes within the cap, the CCD past it", 
 test_that("every BYM2 mixing weight the caller left is movable", {
   bym <- list(type = "bym2")
   iid <- list(type = "iid")
-  expect_identical(.joint_movable_mixing_axes(list(prior = bym)), "rho")
+  expect_identical(.joint_movable_mixing_axes(list(prior = list(bym))), "b1.rho")
   expect_identical(.joint_movable_mixing_axes(list(prior = list(iid, bym))),
                    "b2.rho")
   stated <- list(bym, utils::modifyList(bym, list(rho_grid = c(0.3, 0.6))))
   expect_identical(.joint_movable_mixing_axes(list(prior = stated)), "b1.rho")
-  expect_identical(.joint_movable_mixing_axes(list(prior = list(type = "icar"))),
+  expect_identical(.joint_movable_mixing_axes(list(prior = list(list(type = "icar")))),
                    character(0))
   expect_true(.joint_axis_refine_eligible("b1.rho"))
 })

@@ -12,6 +12,29 @@
 # nothing about the inner Laplace is under test and the exact posterior is
 # available as a reference arm.
 
+# The reported hyperparameter read of a fit: the weighted moments, each axis's
+# SD from the estimator its resolution calls for, and the per-axis quantiles
+# under the reporting geometry -- the primitives every nested moment builder
+# reads through.
+hd_moments <- function(res, within) {
+  w <- res$weights
+  tg <- res$theta_grid
+  res$theta_mean <- stats::setNames(as.numeric(crossprod(w, tg)), colnames(tg))
+  res$theta_sd <- stats::setNames(
+    sqrt(pmax(0, as.numeric(crossprod(w, tg^2)) - res$theta_mean^2)),
+    colnames(tg))
+  res <- tulpa:::.nl_attach_axis_sd(res)
+  geo <- tulpa:::.nl_axis_geometry(res)
+  qs <- tulpa:::.nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
+                                   log_quad = res$log_quad,
+                                   domains = geo$domain, within = within,
+                                   atoms = geo$atom, sd = TRUE)
+  res$theta_median <- qs$median
+  res$theta_ci_lo  <- qs$ci_lo
+  res$theta_ci_hi  <- qs$ci_hi
+  tulpa:::.nl_attach_interval_provenance(res, qs, tg, geo$domain, geo$atom)
+}
+
 # A nested-Laplace-shaped fit whose outer grid is exactly the supplied axes,
 # carrying the engine's own cell measure and weights.
 hd_fit <- function(axes, log_marginal, within = "box_uniform",
@@ -25,7 +48,7 @@ hd_fit <- function(axes, log_marginal, within = "box_uniform",
               blocks = NULL, axis_offsets = NULL)
   res$weights <- tulpa:::.nl_normalise_weights_safe(lm, "outer grid",
                                                     log_quad = lq)
-  res <- tulpa:::.nl_posterior_moments(res, type, within = within)
+  res <- hd_moments(res, within)
   res$within_cell_requested <- within
   structure(res, class = c("tulpa_nested_laplace", "list", "tulpa_fit"))
 }
@@ -207,7 +230,7 @@ hd_refined <- function(within = "box_uniform", r = 0) {
               prior = list(type = "bym2"), blocks = NULL, axis_offsets = NULL)
   res$weights <- tulpa:::.nl_normalise_weights_safe(lm, "outer grid",
                                                     log_quad = lq)
-  res <- tulpa:::.nl_posterior_moments(res, "bym2", within = within)
+  res <- hd_moments(res, within)
   res$within_cell_requested <- within
   structure(res, class = c("tulpa_nested_laplace", "list", "tulpa_fit"))
 }

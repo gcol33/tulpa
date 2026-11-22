@@ -1271,7 +1271,7 @@
 # finely the thing it was built from divides the posterior, which is what bounds
 # how much of the reported number is the grid rather than the posterior. NULL
 # for a fit that records none -- an older fit, or a backend whose summary does
-# not go through `.nl_posterior_moments()`.
+# not go through the nested moment builders.
 .tulpa_grid_resolution <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
   r <- jf$outer_grid_h_over_sd

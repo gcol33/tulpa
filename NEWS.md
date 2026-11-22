@@ -22,6 +22,29 @@
   effects by at most 5e-5 of their standard error, and log evidence by at
   most 4e-4 nats; the re_cov door solves 1-4% fewer cells (#1269).
 
+* `tulpa_nested_laplace_joint()` given one unwrapped areal block (`icar`,
+  `bym2`, `car_proper`) fits it as the one-block list it spells, on the same
+  driver as every other joint fit, and names its axes the same way: `b1.tau`
+  for a non-copy icar or proper-CAR field (`b1.tau`, `b1.rho`), `b1.sigma` /
+  `b1.rho` for a BYM2 field, `b1.sigma` / `b1.alpha` for a field copied by an
+  arm's `field_coef`, where the fit read `sigma`, `rho`, `rho_car` and
+  `alpha`. A stated `sigma_grid` on a non-copy icar or proper-CAR block is
+  integrated as `tau = 1 / sigma^2` at the same nodes: on identical stated
+  grids the log evidence, the coefficients and the intervals (through
+  `sigma = tau^(-1/2)`) match the previous fits to the printed digits. With
+  default grids the placement differs; on a binomial icar fixture the log
+  evidence reads -386.416 where it read -386.368, against -386.417 on a
+  60-node stated grid. A door-level `prior_sigma` now reaches a field's
+  precision axis by the change of variables, on every block of a list as on
+  an unwrapped one; on a list it previously skipped a `tau` axis. A stated
+  `prior_alpha` on a list of blocks replaces the copy scale's default
+  exponential slab, as it did on the unwrapped path; it was applied on top of
+  the slab, a second prior on the same axis (on the small-`n_pos` BYM2
+  fixture the copy-scale geometric bias read -0.028 under `pc.prec(U = 4)`
+  against -0.013 with no prior, where the PC rate below the slab's should
+  shrink less). A copy fit reports `copy_atom$posterior_mass` per copy axis on
+  every prior shape (#1195).
+
 * A single-block `tulpa_nested_laplace_joint()` fit with a proper-CAR prior
   and no copy integrates the model it reports. Its outer grid is laid on the
   field SD, and the SD was handed to the kernel as the precision, so the fit

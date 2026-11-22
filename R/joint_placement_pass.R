@@ -1,9 +1,9 @@
 # The joint driver's outer-grid placement pass.
 #
-# Every axis `tulpa_nested_laplace_joint()` may move -- the single-block field
-# SD, each multi-block copy block's field SD, the per-arm dispersions, the copy
-# scale and a BYM2 field's mixing weight -- is laid from the ONE outer mode the detecting fit's mode-find
-# reached (`.joint_attach_placement()`), and the grid is refit once per attempt
+# Every axis `tulpa_nested_laplace_joint()` may move -- each copy block's field
+# SD, every registry axis of a non-copy block, the per-arm dispersions, the
+# copy scale, a field's mixing weight and a free covariance's coordinates -- is
+# laid from the ONE outer mode the detecting fit's mode-find reached (`.joint_attach_placement()`), and the grid is refit once per attempt
 # with every placement applied. The mode-find varies every axis the grid lays
 # more than one node on, so one run already holds what each axis needs. Placing
 # the families one refit at a time would pay a full grid solve per family, and
@@ -44,30 +44,10 @@
 # `idle` reason.
 
 .joint_placement_families <- function(auto = logical(0), phi_auto = NULL) {
-    field_sd <- function(fires, hold, slots, write) list(
-        slots = slots, hold = hold, fires = fires, write = write,
-        together = FALSE, escalate = TRUE, idle = "grid_not_collapsed")
     list(
-        sigma = field_sd(
+        copy_sigma = list(
             slots = function(res, st) {
-                type <- tolower(st$prior$type %||% "")
-                if (.is_multi_block_prior(st$prior) ||
-                    !type %in% c("bym2", "icar", "car_proper")) return(list())
-                list(list(label = "sigma", axis = "sigma", block = NULL,
-                          ref = function(r) .nl_axis_ref_nodes(r, "sigma")))
-            },
-            hold = function(s, st)
-                .nl_axis_hold(st$prior, "sigma_grid", .nl_auto_fields_at(auto),
-                              type = ".joint_areal"),
-            fires = function(res, s) .nl_axis_railed(res, "sigma"),
-            write = function(st, s, nodes) {
-                st$prior$sigma_grid <- auto_grid(nodes)
-                st
-            }),
-        copy_sigma = field_sd(
-            slots = function(res, st) {
-                if (!.is_multi_block_prior(st$prior) || is.null(st$cp) ||
-                    !isTRUE(st$cp$has_copy)) return(list())
+                if (is.null(st$cp) || !isTRUE(st$cp$has_copy)) return(list())
                 n_b <- .nl_fit_n_blocks(res)
                 lapply(st$cp$copy_blocks_zero + 1L, function(b) list(
                     label = .nl_axis_alias("sigma", b, n_b)[1L],
@@ -82,7 +62,8 @@
             write = function(st, s, nodes) {
                 st$prior[[s$block]]$sigma_grid <- auto_grid(nodes)
                 st
-            }),
+            },
+            together = FALSE, escalate = TRUE, idle = "grid_not_collapsed"),
         phi = list(
             slots = function(res, st)
                 lapply(.nl_phi_axis_slots(res, st$phi_grid), function(p) list(
@@ -106,13 +87,11 @@
         mixing = list(
             slots = function(res, st) .joint_mixing_slots(res, st),
             hold = function(s, st)
-                .nl_axis_hold(if (is.null(s$block)) st$prior else st$prior[[s$block]],
-                              s$field, .nl_auto_fields_at(auto, s$block),
-                              type = s$type),
+                .nl_axis_hold(st$prior[[s$block]], s$field,
+                              .nl_auto_fields_at(auto, s$block), type = s$type),
             fires = function(res, s) .nl_axis_placement_fires(res, s$label, s$tag),
             write = function(st, s, nodes) {
-                if (is.null(s$block)) st$prior[[s$field]] <- auto_grid(nodes)
-                else st$prior[[s$block]][[s$field]] <- auto_grid(nodes)
+                st$prior[[s$block]][[s$field]] <- auto_grid(nodes)
                 st
             },
             together = FALSE, escalate = FALSE, idle = "grid_resolves_posterior"),
@@ -149,7 +128,6 @@
 # coordinates. The axes are coupled through the one `logchol_grid` matrix the
 # block carries, so the family moves them together.
 .joint_logchol_slots <- function(res, st) {
-    if (!.is_multi_block_prior(st$prior)) return(list())
     cn <- colnames(res$theta_grid) %||% character(0)
     out <- list()
     for (b in seq_along(st$prior)) {
@@ -228,31 +206,29 @@
 # tags them with, from the same outer mode as the field's SD. A default axis is
 # a fixed ladder graded towards 1, so a posterior reaching below its lowest
 # node is cut at that node's box edge until the axis is laid where the
-# mode-find found it. Single-block the axis is the field's own; multi-block it
-# is a copied block's (`b<k>.rho`, `b<k>.rho_car`), whose copy grid crosses
-# each axis it carries. A non-copy block's correlation is one of its registry
-# axes, paired with its SD, and the `field` family re-crosses the two. A
-# correlation whose block declares a support the registry gives no coordinate
-# on is not placed.
+# mode-find found it. This family places a copied block's correlation
+# (`b<k>.rho`, `b<k>.rho_car`), whose copy grid crosses each axis it carries.
+# A non-copy block's correlation is one of its registry axes, paired with its
+# SD, and the `field` family re-crosses the two. A correlation whose block
+# declares a support the registry gives no coordinate on is not placed.
 .JOINT_MIXING_AXES <- c(bym2 = "rho", car_proper = "rho_car")
 
 .joint_mixing_slots <- function(res, st) {
     cn <- colnames(res$theta_grid) %||% character(0)
-    slot <- function(blk, b, label) {
+    slot <- function(b) {
+        blk  <- st$prior[[b]]
         type <- tolower(blk$type %||% "")
         axis <- .JOINT_MIXING_AXES[type]
-        if (is.na(axis) || !label(axis) %in% cn) return(NULL)
+        if (is.na(axis)) return(NULL)
+        label <- .axis_label(b, axis)
+        if (!label %in% cn) return(NULL)
         tag <- .joint_pareto_block_tags(type, axis, blk)
         if (is.na(tag)) return(NULL)
-        list(label = label(axis), axis = unname(axis), block = b, type = type,
+        list(label = label, axis = unname(axis), block = b, type = type,
              field = paste0(axis, "_grid"), tag = unname(tag),
-             ref = .joint_declared_axis_ref(label(axis)))
+             ref = .joint_declared_axis_ref(label))
     }
-    if (!.is_multi_block_prior(st$prior)) {
-        return(Filter(Negate(is.null), list(slot(st$prior, NULL, identity))))
-    }
-    Filter(Negate(is.null), lapply(.joint_copied_blocks(st), function(b)
-        slot(st$prior[[b]], b, function(a) .axis_label(b, a))))
+    Filter(Negate(is.null), lapply(.joint_copied_blocks(st), slot))
 }
 
 # --- a block's registry field axes ------------------------------------------
@@ -285,11 +261,10 @@
 }
 
 # The registry slots (`.nl_registry_axis_slots()`) the field family walks, read
-# off the call state alone: the vector-field axes of every non-copy block of a
-# multi-block prior that the transform registry gives a coordinate (`tag`),
-# each labelled as the grid names it.
+# off the call state alone: the vector-field axes of every non-copy block that
+# the transform registry gives a coordinate (`tag`), each labelled as the grid
+# names it.
 .joint_field_registry_slots <- function(st) {
-    if (!.is_multi_block_prior(st$prior)) return(list())
     copied <- .joint_copied_blocks(st)
     out <- list()
     for (sl in .nl_registry_axis_slots(st$prior)) {
@@ -368,44 +343,24 @@
 # continuum and keeps the atom: the new axis is the zero level, when the grid
 # had one, plus the continuum laid at the mode. It is written back MARKED
 # (`auto_grid()`), which is what the axis was: a default the engine placed,
-# which refinement may follow past its ends (`.joint_axis_is_stated()`).
+# which refinement may follow past its ends (`.joint_multi_axis_is_stated()`).
 #
-# Single-block, the axis is the copy arm's `field_coef` and the fit calls it
-# `alpha`; multi-block it is a copy spec's `alpha_grid` and the fit calls it
-# `b<k>.alpha`, for the copy block `k` the spec targets.
+# The axis is a copy spec's `alpha_grid` and the fit calls it `b<k>.alpha`, for
+# the copy block `k` the spec targets.
 
 .joint_alpha_slots <- function(res, st) {
     cn <- colnames(res$theta_grid) %||% character(0)
-    if (.is_multi_block_prior(st$prior)) {
-        if (is.null(st$cp) || !isTRUE(st$cp$has_copy)) return(list())
-        n_b <- .nl_fit_n_blocks(res)
-        out <- lapply(st$cp$copy_blocks_zero + 1L, function(b) {
-            lbl <- .nl_axis_alias("alpha", b, n_b)[1L]
-            if (!lbl %in% cn) return(NULL)
-            list(label = lbl, axis = "alpha", block = b,
-                 ref = function(r) .nl_rescue_axis_nodes(r, lbl))
-        })
-        return(Filter(Negate(is.null), out))
-    }
-    if (!"alpha" %in% cn) return(list())
-    k <- .joint_copy_arm_index(st$responses)
-    if (is.na(k)) return(list())
-    list(list(label = "alpha", axis = "alpha", block = NULL, arm = k,
-              ref = function(r) .nl_rescue_axis_nodes(r, "alpha")))
+    out <- lapply(.joint_copied_blocks(st), function(b) {
+        lbl <- .axis_label(b, "alpha")
+        if (!lbl %in% cn) return(NULL)
+        list(label = lbl, axis = "alpha", block = b,
+             ref = function(r) .nl_rescue_axis_nodes(r, lbl))
+    })
+    Filter(Negate(is.null), out)
 }
 
-# The single-block arm that declares the copy scale as an axis.
-.joint_copy_arm_index <- function(responses) {
-    for (k in seq_along(responses)) {
-        fc <- responses[[k]]$field_coef
-        if (is.list(fc) && !is.null(fc$name)) return(k)
-        if (is.character(fc) && length(fc) == 1L) return(k)
-    }
-    NA_integer_
-}
-
-# The copy spec (multi-block) whose target block is `b`, as an index into the
-# spec list, and the spec list itself: `copy` is one spec or a list of them.
+# The copy spec whose target block is `b`, as an index into the spec list, and
+# the spec list itself: `copy` is one spec or a list of them.
 .joint_copy_specs <- function(copy) {
     if (is.list(copy) && !is.null(copy$arm)) list(copy) else copy
 }
@@ -420,25 +375,13 @@
 # The nodes the caller declared for the copy scale, NULL when it declared none
 # (the engine then lays its own default axis at the declared resolution).
 .joint_alpha_declared <- function(st, s) {
-    if (is.null(s$block)) {
-        fc <- st$responses[[s$arm]]$field_coef
-        return(if (is.list(fc)) fc$grid else NULL)
-    }
     i <- .joint_copy_spec_for_block(st$copy, s$block)
     if (is.na(i)) return(NULL)
     .joint_copy_specs(st$copy)[[i]]$alpha_grid
 }
 
 .joint_alpha_write <- function(st, s, nodes) {
-    grid <- auto_grid(c(if (isTRUE(s$atom)) 0, nodes))
-    if (is.null(s$block)) {
-        fc <- st$responses[[s$arm]]$field_coef
-        if (!is.list(fc)) fc <- list(name = as.character(fc))
-        fc$grid <- grid
-        fc[["n"]] <- NULL
-        st$responses[[s$arm]]$field_coef <- fc
-        return(st)
-    }
+    grid  <- auto_grid(c(if (isTRUE(s$atom)) 0, nodes))
     one   <- is.list(st$copy) && !is.null(st$copy$arm)
     specs <- .joint_copy_specs(st$copy)
     i <- .joint_copy_spec_for_block(st$copy, s$block)
@@ -448,57 +391,49 @@
     st
 }
 
-# The axes beyond the single-block field SD the pass may move, named as the
-# grid names them, read off the call arguments before any fit: the mode-find's
-# own trigger (`.joint_attach_placement()`) is handed them, so it runs on a grid
+# The axes the pass may move beyond a copied field's SD, named as the grid
+# names them, read off the call arguments before any fit: the mode-find's own
+# trigger (`.joint_attach_placement()`) is handed them, so it runs on a grid
 # that concentrated without railing. They are the dispersions, the copy scales,
-# on a multi-block prior a copied field's SD and every registry axis of a
-# non-copy block (`.joint_movable_field_axes()`, its SD or precision among
-# them), and every BYM2 mixing weight, since each of those fires on an
+# a copied field's SD, every free-covariance coordinate, every registry axis of
+# a non-copy block (`.joint_movable_field_axes()`, its SD or precision among
+# them), and every copied field's correlation, since each of those fires on an
 # unresolved posterior as well as on a rail.
 .joint_movable_extra_axes <- function(st, phi_auto, auto = logical(0)) {
     phi <- paste0("phi_", intersect(names(which(phi_auto)),
                                     names(st$phi_grid) %||% character(0)))
-    movable <- function(s) is.null(.nl_axis_hold(
-        list(alpha_grid = .joint_alpha_declared(st, s)), "alpha_grid",
-        type = ".copy"))
     alpha <- character(0)
     scale <- character(0)
-    if (.is_multi_block_prior(st$prior)) {
-        copied <- .joint_copied_blocks(st)
-        for (b in copied) {
-            if (movable(list(block = b))) {
-                alpha <- c(alpha, .nl_axis_alias("alpha", b,
-                                                 length(st$prior))[1L])
-            }
+    copied <- .joint_copied_blocks(st)
+    for (b in copied) {
+        if (is.null(.nl_axis_hold(
+                list(alpha_grid = .joint_alpha_declared(st, list(block = b))),
+                "alpha_grid", type = ".copy"))) {
+            alpha <- c(alpha, .axis_label(b, "alpha"))
         }
-        for (b in seq_along(st$prior)) {
-            blk <- st$prior[[b]]
-            if (b %in% copied &&
-                is.null(.nl_axis_hold(blk, "sigma_grid",
-                                      .nl_auto_fields_at(auto, b),
-                                      type = ".copy"))) {
-                scale <- c(scale, .axis_label(b, "sigma"))
-            }
-            type <- tolower(blk$type %||% "")
-            if (type %in% c("mcar", "miid") &&
-                is.null(.nl_axis_hold(blk, "logchol_grid",
-                                      .nl_auto_fields_at(auto, b), type = type))) {
-                scale <- c(scale, .axis_label(b,
-                                         .mcar_logchol_names(as.integer(blk$n_fields))))
-            }
+    }
+    for (b in seq_along(st$prior)) {
+        blk <- st$prior[[b]]
+        if (b %in% copied &&
+            is.null(.nl_axis_hold(blk, "sigma_grid", .nl_auto_fields_at(auto, b),
+                                  type = ".copy"))) {
+            scale <- c(scale, .axis_label(b, "sigma"))
         }
-    } else {
-        k <- .joint_copy_arm_index(st$responses)
-        if (!is.na(k) && movable(list(block = NULL, arm = k))) alpha <- "alpha"
+        type <- tolower(blk$type %||% "")
+        if (type %in% c("mcar", "miid") &&
+            is.null(.nl_axis_hold(blk, "logchol_grid",
+                                  .nl_auto_fields_at(auto, b), type = type))) {
+            scale <- c(scale, .axis_label(b,
+                                     .mcar_logchol_names(as.integer(blk$n_fields))))
+        }
     }
     unique(c(phi, alpha, scale, .joint_movable_mixing_axes(st, auto),
              .joint_movable_field_axes(st, auto)))
 }
 
-# The registry field axes the pass may move (`.joint_field_registry_slots()`), named as
-# the grid names them: every vector-field axis of a non-copy block of a
-# multi-block prior, unless the caller stated its nodes.
+# The registry field axes the pass may move (`.joint_field_registry_slots()`),
+# named as the grid names them: every vector-field axis of a non-copy block,
+# unless the caller stated its nodes.
 .joint_movable_field_axes <- function(st, auto = logical(0)) {
     out <- character(0)
     for (sl in .joint_field_registry_slots(st)) {
@@ -510,10 +445,9 @@
     out
 }
 
-# The (0, 1) correlations the pass may move, named as the grid names them: the
-# field's own (`rho` on a BYM2, `rho_car` on a proper-CAR single-block prior),
-# `b<k>.rho` for every BYM2 block of a multi-block one and `b<k>.rho_car` for a
-# copied proper-CAR block, each unless the caller stated its nodes.
+# The (0, 1) correlations the pass may move, named as the grid names them:
+# `b<k>.rho` for every BYM2 block and `b<k>.rho_car` for a copied proper-CAR
+# block, each unless the caller stated its nodes.
 .joint_movable_mixing_axes <- function(st, auto = logical(0)) {
     axis_of <- function(blk, copied) {
         type <- tolower(blk$type %||% "")
@@ -524,10 +458,6 @@
         !is.na(a) && is.null(.nl_axis_hold(blk, paste0(a, "_grid"),
                                            .nl_auto_fields_at(auto, b),
                                            type = tolower(blk$type)))
-    }
-    if (!.is_multi_block_prior(st$prior)) {
-        a <- axis_of(st$prior, TRUE)
-        return(if (movable(st$prior, NULL, a)) a else character(0))
     }
     copied <- .joint_copied_blocks(st)
     out <- character(0)

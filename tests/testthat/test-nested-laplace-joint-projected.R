@@ -44,9 +44,14 @@ test_that("a projector is refused where it would be dropped", {
                         family = "poisson"))
   S <- .proj_incidence(d$idx, d$n_s)
   blk <- c(list(type = "icar", projector = list(S)), d$graph)
-  expect_error(
-    tulpa_nested_laplace_joint(responses = resp, prior = blk),
-    "does not read a block `projector`")
+  # An unwrapped projected block is the one-block list it spells.
+  ctl <- list(axis_refine = "none", prune = FALSE, diagnose_k = FALSE)
+  expect_equal(
+    tulpa_nested_laplace_joint(responses = resp, prior = blk,
+                               control = ctl)$log_evidence,
+    tulpa_nested_laplace_joint(responses = resp, prior = list(blk),
+                               control = ctl)$log_evidence,
+    tolerance = 1e-10)
   expect_error(
     tulpa_nested_laplace_joint(
       responses = resp,
