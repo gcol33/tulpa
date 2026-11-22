@@ -60,6 +60,40 @@ fit_occu <- function(d, det_prob = d$det_prob, sigma_grid = c(0.3, 0.6, 1.0)) {
   ))
 }
 
+test_that("a joint arm carrying the occupancy likelihood is the registry fit", {
+  d <- sim_occu(11L, n_regions = 25L)
+  load_cpp_fixture("nested_laplace_occupancy")
+  lik <- cpp_nested_laplace_test_occupancy_likelihood(
+    y = as.numeric(d$y), det_prob = as.numeric(d$det_prob))
+  jnt <- suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(occ = list(y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,
+                                family = "binomial", likelihood = lik)),
+    prior = list(list(type = "iid", obs_idx = list(d$region),
+                      n_units = d$n_regions, sigma_grid = c(0.3, 0.6, 1.0))),
+    control = list(max_iter = 50L, tol = 1e-7, n_threads = 1L,
+                   axis_refine = "none", auto_recenter = FALSE)))
+  reg_fixed <- suppressWarnings(tulpa_nested_laplace(
+    y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,
+    prior = list(list(type = "iid", obs_idx = d$region, n_units = d$n_regions,
+                      sigma_grid = c(0.3, 0.6, 1.0))),
+    likelihood = lik,
+    control = list(max_iter = 50L, tol = 1e-7, n_threads = 1L,
+                   axis_refine = "none", auto_recenter = FALSE)))
+  expect_equal(unname(as.matrix(jnt$theta_grid)),
+               unname(as.matrix(reg_fixed$theta_grid)))
+  expect_equal(jnt$log_marginal, reg_fixed$log_marginal, tolerance = 1e-6)
+  expect_equal(unname(coef(jnt)), unname(coef(reg_fixed)), tolerance = 1e-6)
+  # The likelihood is what the arm reads: the built-in binomial on the same
+  # response is a different fit unless every site has q = 1.
+  bin <- suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(occ = list(y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,
+                                family = "binomial")),
+    prior = list(list(type = "iid", obs_idx = list(d$region),
+                      n_units = d$n_regions, sigma_grid = c(0.3, 0.6, 1.0))),
+    control = list(axis_refine = "none", auto_recenter = FALSE)))
+  expect_gt(max(abs(bin$log_marginal - jnt$log_marginal)), 1)
+})
+
 # Built-in binomial fit (n_trials = 1) -- the reference the q = 1 occupancy
 # spec must reproduce exactly.
 fit_binom <- function(d, sigma_grid = c(0.3, 0.6, 1.0)) {

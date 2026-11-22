@@ -16,6 +16,7 @@
 #include "laplace_newton_joint.h"
 #include "laplace_re_priors.h"
 #include "sparse_hessian.h"
+#include "tulpa/nested_likelihood.h"
 #include <Rcpp.h>
 #include <vector>
 
@@ -149,6 +150,19 @@ inline int parse_joint_arms(
         arms_out[k].family   = Rcpp::as<std::string>(a["family"]);
         arms_out[k].phi      = Rcpp::as<double>(a["phi"]);
         arms_out[k].N        = (int)arms_out[k].y.size();
+        // A model-supplied likelihood (an XPtr<NestedLikelihood> built in a
+        // model package's C++, e.g. tulpaObs occupancy) replaces the built-in
+        // `family` for this arm: the inner solve reads its per-observation
+        // score, Fisher weight and log-likelihood from the spec. The R list
+        // holds the pointer, and with it the spec and its response storage,
+        // for the duration of the call.
+        if (a.containsElementNamed("likelihood") && !Rf_isNull(a["likelihood"])) {
+            Rcpp::XPtr<NestedLikelihood> lk(Rcpp::as<SEXP>(a["likelihood"]));
+            if (lk->spec == nullptr)
+                tulpa::stop("Arm %d: `likelihood` has a null spec.", {k + 1});
+            arms_out[k].spec          = lk->spec;
+            arms_out[k].response_data = lk->response_data;
+        }
         // Raw grouped responses preserve the relative residuals.
         if (a.containsElementNamed("slog_y") || a.containsElementNamed("slog_1my"))
             tulpa::stop("Arm %d: grouped beta requires raw responses in beta_y.", {k+1});

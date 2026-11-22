@@ -245,6 +245,13 @@
     a$sigma_re    <- as.numeric(a$sigma_re %||% 1.0)
     a$family      <- as.character(a$family)
     a$phi         <- as.numeric(a$phi %||% 1.0)
+    # A model-supplied likelihood replaces the built-in `family` on this arm:
+    # an external pointer to a tulpa::NestedLikelihood built in a model
+    # package's C++ from a LikelihoodSpec.
+    if (!is.null(a$likelihood) && !inherits(a$likelihood, "externalptr")) {
+        stop("Arm ", k, ": `likelihood` must be an external pointer to a ",
+             "tulpa::NestedLikelihood.", call. = FALSE)
+    }
     a <- .normalise_arm_field_coef(a, k)
     a <- .normalise_arm_cell_coupling(a, k, N)
     a
