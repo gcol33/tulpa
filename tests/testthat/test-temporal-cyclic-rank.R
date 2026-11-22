@@ -76,6 +76,7 @@ test_that("the AR1 floor engages on rho alone, not on the stationary precision",
   # below a precision floor at tau = 0.01 but not at tau = 100.
   rho <- 1 - 5e-10
   lp <- function(tau) {
+    load_cpp_fixture("test_ratio_temporal")
     cpp_test_temporal_log_prior(phi, "ar1", tau = tau, rho = rho,
                                         cyclic = FALSE)
   }
@@ -107,6 +108,7 @@ test_that("cyclic RW rank helper returns T-1 for both RW1 and RW2", {
 })
 
 test_that("temporal log-prior matches the intrinsic-GMRF normalizer (cyclic + acyclic)", {
+  load_cpp_fixture("test_ratio_temporal")
   skip_on_cran_budget()
   load_cpp_fixture("helpers")
   set.seed(11)
@@ -121,6 +123,7 @@ test_that("temporal log-prior matches the intrinsic-GMRF normalizer (cyclic + ac
 })
 
 test_that("the RW normalizer carries the 2*pi term at every rank", {
+  load_cpp_fixture("test_ratio_temporal")
   skip_on_cran_budget()
   # The offset a missing 2*pi leaves is 0.5 * rank * log(2*pi), which tracks the
   # structure rather than being one constant: 10.1 nats for a rank-11 RW1 on
@@ -144,6 +147,7 @@ test_that("the RW normalizer carries the 2*pi term at every rank", {
 skip_on_cran()
 
 test_that("AR1 log-prior equals the dense multivariate normal it factorizes", {
+  load_cpp_fixture("test_ratio_temporal")
   skip_on_cran()
   load_cpp_fixture("helpers")
   set.seed(13)
@@ -161,6 +165,7 @@ test_that("AR1 log-prior equals the dense multivariate normal it factorizes", {
 })
 
 test_that("AR1 log-prior stays finite at and past the stationarity boundary", {
+  load_cpp_fixture("test_ratio_temporal")
   skip_on_cran()
   # An unregularized stationary variance sigma^2 / (1 - rho^2) diverges here and
   # took the log-prior to -Inf just inside the boundary.

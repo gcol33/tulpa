@@ -44,7 +44,8 @@ test_that("cpp_test_st_gp_log_lik is the covariance it claims", {
     nb <- full_st_neighbors(coords, times, k = n - 1L)
     w <- rnorm(n)
     nngp <- function(sigma2, phi_s, phi_t, nonsep, cov) {
-        tulpa:::cpp_test_st_gp_log_lik(w = w, sigma2 = sigma2, phi_space = phi_s, phi_time = phi_t, coords = coords, 
+        load_cpp_fixture("test_ratio_st")
+        cpp_test_st_gp_log_lik(w = w, sigma2 = sigma2, phi_space = phi_s, phi_time = phi_t, coords = coords, 
             time_values = times, nn = n - 1L, nn_idx = as.integer(t(nb$nn_idx)), nn_dist_space = as.numeric(t(nb$nn_dist_space)), 
             nn_dist_time = as.numeric(t(nb$nn_dist_time)), nn_order = as.integer(nb$nn_order), nonsep_type = nonsep, 
             cov_space = cov, cov_time = cov)
@@ -75,12 +76,13 @@ test_that("cpp_test_st_gp_log_lik is the covariance it claims", {
 })
 
 test_that("the density falls to -Inf on a structure that is not filled", {
+    load_cpp_fixture("test_ratio_st")
     set.seed(3)
     n <- 6L
     coords <- cbind(runif(n), runif(n))
     times <- as.numeric(seq_len(n))
     w <- rnorm(n)
-    got <- tulpa:::cpp_test_st_gp_log_lik(w = w, sigma2 = 1, phi_space = 0.5, phi_time = 0.5, coords = coords, 
+    got <- cpp_test_st_gp_log_lik(w = w, sigma2 = 1, phi_space = 0.5, phi_time = 0.5, coords = coords, 
         time_values = times, nn = 2L, nn_idx = integer(0), nn_dist_space = numeric(0), nn_dist_time = numeric(0), 
         nn_order = seq_len(n))
     expect_true(is.infinite(got) && got < 0)
@@ -133,7 +135,8 @@ test_that("the margin penalty's normalizer is 0.5 log|I + B' Sigma B| with its d
         0.5 * as.numeric(determinant(diag(ncol(B)) + t(B) %*% Sigma %*% B)$modulus)
     }
     engine <- function(tau, phi_s, phi_t) {
-        tulpa:::cpp_test_st_gp_margin_normalizer(tau = tau, phi_space = phi_s, phi_time = phi_t, n_spatial = S, 
+        load_cpp_fixture("test_ratio_st")
+        cpp_test_st_gp_margin_normalizer(tau = tau, phi_space = phi_s, phi_time = phi_t, n_spatial = S, 
             n_times = T, coords = coords, time_values = times, nn = n - 1L, nn_idx = as.integer(t(nb$nn_idx)), 
             nn_dist_space = as.numeric(t(nb$nn_dist_space)), nn_dist_time = as.numeric(t(nb$nn_dist_time)), 
             nn_order = as.integer(nb$nn_order))
@@ -155,6 +158,7 @@ test_that("the margin penalty's normalizer is 0.5 log|I + B' Sigma B| with its d
 })
 
 test_that("the constrained AR1 interaction has a dense Gaussian normalizer", {
+    load_cpp_fixture("test_temporal_gp_prior")
     S <- 5L
     T <- 4L
     tau <- 2
@@ -169,19 +173,20 @@ test_that("the constrained AR1 interaction has a dense Gaussian normalizer", {
     projection <- kronecker(diag(S) - matrix(1/S, S, S), diag(T) - matrix(1/T, T, T))
     for (type in c("II", "IV")) {
         log_mass <- function(rho) {
+            load_cpp_fixture("test_temporal_gp_prior")
             spatial <- if (type == "II") 
                 diag(S)
             else Qicar
             Q <- tau * (projection %*% kronecker(spatial, ar1_R(rho)) %*% projection + diag(S * T) - 
                 projection)
-            tulpa:::cpp_test_st_ar1_constrained_prior(rho, S, T, type)[1] - as.numeric(determinant(Q)$modulus)/2
+            cpp_test_st_ar1_constrained_prior(rho, S, T, type)[1] - as.numeric(determinant(Q)$modulus)/2
         }
         expect_lt(diff(range(vapply(c(-0.6, 0, 0.5, 0.9), log_mass, 0))), 0.001)
         for (rho in c(-0.6, 0.3, 0.8)) {
             h <- 1e-06
-            fd <- (tulpa:::cpp_test_st_ar1_constrained_prior(rho + h, S, T, type)[1] - tulpa:::cpp_test_st_ar1_constrained_prior(rho - 
+            fd <- (cpp_test_st_ar1_constrained_prior(rho + h, S, T, type)[1] - cpp_test_st_ar1_constrained_prior(rho - 
                 h, S, T, type)[1])/(2 * h)
-            expect_equal(tulpa:::cpp_test_st_ar1_constrained_prior(rho, S, T, type)[2], fd, tolerance = 1e-06)
+            expect_equal(cpp_test_st_ar1_constrained_prior(rho, S, T, type)[2], fd, tolerance = 1e-06)
         }
     }
 })

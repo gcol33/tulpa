@@ -88,6 +88,7 @@ test_that("the fixed-effect precision is the Schur complement of the joint curva
 # --- 2. the mixture's curvature derivatives ----------------------------------
 
 test_that("the six mixture curvature partials match central differences", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # What the analytic outer gradient contracts against the predictor
   # (co)variances. The y = 0 rows are the only place the two predictors couple,
@@ -224,6 +225,7 @@ test_that("the mixture curvature gate tracks the observed derivative, not a fami
 
 
 test_that("neg_binomial_1's mixture curvature derivatives are exact", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # The coupled y = 0 branch reads the observed curvature's first and second
   # eta-derivatives, which for this family are the working ones plus a
@@ -236,7 +238,7 @@ test_that("neg_binomial_1's mixture curvature derivatives are exact", {
   nt <- rep(1L, n); h <- 1e-5
   for (phi in c(0.7, 2.0)) for (yv in c(0, 2)) {
     y <- rep(yv, n)
-    W <- function(e, z) tulpa:::cpp_zi_mixture_curvature(
+    W <- function(e, z) cpp_zi_mixture_curvature(
       y, nt, e, z, "neg_binomial_1", phi, NA_real_)
     d3 <- tulpa:::cpp_zi_mixture_curvature_deriv(
       y, nt, e, z, "neg_binomial_1", phi, NA_real_)

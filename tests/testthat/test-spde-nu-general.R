@@ -48,12 +48,13 @@
 }
 
 test_that("the hyper prior is flat when either hyper slot is absent", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   # compute_spde_hyper_prior reads params[log_tau_spde_idx] after checking
   # log_kappa_spde_idx, so a layout carrying one slot and not the other used to
   # index at -1. Both guards are in place; with joint_hypers off the layout
   # reserves neither and the prior is flat.
   expect_equal(
-    tulpa:::cpp_spde_hyper_prior_probe(
+    cpp_spde_hyper_prior_probe(
       log_kappa = 0.3, log_tau = -0.2, nu = 2,
       prior_range_0 = 0.2, prior_range_alpha = 0.05,
       prior_sigma_0 = 1.0, prior_sigma_alpha = -1.0
@@ -302,6 +303,7 @@ test_that("fit_spde runs the nu = 2 operator end to end (gcol33/tulpa#279, #280)
 # --- #437: the joint-NUTS hyper prior reads the same map ---------------------
 
 test_that("the PC hyper prior maps (log_kappa, log_tau) to sigma at every nu", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   skip_on_cran()
   # compute_spde_hyper_prior is the only prior on (log_kappa, log_tau) in
   # joint-NUTS mode, and it has to reach sigma through the same map the sampler
@@ -332,7 +334,7 @@ test_that("the PC hyper prior maps (log_kappa, log_tau) to sigma at every nu", {
                       log_tau   = c(-1.2, 0.0, 0.4),
                       nu        = c(1, 2, 3))
   for (i in seq_len(nrow(grid))) {
-    got <- tulpa:::cpp_spde_hyper_prior_probe(
+    got <- cpp_spde_hyper_prior_probe(
       log_kappa = grid$log_kappa[i], log_tau = grid$log_tau[i],
       nu = grid$nu[i],
       prior_range_0 = 0.2, prior_range_alpha = 0.05,

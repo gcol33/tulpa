@@ -32,6 +32,7 @@ lp_sample <- function(d, backend, control) {
 }
 
 lp_helper_at <- function(fit) {
+  load_cpp_fixture("tulpa_glmm_eta_draws_probes")
   mi <- fit$model_inputs
   cpp_tulpa_glmm_log_prob_draws(
     draws = unname(as.matrix(fit$draws)), y = mi$y, n_trials = mi$n_trials,

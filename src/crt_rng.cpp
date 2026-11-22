@@ -95,16 +95,6 @@ int sample_crt_sum(IntegerVector y, double r) {
 // ---------------------------------------------------------------------
 
 // [[Rcpp::export]]
-Rcpp::IntegerVector cpp_sample_crt(Rcpp::IntegerVector y, double r) {
-  return tulpa::sample_crt_vec(y, r);
-}
-
-// [[Rcpp::export]]
-int cpp_sample_crt_sum(Rcpp::IntegerVector y, double r) {
-  return tulpa::sample_crt_sum(y, r);
-}
-
-// [[Rcpp::export]]
 double cpp_crt_mean(int y, double r) {
   return tulpa::crt_mean(y, r);
 }

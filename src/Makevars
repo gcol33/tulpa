@@ -942,13 +942,6 @@ unity_samplers.o: \
   tulpa_beta_sampler.cpp \
   tulpa_generic_sampler.cpp \
   vi_sampler.cpp \
-  test_ratio_integrator.cpp \
-  test_ratio_metric.cpp \
-  test_ratio_multiscale.cpp \
-  test_ratio_st.cpp \
-  test_ratio_temporal.cpp \
-  test_ratio_vi.cpp \
-  test_temporal_gp_prior.cpp \
   tulpa_stop.h \
   hmc_chain_stack.h \
   omp_threads.h \
@@ -977,14 +970,6 @@ unity_samplers.o: \
   vi_meanfield.h \
   vi_fullrank.h \
   vi_lowrank.h \
-  test_prior_model.h \
-  ess_sampler.h \
-  hmc_mass_drift.h \
-  hmc_multiscale_temporal_grad.h \
-  st_gp_kernel.h \
-  hmc_temporal_multiscale.h \
-  hmc_tvc.h \
-  tulpa_priors_st.h \
   builtin_family_ll_ad.h \
   re_structure.h \
   icar_kernel.h \
@@ -1002,7 +987,9 @@ unity_samplers.o: \
   builtin_family_zi.h \
   hmc_temporal.h \
   hmc_svc.h \
+  hmc_temporal_multiscale.h \
   hmc_latent.h \
+  hmc_tvc.h \
   hmc_sampler_nuts_infra.h \
   hmc_sampler_mass_blocks.h \
   hmc_sampler_adapt.h \
@@ -1015,15 +1002,10 @@ unity_samplers.o: \
   svc_nc_apply.h \
   msgp_nc_apply.h \
   log_post_generic_impl.h \
+  st_gp_kernel.h \
   sampler_log_prob.h \
   tulpa_priors_temporal.h \
   tulpa_priors_icar.h \
-  rwmh.h \
-  re_cov_gibbs_sweep.h \
-  hmc_tvc_grad.h \
-  hmc_svc_autodiff.h \
-  temporal_gp_kernel.h \
-  st_null_space.h \
   hmc_hsgp_kernels.h \
   intrinsic_log_pdet.h \
   hmc_gp_cg.h \
@@ -1035,6 +1017,7 @@ unity_samplers.o: \
   device.h \
   laplace_likelihoods.h \
   nngp_cond.h \
+  temporal_gp_kernel.h \
   hmc_mass_lowrank.h \
   tulpa_priors_gp.h \
   tulpa_priors_msgp.h \
@@ -1043,19 +1026,20 @@ unity_samplers.o: \
   tulpa_priors_svc.h \
   tulpa_priors_tvc.h \
   tulpa_priors_latent.h \
+  tulpa_priors_st.h \
   tulpa_priors_zioi.h \
   log_post_device_impl.h \
-  glmm_oracle.h \
+  hmc_svc_autodiff.h \
+  fastmath.h \
   coordinate_linalg.h \
   device_dense.h \
-  fastmath.h \
+  st_null_space.h \
   spatial_range_prior.h \
   hmc_gp_autodiff.h \
   hsgp_field.h \
   spde_matern_map.h \
   svc_range.h \
   hmc_latent_autodiff.h \
-  glmm_family_elt.h \
   dense_basis_apply.h
 unity_spatial.o: \
   unity_spatial.cpp \
@@ -1069,7 +1053,6 @@ unity_spatial.o: \
   spde_nc_apply.cpp \
   spde_nc_transform.cpp \
   svc_nc_apply.cpp \
-  tulpa_spde_layout_probe.cpp \
   tulpa_spde_sampler.cpp \
   tulpa_stop.h \
   brasil.h \
@@ -1097,9 +1080,8 @@ unity_spatial.o: \
   spde_nc_transform.h \
   svc_nc_apply.h \
   svc_range.h \
-  hmc_sampler.h \
-  tulpa_priors_spde.h \
   fixed_effect_prior.h \
+  hmc_sampler.h \
   spde_matern_map.h \
   density_probe.h \
   hmc_gp_cg.h \

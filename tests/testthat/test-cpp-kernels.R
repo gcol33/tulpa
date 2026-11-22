@@ -159,14 +159,15 @@ test_that("vector kernels match base R", {
 })
 
 test_that("temporal quadratic forms and the AR1 density match their definitions", {
+  load_cpp_fixture("test_ratio_temporal")
   skip_on_cran_budget()
   load_cpp_fixture("helpers")
   phi <- c(0.4, -0.2, 1.1, 0.7, -0.5)
   T_n <- length(phi)
-  expect_equal(tulpa:::cpp_test_rw1_quadratic_form(phi, FALSE), sum(diff(phi)^2))
-  expect_equal(tulpa:::cpp_test_rw1_quadratic_form(phi, TRUE),
+  expect_equal(cpp_test_rw1_quadratic_form(phi, FALSE), sum(diff(phi)^2))
+  expect_equal(cpp_test_rw1_quadratic_form(phi, TRUE),
                sum(diff(phi)^2) + (phi[1] - phi[T_n])^2)
-  expect_equal(tulpa:::cpp_test_rw2_quadratic_form(phi, FALSE),
+  expect_equal(cpp_test_rw2_quadratic_form(phi, FALSE),
                sum(diff(phi, differences = 2)^2))
 
   rho <- 0.6; tau <- 2.0
@@ -174,11 +175,11 @@ test_that("temporal quadratic forms and the AR1 density match their definitions"
   # One rank-T GMRF: |tau Q_AR1| gives 0.5 T (log tau - log 2pi) plus
   # 0.5 log(1 - rho^2). Equivalently, the stationary marginal on phi[1] times
   # the T - 1 Gaussian transitions.
-  expect_equal(tulpa:::cpp_test_ar1_log_density(phi, rho, tau),
+  expect_equal(cpp_test_ar1_log_density(phi, rho, tau),
                0.5 * T_n * (log(tau) - log(2 * pi)) + 0.5 * log(1 - rho^2) -
                  0.5 * tau * quad,
                tolerance = 1e-10)
-  expect_equal(tulpa:::cpp_test_ar1_log_density(phi, rho, tau),
+  expect_equal(cpp_test_ar1_log_density(phi, rho, tau),
                dnorm(phi[1], 0, sqrt(1 / (tau * (1 - rho^2))), log = TRUE) +
                  sum(dnorm(phi[-1], rho * phi[-T_n], sqrt(1 / tau), log = TRUE)),
                tolerance = 1e-10)
@@ -235,6 +236,7 @@ test_that("the Polya-Gamma conditional updates are the posteriors they claim", {
 })
 
 test_that("the Chinese-restaurant-table sampler has the mean it advertises", {
+  load_cpp_fixture("crt_rng_probes")
   skip_on_cran_budget()
   # The augmentation the negative binomial dispersion update draws its Gibbs
   # count from: the expected table count is sum_k r / (r + k) over k < y.

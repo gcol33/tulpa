@@ -19,6 +19,7 @@ test_that("Stirling remainders and relative deviances match exact references", {
 })
 
 test_that("every gamma and beta density matches the exact density at every precision", {
+  load_cpp_fixture("family_terms_export_probes")
   refs <- precision_fixture("densities")
   for (i in seq_len(nrow(refs))) {
     r <- refs[i, ]; family <- r$family
@@ -27,7 +28,7 @@ test_that("every gamma and beta density matches the exact density at every preci
       R_mu = tulpa:::.FAMILY_MU[[family]]$loglik_mu(r$y, r$mu, r$phi, 1),
       string = tulpa:::cpp_family_terms(r$y, 1L, r$eta, family, r$phi)[1L],
       tulpa:::cpp_precision_density_paths(r$y, r$eta, family, r$phi),
-      builtin_AD = tulpa:::cpp_family_ad_terms(r$y, 1L, r$eta, family, r$phi)[1L],
+      builtin_AD = cpp_family_ad_terms(r$y, 1L, r$eta, family, r$phi)[1L],
       SPDE = tulpa:::cpp_spde_density_terms(r$y, r$eta, log(r$phi), family)[1L])
     if (family == "beta") paths <- c(paths,
       beta_sampler = tulpa:::cpp_beta_density_terms(r$y, r$eta, log(r$phi))[1L])

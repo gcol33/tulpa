@@ -19,6 +19,7 @@ test_that("polygamma rising differences match their finite sums at every size", 
 })
 
 test_that("every negative binomial type 2 density reaches the Poisson limit", {
+  load_cpp_fixture("family_terms_export_probes")
   y <- c(0, 3, 17)
   mu <- c(0.4, 2, 12)
   # log Gamma(y + phi) - log Gamma(phi) summed term by term, which is exact for a
@@ -42,7 +43,7 @@ test_that("every negative binomial type 2 density reaches the Poisson limit", {
       expect_equal(unname(tulpa:::cpp_family_terms(y[i], 1L, log(mu[i]),
                                                    "neg_binomial_2", phi)[1L]),
                    ref[i], tolerance = 1e-10, info = paste(phi, y[i]))
-      expect_equal(unname(tulpa:::cpp_glmm_elt_terms("negbin", log(mu[i]), y[i],
+      expect_equal(unname(cpp_glmm_elt_terms("negbin", log(mu[i]), y[i],
                                                      1, phi)[1L]),
                    ref[i], tolerance = 1e-10, info = paste(phi, y[i]))
     }
@@ -55,6 +56,7 @@ test_that("every negative binomial type 2 density reaches the Poisson limit", {
 })
 
 test_that("the type 1 density, score and curvature reach the Poisson limit", {
+  load_cpp_fixture("family_terms_export_probes")
   y <- c(0, 3, 17)
   mu <- c(0.4, 2, 12)
   for (phi in c(1e-4, 1e-10, 1e-15)) {
@@ -75,7 +77,7 @@ test_that("the type 1 density, score and curvature reach the Poisson limit", {
     expect_equal(tulpa:::.FAMILY_OPS$neg_binomial_1$obs_weight(log(mu), y, 1, phi),
                  obs, tolerance = 1e-8, info = format(phi))
     for (i in seq_along(y)) {
-      terms <- tulpa:::cpp_family_obs_terms(y[i], 1L, log(mu[i]),
+      terms <- cpp_family_obs_terms(y[i], 1L, log(mu[i]),
                                             "neg_binomial_1", phi)
       expect_equal(unname(terms[1L]), score[i], tolerance = 1e-8,
                    info = paste(phi, y[i]))
@@ -102,6 +104,7 @@ test_that("the type 2 size score and the CRT mean are exact at a large size", {
 })
 
 test_that("the beta-binomial density, score and curvature reach the binomial limit", {
+  load_cpp_fixture("family_terms_export_probes")
   y <- c(0, 3, 10)
   n <- 10
   mu <- 0.3
@@ -127,7 +130,7 @@ test_that("the beta-binomial density, score and curvature reach the binomial lim
       expect_equal(unname(tulpa:::cpp_family_terms(y[i], n, eta, "beta_binomial",
                                                    phi)[1L]),
                    ref[i], tolerance = 1e-10, info = paste(phi, y[i]))
-      terms <- tulpa:::cpp_family_obs_terms(y[i], n, eta, "beta_binomial", phi)
+      terms <- cpp_family_obs_terms(y[i], n, eta, "beta_binomial", phi)
       expect_lt(abs(unname(terms[1L]) - score[i]), 1e-10,
                 label = paste(phi, y[i]))
       expect_equal(unname(terms[2L]), obs[i], tolerance = 1e-8,
@@ -137,7 +140,7 @@ test_that("the beta-binomial density, score and curvature reach the binomial lim
   expect_equal(tulpa:::.FAMILY_OPS$beta_binomial$loglik(eta, y, n, 1e17),
                stats::dbinom(y, n, mu, log = TRUE), tolerance = 1e-12)
   for (v in y) {
-    expect_equal(unname(tulpa:::cpp_family_ad_terms(v, n, eta, "beta_binomial",
+    expect_equal(unname(cpp_family_ad_terms(v, n, eta, "beta_binomial",
                                                     1e17)[1L]),
                  stats::dbinom(v, n, mu, log = TRUE), tolerance = 1e-12,
                  info = paste("autodiff", v))

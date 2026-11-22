@@ -157,36 +157,37 @@ test_that("a slowly converging inner solve is run to stationarity, not stopped a
 
 
 test_that("the near-mode trust factor damps only a decrement that grew", {
+  load_cpp_fixture("laplace_profile_probes")
   skip_on_cran_budget()
   # Away from the mode the scale is 1, so those solves take the trial sequence
   # they always did; the gate is a decrement of 1e-6.
-  expect_equal(tulpa:::cpp_newton_trust_probe(c(1, 1e-2, 1e-5, 1e-6)),
+  expect_equal(cpp_newton_trust_probe(c(1, 1e-2, 1e-5, 1e-6)),
                rep(1, 4))
 
   # Below the gate a FALLING decrement leaves the scale at 1: a solve that never
   # overshoots is untouched, which is what keeps every converging fit unchanged.
-  expect_equal(tulpa:::cpp_newton_trust_probe(10^-c(7, 8, 9, 10, 11)),
+  expect_equal(cpp_newton_trust_probe(10^-c(7, 8, 9, 10, 11)),
                rep(1, 5))
 
   # A decrement that grows is the overshoot signature. The first reading below
   # the gate only primes the state, so damping starts on the second.
-  expect_equal(tulpa:::cpp_newton_trust_probe(c(1e-7, 1e-7 * 2, 1e-7 * 4)),
+  expect_equal(cpp_newton_trust_probe(c(1e-7, 1e-7 * 2, 1e-7 * 4)),
                c(1, 0.5, 0.25))
 
   # Recovery is by 1.5 per iteration and capped at the full step.
   expect_equal(
-    tulpa:::cpp_newton_trust_probe(c(1e-7, 2e-7, 4e-7, 1e-7, 1e-8, 1e-9, 1e-10)),
+    cpp_newton_trust_probe(c(1e-7, 2e-7, 4e-7, 1e-7, 1e-8, 1e-9, 1e-10)),
     c(1, 0.5, 0.25, 0.375, 0.5625, 0.84375, 1))
 
   # Crossing back above the gate resets both the scale and the memory, so a solve
   # driven away from the mode and back does not carry stale damping.
-  expect_equal(tulpa:::cpp_newton_trust_probe(c(1e-7, 2e-7, 1e-3, 1e-7, 2e-7)),
+  expect_equal(cpp_newton_trust_probe(c(1e-7, 2e-7, 1e-3, 1e-7, 2e-7)),
                c(1, 0.5, 1, 1, 0.5))
 
   # The floor is 2^-20, reached only by a sustained run of growth. The sequence
   # has to grow slowly enough to stay under the gate throughout -- crossing back
   # above it resets, which is the case above.
-  probe <- tulpa:::cpp_newton_trust_probe(1e-30 * 1.1^(0:24))
+  probe <- cpp_newton_trust_probe(1e-30 * 1.1^(0:24))
   expect_equal(probe[25], 2^-20)
   expect_true(all(diff(probe[-1]) <= 0))
 })

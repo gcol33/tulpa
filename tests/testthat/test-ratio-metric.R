@@ -24,9 +24,10 @@ metric_reference_epsilon <- function(q, momenta, C) {
 }
 
 test_that("metric products, energies and momenta match an explicit matrix", {
+    load_cpp_fixture("test_ratio_metric")
     for (n in c(5L, 17L)) for (type in c("identity", "diag", "dense", "block")) {
         for (block in c("none", "precision", "sparse", "kronecker")) {
-            z <- tulpa:::cpp_test_metric_geometry(type, block, n)
+            z <- cpp_test_metric_geometry(type, block, n)
             C <- z$inverse_mass
             p <- z$momentum
             expect_equal(drop(z$velocity), drop(C %*% p), tolerance = 1e-12)
@@ -42,10 +43,11 @@ test_that("metric products, energies and momenta match an explicit matrix", {
 })
 
 test_that("the production leapfrog follows the metric Hamiltonian", {
+    load_cpp_fixture("test_ratio_metric")
     for (n in c(5L, 17L)) for (type in c("identity", "diag", "dense", "block")) {
         for (block in c("none", "precision", "sparse", "kronecker")) {
             epsilon <- 0.15
-            z <- tulpa:::cpp_test_metric_step(type, block, n, epsilon)
+            z <- cpp_test_metric_step(type, block, n, epsilon)
             half <- z$p0 - epsilon * z$q0/2
             q <- z$q0 + epsilon * drop(z$inverse_mass %*% half)
             p <- half - epsilon * q/2
@@ -55,12 +57,13 @@ test_that("the production leapfrog follows the metric Hamiltonian", {
             expect_false(z$divergent)
         }
     }
-    expect_true(tulpa:::cpp_test_metric_step("dense", "none", 5L, 0.15, TRUE)$divergent)
+    expect_true(cpp_test_metric_step("dense", "none", 5L, 0.15, TRUE)$divergent)
 })
 
 test_that("epsilon search uses one new score per trial with every metric", {
+    load_cpp_fixture("test_ratio_metric")
     for (type in c("identity", "diag", "dense", "block")) {
-        z <- tulpa:::cpp_test_metric_epsilon(type)
+        z <- cpp_test_metric_epsilon(type)
         ref <- metric_reference_epsilon(z$q, z$momenta, z$inverse_mass)
         expect_identical(z$epsilon, ref$epsilon)
         expect_identical(z$calls, ref$calls)
@@ -68,8 +71,9 @@ test_that("epsilon search uses one new score per trial with every metric", {
 })
 
 test_that("all gradient modes retain reversible metric trajectories after an arena gradient", {
+    load_cpp_fixture("test_ratio_metric")
     skip_on_cran()
-    invisible(tulpa:::cpp_test_gradient_trajectory("identity", "none", "A_r", "copy"))
+    invisible(cpp_test_gradient_trajectory("identity", "none", "A_r", "copy"))
     for (n in c(5L, 17L)) for (mode in c("N", "A_r", "H", "auto", "reallocate")) {
         for (type in c("identity", "diag", "dense", "block")) {
             for (block in c("none", "precision", "sparse", "kronecker")) {
@@ -77,7 +81,7 @@ test_that("all gradient modes retain reversible metric trajectories after an are
                 for (path in paths) {
                   epsilon <- 0.1
                   steps <- 7L
-                  z <- tulpa:::cpp_test_gradient_trajectory(type, block, mode, path, n, steps, epsilon)
+                  z <- cpp_test_gradient_trajectory(type, block, mode, path, n, steps, epsilon)
                   q <- z$q0
                   p <- z$p0
                   for (j in seq_len(steps)) {

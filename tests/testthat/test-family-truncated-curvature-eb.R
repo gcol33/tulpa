@@ -88,6 +88,7 @@ mean_sigma <- function(seeds, family, ...) {
 }
 
 test_that("truncated_neg_binomial_2 Newton weight is y-free and differs from observed", {
+  load_cpp_fixture("family_terms_export_probes")
   # The gap is the quantity the recovery tests are sensitive to. It is not a
   # rounding difference: it grows linearly in y, since the observed form carries
   # (y + phi) * phi * mu / (mu + phi)^2 where the expected form carries the
@@ -115,6 +116,7 @@ test_that("truncated_neg_binomial_2 Newton weight is y-free and differs from obs
 skip_on_cran_budget()
 
 test_that("neg_binomial_2 registers the observed curvature for Newton", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # The untruncated sibling carries y in its Newton weight, so it is a control
   # for the estimator rather than for the curvature choice.
@@ -134,6 +136,7 @@ skip_on_cran()
 # --- 1. Which families actually have a Fisher-vs-observed distinction --------
 
 test_that("truncated_poisson curvature carries no y, so the two forms agree", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   # Pins the registry's claim that observed = expected for this family, which
   # is what licenses it as a control in the recovery tests below.

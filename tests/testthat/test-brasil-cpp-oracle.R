@@ -75,6 +75,7 @@ test_that("the compiled rational roots match the R oracle", {
 })
 
 test_that("the approximation the port defines is the R oracle's function", {
+  load_cpp_fixture("brasil_export_probes")
   skip_on_cran()
   # Roots and weights carry invariances; the approximating FUNCTION does not.
   # This reads both implementations at the same points.

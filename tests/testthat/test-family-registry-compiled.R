@@ -55,6 +55,7 @@ test_that(".family_obs_weight recycles to the longest argument", {
 skip_on_cran_budget()
 
 test_that("the second dispersion crosses to the compiled dispatch intact", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # tweedie has no default power, so a missing phi2 must still refuse rather
   # than reach the kernel as NA; `t` has one on both sides, and the two
@@ -120,6 +121,7 @@ test_that("the R family registry agrees with the compiled kernels", {
 })
 
 test_that("the R working weight is the one the compiled Hessian carries", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   # Two curvatures exist per family and the compiled dispatch picks one:
   # cpp_family_working_weight_is_observed() reports which. Where it says
@@ -160,6 +162,7 @@ test_that("the R working weight is the one the compiled Hessian carries", {
 })
 
 test_that("the observed curvature is not the expected weight where they differ", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   # The substitution .family_obs_weight() used to make for a family with no
   # registered closed form. It is exact only where the response enters the

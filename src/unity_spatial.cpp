@@ -17,5 +17,4 @@
 #include "spde_nc_apply.cpp"
 #include "spde_nc_transform.cpp"
 #include "svc_nc_apply.cpp"
-#include "tulpa_spde_layout_probe.cpp"
 #include "tulpa_spde_sampler.cpp"

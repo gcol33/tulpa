@@ -44,6 +44,7 @@ skip_on_cran_budget()
 
 
 test_that("the compiled kernels reproduce the R registry pointwise", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   for (fam in count_fams) {
     phi <- fam_phi(fam)
@@ -76,6 +77,7 @@ test_that("the compiled kernels reproduce the R registry pointwise", {
 
 
 test_that("the AD density agrees with the double density and its own score", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # The sampler backends differentiate builtin_family_ll_ad.h, which expresses
   # each density separately from log_lik_for_family. Evaluating it at fwd::Dual
@@ -103,6 +105,7 @@ test_that("the AD density agrees with the double density and its own score", {
 
 
 test_that("the Newton working weight is positive where the observed one is not", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # The reason the two accessors exist rather than one. neg_binomial_1's
   # observed curvature turns negative once the realized y sits well above the
@@ -123,6 +126,7 @@ test_that("the Newton working weight is positive where the observed one is not",
 
 
 test_that("the observed curvature the ZI mixture reads is positive", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # The mixture only ever evaluates the observed curvature at y = 0, so the
   # negativity above never reaches it. For neg_binomial_1 that value is
@@ -307,6 +311,7 @@ test_that("the sampler path carries the new families through its AD density", {
 })
 
 test_that("the neg_binomial_2 density holds its digits as the size grows", {
+  load_cpp_fixture("family_terms_export_probes")
   # The density reaches the Poisson one as the size phi grows. Formed as
   # phi log(phi / (mu + phi)) and a difference of two lgammas it cancelled:
   # at log phi = 40 it read +5.2 for a Poisson -1.65 (y = 4, eta = 1.3), a
@@ -316,7 +321,7 @@ test_that("the neg_binomial_2 density holds its digits as the size grows", {
     phi <- exp(lphi)
     ll <- c(double = unname(tulpa:::cpp_family_terms(y, 1L, eta, "neg_binomial_2",
                                                       phi)["log_lik"]),
-            ad = unname(tulpa:::cpp_family_ad_terms(y, 1L, eta, "neg_binomial_2",
+            ad = unname(cpp_family_ad_terms(y, 1L, eta, "neg_binomial_2",
                                                      phi)["log_lik"]))
     ref <- if (lphi <= 10) stats::dnbinom(y, size = phi, mu = mu, log = TRUE)
            else stats::dpois(y, mu, log = TRUE)

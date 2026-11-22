@@ -1,8 +1,9 @@
 
 test_that("compute_spde_prior: joint mode returns -0.5 * sum(z^2) and leaves spde_w empty", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   set.seed(101)
   z <- rnorm(7)
-  res <- tulpa:::cpp_spde_prior_probe(
+  res <- cpp_spde_prior_probe(
     vals = z, joint_hypers = TRUE,
     C0_diag = numeric(0), G1_x = numeric(0),
     G1_i = integer(0), G1_p = integer(0)
@@ -12,17 +13,18 @@ test_that("compute_spde_prior: joint mode returns -0.5 * sum(z^2) and leaves spd
 })
 
 test_that("compute_spde_prior: joint mode is invariant to (kappa, tau_spde)", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   # The unit-Gaussian-on-z prior must NOT depend on hyperparameters; the
   # change-of-variable Jacobian is absorbed into the NC adjoint downstream.
   set.seed(102)
   z <- rnorm(10)
-  res_a <- tulpa:::cpp_spde_prior_probe(
+  res_a <- cpp_spde_prior_probe(
     vals = z, joint_hypers = TRUE,
     C0_diag = numeric(0), G1_x = numeric(0),
     G1_i = integer(0), G1_p = integer(0),
     kappa = 1.0, tau_spde = 1.0
   )
-  res_b <- tulpa:::cpp_spde_prior_probe(
+  res_b <- cpp_spde_prior_probe(
     vals = z, joint_hypers = TRUE,
     C0_diag = numeric(0), G1_x = numeric(0),
     G1_i = integer(0), G1_p = integer(0),
@@ -32,6 +34,7 @@ test_that("compute_spde_prior: joint mode is invariant to (kappa, tau_spde)", {
 })
 
 test_that("NC transform: z^T z == w^T Q(theta) w (consistency with legacy prior)", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   # The NC transform sets w = L^{-T}(theta) z so L^T w = z, hence
   # z^T z = w^T L L^T w = w^T Q(theta) w. compute_spde_prior in joint
   # mode returns -0.5 z^T z, and in legacy mode (with Q built at the
@@ -47,20 +50,20 @@ test_that("NC transform: z^T z == w^T Q(theta) w (consistency with legacy prior)
   kappa <- exp(log_kappa)
   tau   <- exp(log_tau)
 
-  w_res <- tulpa:::cpp_spde_nc_apply_probe(
+  w_res <- cpp_spde_nc_apply_probe(
     z = z, log_kappa = log_kappa, log_tau = log_tau,
     C0_diag = spec$C0_diag, G1_x = spec$G1_x,
     G1_i = spec$G1_i, G1_p = spec$G1_p
   )
   w <- w_res$w
 
-  joint_prior <- tulpa:::cpp_spde_prior_probe(
+  joint_prior <- cpp_spde_prior_probe(
     vals = z, joint_hypers = TRUE,
     C0_diag = numeric(0), G1_x = numeric(0),
     G1_i = integer(0), G1_p = integer(0)
   )$prior_val
 
-  legacy_prior <- tulpa:::cpp_spde_prior_probe(
+  legacy_prior <- cpp_spde_prior_probe(
     vals = w, joint_hypers = FALSE,
     C0_diag = spec$C0_diag, G1_x = spec$G1_x,
     G1_i = spec$G1_i, G1_p = spec$G1_p,
@@ -71,6 +74,7 @@ test_that("NC transform: z^T z == w^T Q(theta) w (consistency with legacy prior)
 })
 
 test_that("NC transform: w is linear in z", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   # If w = L^{-T}(theta) z then w(c z) = c w(z) at the same theta.
   skip_if_not_installed("fmesher")
   set.seed(203)
@@ -82,12 +86,12 @@ test_that("NC transform: w is linear in z", {
   log_tau   <- log(0.9)
   c_scale   <- -2.4
 
-  w_z <- tulpa:::cpp_spde_nc_apply_probe(
+  w_z <- cpp_spde_nc_apply_probe(
     z = z, log_kappa = log_kappa, log_tau = log_tau,
     C0_diag = spec$C0_diag, G1_x = spec$G1_x,
     G1_i = spec$G1_i, G1_p = spec$G1_p
   )$w
-  w_cz <- tulpa:::cpp_spde_nc_apply_probe(
+  w_cz <- cpp_spde_nc_apply_probe(
     z = c_scale * z, log_kappa = log_kappa, log_tau = log_tau,
     C0_diag = spec$C0_diag, G1_x = spec$G1_x,
     G1_i = spec$G1_i, G1_p = spec$G1_p
@@ -97,17 +101,18 @@ test_that("NC transform: w is linear in z", {
 })
 
 test_that("PC hyper prior: disabled when any anchor is non-positive or >= 1", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   # Disabled means improper flat hyper-prior — compute_spde_hyper_prior
   # must return 0 verbatim so the joint log-post still converges in floor-
   # check runs and the gradient-verification harness.
   expect_equal(
-    tulpa:::cpp_spde_hyper_prior_probe(
+    cpp_spde_hyper_prior_probe(
       log_kappa = log(2.0), log_tau = log(1.5)
     )$prior_val, 0.0, tolerance = 1e-12
   )
   # range anchor present, sigma anchor missing -> still disabled
   expect_equal(
-    tulpa:::cpp_spde_hyper_prior_probe(
+    cpp_spde_hyper_prior_probe(
       log_kappa = 0.5, log_tau = -0.3,
       prior_range_0 = 0.3, prior_range_alpha = 0.05
     )$prior_val, 0.0, tolerance = 1e-12
@@ -115,7 +120,7 @@ test_that("PC hyper prior: disabled when any anchor is non-positive or >= 1", {
   # alpha == 1 is a knife-edge degeneracy: -log(1) = 0 -> lambda_r/lambda_s = 0
   # which kills the PC density.  The guard rejects alpha >= 1 explicitly.
   expect_equal(
-    tulpa:::cpp_spde_hyper_prior_probe(
+    cpp_spde_hyper_prior_probe(
       log_kappa = 0.0, log_tau = 0.0,
       prior_range_0 = 0.3, prior_range_alpha = 1.0,
       prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
@@ -124,6 +129,7 @@ test_that("PC hyper prior: disabled when any anchor is non-positive or >= 1", {
 })
 
 test_that("PC hyper prior: anchor scaling moves density in the right direction", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   # The d = 2 PC prior on range uses 'large range' as the base model and
   # penalises deviation toward small range: lambda_r = -log(alpha_r) *
   # range_0, density lambda_r * range^{-2} * exp(-lambda_r / range). At a
@@ -134,12 +140,12 @@ test_that("PC hyper prior: anchor scaling moves density in the right direction",
   range_at <- 3.34   # range = sqrt(8) * exp(-3.34) ~ 0.10 -- a 'rough' field
   tau_at   <- log(1.0)
 
-  small_r0 <- tulpa:::cpp_spde_hyper_prior_probe(
+  small_r0 <- cpp_spde_hyper_prior_probe(
     log_kappa = range_at, log_tau = tau_at,
     prior_range_0 = 0.3, prior_range_alpha = 0.05,
     prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
   )$prior_val
-  large_r0 <- tulpa:::cpp_spde_hyper_prior_probe(
+  large_r0 <- cpp_spde_hyper_prior_probe(
     log_kappa = range_at, log_tau = tau_at,
     prior_range_0 = 0.8, prior_range_alpha = 0.05,
     prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
@@ -151,12 +157,12 @@ test_that("PC hyper prior: anchor scaling moves density in the right direction",
   # At fixed (log_kappa, log_tau) with sigma ~ 1 / (sqrt(4 pi) * 2 * 1)
   # ~ 0.14, smaller sigma_0 -> larger lambda_s -> stronger penalty ->
   # lower log-density.
-  small_s0 <- tulpa:::cpp_spde_hyper_prior_probe(
+  small_s0 <- cpp_spde_hyper_prior_probe(
     log_kappa = range_at, log_tau = tau_at,
     prior_range_0 = 0.3, prior_range_alpha = 0.05,
     prior_sigma_0 = 0.5, prior_sigma_alpha = 0.05
   )$prior_val
-  large_s0 <- tulpa:::cpp_spde_hyper_prior_probe(
+  large_s0 <- cpp_spde_hyper_prior_probe(
     log_kappa = range_at, log_tau = tau_at,
     prior_range_0 = 0.3, prior_range_alpha = 0.05,
     prior_sigma_0 = 2.0, prior_sigma_alpha = 0.05
@@ -165,6 +171,7 @@ test_that("PC hyper prior: anchor scaling moves density in the right direction",
 })
 
 test_that("PC hyper prior: dependence on log_kappa matches analytical decomposition", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   # At fixed log_tau and fixed PC anchors, the part of log p that varies
   # with log_kappa (d = 2) is
   #     - lambda_r * (8 nu)^{-1/2} * exp(log_kappa)
@@ -183,12 +190,12 @@ test_that("PC hyper prior: dependence on log_kappa matches analytical decomposit
   log_kappa_a <- 0.4
   log_kappa_b <- 1.1
 
-  pa <- tulpa:::cpp_spde_hyper_prior_probe(
+  pa <- cpp_spde_hyper_prior_probe(
     log_kappa = log_kappa_a, log_tau = log_tau, nu = nu,
     prior_range_0 = range_0, prior_range_alpha = alpha_r,
     prior_sigma_0 = sigma_0, prior_sigma_alpha = alpha_s
   )$prior_val
-  pb <- tulpa:::cpp_spde_hyper_prior_probe(
+  pb <- cpp_spde_hyper_prior_probe(
     log_kappa = log_kappa_b, log_tau = log_tau, nu = nu,
     prior_range_0 = range_0, prior_range_alpha = alpha_r,
     prior_sigma_0 = sigma_0, prior_sigma_alpha = alpha_s
@@ -259,8 +266,9 @@ test_that("print.tulpa_spatial works for SPDE", {
 })
 
 test_that("ParamLayout: legacy fixed-hyper mode leaves hyper slots at -1", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   skip_on_cran_budget()
-  layout <- tulpa:::cpp_spde_layout_probe(
+  layout <- cpp_spde_layout_probe(
     n_mesh = 50, p = 2, joint_hypers = FALSE, n_extra_params = 1L
   )
 
@@ -274,8 +282,9 @@ test_that("ParamLayout: legacy fixed-hyper mode leaves hyper slots at -1", {
 })
 
 test_that("ParamLayout: joint-NUTS mode allocates hyper slots after z block", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   skip_on_cran_budget()
-  layout <- tulpa:::cpp_spde_layout_probe(
+  layout <- cpp_spde_layout_probe(
     n_mesh = 50, p = 2, joint_hypers = TRUE, n_extra_params = 1L
   )
 
@@ -291,13 +300,14 @@ test_that("ParamLayout: joint-NUTS mode allocates hyper slots after z block", {
 })
 
 test_that("compute_spde_prior: legacy mode is quadratic in w and fills spde_w", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   skip_on_cran_budget()
   skip_if_not_installed("fmesher")
   set.seed(103)
   coords <- cbind(runif(40), runif(40))
   spec <- spatial_spde(coords)
 
-  probe <- function(w) tulpa:::cpp_spde_prior_probe(
+  probe <- function(w) cpp_spde_prior_probe(
     vals = w, joint_hypers = FALSE,
     C0_diag = spec$C0_diag, G1_x = spec$G1_x,
     G1_i = spec$G1_i,       G1_p = spec$G1_p,
@@ -321,6 +331,7 @@ test_that("compute_spde_prior: legacy mode is quadratic in w and fills spde_w", 
 })
 
 test_that("NC transform: z=0 yields w=0 and lazily builds the cache", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   skip_on_cran_budget()
   skip_if_not_installed("fmesher")
   set.seed(201)
@@ -328,7 +339,7 @@ test_that("NC transform: z=0 yields w=0 and lazily builds the cache", {
   spec <- spatial_spde(coords)
 
   z0 <- rep(0.0, spec$n_mesh)
-  res <- tulpa:::cpp_spde_nc_apply_probe(
+  res <- cpp_spde_nc_apply_probe(
     z = z0, log_kappa = log(2.0), log_tau = log(1.5),
     C0_diag = spec$C0_diag, G1_x = spec$G1_x,
     G1_i = spec$G1_i, G1_p = spec$G1_p
@@ -340,6 +351,7 @@ test_that("NC transform: z=0 yields w=0 and lazily builds the cache", {
 })
 
 test_that("PC hyper prior: matches Fuglstad et al. (2019) reference at multiple points", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   skip_on_cran_budget()
   # Hand-coded reference of the PC density in (log_kappa, log_tau) for a
   # d = 2 Matern SPDE (Fuglstad et al. 2019): the range PC prior is
@@ -363,7 +375,7 @@ test_that("PC hyper prior: matches Fuglstad et al. (2019) reference at multiple 
     log_tau   = c(-1.2, 0.0, 0.4)
   )
   for (i in seq_len(nrow(grid))) {
-    res <- tulpa:::cpp_spde_hyper_prior_probe(
+    res <- cpp_spde_hyper_prior_probe(
       log_kappa = grid$log_kappa[i], log_tau = grid$log_tau[i],
       nu = 1.0,
       prior_range_0 = 0.2, prior_range_alpha = 0.05,
@@ -379,9 +391,10 @@ test_that("PC hyper prior: matches Fuglstad et al. (2019) reference at multiple 
 })
 
 test_that("ParamLayout: hyper slot ordering is mesh-size invariant", {
+  load_cpp_fixture("tulpa_spde_layout_probe")
   skip_on_cran_budget()
   for (n_mesh in c(10, 100, 500)) {
-    layout <- tulpa:::cpp_spde_layout_probe(
+    layout <- cpp_spde_layout_probe(
       n_mesh = n_mesh, p = 1, joint_hypers = TRUE, n_extra_params = 0L
     )
     expect_equal(layout$spde_w_end - layout$spde_w_start, n_mesh,

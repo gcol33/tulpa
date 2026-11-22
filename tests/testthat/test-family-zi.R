@@ -41,11 +41,12 @@ truncated   <- c("truncated_poisson", "truncated_neg_binomial_2")
 
 
 test_that("the compiled zero-inflation refusal reports the gate's own set", {
+  load_cpp_fixture("family_terms_export_probes")
   # The kernel's refusal message enumerates what compiled_zi_supported() admits
   # rather than restating it, so the two cannot disagree. Held here against the
   # R front door's independent enumeration, which filters every registered
   # family through the same predicate.
-  reported <- strsplit(tulpa:::cpp_family_compiled_zi_supported_families(),
+  reported <- strsplit(cpp_family_compiled_zi_supported_families(),
                        ", ", fixed = TRUE)[[1]]
   expect_setequal(reported, tulpa:::.zi_compiled_families())
 

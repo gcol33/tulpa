@@ -29,6 +29,7 @@ test_that("non-Gaussian collapsing gives an explicit full-field route", {
 })
 
 test_that("built-in Gaussian collapsing matches the dense marginal at fixed dispersion", {
+  load_cpp_fixture("tulpa_glmm_eta_draws_probes")
   sp <- collapsed_target_fixtures()$icar
   X <- cbind(1,seq(-1,1,length.out=16)); y <- sin(seq_len(16))
   S <- sp$n_spatial_units
@@ -38,7 +39,7 @@ test_that("built-in Gaussian collapsing matches the dense marginal at fixed disp
   points <- rbind(c(.2,-.3,.4),c(0,0,0),c(-.4,.1,-.2))
   rate <- -log(.01)/3
   for (sd in c(.4,1.7)) {
-    actual <- tulpa:::cpp_test_sampler_log_post_paths(points,y,rep(1L,16),X,
+    actual <- cpp_test_sampler_log_post_paths(points,y,rep(1L,16),X,
       "gaussian",phi=sd,spatial_spec=sp)
     expected <- apply(points,1,function(q) {
       V <- diag(sd^2,16)+B%*%solve(exp(q[3])*Q,t(B))

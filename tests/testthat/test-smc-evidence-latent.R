@@ -365,6 +365,7 @@ test_that("the GP / HSGP / SVC / TVC normalizers make the prior a density", {
 })
 
 test_that("the non-centered NNGP posterior is the dense GP posterior", {
+  load_cpp_fixture("tulpa_glmm_eta_draws_probes")
   skip_on_cran()
   # Every earlier location a neighbour: the non-centered field is
   # w[ord] = chol(K[ord, ord]) z[ord] with z ~ N(0, I), K carrying the engine's
@@ -409,9 +410,9 @@ test_that("the non-centered NNGP posterior is the dense GP posterior", {
   args <- list(draws = th, y = d$y, n_trials = rep(1L, n), X = X,
                family = "gaussian", phi = sd_eps, sigma_beta = sdb,
                spatial_spec = sp)
-  engine <- do.call(tulpa:::cpp_tulpa_glmm_log_prob_draws, args)
+  engine <- do.call(cpp_tulpa_glmm_log_prob_draws, args)
   expect_lt(diff(range(dense - engine)), 1e-10)
-  paths <- do.call(tulpa:::cpp_test_sampler_log_post_paths, args)
+  paths <- do.call(cpp_test_sampler_log_post_paths, args)
   expect_equal(paths[, 1L], paths[, 2L], tolerance = 1e-12)
   expect_equal(paths[, 2L], engine, tolerance = 1e-12)
 })

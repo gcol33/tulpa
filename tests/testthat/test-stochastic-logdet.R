@@ -14,6 +14,7 @@
 }
 
 test_that("a repeated spectrum converges rather than erroring", {
+  load_cpp_fixture("stochastic_logdet_probes")
   # Two distinct eigenvalues: the Krylov space is 2-dimensional whatever
   # n_lanczos says, so this breaks down at step 2 on every probe.
   n <- 30L
@@ -26,6 +27,7 @@ test_that("a repeated spectrum converges rather than erroring", {
 })
 
 test_that("the estimate stops moving once the Krylov space is exhausted", {
+  load_cpp_fixture("stochastic_logdet_probes")
   # A spectrum with k distinct eigenvalues spans a k-dimensional Krylov space,
   # so every n_lanczos >= k must give the SAME number at the same seed: the
   # recurrence breaks down at step k and the quadrature there is exact. Two
@@ -53,6 +55,7 @@ skip_on_cran_budget()
 # Tests for stochastic Lanczos quadrature log-determinant
 
 test_that("SLQ Gauss-quadrature log-det matches exact dense log-det", {
+  load_cpp_fixture("stochastic_logdet_probes")
   skip_on_cran_budget()
   n <- 50
   Q <- Matrix::bandSparse(n, k = c(0, 1), diag = list(
@@ -82,6 +85,7 @@ test_that("SLQ Gauss-quadrature log-det matches exact dense log-det", {
 })
 
 test_that("SLQ log-det is accurate for a dense SPD matrix", {
+  load_cpp_fixture("stochastic_logdet_probes")
   skip_on_cran_budget()
   set.seed(7)
   n <- 40
@@ -103,6 +107,7 @@ test_that("SLQ log-det is accurate for a dense SPD matrix", {
 })
 
 test_that("stochastic log-det works for larger matrix", {
+  load_cpp_fixture("stochastic_logdet_probes")
   skip_on_cran_budget()
   n <- 200
   Q <- Matrix::bandSparse(n, k = c(0, 1, 2), diag = list(
@@ -124,6 +129,7 @@ test_that("stochastic log-det works for larger matrix", {
 })
 
 test_that("a Lanczos breakdown is the exact answer, not a definiteness error", {
+  load_cpp_fixture("stochastic_logdet_probes")
   skip_on_cran_budget()
   # H = c * I. Step 0 gives w = H q - alpha q = 0, so beta_0 = 0 and the
   # recurrence stops with the Krylov space exhausted -- the one case where the
@@ -142,6 +148,7 @@ test_that("a Lanczos breakdown is the exact answer, not a definiteness error", {
 })
 
 test_that("a malformed CSC triple is an R error rather than an out-of-bounds write", {
+  load_cpp_fixture("stochastic_logdet_probes")
   skip_on_cran_budget()
   n <- 6L
   cs <- .csc_lower(diag(2, n))

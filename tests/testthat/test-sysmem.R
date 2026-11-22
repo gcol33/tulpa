@@ -30,9 +30,10 @@ skip_on_cran_budget()
 # monotone in the per-thread footprint.
 
 test_that("RAM queries return sane byte counts", {
+  load_cpp_fixture("hmc_rcpp_utils_probes")
   skip_on_cran_budget()
-  total <- tulpa:::cpp_total_ram_bytes()
-  avail <- tulpa:::cpp_available_ram_bytes()
+  total <- cpp_total_ram_bytes()
+  avail <- cpp_available_ram_bytes()
 
   expect_true(is.numeric(total) && length(total) == 1L)
   expect_true(is.numeric(avail) && length(avail) == 1L)
@@ -102,12 +103,13 @@ test_that("outer-thread cap fits the budget, floors at one, and is monotone", {
 skip_on_cran()
 
 test_that("RAM queries resolve on this platform", {
+  load_cpp_fixture("hmc_rcpp_utils_probes")
   skip_on_cran()
   # Windows / Linux / macOS all implement both queries; a 0 here means the
   # platform query failed, which we want to catch in development rather than
   # silently fall back to the fixed 2 GB cap.
-  total <- tulpa:::cpp_total_ram_bytes()
-  avail <- tulpa:::cpp_available_ram_bytes()
+  total <- cpp_total_ram_bytes()
+  avail <- cpp_available_ram_bytes()
   expect_gt(total, 1024^3)  # > 1 GB installed
   expect_gt(avail, 0)
 })

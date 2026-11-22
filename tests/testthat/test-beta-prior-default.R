@@ -32,13 +32,14 @@ test_that("no compiled entry restates the default fixed-effect prior", {
 })
 
 test_that("a compiled entry handed no prior SD reads the engine default", {
+  load_cpp_fixture("tulpa_glmm_eta_draws_probes")
   skip_on_cran()
   set.seed(3)
   n <- 40L
   X <- cbind(1, rnorm(n))
   y <- rpois(n, exp(0.3 + 0.5 * X[, 2]))
   draws <- matrix(c(0.2, -0.4), 1L)
-  lp <- function(...) tulpa:::cpp_tulpa_glmm_log_prob_draws(
+  lp <- function(...) cpp_tulpa_glmm_log_prob_draws(
     draws, as.numeric(y), rep(1L, n), X, "poisson", ...)
   s0 <- tulpa:::.TULPA_PRIOR$beta_sd
   expect_equal(lp(), lp(sigma_beta = s0))

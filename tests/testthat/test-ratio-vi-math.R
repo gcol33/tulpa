@@ -1,5 +1,6 @@
 test_that("VI Monte Carlo gradients match a Gaussian reference and stopping uses stationarity", {
-    z <- tulpa:::cpp_test_vi_math()
+    load_cpp_fixture("test_ratio_vi")
+    z <- cpp_test_vi_math()
     expect_lt(max(z[c("meanfield", "fullrank", "lowrank")]), 1e-12)
     expect_lt(z["inverse_error"], 1e-13)
     expect_lt(z["alignment_error"], 1e-13)

@@ -2,6 +2,7 @@
 skip_on_cran_budget()
 
 test_that("gaussian: passing phi on the wrong scale is detectable", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # Guards the guard: if the two conventions were accidentally the same, the
   # test above would pass even after a convention flip. At sd != 1 the wrong
@@ -30,6 +31,7 @@ skip_on_cran()
 # here instead of silently changing what a backend fits.
 
 test_that("gaussian: the SD and VARIANCE phi conventions line up exactly", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   # THE 0.0.73 REGRESSION GUARD.
   # laplace_family_link.h and laplace_likelihoods.cpp take phi = residual SD.
@@ -60,6 +62,7 @@ test_that("gaussian: the SD and VARIANCE phi conventions line up exactly", {
 })
 
 test_that("poisson: every kernel agrees at a shared eta", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   load_cpp_fixture("helpers")
   for (y in c(0L, 1L, 5L, 17L)) {
@@ -81,6 +84,7 @@ test_that("poisson: every kernel agrees at a shared eta", {
 })
 
 test_that("neg_binomial_2: every kernel agrees, and phi is the size everywhere", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   # A mu/size vs mu/dispersion split between copies would show up here.
   load_cpp_fixture("helpers")
@@ -109,6 +113,7 @@ test_that("neg_binomial_2: every kernel agrees, and phi is the size everywhere",
 })
 
 test_that("binomial: every kernel agrees and keeps the lchoose normalizer", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   load_cpp_fixture("helpers")
   for (n in c(1L, 5L, 20L)) {

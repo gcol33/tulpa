@@ -1,4 +1,5 @@
 test_that("multiscale prior scores differentiate their dense densities at small variances", {
+  load_cpp_fixture("test_ratio_multiscale")
   n <- 8L
   rho <- 0.3
   logit_rho <- qlogis((rho + 1) / 2)
@@ -21,7 +22,7 @@ test_that("multiscale prior scores differentiate their dense densities at small 
     for (x in c(-12, -20, -25, -30)) {
       sigma2 <- exp(x)
       phi <- sqrt(sigma2) * sin(seq_len(n))
-      result <- tulpa:::cpp_test_multiscale_prior(structure, phi, x, logit_rho)
+      result <- cpp_test_multiscale_prior(structure, phi, x, logit_rho)
       quad <- drop(crossprod(phi, Q %*% phi))
       expected_value <- -quad / (2 * sigma2) - rank / 2 * log(2 * pi * sigma2) +
         log(lambda / 2) + x / 2 - lambda * sqrt(sigma2)
@@ -38,7 +39,7 @@ test_that("multiscale prior scores differentiate their dense densities at small 
         plus <- minus <- parameters
         plus[j] <- plus[j] + h
         minus[j] <- minus[j] - h
-        value <- function(p) tulpa:::cpp_test_multiscale_prior(
+        value <- function(p) cpp_test_multiscale_prior(
           structure, p[seq_len(n)], p[n + 1L], p[n + 2L])$value
         finite_difference <- (value(plus) - value(minus)) / (2 * h)
         expect_equal(unname(result$gradient[j, ]), unname(finite_difference),

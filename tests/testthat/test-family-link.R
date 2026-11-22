@@ -1,5 +1,6 @@
 
 test_that("the R cauchit link reads the same tails as the kernel", {
+  load_cpp_fixture("family_terms_export_probes")
   eta <- c(-1e9, -1e6, -1e5, -3, 0, 3, 1e5, 1e6, 1e9)
   lk <- tulpa:::.LINKS$cauchit
   expect_equal(lk$linkinv(eta), unname(cpp_link_ladder(eta, "cauchit")[, "linkinv"]),
@@ -87,6 +88,7 @@ test_that("a hurdle spelling is answered with the composition, not the registry"
 # --------------------------------------------------------------------------- #
 
 test_that("cloglog matches stats::binomial on relative tolerance into the tail", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   eta <- c(seq(-50, 5, by = 0.25), -745, -100, -37, -36.7, -20, -1e-8)
   R_lk <- stats::binomial("cloglog")
@@ -118,6 +120,7 @@ test_that("cloglog matches stats::binomial on relative tolerance into the tail",
 # --------------------------------------------------------------------------- #
 
 test_that("cauchit matches stats::pcauchy on relative tolerance into both tails", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   eta <- c(-1e9, -1e8, -1e7, -1e6, -1e5, -1e3, -37, -3, -0.5, 0,
            0.5, 3, 37, 1e3, 1e5, 1e6, 1e7, 1e8, 1e9)
@@ -270,6 +273,7 @@ test_that("the binomial working weight carries n_trials the right way round", {
 })
 
 test_that("the cauchit derivative ladder is its own finite difference", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   eta <- c(-30, -10, -3, -0.5, 0, 0.7, 1.8, 12)
   h <- 1e-5
@@ -286,6 +290,7 @@ test_that("the cauchit derivative ladder is its own finite difference", {
 })
 
 test_that("the cloglog derivative ladder is its own finite difference", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran()
   # mu_eta2 / mu_eta3 carry the same cancellation risk one and two derivatives
   # in (-expm1(eta) is the second's stable form), and both reach a gradient.

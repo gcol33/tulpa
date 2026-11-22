@@ -211,6 +211,7 @@ test_that("the derivatives are registered only where phi is free", {
 
 
 test_that("d(W_obs)/dphi matches a difference of the registered observed weight", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # The one entry with no counterpart in .FAMILY_OPS for gamma and t, whose
   # observed curvature is not registered there. Differenced against the compiled
@@ -222,7 +223,7 @@ test_that("d(W_obs)/dphi matches a difference of the registered observed weight"
       cs <- dispersion_case(fam, phi)
       p2 <- if (is.null(cs$phi2)) NA_real_ else cs$phi2
       w_obs <- function(p) vapply(seq_along(cs$eta), function(i)
-        tulpa:::cpp_family_obs_terms(cs$y[i], cs$n_trials[i], cs$eta[i], fam,
+        cpp_family_obs_terms(cs$y[i], cs$n_trials[i], cs$eta[i], fam,
                                      p, p2)[["neg_hess"]], numeric(1))
       expect_equal(d2$dobs_weight(cs$eta, cs$y, cs$n_trials, phi, cs$phi2),
                    fd_dphi(w_obs, phi), tolerance = 1e-5,

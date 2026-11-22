@@ -79,6 +79,7 @@ test_that("each component of a disconnected graph reaches unit generalised varia
 })
 
 test_that("the ModelData sampler's BYM2 prior is diag(node_prec) Q_aug (#902)", {
+  load_cpp_fixture("tulpa_glmm_eta_draws_probes")
   skip_on_cran_budget()
   # Shifting phi by a constant leaves the centred field -- and so eta and the
   # likelihood -- unchanged, so the log-posterior difference is the prior's
@@ -100,7 +101,7 @@ test_that("the ModelData sampler's BYM2 prior is diag(node_prec) Q_aug (#902)", 
   base <- c(0.3, 0.5, log(0.8), 0.2, rnorm(S, 0, 0.3), rnorm(S, 0, 0.3))
   shift <- 0.7
   up <- base; up[4L + seq_len(S)] <- up[4L + seq_len(S)] + shift
-  lp <- function(sp_spec) tulpa:::cpp_tulpa_glmm_log_prob_draws(
+  lp <- function(sp_spec) cpp_tulpa_glmm_log_prob_draws(
     rbind(base, up), dd$d$y, rep(1L, nrow(dd$d)), X, "poisson",
     spatial_spec = sp_spec)
   aug <- function(phi, w) {

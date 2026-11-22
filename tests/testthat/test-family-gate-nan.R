@@ -62,19 +62,20 @@ test_that("an unregistered family is an R error at more than one thread", {
 skip_on_cran_budget()
 
 test_that("truncated_neg_binomial_2 is the declining case, and used to be finite", {
+    load_cpp_fixture("family_terms_export_probes")
     skip_on_cran_budget()
     # Its working weight IS the observed curvature at first order but the
     # second-order delta is unregistered, so this is precisely the family whose
     # sum was the working answer wearing the observed one's name.
-    expect_false(tulpa:::cpp_family_has_obs_curvature_2nd_derivative(
+    expect_false(cpp_family_has_obs_curvature_2nd_derivative(
         "truncated_neg_binomial_2"))
-    v <- tulpa:::cpp_family_obs_curvature_deta2(
+    v <- cpp_family_obs_curvature_deta2(
         y = 3, n_trials = 1L, eta = 0.2, family = "truncated_neg_binomial_2",
         phi = 2.0)
     expect_true(is.nan(v[["d2w_obs_deta2"]]))
     # The WORKING second derivative is available and finite: the decline is a
     # statement about the observed one, not about the family being unsupported.
-    w <- tulpa:::cpp_family_curvature_deta2(
+    w <- cpp_family_curvature_deta2(
         y = 3, n_trials = 1L, eta = 0.2, family = "truncated_neg_binomial_2",
         phi = 2.0)
     expect_true(is.finite(w[["d2w_deta2"]]))
@@ -104,16 +105,17 @@ test_that("tweedie without its variance power is refused before any solve", {
 skip_on_cran()
 
 test_that("the observed-curvature 2nd derivative declines with NaN, not a number", {
+    load_cpp_fixture("family_terms_export_probes")
     skip_on_cran()
     declined <- character(0)
     for (f in .families_with_2nd) {
-        ok <- tryCatch(tulpa:::cpp_family_has_obs_curvature_2nd_derivative(f),
+        ok <- tryCatch(cpp_family_has_obs_curvature_2nd_derivative(f),
                        error = function(e) NA)
         if (is.na(ok)) next
         # A response inside the family's support, so a finite value is the
         # admitted answer and not an artefact of evaluating outside it.
         v <- tryCatch(
-            tulpa:::cpp_family_obs_curvature_deta2(
+            cpp_family_obs_curvature_deta2(
                 y = if (f == "beta") 0.3 else 2, n_trials = 10L, eta = 0.3,
                 family = f, phi = 1.5,
                 phi2 = 4.0),

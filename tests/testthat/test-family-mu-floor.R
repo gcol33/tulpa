@@ -112,6 +112,7 @@ test_that("cauchit's score reads the same mu its density reports", {
 })
 
 test_that("both curvature ladders are derivatives of the weight in the band", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # curvature_deta / curvature_deta2 feed gamma_3 and the debias correction, and
   # carry their own copy of the clamp. Finite differences bind each rung to the

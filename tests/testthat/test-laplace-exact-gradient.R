@@ -263,6 +263,7 @@ test_that("a gaussian response is the control: dw/deta is zero throughout", {
 })
 
 test_that("dw/deta differentiates the weight the Newton system uses", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   cases <- list(
     list(family = "poisson",                  y = 4,   n = 1L,  phi = 1.0),
@@ -308,6 +309,7 @@ test_that("families with an exact curvature derivative are gated honestly", {
 })
 
 test_that("the vectorized curvature derivative matches the scalar probe", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   set.seed(2)
   eta <- rnorm(25)
@@ -322,6 +324,7 @@ test_that("the vectorized curvature derivative matches the scalar probe", {
 })
 
 test_that("d2w/deta2 differentiates dw/deta (curvature the theta-Hessian needs)", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # Same load-bearing idea as the dw/deta test: a central difference of the
   # verified first curvature derivative is the ground truth the closed-form
@@ -358,6 +361,7 @@ test_that("d2w/deta2 differentiates dw/deta (curvature the theta-Hessian needs)"
 })
 
 test_that("the second curvature derivative gate covers every family with a first", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   # The truncated pair carry the third truncation-shape derivative d3a, so their
   # second eta-derivative is closed-form alongside every other family.
@@ -400,6 +404,7 @@ test_that("the compiled zero-inflation gate needs a discrete base, not just a cu
 })
 
 test_that("the vectorized second curvature derivative matches the scalar probe", {
+  load_cpp_fixture("family_terms_export_probes")
   skip_on_cran_budget()
   set.seed(3)
   eta <- rnorm(20)

@@ -1,4 +1,5 @@
 test_that("production temporal priors match dense quadratic forms", {
+  load_cpp_fixture("test_ratio_temporal")
   T <- 6L; G <- 2L; tau <- 1.7; rho <- -0.35
   w <- seq(-0.7,1.2,length.out=T*G)
   for (type in c('rw1','rw2','ar1','iid')) for (cyclic in c(FALSE,TRUE)) {
@@ -22,10 +23,10 @@ test_that("production temporal priors match dense quadratic forms", {
             sum(dnorm(v[-1],rho*v[-T],1/sqrt(tau),log=TRUE))
         } else reference <- reference + sum(dnorm(v,0,1/sqrt(tau),log=TRUE))
       }
-      actual <- tulpa:::cpp_test_temporal_log_prior(w,type,tau,rho,cyclic,G,augment)
+      actual <- cpp_test_temporal_log_prior(w,type,tau,rho,cyclic,G,augment)
       expect_equal(actual,reference,tolerance=1e-12,info=paste(type,cyclic,augment))
       if (augment == (type %in% c('rw1','rw2'))) expect_equal(
-        tulpa:::cpp_test_temporal_log_prior(w,type,tau,rho,cyclic,G,FALSE,TRUE),
+        cpp_test_temporal_log_prior(w,type,tau,rho,cyclic,G,FALSE,TRUE),
         reference,tolerance=1e-12,info=paste('TVC',type,cyclic))
     }
   }

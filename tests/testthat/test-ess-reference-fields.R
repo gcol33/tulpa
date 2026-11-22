@@ -1,7 +1,8 @@
 test_that("ESS reference correction recovers a correlated Gaussian target", {
+  load_cpp_fixture("test_ratio_integrator")
   skip_if_not_installed("posterior")
   set.seed(4013623)
-  draws <- tulpa:::cpp_test_ess_correlated_reference()
+  draws <- cpp_test_ess_correlated_reference()
   mu <- c(.6, -.35)
   covariance <- matrix(c(1, .8, .8, 1.5), 2)
   moments <- cbind(draws, draws[, 1]^2, draws[, 2]^2, draws[, 1]*draws[, 2])
