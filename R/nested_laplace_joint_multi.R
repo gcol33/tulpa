@@ -1465,20 +1465,11 @@
 
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
-    kd <- .joint_pareto_k(res, refit, diagnose_draws, proposal = proposal,
-                          arm_axes = arm_axes, k_bootstrap = k_bootstrap,
-                          k_tail_points = k_tail_points, k_conf_bands = k_conf_bands)
-    res$pareto_k        <- kd$pareto_k
-    res$pareto_k_is_ess <- kd$is_ess
-    res$pareto_k_proposal_source <- kd$proposal_source
-    res <- .k_attach_declined(res, kd)
-    res$pareto_k_mode_u     <- kd$mode_u
-    res$pareto_k_cov_u      <- kd$cov_u
-    res$pareto_k_axis_tags  <- kd$axis_tags
-    res$pareto_k_axis_names <- kd$axis_names
-    res <- .joint_attach_pareto_k_regime(res, kd)
-    res <- .joint_attach_pareto_k_uncertainty(res, kd)
-    res <- .joint_attach_by_arm_k(res, kd)
+    res <- .joint_score_outer_k(res, function(r) {
+        .joint_pareto_k(r, refit, diagnose_draws, proposal = proposal,
+                        arm_axes = arm_axes, k_bootstrap = k_bootstrap,
+                        k_tail_points = k_tail_points, k_conf_bands = k_conf_bands)
+    })
     .joint_attach_placement(res, place_fn, place_set_warm,
                             extra_axes = placement_axes)
 }

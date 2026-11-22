@@ -127,6 +127,14 @@
   by. A placed Poisson SPDE fit (n = 250) went from about 4.3 s to 2.0 s with
   the same grid and k-hat (#1264).
 
+* An HSGP fit whose basis is left to the data scores the outer Pareto-k-hat
+  once, on the fit the basis procedure returns. The procedure refits on a new
+  basis and reads each fit's lengthscale posterior and linear predictor, never
+  its k-hat, so the fits it replaces were scored for nothing. On a Poisson
+  `fit_st_nested(spatial_type = "hsgp")` fit (160 observations, two basis
+  fits) the time went from 145 s to 102 s with the same grid, weights and
+  k-hat fields (#1277).
+
 * `tgmrf()` and `tgmrf_cpp()` take `grid_span` where they took `bounds`: the
   box the outer theta grid and the samplers' pilot are laid over. The support
   of `theta` is that of `prior(theta)` alone, as the samplers already read it.

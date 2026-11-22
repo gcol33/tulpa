@@ -501,8 +501,10 @@
 # and write the bases a spec carries (`.hsgp_basis_parts()`); the joint door,
 # whose spec is the list of its coordinate blocks' bases, passes identities.
 # The warnings of a fit that is replaced describe a fit the caller does not
-# receive, so only the returned fit's are raised. Returns `list(fit, spec)`,
-# the spec the fit was made at.
+# receive, so only the returned fit's are raised. The procedure reads each fit's
+# lengthscale posterior and linear predictor and never its outer k-hat, so the
+# fits run inside `.nl_k_defer()` and only the returned fit is scored
+# (`.nl_settle_k()`). Returns `list(fit, spec)`, the spec the fit was made at.
 .hsgp_fit_basis_loop <- function(spec, fit_once,
                                  parts = .hsgp_basis_parts,
                                  set_parts = .hsgp_basis_set_parts) {
@@ -513,7 +515,7 @@
   repeat {
     fit_warnings <- list()
     fit <- withCallingHandlers(
-      fit_once(spec),
+      if (auto) .nl_k_defer(fit_once(spec)) else fit_once(spec),
       warning = function(w) {
         if (auto) {
           fit_warnings[[length(fit_warnings) + 1L]] <<- w
@@ -538,7 +540,7 @@
     spec <- set_parts(spec, lapply(steps, `[[`, "spec"))
   }
   for (w in fit_warnings) warning(w)
-  list(fit = fit, spec = spec)
+  list(fit = if (auto) .nl_settle_k(fit) else fit, spec = spec)
 }
 
 # The basis check of an HSGP fit: the smallest and the largest posterior median

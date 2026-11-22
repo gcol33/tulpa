@@ -1568,9 +1568,21 @@
     # unavailable, else the plain broadcast warm.
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
-    kd <- .joint_pareto_k(res, refit, diagnose_draws, arm_axes = arm_axes,
-                          k_bootstrap = k_bootstrap, k_tail_points = k_tail_points,
-                          k_conf_bands = k_conf_bands)
+    res <- .joint_score_outer_k(res, function(r) {
+        .joint_pareto_k(r, refit, diagnose_draws, arm_axes = arm_axes,
+                        k_bootstrap = k_bootstrap, k_tail_points = k_tail_points,
+                        k_conf_bands = k_conf_bands)
+    })
+    .joint_attach_placement(res, place_fn, place_set_warm,
+                            extra_axes = placement_axes)
+}
+
+# The outer k-hat fields of a scored fit: the point estimate and its decline,
+# the proposal it was read from, the grid regime with the outer skewness, the
+# bootstrap uncertainty and the per-arm k. Every field it writes is named
+# `pareto_k*`, which is what lets a deferred score be copied onto the fit a
+# caller kept (`.joint_score_outer_k()`).
+.joint_attach_outer_k <- function(res, kd) {
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
@@ -1581,7 +1593,62 @@
     res$pareto_k_axis_names <- kd$axis_names
     res <- .joint_attach_pareto_k_regime(res, kd)
     res <- .joint_attach_pareto_k_uncertainty(res, kd)
-    res <- .joint_attach_by_arm_k(res, kd)
-    .joint_attach_placement(res, place_fn, place_set_warm,
-                            extra_axes = placement_axes)
+    .joint_attach_by_arm_k(res, kd)
+}
+
+# A caller that fits several times and keeps one fit -- the HSGP basis loop,
+# which reads each fit's lengthscale posterior and linear predictor and never
+# its k-hat -- scores the outer k-hat once, on the fit it returns. Inside
+# `.nl_k_defer()` a driver leaves the score on the fit as `pareto_k_pending`, a
+# function of the fit the caller kept, and `.nl_settle_k()` runs it.
+.nl_k_defer <- function(expr) {
+    op <- options(tulpa.nl_defer_k = TRUE)
+    on.exit(options(op), add = TRUE)
+    expr
+}
+
+# Attach the outer k-hat `score(res)` returns, now or, inside `.nl_k_defer()`, as
+# the fit's pending score. The pending score reads the grid this driver solved
+# (`res` as it is here), so a fit scored later reports the k-hat it would have
+# reported scored now; its `pareto_k*` fields replace those of the fit it is
+# handed.
+.joint_score_outer_k <- function(res, score) {
+    solved <- res
+    scored <- function(fit) {
+        s  <- .joint_attach_outer_k(solved, score(solved))
+        nm <- grep("^pareto_k", names(s), value = TRUE)
+        fit[nm] <- s[nm]
+        fit
+    }
+    if (!isTRUE(getOption("tulpa.nl_defer_k"))) return(scored(res))
+    res$pareto_k_pending <- scored
+    res
+}
+
+# Compose `then(fit)` after a fit's pending score, so a door that attaches
+# fields read off the k-hat (the k_quality verdict) attaches them when the
+# score runs. A fit with no pending score is returned unchanged.
+.nl_k_then <- function(fit, then) {
+    pend <- fit$pareto_k_pending
+    if (!is.function(pend)) return(fit)
+    fit$pareto_k_pending <- function(f) then(pend(f))
+    fit
+}
+
+# Run a fit's pending outer k-hat score, adding its wall clock to the fit's
+# `diagnostics` timing so `diagnose_cost_ratio` reads the score that ran. A fit
+# with no pending score is returned unchanged.
+.nl_settle_k <- function(fit) {
+    pend <- if (is.list(fit)) fit$pareto_k_pending
+    if (!is.function(pend)) return(fit)
+    fit$pareto_k_pending <- NULL
+    t0  <- proc.time()[["elapsed"]]
+    fit <- pend(fit)
+    tmg <- fit$timing
+    if (is.numeric(tmg) && all(c("total", "diagnostics") %in% names(tmg))) {
+        secs <- proc.time()[["elapsed"]] - t0
+        tmg[c("total", "diagnostics")] <- tmg[c("total", "diagnostics")] + secs
+        fit$timing <- tmg
+    }
+    .joint_attach_diagnose_cost(fit, TRUE, fit$diagnose_draws)
 }

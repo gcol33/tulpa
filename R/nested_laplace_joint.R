@@ -1465,6 +1465,14 @@ tulpa_nested_laplace_joint <- function(responses,
     attach_q <- function(res)
         .joint_attach_k_quality(res, k_quality, diagnose_k,
                                 res$diagnose_draws %||% NA_integer_, k_conf_bands)
+    # The k_quality escalation reads every fit's k-hat, so its fits are scored
+    # as they are solved, whatever an enclosing caller deferred.
+    escalate <- k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
+        k_max_rounds > 0L && k_refine %in% c("grid", "ccd")
+    if (escalate) {
+        op_defer <- options(tulpa.nl_defer_k = NULL)
+        on.exit(options(op_defer), add = TRUE)
+    }
 
     # Outer-axis provenance, taken ONCE before the first fit: which grid axes
     # the caller declared as defaults with `auto_grid()` (as opposed to pinned
@@ -1709,9 +1717,13 @@ tulpa_nested_laplace_joint <- function(responses,
         res$k_quality_rounds <- 0L
     }
     res$k_quality_k_trace    <- res$pareto_k
+    res <- .nl_k_then(res, function(r) {
+        r <- attach_q(r)
+        r$k_quality_k_trace <- r$pareto_k
+        r
+    })
 
-    if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
-        k_max_rounds > 0L && k_refine %in% c("grid", "ccd")) {
+    if (escalate) {
         # A miss has two causes, and the ladder is ordered by which lever
         # reduces which quantity -- not by which cause the verdict named.
         #
