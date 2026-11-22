@@ -1,5 +1,16 @@
 # tulpa 0.8.0
 
+* A single-block `tulpa_nested_laplace_joint()` fit with a proper-CAR prior
+  and no copy integrates the model it reports. Its outer grid is laid on the
+  field SD, and the SD was handed to the kernel as the precision, so the fit
+  integrated the likelihood at tau = sigma under the prior for sigma. On a
+  binomial fixture the SD read 0.608 / 1.354 / 2.965 at its 2.5 / 50 / 97.5%
+  points where the same model on the block-list door reads 0.416 / 0.709 /
+  1.145; it now reads 0.415 / 0.709 / 1.149 (log evidence -492.374 ->
+  -492.223 against -492.220). A single-block BYM2 mixing weight's interval
+  stays inside (0, 1): the moments were read under a type name no registry
+  entry knew, and the 97.5% point read 1.057; it now reads 0.985 (#1195).
+
 * Once every axis is refined, the consistency pass lays each axis's new
   levels again in the rows of the grid as it then stands. An axis is refined
   in turn, so its levels never reached the rows a later axis's levels opened;

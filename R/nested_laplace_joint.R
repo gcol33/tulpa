@@ -2508,7 +2508,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$log_hyperprior <- hp_fn(res$theta_grid)
     res             <- .nl_prune_merged_record(res)
     res             <- .nl_attach_evidence(res, res$theta_grid, specs)
-    res             <- .nl_posterior_moments(res, paste0("joint_", type),
+    res             <- .nl_posterior_moments(res, type,
                                              within = within_cell)
     if (isTRUE(var_of_means_consistency)) {
         res$var_of_means_consistency_info <- ref$consistency_info
@@ -2594,7 +2594,7 @@ tulpa_nested_laplace_joint <- function(responses,
             kernel_fn(res$theta_grid, debias = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names,
         remoments = function(r) .nl_posterior_moments(
-            r, paste0("joint_", type), within = within_cell))
+            r, type, within = within_cell))
     # Corrected integrated Laplace, over the same settled
     # grid and through the same kernel closure.
     res <- .nl_cila_attach(
@@ -2603,7 +2603,7 @@ tulpa_nested_laplace_joint <- function(responses,
             kernel_fn(res$theta_grid, cila = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names,
         remoments = function(r) .nl_posterior_moments(
-            r, paste0("joint_", type), within = within_cell))
+            r, type, within = within_cell))
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

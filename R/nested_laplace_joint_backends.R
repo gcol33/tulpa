@@ -197,11 +197,16 @@
         )
         copy_block <- 0L
     } else {
+        # The multi-block kernel integrates a non-copy ICAR or proper-CAR
+        # field on its precision (`(tau)`, `(tau, rho_car)`) and a BYM2 field
+        # on its SD, so the outer grid's field SD is carried to the precision
+        # here, tau = 1 / sigma^2.
+        tau <- 1.0 / (as.numeric(grids$sigma)^2)
         cols <- switch(
             type,
             bym2       = list(b1.sigma = grids$sigma, b1.rho = grids$rho),
-            icar       = list(b1.tau   = 1.0 / (as.numeric(grids$sigma)^2)),
-            car_proper = list(b1.sigma = grids$sigma, b1.rho_car = grids$rho_car)
+            icar       = list(b1.tau   = tau),
+            car_proper = list(b1.tau   = tau, b1.rho_car = grids$rho_car)
         )
         copy_block <- -1L
     }
@@ -231,7 +236,8 @@
 #   icar  -copy: axes = (tau,)                        -- tau on prior;
 #                grid$sigma is translated to tau = 1 / sigma^2.
 #   car_proper +copy: (sigma_occ, sigma_pos, rho_car) -- as above.
-#   car_proper -copy: (sigma, rho_car)                -- sigma in d_fac.
+#   car_proper -copy: (tau, rho_car)                  -- tau on prior;
+#                grid$sigma is translated to tau = 1 / sigma^2.
 #
 # The legacy backends used `grid$sigma` for both the donor amplitude
 # (copy case) and the prior scale (no-copy case). The C++ kernel is

@@ -194,3 +194,44 @@ test_that("joint CAR_proper recovers per-arm betas and locates the alpha mode", 
     expect_lt(fit_thin$copy_atom$posterior_mass, fit$copy_atom$posterior_mass)
     expect_lt(abs(fit_thin$theta_mean[["alpha"]] - 1.0), 0.75)
 })
+
+test_that("a single-block proper-CAR fit is the block-list fit of the same model", {
+    skip_on_cran()
+    # The single-block door lays the field on its SD and the block-list door
+    # on its precision; the kernel integrates the precision either way, so
+    # the SD read is the precision read through sigma = tau^(-1/2).
+    sim <- .simulate_joint_car(N = 800, n_s = 30, sigma = 6, seed = 11)
+    adj <- .chain_adj(sim$n_s)
+    arm <- list(occ = list(y = sim$occur, n_trials = rep(1L, sim$N),
+                           X = sim$Xocc, spatial_idx = sim$spatial_idx,
+                           family = "binomial", phi = 1.0))
+    car <- c(list(type = "car_proper"), adj[c("n_spatial_units", "adj_row_ptr",
+                                             "adj_col_idx", "n_neighbors")])
+    ctl <- list(progress = FALSE, diagnose_k = FALSE)
+    single <- suppressWarnings(tulpa_nested_laplace_joint(arm, car, control = ctl))
+    blk <- car; blk$spatial_idx <- list(sim$spatial_idx)
+    multi <- suppressWarnings(tulpa_nested_laplace_joint(arm, list(blk), control = ctl))
+    sd_ci <- c(single$theta_ci_lo[["sigma"]], single$theta_median[["sigma"]],
+               single$theta_ci_hi[["sigma"]])
+    tau_ci <- c(multi$theta_ci_hi[["b1.tau"]], multi$theta_median[["b1.tau"]],
+                multi$theta_ci_lo[["b1.tau"]])^(-1 / 2)
+    expect_lt(max(abs(log(sd_ci) - log(tau_ci))), 0.02)
+    expect_lt(abs(single$log_evidence - multi$log_evidence), 0.05)
+    expect_equal(unname(coef(single)), unname(coef(multi)), tolerance = 0.01)
+})
+
+test_that("a single-block BYM2 mixing weight reports an interval inside (0, 1)", {
+    skip_on_cran()
+    sim <- .simulate_joint_car(N = 800, n_s = 30, sigma = 6, seed = 11)
+    adj <- .chain_adj(sim$n_s)
+    arm <- list(occ = list(y = sim$occur, n_trials = rep(1L, sim$N),
+                           X = sim$Xocc, spatial_idx = sim$spatial_idx,
+                           family = "binomial", phi = 1.0))
+    bym <- c(list(type = "bym2", scale_factor = 1),
+             adj[c("n_spatial_units", "adj_row_ptr", "adj_col_idx", "n_neighbors")])
+    fit <- suppressWarnings(tulpa_nested_laplace_joint(
+        arm, bym, control = list(progress = FALSE, diagnose_k = FALSE)))
+    expect_identical(unname(fit$theta_cell_edge_coord[["rho"]]), "unit")
+    expect_gt(fit$theta_ci_lo[["rho"]], 0)
+    expect_lt(fit$theta_ci_hi[["rho"]], 1)
+})
