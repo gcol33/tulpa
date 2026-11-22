@@ -31,7 +31,7 @@ test_that("a dense grid past the threshold is announced before its solve", {
     paste0("dense tensor of ", n, " cells, one inner solve each\\. It crosses ",
            "b1 \\(x\\) x phi_pos 4\\. Reduce per-block grid sizes\\."))
   expect_silent(.nl_dense_grid_warn(.NL_DENSE_GRID_WARN_CELLS, "x"))
-  expect_silent(.nl_with_internal_batch(.nl_dense_grid_warn(n, "x")))
+  expect_silent(.joint_with_quiet_opts(.nl_dense_grid_warn(n, "x")))
 })
 
 # --------------------------------------------------------------------------- #

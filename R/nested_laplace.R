@@ -656,36 +656,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # A constraint row as a driver hands it back (`constraint_cols`): an integer
 # vector of 1-based latent indices is a sum-to-zero group (every weight 1); a
 # list(cols, w) is a weighted row, a hard linear constraint a block declares
-# or a weighted level. `.constraint_row_dense()` is the row as a length-n_x
-# vector; `.constraint_rows_for_cpp()` the list in the form
-# read_constraint_rows() takes.
-.constraint_row_dense <- function(cc, n_x) {
-  a <- numeric(n_x)
-  if (is.list(cc)) {
-    cols <- as.integer(cc$cols)
-    a[sort(unique(cols))] <- as.numeric(rowsum(as.numeric(cc$w), cols))
-  } else {
-    a[unique(as.integer(cc))] <- 1
-  }
-  a
-}
-
-# The rows as the columns of a sparse n_x x k matrix (A').
-.constraint_rows_matrix <- function(constr, n_x) {
-  ij <- lapply(seq_along(constr), function(g) {
-    cc <- constr[[g]]
-    if (is.list(cc)) {
-      data.frame(i = as.integer(cc$cols), j = g, x = as.numeric(cc$w))
-    } else {
-      u <- unique(as.integer(cc))
-      data.frame(i = u, j = rep(g, length(u)), x = rep(1, length(u)))
-    }
-  })
-  ij <- do.call(rbind, ij)
-  Matrix::sparseMatrix(i = ij$i, j = ij$j, x = ij$x,
-                       dims = c(n_x, length(constr)))
-}
-
+# or a weighted level. The list in the form read_constraint_rows() takes.
 .constraint_rows_for_cpp <- function(constr) {
   lapply(constr %||% list(), function(cc) {
     if (is.list(cc)) list(cols = as.integer(cc$cols), w = as.numeric(cc$w))
@@ -2276,14 +2247,6 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # behind dispatchers whose signatures do not carry it.
 .nl_internal_batch <- function() {
   isTRUE(getOption("tulpa.nl_internal_batch", FALSE))
-}
-
-# Run `expr` with that flag set. Nests and restores, so an internal batch that
-# itself re-dispatches stays internal.
-.nl_with_internal_batch <- function(expr) {
-  op <- options(tulpa.nl_internal_batch = TRUE)
-  on.exit(options(op), add = TRUE)
-  force(expr)
 }
 
 # The caller's ceiling on a dense multi-block outer tensor, in inner solves.

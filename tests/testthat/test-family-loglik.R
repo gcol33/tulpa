@@ -1,8 +1,8 @@
 
-test_that("family_mean applies the documented clamps", {
-  expect_true(all(family_mean(c(-50, 50), "binomial") > 0 &
-                    family_mean(c(-50, 50), "binomial") < 1))
-  expect_true(all(family_mean(c(-50, 50), "poisson") >= 1e-8))
+test_that("a family's registered mean applies the documented clamps", {
+  expect_true(all(.family_ops("binomial")$mean(c(-50, 50)) > 0 &
+                    .family_ops("binomial")$mean(c(-50, 50)) < 1))
+  expect_true(all(.family_ops("poisson")$mean(c(-50, 50)) >= 1e-8))
 })
 
 skip_on_cran_budget()
@@ -93,7 +93,7 @@ test_that("glmm_weights is unchanged by the registry refactor", {
 test_that("family helpers validate names; glmm_weights errors on unknown family", {
   skip_on_cran_budget()
   expect_error(family_loglik(0, 0, "weibull"), "Unknown family")
-  expect_error(family_mean(0, "nope"), "Unknown family")
+  expect_error(.family_ops("nope"), "Unknown family")
   expect_setequal(family_names(),
                   c("binomial", "poisson", "neg_binomial_2", "neg_binomial_1",
                     "truncated_poisson", "truncated_neg_binomial_2",

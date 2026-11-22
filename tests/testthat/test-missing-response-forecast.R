@@ -88,7 +88,7 @@ test_that("a forecast row's linear predictor is the exact Gaussian predictive", 
   sb <- tulpa:::.tulpa_prior_sd()
   st <- tulpa:::.st_interaction_structure("IV", A, n_t, "rw1", FALSE)
   nd <- st$n_latent
-  Am <- t(vapply(st$constr, tulpa:::.constraint_row_dense, numeric(nd), n_x = nd))
+  Am <- t(vapply(st$constr, .constraint_row_dense, numeric(nd), n_x = nd))
   B <- MASS::Null(t(Am))
   Cd <- B %*% solve(tau_d * crossprod(B, as.matrix(st$R) %*% B)) %*% t(B)
   # The main effects' augmented covariances conditioned on their level rows

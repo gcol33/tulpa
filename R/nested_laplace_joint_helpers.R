@@ -529,8 +529,7 @@
 # `.joint_axis_refine_modes_by()` in the driver.
 # `user_priors` carries the caller's regularizing hyperpriors, named by the axis
 # each applies to (`sigma`, `alpha`, `phi` -- the last matching every `phi_<arm>`
-# axis), matching how `.joint_hp_vec_for_grids()` folds them into
-# `log_marginal`. An axis with one keeps the flat-over-declared-span measure,
+# axis), matching how `.joint_hyperprior()` folds them into `log_marginal`. An axis with one keeps the flat-over-declared-span measure,
 # because applying the engine's declared density as well would put two priors on
 # one axis, and carries the density on the spec so the axis quadrature knows
 # what the fold will apply -- which is what lets a declared point mass keep its

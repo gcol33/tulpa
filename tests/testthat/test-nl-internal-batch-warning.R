@@ -29,25 +29,20 @@ skip_on_cran_budget()
 test_that(".nl_internal_batch() is off by default and restores (#614)", {
   skip_on_cran_budget()
   expect_false(.nl_internal_batch())
-  inner <- .nl_with_internal_batch({
+  # The joint side sets the flag through the wrapper that already quiets the
+  # checkpoint and the progress bar for an internal re-dispatch, nests, and
+  # restores it.
+  inner <- .joint_with_quiet_opts({
     expect_true(.nl_internal_batch())
-    # Nested: an internal batch that re-dispatches stays internal, and the
-    # inner restore must not clear the outer flag.
-    .nl_with_internal_batch(expect_true(.nl_internal_batch()))
+    .joint_with_quiet_opts(expect_true(.nl_internal_batch()))
     expect_true(.nl_internal_batch())
     "value"
   })
   expect_identical(inner, "value")
   expect_false(.nl_internal_batch())
-
   # It restores on an error too, so a failed diagnostic cannot leave the rest
   # of the session silenced.
-  expect_error(.nl_with_internal_batch(stop("boom")), "boom")
-  expect_false(.nl_internal_batch())
-
-  # The joint side reaches the same flag through the wrapper that already
-  # quiets the checkpoint and the progress bar for an internal re-dispatch.
-  .joint_with_quiet_opts(expect_true(.nl_internal_batch()))
+  expect_error(.joint_with_quiet_opts(stop("boom")), "boom")
   expect_false(.nl_internal_batch())
 })
 
@@ -73,7 +68,7 @@ test_that(".nl_dense_grid_warn() fires past its cell count, gated by .nl_interna
   # An internal re-dispatch (the Pareto-k diagnostic's own re-evaluation) is
   # exempt even past the threshold -- #614's whole point.
   w2 <- grid_warnings(
-    tulpa:::.nl_with_internal_batch(
+    tulpa:::.joint_with_quiet_opts(
       tulpa:::.nl_dense_grid_warn(n_cells = over, remedy = "x")))
   expect_identical(w2, character(0))
 })

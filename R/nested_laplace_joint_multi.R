@@ -1130,13 +1130,10 @@
 }
 
 # Add the regularizing (sigma, alpha) hyperprior to a per-cell log-marginal
-# vector for a multi-block `joint_grid`. Each applied axis is folded through
-# the SAME `.joint_hp_vec_for_grids()` the single-block path uses, one column
-# at a time, so the atom / continuum reading of a copy scale's zero is that
-# axis's own. The per-axis contributions are summed before the one addition to
-# `log_marginal`, so a grid carrying a single axis of each role reproduces the
-# whole-view call to the bit. Single source of truth for the main dispatch and
-# the Pareto-k re-evaluation.
+# vector for a joint `joint_grid`, through `.joint_hyperprior()` one column at
+# a time, so the atom / continuum reading of a copy scale's zero is that axis's
+# own. Single source of truth for the main dispatch and the Pareto-k
+# re-evaluation.
 .joint_multi_add_hp <- function(log_marginal, joint_grid, axis_offsets, B,
                                 fn_sigma, fn_alpha, fn_phi = NULL,
                                 blocks = NULL, families = NULL,

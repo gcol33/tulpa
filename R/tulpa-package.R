@@ -45,17 +45,6 @@ utils::globalVariables(c("cpp_gradient_mode_names", ".data", "ratio", ".phl_w", 
                          "cpp_beta_grouped_terms", "cpp_test_field_coordinates",
                          "cpp_test_sampler_controls"))
 
-# The package version, read from the one place that defines it. A literal here
-# (or in src/) is a second definition that nothing forces anyone to update at
-# release, so it can only ever agree with DESCRIPTION by coincidence.
-# TULPA_ABI_VERSION is deliberately NOT this: it is a compiled constant because
-# it must describe the DLL a model package linked against, not the metadata
-# sitting beside it.
-#' @keywords internal
-tulpa_version <- function() {
-  as.character(utils::packageVersion("tulpa"))
-}
-
 # Scoped set.seed: seeds the RNG and restores the caller's RNG state when the
 # calling function exits, so a user-supplied `seed` does not clobber the
 # session RNG stream. No-op when `seed` is NULL. The on.exit restore is

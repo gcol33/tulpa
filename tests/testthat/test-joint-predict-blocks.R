@@ -53,13 +53,13 @@ skip_on_cran()
     # folded (soft rows, precision D), conditioned on the hard rows.
     cons <- tulpa:::.inner_constraint(fit, j)
     At <- if (length(cons$hard))
-      as.matrix(tulpa:::.constraint_rows_matrix(cons$hard, n_x))
+      as.matrix(.constraint_rows_matrix(cons$hard, n_x))
     Q <- as.matrix(Matrix::sparseMatrix(i = fit$Q_csc_i_per_grid[[j]] + 1L,
                                         p = fit$Q_csc_p_per_grid[[j]],
                                         x = fit$Q_csc_x_per_grid[[j]],
                                         dims = c(n_x, n_x), symmetric = TRUE))
     if (!is.null(cons$soft_D)) {
-      Sm <- as.matrix(tulpa:::.constraint_rows_matrix(cons$soft, n_x))
+      Sm <- as.matrix(.constraint_rows_matrix(cons$soft, n_x))
       Q <- Q + Sm %*% as.matrix(cons$soft_D[[1L]]) %*% t(Sm)
     }
     S <- solve(Q)

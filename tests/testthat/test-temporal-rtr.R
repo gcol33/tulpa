@@ -204,10 +204,10 @@ test_that("temporal() summarizes a restricted field past the retained-covariance
   w <- fr$weights[on] / sum(fr$weights[on])
   cons <- sol$constraint
   A <- if (length(cons$hard)) {
-    as.matrix(tulpa:::.constraint_rows_matrix(cons$hard, n_x))
+    as.matrix(.constraint_rows_matrix(cons$hard, n_x))
   }
   Sr <- if (!is.null(cons$soft_D)) {
-    as.matrix(tulpa:::.constraint_rows_matrix(cons$soft, n_x))
+    as.matrix(.constraint_rows_matrix(cons$soft, n_x))
   }
   expect_false(is.null(Sr))
   mus <- vars <- NULL

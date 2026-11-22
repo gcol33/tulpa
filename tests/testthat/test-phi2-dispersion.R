@@ -59,7 +59,7 @@ test_that("lognormal is registered with the variance convention", {
   expect_equal(tulpa:::family_loglik(eta, y, "lognormal", phi = v),
                stats::dlnorm(y, meanlog = eta, sdlog = sqrt(v), log = TRUE),
                tolerance = 1e-12)
-  expect_equal(tulpa:::family_mean(eta, "lognormal", phi = v),
+  expect_equal(tulpa:::.family_ops("lognormal")$mean(eta, v),
                exp(eta + v / 2))
   # Sample moments.
   ys <- tulpa:::family_sample(rep(0.5, 40000), "lognormal", phi = 0.25)

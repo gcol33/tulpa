@@ -62,9 +62,10 @@ test_that("the joint driver integrates the prior it documents (#625)", {
   fn <- .joint_parse_sigma_prior(list("pc.prec", c(U, a)), "prior_sigma")
 
   specs <- .joint_axis_specs_from_grid(tg)
-  w <- .nl_normalise_weights_safe(
-    .joint_hp_vec_for_grids(tg, fn, NULL, NULL), what = "test",
-    log_quad = .hyper_log_quad_weights(tg, specs))
+  lp <- .joint_hyperprior(tg, list(), user = list(sigma = fn),
+                          hyperprior = "flat", declared = .hp_declare(tg))$lp
+  w <- .nl_normalise_weights_safe(lp, what = "test",
+                                  log_quad = .hyper_log_quad_weights(tg, specs))
 
   bd <- specs[[1L]]$slab_bounds
   u  <- log(sig)
@@ -92,9 +93,10 @@ test_that("the joint copy scale keeps its declared atom mass under a prior", {
   fn <- .joint_parse_sigma_prior(list("pc.prec", c(1, 0.05)), "prior_alpha")
   specs <- .joint_axis_specs(list(alpha = ATOM_GRID), list(has_copy = TRUE),
                             user_priors = list(alpha = fn))
-  w <- .nl_normalise_weights_safe(
-    .joint_hp_vec_for_grids(tg, NULL, fn, NULL), what = "test",
-    log_quad = .hyper_log_quad_weights(tg, specs))
+  lp <- .joint_hyperprior(tg, list(), user = list(alpha = fn),
+                          hyperprior = "flat", declared = .hp_declare(tg))$lp
+  w <- .nl_normalise_weights_safe(lp, what = "test",
+                                  log_quad = .hyper_log_quad_weights(tg, specs))
   expect_equal(unname(w[1L]), .TULPA_COPY_ATOM_MASS)
   expect_true(all(is.finite(w)))
 })

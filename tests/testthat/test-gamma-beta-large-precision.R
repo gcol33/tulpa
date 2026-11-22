@@ -6,16 +6,13 @@ test_that("Stirling remainders and relative deviances match exact references", {
   refs <- precision_fixture("primitives")
   for (i in seq_len(nrow(refs))) {
     r <- refs[i, ]
-    actual <- if (r$kind == "s") tulpa:::.stirling_remainder(r$x, r$order) else
-      tulpa:::.log1pmx(r$x)
+    actual <- if (r$kind == "s") tulpa:::cpp_precision_math(r$x, TRUE, r$order) else
+      tulpa:::cpp_precision_math(r$x, FALSE, 0L)
     if (is.infinite(r$expected)) expect_identical(actual, r$expected) else
       expect_lte(abs(actual - r$expected), 4 * .Machine$double.eps * abs(r$expected),
                  label = paste(r$kind, r$order, r$x))
   }
-  x <- matrix(c(.3, 2, 1e8, NA_real_), 2, dimnames = list(c("a", "b"), c("c", "d")))
-  expect_identical(dimnames(tulpa:::.stirling_remainder(x)), dimnames(x))
-  expect_identical(tulpa:::.log1pmx(numeric()), numeric())
-  expect_true(is.na(tulpa:::.stirling_remainder(NA_real_)))
+
 })
 
 test_that("every gamma and beta density matches the exact density at every precision", {
@@ -70,7 +67,7 @@ test_that("autodiff primitives carry their exact unary chain rule", {
   for (i in which(refs$order == 0L & refs$x > -1 & is.finite(refs$expected))) {
     r <- refs[i, ]
     val <- tulpa:::cpp_precision_ad_math(r$x, r$kind=="s")
-    deriv <- if (r$kind=="s") tulpa:::.stirling_remainder(r$x,1L) else r$x/(1+r$x)
+    deriv <- if (r$kind=="s") tulpa:::cpp_precision_math(r$x,TRUE,1L) else r$x/(1+r$x)
     for (start in c(1L,4L)) {
       expect_equal(val[start],r$expected,tolerance=1e-14)
       expect_equal(val[start+1L],deriv,tolerance=1e-14)

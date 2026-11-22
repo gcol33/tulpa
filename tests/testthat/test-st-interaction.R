@@ -24,7 +24,7 @@
 .kh_null_basis <- function(st) {
   nd <- st$n_latent
   if (!length(st$constr)) return(diag(nd))
-  Am <- t(vapply(st$constr, tulpa:::.constraint_row_dense, numeric(nd),
+  Am <- t(vapply(st$constr, .constraint_row_dense, numeric(nd),
                  n_x = nd))
   MASS::Null(t(Am))
 }
@@ -49,7 +49,7 @@ test_that("the constraint rows span the structure's null space, independently", 
       nul <- sum(ev < 1e-9)
       expect_identical(length(st$constr), nul)
       if (nul) {
-        Am <- t(vapply(st$constr, tulpa:::.constraint_row_dense,
+        Am <- t(vapply(st$constr, .constraint_row_dense,
                        numeric(st$n_latent), n_x = st$n_latent))
         expect_lt(max(abs(Am %*% R)), 1e-10)
         expect_identical(qr(Am)$rank, nul)

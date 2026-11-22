@@ -38,7 +38,7 @@ test_that("the grid read conditions a precision singular along its constraints",
   expect_lt(max(abs(Q %*% v)), 1e-10)
 
   constr <- list(2L + seq_len(n_a), 2L + n_a + seq_len(n_b))
-  A <- t(vapply(constr, tulpa:::.constraint_row_dense, numeric(n_x),
+  A <- t(vapply(constr, .constraint_row_dense, numeric(n_x),
                 n_x = n_x))
   cs <- .gh_csc(Q)
   res <- list(Q_csc_p_per_grid = list(cs$p), Q_csc_i_per_grid = list(cs$i),
@@ -106,7 +106,7 @@ test_that("a constrained cell draw has the conditional covariance", {
   v <- c(0, rep(1, n_a), rep(-1, n_b))
   expect_lt(max(abs(Q %*% v)), 1e-10)
   constr <- list(1L + seq_len(n_a), 1L + n_a + seq_len(n_b))
-  A <- t(vapply(constr, tulpa:::.constraint_row_dense, numeric(n_x),
+  A <- t(vapply(constr, .constraint_row_dense, numeric(n_x),
                 n_x = n_x))
   cs <- .gh_csc(Q)
   ref <- .gh_null_cov(Q, A)
@@ -142,7 +142,7 @@ test_that("a draw with soft and hard rows has the conditional covariance of Q + 
   P[1 + n_a + seq_len(n_b), 1 + n_a + seq_len(n_b)] <- crossprod(diff(diag(n_b)))
   Q <- crossprod(Xt, runif(n, 0.5, 2) * Xt) + P
   soft <- list(1L + seq_len(n_a), 1L + n_a + seq_len(n_b))
-  S <- t(vapply(soft, tulpa:::.constraint_row_dense, numeric(n_x), n_x = n_x))
+  S <- t(vapply(soft, .constraint_row_dense, numeric(n_x), n_x = n_x))
   D <- matrix(c(0.4, 0.1, 0.1, 0.3), 2, 2)
   M <- Q + crossprod(S, D %*% S)
   cs <- .gh_csc(Q)
@@ -156,7 +156,7 @@ test_that("a draw with soft and hard rows has the conditional covariance of Q + 
 
   # With a hard row on the second level's contrast: V = B (B' M B)^{-1} B'.
   hard <- list(list(cols = 1L + n_a + seq_len(n_b), w = seq_len(n_b) - 2.5))
-  A <- t(vapply(hard, tulpa:::.constraint_row_dense, numeric(n_x), n_x = n_x))
+  A <- t(vapply(hard, .constraint_row_dense, numeric(n_x), n_x = n_x))
   X <- tulpa:::cpp_constrained_cell_draw(cs$p, cs$i, cs$x, n_x,
                                          tulpa:::.constraint_rows_for_cpp(hard),
                                          diag(n_x), soft_cpp, D)

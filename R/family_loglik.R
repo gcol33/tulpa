@@ -105,11 +105,6 @@
   .recycled_kernel(function(y, mu, phi) cpp_precision_density(y, mu, phi, beta, order),
                    y, mu, phi)
 
-.stirling_remainder <- function(x, order = 0L)
-  .recycled_kernel(function(x) cpp_precision_math(x, TRUE, order), x)
-
-.log1pmx <- function(x) .recycled_kernel(function(x) cpp_precision_math(x, FALSE), x)
-
 .beta_precision_score <- function(y, mu, phi, derivative = FALSE)
   .recycled_kernel(function(y, mu, phi) cpp_beta_precision_score(y, mu, phi, derivative),
                    y, mu, phi)
@@ -1301,15 +1296,6 @@ family_names <- function() names(.FAMILY_OPS)
       logical(1))])
 }
 
-
-#' Inverse-link mean for a family
-#'
-#' `phi` reaches entries whose response mean depends on the dispersion
-#' (lognormal); the others ignore it via `...`.
-#' @noRd
-family_mean <- function(eta, family, phi = 1.0) {
-  .family_ops(family)$mean(eta, phi)
-}
 
 
 # Call one registered operation of a family with the positional arguments in
