@@ -108,22 +108,6 @@
   as.numeric(x) == 0
 }
 
-# Node cell widths on the integration coordinate, clipped to a fixed interval.
-#
-# Each node owns the half-interval to its neighbour on either side; the outermost
-# nodes own out to the declared bounds. On an evenly spaced grid whose bounds sit
-# half a step beyond the end nodes this returns equal widths, which is the rule
-# the engine has always applied, so an unrefined grid integrates exactly what it
-# did before. Subdividing an interval splits that node's width instead of adding
-# weight, which is what makes refinement leave the measure alone.
-.hyper_cell_widths <- function(u, lo, hi) {
-  K <- length(u)
-  if (K < 1L) return(numeric(0))
-  if (K == 1L) return(1)
-  edges <- c(lo, (u[-K] + u[-1L]) / 2, hi)
-  diff(edges)
-}
-
 # Default bounds for a node set with no declared support: half a step beyond the
 # outermost nodes, so an evenly spaced grid keeps equal weights.
 .hyper_default_coord_bounds <- function(u) {
@@ -248,16 +232,6 @@
   if (!is.finite(b[1L]) && !is.finite(b[2L])) NULL else b
 }
 
-# Coordinate bounds the cells of one node set tile: the half-node-step
-# extrapolation, widened to the declared span (`.hyper_span_coord_bounds()`) and
-# closed inside the axis's declared domain. The ONE construction behind both
-# the level weights and the reported support, so the interval the prior is
-# normalised over and the interval a sampler is told the quadrature reached are
-# the same interval.
-.hyper_axis_coord_bounds <- function(u, spec, declared = NULL) {
-  .hyper_domain_clamp(.hyper_span_coord_bounds(u, spec, declared), u, spec)
-}
-
 # Prior weight per level on one axis.
 #
 # The rule is cell width times declared density on the integration coordinate.
@@ -290,15 +264,77 @@
 # over does not move because a node was added inside it. `declared` holds the
 # natural-scale levels of the cells no pass added (NULL, or the same levels, on
 # a grid nothing refined).
-.hyper_span_coord_bounds <- function(u, spec, declared = NULL) {
+.hyper_span_coord_bounds <- function(u, spec, declared = NULL,
+                                     to = function(v) .hyper_axis_coord(v, spec)) {
   bd <- .hyper_default_coord_bounds(u)
   if (!length(declared)) return(bd)
   d <- sort(unique(as.numeric(declared)))
   d <- d[is.finite(d) & !.hyper_is_atom_level(d, spec)]
   if (isTRUE(spec$log_scale)) d <- d[d > 0]
   if (length(d) < 2L) return(bd)
-  dbd <- .hyper_default_coord_bounds(.hyper_axis_coord(d, spec))
+  dbd <- .hyper_default_coord_bounds(to(d))
   c(min(bd[1L], dbd[1L]), max(bd[2L], dbd[2L]))
+}
+
+# The coordinate an axis's cells are LAID on where it is not the integration
+# coordinate: the unbounded coordinate of a bounded continuum
+# (`.NL_DOMAIN_TRANSFORM`: atanh for a correlation, the logit for a mixing
+# weight), which is the coordinate its grid is spaced on and its within-cell
+# read partitions it on (`.nl_cell_partition()`). NULL where the cells are laid
+# on the integration coordinate itself: a log-scale axis, and an axis whose
+# domain is unbounded or names no transform.
+.hyper_axis_partition <- function(spec) {
+  if (isTRUE(spec$log_scale)) return(NULL)
+  key <- .nl_domain_of_bounds(.hyper_axis_domain(spec)$bounds)
+  if (is.na(key) || identical(key, "unbounded")) return(NULL)
+  .NL_DOMAIN_TRANSFORM[[key]]
+}
+
+# The edges of the cells the continuum nodes `x` own, on the integration
+# coordinate: `length(x) + 1` of them, cell k owning `[e_k, e_{k+1}]`. Each
+# interior edge is the midpoint of two adjacent nodes, and the outer edges half
+# a node step beyond the outer nodes, widened to the declared levels' span
+# (`.hyper_span_coord_bounds()`), on the coordinate the cells are laid on
+# (`.hyper_axis_partition()`), and closed inside the axis's domain; a declared
+# `slab_bounds` is the outer edges instead. The within-cell read lays its boxes
+# by the same rule (`.nl_level_edges()`), so a cell's mass is measured over the
+# box it is read on, and the reported support (`.hyper_axis_support()`) is the
+# span these edges tile, so the interval the prior is normalised over and the
+# interval a sampler is told the quadrature reached are one interval.
+#
+# On an evenly spaced grid whose bounds sit half a step beyond the end nodes the
+# cells are equally wide, which is the rule the engine has always applied, and
+# subdividing an interval splits that node's cell instead of adding weight,
+# which is what makes refinement leave the measure alone.
+#
+# A correlation axis laid evenly in atanh had its cells measured with edges at
+# the natural-scale midpoints while the read laid its boxes at the atanh
+# midpoints: a cell's mass was measured over one box and spread over another,
+# leaving a slab ratio from 0.985 at rho = 0 to 1.031 in the tails at atanh
+# spacing 0.43 (gcol33/tulpa#1279). The width stays the one the declared
+# density is a density on: a cell carries the prior mass of the box it owns on
+# the natural scale, exact for a flat prior, rather than the change of
+# coordinate taken at its node. Against dense references on three AR(1) and
+# BYM2 correlation axes the summed |error| of the fits' 2.5% / 50% / 97.5%
+# reads was 0.083 with the natural-scale edges, 0.037 with these and 0.047
+# with the node's change of coordinate.
+.hyper_axis_cell_edges <- function(x, spec, declared = NULL,
+                                   close_domain = TRUE) {
+  K <- length(x)
+  u <- .hyper_axis_coord(x, spec)
+  pt <- .hyper_axis_partition(spec)
+  slab <- spec$slab_bounds
+  bd <- if (!is.null(slab)) sort(.hyper_axis_coord(slab, spec))
+        else if (is.null(pt)) .hyper_span_coord_bounds(u, spec, declared)
+        else .hyper_axis_coord(pt$from(.hyper_span_coord_bounds(
+          pt$to(x), spec, declared, to = pt$to)), spec)
+  if (close_domain) bd <- .hyper_domain_clamp(bd, u, spec)
+  if (K < 2L) return(bd)
+  mid <- if (is.null(pt)) (u[-K] + u[-1L]) / 2 else {
+    v <- pt$to(x)
+    .hyper_axis_coord(pt$from(v[-1L] / 2 + v[-K] / 2), spec)
+  }
+  c(bd[1L], mid, bd[2L])
 }
 
 # The level weights of one axis together with the continuum nodes and the cell
@@ -352,8 +388,6 @@
 
   x  <- levels[cont]
   u  <- .hyper_axis_coord(x, spec)
-  bd <- if (is.null(slab)) .hyper_span_coord_bounds(u, spec, declared)
-        else sort(.hyper_axis_coord(slab, spec))
   # The outer cells are closed inside the axis's declared domain whichever
   # rule placed them, so the measure is never normalised over a region the
   # parameter does not live on and the weights cannot disagree with the
@@ -364,7 +398,7 @@
   # posterior is normalised over it -- it is the measure a boundary DETECTOR
   # reads, which must not weaken because the axis's support happens to close
   # where it is looking (`.nl_axis_marginal_w(measure = "span")`).
-  if (close_domain) bd <- .hyper_domain_clamp(bd, u, spec)
+  edges <- .hyper_axis_cell_edges(x, spec, declared, close_domain)
   dens <- spec$slab_log_density
   # A proper continuum beside a point mass at zero lives on the whole of
   # (0, Inf), and the atom is its limit there, so the lowest continuum cell
@@ -376,8 +410,9 @@
   # copy scale truly zero the atom read 0.90 of the posterior against 0.83 on a
   # grid laid down to 1e-4.
   floor_cell <- .hyper_continuum_reaches_atom(levels, spec, atom_mass)
-  if (floor_cell) bd[1L] <- -Inf
-  width <- .hyper_cell_widths(u, bd[1L], bd[2L])
+  if (floor_cell) edges[1L] <- -Inf
+  bd <- edges[c(1L, length(edges))]
+  width <- if (length(x) < 2L) 1 else diff(edges)
 
   if (is.null(dens)) {
     # Flat over the declared span: the widths themselves are the shape. As an
@@ -400,7 +435,7 @@
     cw <- width * per_width(x)
     if (floor_cell) {
       cw[1L] <- .hyper_floor_cell_mass(
-        if (length(u) > 1L) (u[1L] + u[2L]) / 2 else bd[2L], dens, spec)
+        if (length(u) > 1L) edges[2L] else bd[2L], dens, spec)
     }
     cw[!is.finite(cw)] <- 0
   }
@@ -439,7 +474,7 @@
     w[cont] <- cw
   }
   list(w = stats::setNames(w, nm), levels = levels, x = x,
-       edges = c(bd[1L], (u[-length(u)] + u[-1L]) / 2, bd[2L]),
+       edges = if (length(x) < 2L) bd else edges,
        unit = function(xx) scale * per_width(xx), slab = slab)
 }
 
@@ -723,7 +758,8 @@ tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
     if (identical(cl, bd)) return(nat)
     return(if (isTRUE(spec$log_scale)) exp(cl) else cl)
   }
-  bd <- .hyper_axis_coord_bounds(u, spec, declared)
+  e <- .hyper_axis_cell_edges(cont, spec, declared)
+  bd <- e[c(1L, length(e))]
   # A continuum reaching its atom integrates down to zero, so that is where its
   # support starts.
   if (.hyper_continuum_reaches_atom(levels, spec)) bd[1L] <- -Inf

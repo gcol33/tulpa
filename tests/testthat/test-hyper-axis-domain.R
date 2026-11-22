@@ -94,7 +94,13 @@ test_that("a block's own bounds tighten the domain the name declares", {
         g, hyper_axis_spec("rho", g, bounds = c(0, 1)))
     # The name alone fixes the upper end, which is what the default grid needs.
     expect_equal(bare, c(0.05, 0.9995))
-    expect_identical(bare, bym2)
+    # Declared on (0, 1) the axis is a mixing weight, whose cells are laid on
+    # its logit, as the within-cell read lays its boxes (gcol33/tulpa#1279):
+    # half a logit step past each outer level, inside (0, 1) by construction.
+    lg <- stats::qlogis(g); n <- length(g)
+    expect_equal(bym2, stats::plogis(c(lg[1L] - (lg[2L] - lg[1L]) / 2,
+                                       lg[n] + (lg[n] - lg[n - 1L]) / 2)))
+    expect_true(all(bym2 > 0 & bym2 < 1))
 
     # The lower end is what only the block knows: `rho` names a mixing weight
     # on (0, 1) in one family and an autocorrelation reaching below zero in
@@ -106,7 +112,8 @@ test_that("a block's own bounds tighten the domain the name declares", {
         g2, hyper_axis_spec("rho", g2, bounds = c(0, 1)))
     expect_lt(open_below[1L], 0)
     expect_gt(unit[1L], 0)
-    expect_equal(unit[1L], 0.01)
+    expect_equal(unit[1L], stats::plogis(1.5 * stats::qlogis(0.02) -
+                                         0.5 * stats::qlogis(0.2)))
     expect_true(unit[1L] < min(g2))
 })
 
@@ -197,12 +204,18 @@ test_that("a block's own support closes the axis its name leaves open", {
     expect_equal(rho_spec(by_name)$bounds, c(-Inf, 1))
     expect_equal(rho_spec(by_block)$bounds, c(0, 1))
     expect_lt(tulpa:::.hyper_axis_measure(lv, rho_spec(by_name))$edges[1L], 0)
+    # Declared on (0, 1), the cells are laid on the logit: the outer edge is
+    # half a logit step below the lowest level.
+    mirror_lo <- function(x) {
+        lx <- stats::qlogis(sort(x))
+        stats::plogis(lx[1L] - (lx[2L] - lx[1L]) / 2)
+    }
     expect_equal(tulpa:::.hyper_axis_measure(lv, rho_spec(by_block))$edges[1L],
-                 lv[1L] / 2)
+                 mirror_lo(lv))
 
     # With the support declared, the outer cell follows a ladder of levels
-    # in: it runs from half the lowest level to the midpoint with the next
-    # one, so its width falls as the ladder descends.
+    # in: it runs from half a logit step below the lowest level to the logit
+    # midpoint with the next one, so its width falls as the ladder descends.
     ladders <- list(0.02, c(0.002, 0.02), c(0.0002, 0.002, 0.02))
     widths <- vapply(ladders, function(lo) {
         m <- tulpa:::.hyper_axis_measure(c(lo, lv), rho_spec(by_block),
@@ -213,7 +226,10 @@ test_that("a block's own support closes the axis its name leaves open", {
         diff(m$edges[1:2])
     }, numeric(1))
     expect_true(all(diff(widths) < 0))
-    expect_equal(widths, c(lv[1L], 0.02, 0.002) / 2)
+    expect_equal(widths, vapply(ladders, function(lo) {
+        x <- sort(c(lo, lv))
+        stats::plogis(mean(stats::qlogis(x[1:2]))) - mirror_lo(x)
+    }, numeric(1)))
 
     # A prefixed column is keyed by its full name.
     tg <- grid_of(lv); colnames(tg) <- c("b1.sigma", "b1.rho")

@@ -212,6 +212,18 @@
   edge, and a mixture of it with a resolved row reads its 97.5% point at 1.014
   where it read 1.025 (#1278).
 
+* A correlation or mixing-weight axis lays its cells on the coordinate its
+  within-cell read partitions it on (atanh or the logit): one rule
+  (`.hyper_axis_cell_edges()`) places the edges the measure weighs a cell over,
+  the box the read spreads it on, and the reported support. The measure had
+  put the edges at natural-scale midpoints, so a cell's mass was measured over
+  one box and read over another. On a flat-likelihood rho axis (true 95% ends
+  +/- 0.95) the read at 22 levels went from +/- 0.9554 to +/- 0.9514 and at 43
+  from 0.9515 to 0.9504; on three AR(1) and BYM2 correlation axes the summed
+  |error| of the 2.5% / 50% / 97.5% reads against dense references went from
+  0.083 to 0.037. Integration weights change on every such axis; log-scale and
+  unbounded axes are bit-identical (#1279).
+
 * `tgmrf()` and `tgmrf_cpp()` take `grid_span` where they took `bounds`: the
   box the outer theta grid and the samplers' pilot are laid over. The support
   of `theta` is that of `prior(theta)` alone, as the samplers already read it.
