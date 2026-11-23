@@ -1,5 +1,25 @@
 # tulpa 0.8.0
 
+* The second placement attempt on a copy block's field SD engages the
+  engine's PC prior on that block alone. It used to replace the door-level
+  `prior_sigma` on every block, so a `prior_sigma` stated on any other block
+  called it off for the copy block too. Now the escalation writes a per-block
+  door spec: the copy block takes the engine prior unless its own prior is
+  stated, and every other block keeps the density it had, its own anchor or a
+  wrapper's declared default.
+* `tulpa_re_cov_nested()` no longer warns when its empirical-Bayes point
+  `theta_hat` sits on the boundary of the covariance. The posterior summaries
+  integrate over the covariance and do not rest on that point. The hit is
+  recorded in the new `theta_hat_boundary` field; `tulpa_eb()` still warns.
+* Documentation: `control$auto_recenter = FALSE` turns off placement only, and
+  refinement can still add levels, also beyond the declared span;
+  `axis_refine = "none"` together with it holds the grid exactly as given.
+  `tulpa_eb()` and `tulpa_re_cov_nested()` state that `theta_hat` is the mode
+  in log-Cholesky coordinates and `map` the covariance read off there, not a
+  mode in `(sigma, rho)`. A nested-Laplace EM block's `mode` is the weighted
+  mean of its per-cell modes, and a block fit without per-cell modes now
+  errors instead of returning a zero vector.
+
 * A nested-Laplace fit resumed from its checkpoint lays the grid the
   uninterrupted fit lays with the default cheap-pass screen on. A cell read
   from the file stood in for its screen as well as its full solve: it entered

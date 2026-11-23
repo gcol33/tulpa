@@ -387,10 +387,12 @@ the block indices reached, and the grid columns those are.
 
 \code{prior_sigma} also interacts with the auto-recenter above: its second
 attempt engages the engine's own weakly-informative PC(U = 3,
-alpha = 0.01) prior, and a \code{prior_sigma} the caller PINNED suppresses
-that (the caller's prior stands), whether it was stated here or as a
-block's own \code{prior_sigma} anchor: the escalated prior reaches every
-block's field-scale axis, so a prior stated on any block pins it. Pinning
+alpha = 0.01) prior on the copy block whose field SD it re-placed, and a
+\code{prior_sigma} the caller PINNED on that block suppresses it (the caller's
+prior stands), whether it was stated here or as the block's own
+\code{prior_sigma} anchor. Every other block keeps its own density: a prior
+stated on another block neither pins the escalation nor is replaced by
+it. Pinning
 is decided by provenance, not
 presence: a spec marked with \code{\link[=auto_grid]{auto_grid()}}, or one
 equal by value to the engine's own default, is a default and does not
@@ -963,9 +965,11 @@ to draw with and is declined with \code{"sparse_factor_not_ll"}.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node.
 \code{FALSE} places no axis, whatever its grid is, and records
-\code{outer_grid_recenter_declined = "auto_recenter_disabled"}; the
-refinement passes still resolve each axis as \code{axis_refine} allows, and
-\code{axis_refine = "none"} integrates the grid exactly as given. The
+\code{outer_grid_recenter_declined = "auto_recenter_disabled"}. It governs
+placement only: the refinement passes still add levels to each axis as
+\code{axis_refine} allows, and the at-mode pass can add them beyond the
+declared span; \code{axis_refine = "none"} together with \code{FALSE} integrates
+the grid exactly as given. The
 joint FIELD rescues trigger on the whole grid's collapsed-edge regime
 rather than on a per-axis rail, so the per-axis policy names
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes (\code{"rail"}, \code{"resolve"}, \code{"always"}) are

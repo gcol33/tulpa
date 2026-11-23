@@ -214,10 +214,10 @@
 
 # ----------------------------------------------------------------------------
 # Fit one validated block via tulpa_nested_laplace(). Used when the block
-# carries a `prior` field (single-block list or list-of-blocks). The mode
-# vector returned in `$mode` is the latent vector at the grid-weighted
-# posterior mean of theta, so .fits_to_param_vec()'s convergence check works
-# unchanged.
+# carries a `prior` field (single-block list or list-of-blocks). `$mode` is
+# the weighted mean of the per-cell modes, so .fits_to_param_vec()'s
+# convergence check reads one latent vector per block as for a plain Laplace
+# fit.
 #
 # `weights` / `offset` / multi-term `re_list` are not currently supported by
 # tulpa_nested_laplace(); fail loudly if a block sets them. The expected
@@ -325,20 +325,17 @@
 
   fit <- do.call(tulpa_nested_laplace, args)
 
-  # Project the multi-grid result onto a single mode vector so EM-side
-  # convergence + downstream `extract_beta()` callers see the same shape
-  # as a plain Laplace fit. The fixed-effects block is the first p entries
-  # of each per-grid mode; we take the weighted mean across grid points.
-  p <- ncol(block$X)
-  if (!is.null(fit$modes) && is.matrix(fit$modes)) {
-    w <- fit$weights
-    if (is.null(w)) w <- rep(1 / nrow(fit$modes), nrow(fit$modes))
-    fit$mode <- as.numeric(crossprod(fit$modes, w))
-  } else if (is.null(fit$mode)) {
-    # Fallback: no per-grid modes stored. Use theta-mean entries from
-    # whatever the driver gave us, padded to length p with zeros.
-    fit$mode <- numeric(p)
+  # One latent vector per block, the shape a plain Laplace fit carries, for the
+  # EM convergence check and the E-step callbacks. It is the posterior mean of
+  # the per-cell modes, `sum_k w_k mode_k`, and not the mode at any one cell:
+  # that mean moves continuously as the weights move between iterations, where
+  # the modal cell (`.nl_modal_cell()`) jumps from one cell to another and
+  # would stall the convergence check on a jump.
+  if (!is.matrix(fit$modes) || length(fit$weights) != nrow(fit$modes)) {
+    stop("The nested-Laplace block fit returned no per-cell modes and ",
+         "weights, so it has no latent vector for the EM step.", call. = FALSE)
   }
+  fit$mode <- as.numeric(crossprod(fit$modes, fit$weights))
 
   # Grid-marginalized fixed-effect covariance -> H_beta, so .attach_beta_se can
   # report a pooled SE for a nested-prior block under correction = "mi".
@@ -618,7 +615,9 @@
 #' @return A list with:
 #' \itemize{
 #'   \item `fits` -- named list of [tulpa_laplace()] results, one per block,
-#'     each with `beta` and its complete-data `se` attached.
+#'     each with `beta` and its complete-data `se` attached. A block carrying a
+#'     nested `prior` is a [tulpa_nested_laplace()] result, whose `mode` is the
+#'     weighted mean of its per-cell modes rather than the mode of one cell.
 #'   \item `vcov`, `se`, `louis` -- for EM and MI, observed-information
 #'     covariance and standard errors by Louis' method. For Gibbs, `vcov`
 #'     is the full sampled parameter covariance and `se` the per-block

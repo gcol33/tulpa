@@ -42,6 +42,13 @@
 #' `sigma = 0` boundary. `hyperprior = "flat"` maximizes the marginal likelihood
 #' alone.
 #'
+#' Under the proper hyperprior the estimate is a posterior mode, and a mode
+#' moves under a change of coordinates: `theta_hat` is the mode in the
+#' log-Cholesky coordinates above, and `map` is the covariance read off at that
+#' point, not the mode of the posterior on `(sigma, rho)`. Under
+#' `hyperprior = "flat"` the maximizer of the marginal likelihood is the same
+#' covariance in any coordinates.
+#'
 #' The marginal likelihood is marginal over the fixed effects too: the inner
 #' Laplace approximation integrates `beta` out together with the random
 #' effects (under `beta_prior`, or the engine default `N(0, 2.5^2)`)
@@ -443,7 +450,8 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                           outer_reltol = NULL,
                           sigma_init = NULL,
                           X_zi = NULL, zi_prior_sd = 2.5,
-                          weights = NULL) {
+                          weights = NULL,
+                          warn_boundary = TRUE) {
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
   .require_fixed_effects(X, caller)
@@ -1187,6 +1195,11 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   # outer objective's supremum then lies on the boundary of the covariance
   # cone, and the box edge is where the search reports it. A log scale at the
   # upper end is capped rather than fitted.
+  #
+  # `warn_boundary = FALSE` records the boundary without warning. A caller that
+  # integrates over the covariance reports a posterior that is valid whether or
+  # not this one point sits on the boundary, so the hit describes `theta_hat`
+  # alone and is recorded with it.
   L_hat_b <- .re_cov_theta_to_L_list(theta_split(theta_hat)$re, layout)
   boundary <- data.frame(block = character(0), coef = integer(0),
                          end = character(0), sigma = numeric(0),
@@ -1205,6 +1218,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                                             sd_i)
     what <- if (bl$nc > 1L) sprintf("coefficient %d of block '%s'", i, lab) else
       sprintf("block '%s'", lab)
+    if (!isTRUE(warn_boundary)) next
     if (at_lo && bl$full && i > 1L) {
       mult_cor <- sqrt(max(0, 1 - (L[i, i] / sd_i)^2))
       warning(sprintf(paste0(

@@ -1010,7 +1010,15 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'
 #' `theta_hat` and `map` are the empirical-Bayes estimate: the mode of the same
 #' log marginal plus log prior in the stacked coordinates, the estimate
-#' [tulpa_eb()] reports on the same data.
+#' [tulpa_eb()] reports on the same data. A mode is not invariant under a change
+#' of coordinates, so `theta_hat` is the mode in log-Cholesky coordinates (log
+#' standard deviations and the strictly lower Cholesky entries), and `map` is
+#' the covariance read off at that point, not a mode in `(sigma, rho)`. Where
+#' `theta_hat` sits on the boundary of the covariance (a standard deviation at
+#' the lower end of its search bracket, the case [tulpa_eb()] warns about as a
+#' singular fit), the hit is recorded in `theta_hat_boundary` without a
+#' warning: the posterior summaries integrate over the covariance and do not
+#' rest on that one point.
 #'
 #' @param y,n_trials,X,family,phi The response, trials, fixed-effect design,
 #'   family and dispersion of the one arm. `n_trials = NULL` defaults to 1
@@ -1119,6 +1127,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'   - `mean_shift`: per cell, `"applied"` where `control$skew_correct` centred
 #'     the cell at the leading-order mean, otherwise the reason it stayed at the
 #'     mode. `NULL` when the centring was off.
+#'   - `theta_hat_boundary`: one row per log-scale coordinate of `theta_hat`
+#'     at either end of its search bracket (`block`, `coef`, `end`, `sigma`, as
+#'     [tulpa_eb()]'s `boundary`); no rows when none is.
 #'   - `theta_hat`, `theta_grid` (the cells in the stacked coordinates),
 #'     `weights`, `log_marginal` (log marginal plus log prior per cell),
 #'     `log_hyperprior`, `log_evidence`, `log_evidence_declined_axes`,
@@ -1194,7 +1205,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     n_threads = as.integer(control$n_threads %||% 1L),
     caller = caller, outer_maxit = as.integer(control$outer_maxit %||% 500L),
     offset = offset, X_zi = X_zi, zi_prior_sd = zi_prior_sd,
-    weights = weights)
+    weights = weights, warn_boundary = FALSE)
   theta_hat <- eb$theta_hat
   phi2 <- .phi2_or_stop(family, phi2)
 
@@ -1361,6 +1372,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     n_params    = p_fix,
     N           = length(y),
     theta_hat   = theta_hat,
+    theta_hat_boundary = eb$boundary,
     theta_grid  = theta_grid,
     weights     = w,
     log_marginal = logm,

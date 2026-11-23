@@ -370,9 +370,10 @@ test_that("the field placement honours a pin and passes a default", {
 # ANY supplied prior_sigma, decided by presence -- so a wrapper stamping a
 # prior_sigma of its own silently turned the escalation into a second geometry
 # recenter while still reporting `attempts = 2`.
-test_that(".nl_prior_sigma_is_pinned reads provenance, not presence", {
+test_that("a door prior_sigma pins by provenance, not presence", {
     skip_on_cran_budget()
-    pinned <- tulpa:::.nl_prior_sigma_is_pinned
+    pinned <- function(ps) tulpa:::.nl_prior_sigma_pinned_at(
+        ps, list(list(type = "icar")), 1L)
     expect_false(pinned(NULL))
     # The engine's own default handed back in carries no information a pin adds.
     expect_false(pinned(tulpa:::.nl_recenter("sigma_pc_prior")))
@@ -381,6 +382,11 @@ test_that(".nl_prior_sigma_is_pinned reads provenance, not presence", {
     # A different prior, undeclared: a real choice.
     expect_true(pinned(list("pc.prec", c(U = 1, alpha = 0.01))))
     expect_true(pinned(list("half_normal", 2)))
+    # A per-block door spec pins only the block it names.
+    per_block <- list(list(block = 2L, prior = list("pc.prec", c(1, 0.01))))
+    two <- list(list(type = "icar"), list(type = "icar"))
+    expect_false(tulpa:::.nl_prior_sigma_pinned_at(per_block, two, 1L))
+    expect_true(tulpa:::.nl_prior_sigma_pinned_at(per_block, two, 2L))
 })
 
 test_that("the second recenter attempt engages the PC prior unless it was PINNED", {
@@ -404,20 +410,21 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     }
     blocks <- list(list(type = "icar"))
     pc <- tulpa:::.nl_recenter("sigma_pc_prior")
+    on_b1 <- list(list(block = 1L, prior = pc))
 
-    # No prior at all -> attempt 2 adds the engine's PC prior.
+    # No prior at all -> attempt 2 adds the engine's PC prior on the copy block.
     out <- .place_copy_sd(stub_res, blocks, NULL, cp, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_attempts, 2L)
     expect_true(out$res$outer_grid_prior_added)
-    expect_equal(calls$last_prior_sigma, pc)
+    expect_equal(calls$last_prior_sigma, on_b1)
     expect_null(out$res$outer_grid_prior_declined)
 
     # A wrapper's own default, declared -> the escalation still engages, and the
-    # engine's prior replaces the declared default.
+    # engine's prior replaces the declared default on the copy block.
     wrapper_default <- auto_grid(list("pc.prec", c(U = 1, alpha = 0.01)))
     out <- .place_copy_sd(stub_res, blocks, NULL, cp, wrapper_default, refit)
     expect_true(out$res$outer_grid_prior_added)
-    expect_equal(calls$last_prior_sigma, pc)
+    expect_equal(calls$last_prior_sigma, on_b1)
     expect_null(out$res$outer_grid_prior_declined)
 
     # A deliberate, undeclared choice -> held, and the suppression is legible
@@ -430,18 +437,19 @@ test_that("the second recenter attempt engages the PC prior unless it was PINNED
     expect_equal(calls$last_prior_sigma, chosen)
 })
 
-test_that("a prior_sigma stated on a block pins the escalation like one at the door", {
+test_that("a prior_sigma stated on a block pins the escalation on that block only", {
     skip_on_cran_budget()
-    pinned <- tulpa:::.nl_prior_sigma_is_pinned
+    pinned <- tulpa:::.nl_prior_sigma_pinned_at
     icar <- function(anchor = NULL) c(list(type = "icar"),
                                       if (!is.null(anchor)) list(prior_sigma = anchor))
-    expect_true(pinned(NULL, list(icar(c(1, 0.01)))))
-    expect_true(pinned(NULL, list(icar(), icar(c(1, 0.01)))))
-    expect_true(pinned(NULL, icar(c(1, 0.01))))
+    expect_true(pinned(NULL, list(icar(c(1, 0.01))), 1L))
+    expect_false(pinned(NULL, list(icar(), icar(c(1, 0.01))), 1L))
+    expect_true(pinned(NULL, list(icar(), icar(c(1, 0.01))), 2L))
+    expect_true(pinned(NULL, icar(c(1, 0.01)), 1L))
     # The engine's own anchor, or one the caller marked a default, adds nothing.
-    expect_false(pinned(NULL, list(icar(c(3, 0.01)))))
-    expect_false(pinned(NULL, list(icar(auto_grid(c(1, 0.01))))))
-    expect_false(pinned(NULL, list(icar(), icar())))
+    expect_false(pinned(NULL, list(icar(c(3, 0.01))), 1L))
+    expect_false(pinned(NULL, list(icar(auto_grid(c(1, 0.01)))), 1L))
+    expect_false(pinned(NULL, list(icar(), icar()), 2L))
 
     # A railed copy block whose own anchor the caller stated: the escalated door
     # spec would replace that anchor's density, so the second attempt holds it.
@@ -465,16 +473,52 @@ test_that("a prior_sigma stated on a block pins the escalation like one at the d
     expect_identical(out$res$outer_grid_prior_declined, "prior_pinned")
     expect_null(calls$last_prior_sigma)
 
-    # The same holds when the stated anchor sits on another block of the fit.
-    out <- .place_copy_sd(stub_res, list(icar(), icar(c(1, 0.01))), NULL, cp,
-                          NULL, refit)
-    expect_identical(out$res$outer_grid_prior_declined, "prior_pinned")
-    expect_null(calls$last_prior_sigma)
+    pc <- tulpa:::.nl_recenter("sigma_pc_prior")
+    # A stated anchor on ANOTHER block neither pins the copy block's escalation
+    # nor is replaced: the door spec names the copy block alone, so block 2
+    # keeps its own anchor.
+    stub_two <- stub_res
+    stub_two$outer_mode_axis_names <- c("b1.sigma", "b1.alpha", "b2.sigma")
+    stub_two$outer_mode_u <- c(log(3), 0.4, 0)
+    stub_two$outer_mode_cov_u <- diag(c(0.25, 0.09, 0.25))
+    stub_two$outer_mode_axis_tags <- c("log", "identity", "log")
+    stub_two$blocks <- list(list(type = "icar"), list(type = "icar"))
+    refit_two <- function(prior_i, prior_sigma_i) {
+        calls$last_prior_sigma <- prior_sigma_i
+        stub_two
+    }
+    out <- .place_copy_sd(stub_two, list(icar(), icar(c(1, 0.01))), NULL, cp,
+                          NULL, refit_two)
+    expect_true(out$res$outer_grid_prior_added)
+    expect_null(out$res$outer_grid_prior_declined)
+    expect_equal(calls$last_prior_sigma, list(list(block = 1L, prior = pc)))
+
+    # A wrapper default at the door keeps reaching the other block, while the
+    # copy block takes the engine prior.
+    wrapper_default <- auto_grid(list("pc.prec", c(U = 1, alpha = 0.01)))
+    out <- .place_copy_sd(stub_two, list(icar(), icar()), NULL, cp,
+                          wrapper_default, refit_two)
+    expect_true(out$res$outer_grid_prior_added)
+    expect_equal(calls$last_prior_sigma, list(
+        list(block = 1L, prior = pc),
+        list(block = 2L, prior = list("pc.prec", c(U = 1, alpha = 0.01)))))
 
     # A block anchor at the engine's own value escalates as before.
     out <- .place_copy_sd(stub_res, list(icar(c(3, 0.01))), NULL, cp, NULL, refit)
     expect_true(out$res$outer_grid_prior_added)
-    expect_equal(calls$last_prior_sigma, tulpa:::.nl_recenter("sigma_pc_prior"))
+    expect_equal(calls$last_prior_sigma, list(list(block = 1L, prior = pc)))
+})
+
+test_that("the escalated per-block prior_sigma parses to the copy block alone", {
+    skip_on_cran_budget()
+    # The per-block door spec the escalation writes parses and is applied to the
+    # copy block's field-SD axis alone.
+    fn <- tulpa:::.joint_parse_hyperprior(
+        list(list(block = 1L, prior = tulpa:::.nl_recenter("sigma_pc_prior"))),
+        "prior_sigma")
+    expect_s3_class(fn, "tulpa_block_hyperprior")
+    expect_identical(tulpa:::.joint_hp_named_blocks(fn), 1L)
+    expect_null(tulpa:::.joint_hp_fn_for_block(fn, 2L))
 })
 
 test_that("the multi-block rescue reports a pinned copy-block axis", {

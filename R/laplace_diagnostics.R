@@ -1350,8 +1350,8 @@
       "state your own nodes for it through that package's argument, wrapped ",
       "in `auto_grid()`, to have the pass size it to the posterior instead"),
     auto_recenter_disabled = paste0(
-      "`control$auto_recenter = FALSE` holds every axis where it was ",
-      "declared, this one included"),
+      "`control$auto_recenter = FALSE` places no axis, this one included ",
+      "(refinement under `control$axis_refine` can still add levels)"),
     no_usable_curvature = paste0(
       "the auto-placement pass could not read a curvature to re-place that ",
       "axis from, so it was left where it was declared"),

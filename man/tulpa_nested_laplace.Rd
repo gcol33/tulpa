@@ -323,10 +323,12 @@ does not RESOLVE its posterior (an axis's node spacing exceeds 2 posterior
 SDs in its own coordinate). Both tests read the weights the fit already
 stored, so a grid that brackets and resolves its mode costs nothing beyond
 them; when the pass does fire it is a second full grid solve plus a
-finite-difference mode/Hessian stencil. \code{FALSE} integrates over the grid
-exactly as given and records
-\code{outer_grid_recenter_declined = "auto_recenter_disabled"}. Any other value
-is an error.
+finite-difference mode/Hessian stencil. \code{FALSE} places no axis and
+records \code{outer_grid_recenter_declined = "auto_recenter_disabled"}. It
+governs placement only: the refinement passes still add levels to an axis
+as \code{axis_refine} allows, and the at-mode pass can add them beyond the
+declared span. \code{axis_refine = "none"} together with \code{FALSE} integrates
+the grid exactly as given. Any other value is an error.
 
 Measured over 200 fixed-truth seeds on each of six configurations (icar
 chain / icar lattice / rw1 / bym2 / iid / nngp), the rail-or-resolve rule

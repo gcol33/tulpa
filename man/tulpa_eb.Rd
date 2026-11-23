@@ -214,6 +214,13 @@ of the engine defaults to, which at small G keeps a block off the
 \code{sigma = 0} boundary. \code{hyperprior = "flat"} maximizes the marginal likelihood
 alone.
 
+Under the proper hyperprior the estimate is a posterior mode, and a mode
+moves under a change of coordinates: \code{theta_hat} is the mode in the
+log-Cholesky coordinates above, and \code{map} is the covariance read off at that
+point, not the mode of the posterior on \verb{(sigma, rho)}. Under
+\code{hyperprior = "flat"} the maximizer of the marginal likelihood is the same
+covariance in any coordinates.
+
 The marginal likelihood is marginal over the fixed effects too: the inner
 Laplace approximation integrates \code{beta} out together with the random
 effects (under \code{beta_prior}, or the engine default \code{N(0, 2.5^2)})

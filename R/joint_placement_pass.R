@@ -541,7 +541,9 @@
     for (i in which(fam_of == "alpha")) {
         slots[[i]]$atom <- any(slots[[i]]$ref(res) <= 0)
     }
-    prior_pinned <- .nl_prior_sigma_is_pinned(st$prior_sigma, st$prior)
+    esc_blocks   <- integer(0)
+    prior_added  <- FALSE
+    prior_pinned <- FALSE
 
     attempt  <- 0L
     placed   <- character(0)
@@ -603,12 +605,21 @@
             nxt <- families[[fam_of[i]]]$write(nxt, slots[[i]], laid[[as.character(i)]])
             failed[i] <- NA_character_
         }
-        escalating <- any(vapply(fam_of[moved_now], function(f)
-            isTRUE(families[[f]]$escalate), logical(1)))
-        if (escalating) {
+        escalating_now <- moved_now[vapply(fam_of[moved_now], function(f)
+            isTRUE(families[[f]]$escalate), logical(1))]
+        if (length(escalating_now)) {
             nxt$prior_sigma <- .nl_strip_auto(nxt$prior_sigma)
-            if (attempt >= 2L && !prior_pinned) {
-                nxt$prior_sigma <- .nl_recenter("sigma_pc_prior")
+            if (attempt >= 2L) {
+                # The pin is read off the call state the pass started from, where
+                # a default still carries its marker.
+                esc_blocks <- union(esc_blocks, vapply(slots[escalating_now],
+                    function(s) as.integer(s$block), integer(1)))
+                esc <- .nl_escalate_prior_sigma(st$prior_sigma, st$prior,
+                                                esc_blocks,
+                                                out$res$outer_mode_axis_names)
+                nxt$prior_sigma <- esc$prior_sigma
+                prior_added  <- esc$added
+                prior_pinned <- esc$pinned
             }
             escalated_on <- attempt
         }
@@ -621,7 +632,7 @@
         new_res$outer_grid_recenter_sd_used  <- used
         new_res$outer_grid_recenter_sd_raw   <- raw
         if (escalated_on > 0L) {
-            new_res$outer_grid_prior_added    <- escalated_on >= 2L && !prior_pinned
+            new_res$outer_grid_prior_added    <- escalated_on >= 2L && prior_added
             new_res$outer_grid_prior_declined <-
                 if (escalated_on >= 2L && prior_pinned) "prior_pinned" else NULL
         }

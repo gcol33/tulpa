@@ -143,7 +143,9 @@ inflation, default \code{1}). Unknown entries are errors.}
 A list with:
 \itemize{
 \item \code{fits} -- named list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results, one per block,
-each with \code{beta} and its complete-data \code{se} attached.
+each with \code{beta} and its complete-data \code{se} attached. A block carrying a
+nested \code{prior} is a \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} result, whose \code{mode} is the
+weighted mean of its per-cell modes rather than the mode of one cell.
 \item \code{vcov}, \code{se}, \code{louis} -- for EM and MI, observed-information
 covariance and standard errors by Louis' method. For Gibbs, \code{vcov}
 is the full sampled parameter covariance and \code{se} the per-block

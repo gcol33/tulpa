@@ -472,6 +472,18 @@ test_that("a slope SD whose supremum is at zero is reported as a singular fit", 
   expect_identical(core$boundary$coef, 2L)
   expect_identical(core$boundary$end, "lower")
 
+  # The integrating door reads the same mode and records the hit silently:
+  # its posterior does not rest on this one point.
+  expect_no_warning(
+    quiet <- .eb_theta_fit(
+      y = y, n_trials = rep(1L, N), X = X, re_terms = re_terms,
+      family = "binomial", phi = 1, prior_sigma = NULL, eta = NULL,
+      log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
+      max_iter = 100L, tol = 1e-8, n_threads = 1L, caller = "test",
+      outer_maxit = 100L, offset = NULL, warn_boundary = FALSE))
+  expect_identical(quiet$boundary, core$boundary)
+  expect_equal(quiet$theta_hat, core$theta_hat)
+
   obj <- function(t) {
     core$inner_logmarg(.re_cov_theta_to_L_list(t, core$layout), 1) +
       core$log_prior_theta(t)

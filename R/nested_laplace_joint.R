@@ -381,10 +381,12 @@
 #'
 #'   `prior_sigma` also interacts with the auto-recenter above: its second
 #'   attempt engages the engine's own weakly-informative PC(U = 3,
-#'   alpha = 0.01) prior, and a `prior_sigma` the caller PINNED suppresses
-#'   that (the caller's prior stands), whether it was stated here or as a
-#'   block's own `prior_sigma` anchor: the escalated prior reaches every
-#'   block's field-scale axis, so a prior stated on any block pins it. Pinning
+#'   alpha = 0.01) prior on the copy block whose field SD it re-placed, and a
+#'   `prior_sigma` the caller PINNED on that block suppresses it (the caller's
+#'   prior stands), whether it was stated here or as the block's own
+#'   `prior_sigma` anchor. Every other block keeps its own density: a prior
+#'   stated on another block neither pins the escalation nor is replaced by
+#'   it. Pinning
 #'   is decided by provenance, not
 #'   presence: a spec marked with [auto_grid()], or one
 #'   equal by value to the engine's own default, is a default and does not
@@ -946,9 +948,11 @@
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node.
 #'     `FALSE` places no axis, whatever its grid is, and records
-#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`; the
-#'     refinement passes still resolve each axis as `axis_refine` allows, and
-#'     `axis_refine = "none"` integrates the grid exactly as given. The
+#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`. It governs
+#'     placement only: the refinement passes still add levels to each axis as
+#'     `axis_refine` allows, and the at-mode pass can add them beyond the
+#'     declared span; `axis_refine = "none"` together with `FALSE` integrates
+#'     the grid exactly as given. The
 #'     joint FIELD rescues trigger on the whole grid's collapsed-edge regime
 #'     rather than on a per-axis rail, so the per-axis policy names
 #'     [tulpa_nested_laplace()] takes (`"rail"`, `"resolve"`, `"always"`) are
@@ -1537,14 +1541,15 @@ tulpa_nested_laplace_joint <- function(responses,
         .nl_check_axis_fields(prior, "joint", auto = prov$auto,
                               copy = copy, responses = responses))
     on.exit(options(.op_axis), add = TRUE)
-    # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
-    # opt-out for a caller who wants the default axis integrated as-is. The
-    # placement pass has one rule, an axis fires when it rails or its grid does
-    # not resolve its own posterior, so the knob is TRUE or FALSE.
+    # `control$auto_recenter = FALSE` turns the placement pass off: no axis is
+    # moved or resized. Refinement is a separate stage under
+    # `control$axis_refine` and still adds levels. The placement pass has one
+    # rule, an axis fires when it rails or its grid does not resolve its own
+    # posterior, so the knob is TRUE or FALSE.
     if (!isTRUE(control$auto_recenter %||% TRUE) && !isFALSE(control$auto_recenter)) {
         stop("control$auto_recenter must be TRUE or FALSE: the placement pass ",
              "places every axis that rails or does not resolve its own ",
-             "posterior, or (FALSE) holds every grid as given.", call. = FALSE)
+             "posterior, or (FALSE) places none.", call. = FALSE)
     }
     auto_recenter <- !isFALSE(control$auto_recenter)
 

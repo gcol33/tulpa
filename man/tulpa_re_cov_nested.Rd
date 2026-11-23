@@ -146,6 +146,9 @@ row's fixed effects. \code{NULL} at \code{n_quad > 1}.
 \item \code{mean_shift}: per cell, \code{"applied"} where \code{control$skew_correct} centred
 the cell at the leading-order mean, otherwise the reason it stayed at the
 mode. \code{NULL} when the centring was off.
+\item \code{theta_hat_boundary}: one row per log-scale coordinate of \code{theta_hat}
+at either end of its search bracket (\code{block}, \code{coef}, \code{end}, \code{sigma}, as
+\code{\link[=tulpa_eb]{tulpa_eb()}}'s \code{boundary}); no rows when none is.
 \item \code{theta_hat}, \code{theta_grid} (the cells in the stacked coordinates),
 \code{weights}, \code{log_marginal} (log marginal plus log prior per cell),
 \code{log_hyperprior}, \code{log_evidence}, \code{log_evidence_declined_axes},
@@ -208,7 +211,15 @@ prior is then stated as its \code{logchol_prior} on
 
 \code{theta_hat} and \code{map} are the empirical-Bayes estimate: the mode of the same
 log marginal plus log prior in the stacked coordinates, the estimate
-\code{\link[=tulpa_eb]{tulpa_eb()}} reports on the same data.
+\code{\link[=tulpa_eb]{tulpa_eb()}} reports on the same data. A mode is not invariant under a change
+of coordinates, so \code{theta_hat} is the mode in log-Cholesky coordinates (log
+standard deviations and the strictly lower Cholesky entries), and \code{map} is
+the covariance read off at that point, not a mode in \verb{(sigma, rho)}. Where
+\code{theta_hat} sits on the boundary of the covariance (a standard deviation at
+the lower end of its search bracket, the case \code{\link[=tulpa_eb]{tulpa_eb()}} warns about as a
+singular fit), the hit is recorded in \code{theta_hat_boundary} without a
+warning: the posterior summaries integrate over the covariance and do not
+rest on that one point.
 }
 \examples{
 \donttest{

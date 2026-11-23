@@ -186,25 +186,62 @@ auto_grid_place <- function(x)
 # the engine's own `.NL_RECENTER$sigma_pc_prior` are all defaults; anything else
 # is a deliberate choice the rescue leaves alone.
 #
-# A caller states an SD prior at the door (`prior_sigma`, a spec) or on a block
-# (`blocks[[k]]$prior_sigma`, the PC anchor `c(U, alpha)`), and the same rule
-# reads both: a block anchor is the spec `list("pc.prec", anchor)`. The
-# escalated prior is a door spec, which replaces every block's density on its
-# field-scale axis, so a prior stated on ANY block pins the escalation.
-.nl_prior_sigma_is_pinned <- function(prior_sigma, blocks = list()) {
-    stated <- function(spec) {
-        if (is.null(spec) || is_auto_grid(spec)) return(FALSE)
-        !isTRUE(all.equal(.nl_recenter("sigma_pc_prior"), .nl_strip_auto(spec),
-                          check.attributes = FALSE))
+# A caller states an SD prior at the door (`prior_sigma`: one spec reaching
+# every block, or the per-block list `list(list(block =, prior =), ...)`) or on
+# a block (`blocks[[k]]$prior_sigma`, the PC anchor `c(U, alpha)`), and the same
+# rule reads all three: a block anchor is the spec `list("pc.prec", anchor)`.
+# The pin is read per block, since the escalation engages the prior on the
+# blocks whose axis needed it and leaves every other block's density alone.
+.nl_sigma_spec_stated <- function(spec) {
+    if (is.null(spec) || is_auto_grid(spec)) return(FALSE)
+    !isTRUE(all.equal(.nl_recenter("sigma_pc_prior"), .nl_strip_auto(spec),
+                      check.attributes = FALSE))
+}
+
+# The door spec reaching block `b`: the one spec, or the per-block entry naming
+# `b` (NULL where the list names no such block).
+.nl_door_sigma_at <- function(prior_sigma, b) {
+    if (!.joint_is_block_hyperprior(prior_sigma)) return(prior_sigma)
+    for (e in prior_sigma) {
+        if (identical(as.integer(e$block), as.integer(b))) return(e$prior)
     }
-    if (stated(prior_sigma)) return(TRUE)
+    NULL
+}
+
+.nl_prior_sigma_pinned_at <- function(prior_sigma, blocks, b) {
+    if (.nl_sigma_spec_stated(.nl_door_sigma_at(prior_sigma, b))) return(TRUE)
     if (!is.null(blocks$type)) blocks <- list(blocks)
-    for (b in blocks) {
-        a <- b$prior_sigma
-        if (!is.null(a) && !is_auto_grid(a) &&
-            stated(list("pc.prec", as.numeric(a)[1:2]))) return(TRUE)
-    }
-    FALSE
+    a <- if (b <= length(blocks)) blocks[[b]]$prior_sigma
+    !is.null(a) && !is_auto_grid(a) &&
+        .nl_sigma_spec_stated(list("pc.prec", as.numeric(a)[1:2]))
+}
+
+# The door `prior_sigma` with the engine's SD prior engaged on the blocks `at`
+# whose prior is not a pin. A door spec replaces a block's own anchor, so the
+# result is the per-block list: the engine prior on each such block, and on
+# every other block carrying a field-scale axis (read off `axis_names`) the
+# door default it had, markers stripped. Returns `list(prior_sigma, added,
+# pinned)`: the spec, whether any block took the engine prior, and whether any
+# block of `at` was held by a pin.
+.nl_escalate_prior_sigma <- function(prior_sigma, blocks, at, axis_names) {
+    if (!is.null(blocks$type)) blocks <- list(blocks)
+    at <- unique(as.integer(at))
+    pinned <- vapply(at, function(b)
+        .nl_prior_sigma_pinned_at(prior_sigma, blocks, b), logical(1))
+    add <- at[!pinned]
+    out <- list(prior_sigma = .nl_strip_auto(prior_sigma),
+                added = length(add) > 0L, pinned = any(pinned))
+    if (!length(add)) return(out)
+    sd_cols <- axis_names[.axis_has_block(axis_names) &
+                          .axis_bare(axis_names) %in% .hp_role_axes("sigma")]
+    carried <- sort(unique(c(as.integer(.axis_block(sd_cols)), add)))
+    entries <- lapply(carried, function(k) {
+        p <- if (k %in% add) .nl_recenter("sigma_pc_prior")
+             else .nl_door_sigma_at(prior_sigma, k)
+        if (is.null(p)) NULL else list(block = k, prior = .nl_strip_auto(p))
+    })
+    out$prior_sigma <- Filter(Negate(is.null), entries)
+    out
 }
 
 # Drop the marker so nothing downstream of the rescue sees an attributed
