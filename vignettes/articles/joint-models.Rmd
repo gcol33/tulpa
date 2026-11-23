@@ -190,8 +190,8 @@ cell.
 diagnostics(fit)
 ```
 
-Both layers grade as good. The note on $\alpha$ says the grid cells on that
-axis are 1.26 posterior standard deviations wide, so the endpoints of its
+Both layers grade as good. The note on $\sigma$ says the grid cells on that
+axis are 1.25 posterior standard deviations wide, so the endpoints of its
 interval are resolved to within one cell.
 
 A posterior predictive check compares the count arm with counts replicated
@@ -205,8 +205,8 @@ set.seed(2)
 d  <- tulpa_posterior_draws(fit, n = 1000)
 th <- attr(d, "theta")
 zc <- fit$arm_layout$phi_start + seq_len(S)
-f1 <- th[, "sigma"] * d[, zc]
-f2 <- th[, "alpha"] * f1
+f1 <- th[, "b1.sigma"] * d[, zc]
+f2 <- th[, "b1.alpha"] * f1
 ```
 
 `f1` holds the field contribution $\sigma z_s$ in the count arm and `f2` the
@@ -252,12 +252,12 @@ over the cells at each $\alpha$ level gives that axis's marginal.
 ```{r grid}
 g <- tulpa_outer_grid(fit)
 dim(g$nodes)
-p_alpha <- tapply(g$weights, g$nodes[, "alpha"], sum)
+p_alpha <- tapply(g$weights, g$nodes[, "b1.alpha"], sum)
 round(p_alpha, 3)
 ```
 
 The $\alpha$ levels differ from the default axis, because the fit re-centred
-that axis on its posterior mode, as the first note in `diagnostics()` says. Its
+both axes on the posterior mode, as the first note in `diagnostics()` says. Its
 levels above zero run from 0.35 to 1.10, where the posterior sits. The
 point mass at zero carries no weight.
 
@@ -271,7 +271,8 @@ abline(v = alpha_true, lty = 2)
 ## What the shared field buys
 
 The same detection data, fitted alone, carries its own field with its own
-amplitude and no information from the counts. A joint fit with one arm is
+precision and no information from the counts. Without a copy scale the field
+block takes a precision axis, and its latent block is the field itself. A joint fit with one arm is
 that model.
 
 ```{r fit-separate, fit = c("fit_d")}
@@ -291,7 +292,7 @@ counts taken there.
 ```{r field-unvisited}
 set.seed(3)
 dd <- tulpa_posterior_draws(fit_d, n = 1000)
-fd <- attr(dd, "theta")[, "sigma"] * dd[, fit_d$arm_layout$phi_start + seq_len(S)]
+fd <- dd[, fit_d$arm_layout$phi_start + seq_len(S)]
 unvisited <- setdiff(seq_len(S), visited)
 err <- function(f) sqrt(mean((colMeans(f[, unvisited]) -
                                alpha_true * w[unvisited])^2))
@@ -302,8 +303,8 @@ rbind(joint = c(rmse = err(f2), interval_width = wid(f2)),
 ```
 
 On these 24 units the root mean squared error of the detection-arm field is
-0.11 for the joint fit and 0.24 for the separate fit, with intervals of
-similar width.
+0.11 for the joint fit and 0.13 for the separate fit, and the joint
+intervals are 0.73 wide on average against 1.28.
 
 ## Prediction
 
@@ -377,13 +378,14 @@ fit_z <- tulpa_nested_laplace_joint(list(counts = counts, detect = detect_z),
 fit_z$copy_atom
 ```
 
-The point mass now holds 0.82 of the posterior weight on $\alpha$. The
-continuum part of the axis carries the rest, and its own weight piles up at
-its smallest node, 0.1, as the per-level weights show.
+The point mass now holds 0.83 of the posterior weight on $\alpha$. The
+continuum part of the axis carries the rest. The axis now also has levels
+below 0.1, and the continuum's weight peaks at 0.1 and falls off on both
+sides, as the per-level weights show.
 
 ```{r zero-levels}
 gz <- tulpa_outer_grid(fit_z)
-round(tapply(gz$weights, gz$nodes[, "alpha"], sum), 3)
+round(tapply(gz$weights, gz$nodes[, "b1.alpha"], sum), 3)
 ```
 
 Because the prior odds are one, the posterior odds on the point mass are the
@@ -410,11 +412,11 @@ detect_w$y <- rbinom(length(s2), 1L, plogis(eta2))
 fit_w <- tulpa_nested_laplace_joint(list(counts = counts, detect = detect_w),
                                     prior = icar, control = ctl)
 fit_w$copy_atom
-fit_w$theta_ci_lo["alpha"]; fit_w$theta_ci_hi["alpha"]
+fit_w$theta_ci_lo["b1.alpha"]; fit_w$theta_ci_hi["b1.alpha"]
 ```
 
 With 160 binary detections the 95% interval for $\alpha$ runs from 0.30 to
-1.49, against 0.48 to 0.86 with ten trials per detection, and the point mass
+1.37, against 0.48 to 0.86 with ten trials per detection, and the point mass
 still holds almost no weight. The weaker arm leaves the coupling detected but
 its strength poorly resolved.
 
@@ -423,20 +425,20 @@ its strength poorly resolved.
 - **Read `copy_atom` with its prior.** The point at $\alpha = 0$ starts with
   probability 1/2, so the posterior mass on it reads directly as a posterior
   probability, and its odds as a Bayes factor. Here it was 0 at
-  $\alpha = 0.6$ and 0.82 at $\alpha = 0$.
+  $\alpha = 0.6$ and 0.83 at $\alpha = 0$.
 - **The arm with less information decides how well $\alpha$ is resolved.**
   With 160 detections of ten trials each the 95% interval for $\alpha$ was
-  0.39 wide; with 160 single trials it was 1.19 wide. A large
+  0.39 wide; with 160 single trials it was 1.07 wide. A large
   `posterior_mass` is evidence for "no shared field" only if the weaker arm
   could have shown one; simulating from the fitted model at a plausible
   $\alpha$ checks that.
-- **Beside a heavy point mass, the continuum's weight sits at its low end.**
-  When most of the weight sits at $\alpha = 0$, the remainder piles up at the
-  smallest continuum node. `copy_atom` and the per-level weights from `tulpa_outer_grid()` show
+- **Beside a heavy point mass, the continuum's weight sits at small values.**
+  When most of the weight sits at $\alpha = 0$, the remainder concentrates on
+  the small continuum levels, here around 0.1. `copy_atom` and the per-level weights from `tulpa_outer_grid()` show
   how the mass is split.
 - **The gain from sharing is largest where one arm has no data.** On the
-  24 units without detections the field error fell from 0.24 to 0.11; the
-  slope interval of the detection arm barely changed. A joint model pays off for mapping and
+  24 units without detections the field error fell from 0.13 to 0.11 and
+  the interval width from 1.28 to 0.73; the slope interval of the detection arm barely changed. A joint model pays off for mapping and
   prediction across the gaps of the sparser survey.
 - **$\alpha$ is non-negative.** The copy scale scales the donor field and
   cannot flip its sign, so a driver that raises one response and lowers the

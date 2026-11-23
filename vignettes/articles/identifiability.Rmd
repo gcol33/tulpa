@@ -379,7 +379,8 @@ aggregate(width ~ parameter + K, data = bym, FUN = function(v) round(median(v), 
 ```
 
 ```{r bym2-plot, fig.alt = "95 percent intervals for the BYM2 mixing parameter rho in four replicates at 16, 49, 100 and 196 regions, with the true value 0.5 as a horizontal line; the intervals cover most of the unit interval at 16 regions and narrow with more regions"}
-rb <- bym[bym$parameter == "rho", ]
+rb <- bym[bym$parameter == "b1.rho", ]
+stopifnot(nrow(rb) > 0L)
 K_set <- k_set^2
 xpos <- match(rb$K, K_set) + (rb$seed - 2.5) / 10
 plot(xpos, rb$mean, ylim = c(0, 1), pch = 19, xaxt = "n",
@@ -391,7 +392,7 @@ abline(h = 0.5, lty = 2, lwd = 2, col = "steelblue")
 
 ```{r bym2-numbers, include = FALSE}
 rho_w <- aggregate(width ~ K, data = rb, FUN = median)
-sig_w <- aggregate(width ~ K, data = bym[bym$parameter == "sigma", ],
+sig_w <- aggregate(width ~ K, data = bym[bym$parameter == "b1.sigma", ],
                    FUN = median)
 rho_cover <- sum(rb$ci_lo <= 0.5 & rb$ci_hi >= 0.5)
 ```
@@ -431,8 +432,8 @@ gp_one <- function(n, seed) {
              spatial = spatial_gp(~ lon + lat, scale_coords = FALSE),
              mode = "nested_laplace", control = list(n_threads = 2))
   g <- tulpa_outer_grid(f)
-  L <- cbind(log_phi = log(g$nodes[, "phi_gp"]),
-             log_sigma2 = log(g$nodes[, "sigma2"]))
+  L <- cbind(log_phi = log(g$nodes[, "b1.phi_gp"]),
+             log_sigma2 = log(g$nodes[, "b1.sigma2"]))
   L <- cbind(L, log_ratio = L[, "log_sigma2"] - L[, "log_phi"])
   m <- colSums(g$weights * L)
   s <- sqrt(colSums(g$weights * sweep(L, 2, m)^2))

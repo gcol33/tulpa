@@ -171,7 +171,7 @@ fit_t
 ```
 
 The printed header names the method: nested Laplace over a grid of cells for
-`tau`. The computation has two layers. For each fixed value of `tau`, the
+`b1.tau`, the precision `tau` of the random walk. The computation has two layers. For each fixed value of `tau`, the
 inner Laplace approximation finds the mode of the fixed effects and the field
 and the curvature there, and with them an approximate log marginal likelihood
 of that `tau`. The outer layer lays a grid of `tau` values, the outer grid,

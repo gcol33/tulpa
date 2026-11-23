@@ -403,11 +403,10 @@ The lines to read, in order:
   than its posterior.
 - `whole-fit verdict`, which combines the outer and inner layers.
 
-Here the outer k is -1.408, in the good band, and the verdict reads the fit
+Here the outer k is -1.596, in the good band, and the verdict reads the fit
 as reliable, with both layers good. Each number is also an attribute of the returned
-object. On the two-field fit `fit_st` of the grid entry the outer k is `NA`,
-because it is not defined on a multi-block grid, and that fit's verdict says
-the outer integration was not assessed.
+object. On the two-field fit `fit_st` of the grid entry the outer k is 0.154,
+also in the good band.
 
 ```{r diag-read-st}
 attr(diagnostics(fit_rw), "pareto_k")

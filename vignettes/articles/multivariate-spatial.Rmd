@@ -206,7 +206,7 @@ summary(fit)
 ```
 
 The coefficients are prefixed by the arm name. The detection slope comes
-back at 0.86 against a true 0.8, and the count slope at 0.45 against 0.4. A
+back at 0.89 against a true 0.8, and the count slope at 0.46 against 0.4. A
 Poisson regression of the same counts with the true field as an offset shows
 what the counts alone say about the count slope:
 
@@ -339,8 +339,9 @@ At the 30 unvisited units the detection arm has no observations. A fit of the
 detection data alone can only interpolate its field there from neighbouring
 visited units. The MCAR fit can also read the count field at the same unit
 and carry it over through $\rho$. The separate fit is a joint fit with one arm
-and an ICAR block, as in [Joint models](joint-models.html), whose field is
-the amplitude times a unit-precision ICAR vector.
+and an ICAR block, as in [Joint models](joint-models.html). Its latent block
+is the field itself, with precision $\tau$ times the ICAR structure, so its
+draws need no rescaling.
 
 ```{r fit-separate, fit = c("fit_c", "fit_d", "dd", "ud")}
 icar <- c(list(type = "icar"), graph)
@@ -352,8 +353,7 @@ fit_d <- tulpa_nested_laplace_joint(list(detect = sep_detect), icar,
                                     control = ctl)
 set.seed(3)
 dd <- tulpa_posterior_draws(fit_d, n = 1000)
-ud <- attr(dd, "theta")[, "sigma"] *
-  dd[, fit_d$arm_layout$phi_start + seq_len(S)]
+ud <- dd[, fit_d$arm_layout$phi_start + seq_len(S)]
 ```
 
 `u2` holds the MCAR draws of field 2 and `ud` the separate fit's draws of the
@@ -373,8 +373,8 @@ round(rbind(mcar = score(u2), separate = score(ud)), 3)
 ```
 
 The MCAR fit predicts field 2 at the unvisited units with an error of 0.47
-against 0.52 for the separate fit. Its intervals are 2.5 wide on average
-against 3.5, and both sets contain the truth at all 30 units. The detection probability at those
+against 0.51 for the separate fit. Its intervals are 2.5 wide on average
+against 2.7, and both sets contain the truth at all 30 units. The detection probability at those
 units, for a covariate value of zero, follows from each draw as
 $\operatorname{logit}^{-1}(\beta_{20} + u_{2s})$:
 
@@ -497,7 +497,7 @@ fit_fd
 
 The printed `rho_12` is the cross-response correlation, read from the outer
 grid by the front door: 0.36 with a 95% interval from 0.04 to 0.62 on this
-seed, against a true 0.6. The slopes come back at 0.33 and $-0.31$ against
+seed, against a true 0.6. The slopes come back at 0.34 and $-0.31$ against
 0.4 and $-0.3$. Mixed families, such as the counts and detections
 above, and the MIID model are fitted with `tulpa_nested_laplace_joint()`.
 
@@ -518,8 +518,8 @@ above, and the MIID model are fitted with `tulpa_nested_laplace_joint()`.
   names an axis whose cells are wide against its posterior, as it did for
   the $L_{22}$ coordinate.
 - **The gain from the correlation is largest where one response is
-  missing.** At the 30 unvisited units the error of field 2 fell from 0.52 to
-  0.47 and the interval width from 3.5 to 2.5.
+  missing.** At the 30 unvisited units the error of field 2 fell from 0.51 to
+  0.47 and the interval width from 2.7 to 2.5.
 - **$\sigma$ is the amplitude of an unscaled ICAR field.** Compare fields on
   the scale of $u$, drawn with `tulpa_posterior_draws()`, rather than
   comparing $\sigma$ across lattices.

@@ -239,8 +239,8 @@ legend("right", c("k-hat, bootstrap interval", "usable boundary", "good cut"),
        bty = "n", cex = 0.8)
 ```
 
-The k-hat falls from -1.33 at 100 draws to -1.69 at 4000, and its bootstrap
-interval narrows from 1.25 wide to 0.26. Every reading and every interval sits
+The k-hat falls from -1.16 at 100 draws to -1.66 at 4000, and its bootstrap
+interval narrows from 1.21 wide to 0.26. Every reading and every interval sits
 far below the good cut, and the orange curve, the usable boundary from the
 previous section, lies above all of them.
 

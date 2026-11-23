@@ -173,7 +173,8 @@ summary(fit_ts)$hyperparameters[, c("parameter", "median", "ci_lo", "ci_hi")]
 
 ```{r ts-rho, include = FALSE}
 hy  <- summary(fit_ts)$hyperparameters
-rho <- hy[hy$parameter == "rho", ]
+rho <- hy[hy$parameter == "b1.rho", ]
+stopifnot(nrow(rho) == 1L)
 ```
 
 The autocorrelation `rho` has median `r round(rho$median, 2)`, with an
@@ -284,7 +285,7 @@ data.frame(
 ```
 
 Adding the field lowers the error of the predicted log mean at the held-out
-points from 0.61 to 0.39. Its 95% intervals contain 55 of the 60 true values.
+points from 0.61 to 0.39. Its 95% intervals contain 54 of the 60 true values.
 The interval is read from the fit's posterior of the coefficients and the
 field, a mixture over the cells of the hyperparameter grid
 (`?predict.tulpa_fit`). Without the field the interval

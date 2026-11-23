@@ -175,8 +175,8 @@ coef(summary(fit))
 
 The slope interval contains the simulated 0.4. With `range` and `sigma` left
 unset, the fit integrates over both by nested Laplace: an inner Laplace solve
-of the coefficients and the vertex field at each design point of a central
-composite design in $(\log\rho, \log\sigma)$, weighted by the marginal
+of the coefficients and the vertex field at each cell of a grid in
+$(\log\rho, \log\sigma)$ laid around the posterior mode, weighted by the marginal
 likelihood and the priors. `spatial_range()` reports the two hyperparameters
 with their posterior mean, SD and 95% bounds.
 
@@ -187,8 +187,8 @@ spatial_range(fit)
 Both intervals contain the simulated values, a range of 0.3 and an SD of 0.8.
 `diagnostics()`
 scores the outer integration over $(\rho, \sigma)$ with a Pareto-$\hat k$
-from importance sampling against the Gaussian the design was laid on; here it
-reads 0.491, marked good.
+from importance sampling against a mixture over the grid cells; here it
+reads 0.135, marked good.
 
 ```{r diagnostics}
 diagnostics(fit)
@@ -338,9 +338,9 @@ round(res_mesh, 3)
 
 Times are elapsed seconds on the machine that built this page, 300
 observations, two threads. All three meshes report a range between 0.37 and
-0.40, inside the range's 95% interval of 0.21 to 0.71; the coarsest mesh, with edges as
-long as the range, reports a larger SD, 1.17 against 0.93 and 0.97 on the two
-finer meshes. The finest takes about twelve times as long as the middle one
+0.40, inside the range's 95% interval of 0.22 to 0.72; the coarsest mesh, with edges as
+long as the range, reports a larger SD, 1.16 against 0.93 and 0.97 on the two
+finer meshes. The finest takes about ten times as long as the middle one
 for a grid error 0.006 lower.
 
 ## Comparing with other spatial fits
@@ -385,7 +385,7 @@ tab <- cbind(tab, seconds = time[rownames(tab)],
 round(tab, 3)
 ```
 
-The three fields reach grid errors within about 0.01 of each other, the NNGP
+The three fields reach grid errors within about 0.04 of each other, the SPDE
 field the lowest, and agree on the slope to within 0.015. On this dataset the
 non-spatial slope, 0.402, is closer to the simulated 0.4, and its standard
 error is smaller than those of the spatial fits; every slope interval contains
@@ -400,10 +400,10 @@ compare_models(nonspatial = fits$nonspatial, spde = fits$spde,
                nngp = fits$nngp, hsgp = fits$hsgp, criterion = "waic")
 ```
 
-All three spatial fits sit about 164 to 169 units of expected log predictive
+All three spatial fits sit about 166 to 174 units of expected log predictive
 density above the non-spatial one. Among them the NNGP field ranks first, the
-SPDE field 0.9 below it with a standard error of 2.0 on the difference, and
-the HSGP field 5.3 below with a standard error of 4.4.
+SPDE field 3.2 below it with a standard error of 1.9 on the difference, and
+the HSGP field 8.6 below with a standard error of 4.3.
 
 ## Fractional smoothness
 
@@ -449,11 +449,11 @@ rbind(spatial_spde = coef(fit), spatial_spde_custom = coef(f_custom))
 - **Mesh edge against the range.** On these data, inner edges of a sixth and
   a half of the range (0.05 and 0.15 against 0.3) gave ranges of 0.38 and
   0.39, both inside the 95% interval, and grid errors 0.006 apart, while
-  edges as long as the range raised the SD estimate from 0.93 to 1.17. Start with an inner
+  edges as long as the range raised the SD estimate from 0.93 to 1.16. Start with an inner
   `max_edge` at most half the range you expect, and refit at half that edge:
   if the range and the slope do not move, the coarser mesh is enough.
 - **Cost grows with the vertices.** The fine mesh of the comparison above had
-  about eight times the vertices of the middle one and took about twelve
+  about eight times the vertices of the middle one and took about ten
   times as long. `cutoff` is the lever for clustered data, since every point
   closer than `cutoff` to another shares its vertex.
 - **Priors.** With 300 observations, prior medians for the range twenty times

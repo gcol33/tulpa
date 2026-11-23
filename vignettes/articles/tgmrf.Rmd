@@ -118,7 +118,7 @@ how they explore `theta`.
    posterior moments of every hyperparameter as weighted means and SDs
    (`$theta_mean`, `$theta_sd`) plus weighted quantiles.
 5. **Diagnose the outer approximation.** With the grid integrated, the
-   driver fits a Gaussian proposal to the hyperparameter posterior and
+   driver builds a proposal from the weighted grid cells and
    importance-samples it to compute the outer Pareto-$\hat{k}$
    (`$pareto_k`); see the convergence section.
 

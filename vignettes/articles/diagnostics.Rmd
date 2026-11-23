@@ -146,9 +146,9 @@ rbind(correct = unlist(cm[c("ks_p", "disp_ratio")]),
 ```
 
 On the correct fit the PIT points lie on the diagonal (Kolmogorov-Smirnov
-p = 0.66) and the observed variance sits inside the simulated ones, at 1.04
+p = 0.56) and the observed variance sits inside the simulated ones, at 1.05
 times their median. On the misspecified fit the QQ plot bends away from the
-diagonal (p = 1.7e-08), and the observed variance, 1.85 times the simulated
+diagonal (p = 6.0e-08), and the observed variance, 1.87 times the simulated
 median, falls beyond the right edge of the histogram, so its red line is not
 drawn. The correlogram reads Moran's I between -0.075 and -0.04 on the correct
 fit: it is built from `residuals()`, which include the fitted field (see
@@ -190,7 +190,7 @@ test_uniformity(fit_od)
 ```
 
 The largest gap between the empirical and the uniform distribution function,
-`D`, is 0.030 on the correct fit and 0.125 on the misspecified one; only the
+`D`, is 0.032 on the correct fit and 0.120 on the misspecified one; only the
 second is far outside what 600 uniform draws produce.
 
 ### Dispersion
@@ -204,7 +204,7 @@ test_dispersion(fit)
 test_dispersion(fit_od)
 ```
 
-The Poisson data give a ratio of 1.04 (p = 0.66), the overdispersed data 1.85
+The Poisson data give a ratio of 1.05 (p = 0.54), the overdispersed data 1.87
 (p below 2.2e-16). The same comparison as a plot: simulate from the
 misspecified fit and place the observed variance among the simulated ones.
 
@@ -258,11 +258,11 @@ test_zero_inflation(fit)
 test_zero_inflation(fit_od)
 ```
 
-The Poisson data have 160 zeros against 143 expected (p = 0.048), the
-overdispersed data 199 against 136 (p below 2.2e-16). The first model is the
+The Poisson data have 160 zeros against 145 expected (p = 0.112), the
+overdispersed data 199 against 138 (p below 2.2e-16). The first model is the
 one that generated its data, so its p-value is a draw from a uniform
 distribution and falls below 0.05 in one dataset out of twenty; the ratio of
-1.12 against 1.46 is what separates the two fits here.
+1.10 against 1.44 is what separates the two fits here.
 
 ```{r zero-plot, fig.alt = "Histogram of the number of zeros in simulated datasets under the misspecified fit, with the observed number of zeros to the right"}
 z_sim <- colSums(sims_od == 0)
@@ -300,8 +300,8 @@ test_dispersion(fit_nb)
 test_uniformity(fit_nb)
 ```
 
-The dispersion ratio drops to 1.06 (p = 0.74) and the PIT residuals pass the
-uniformity test (p = 0.83).
+The dispersion ratio drops to 1.01 (p = 0.94) and the PIT residuals pass the
+uniformity test (p = 0.74).
 
 ## Spatial and temporal structure
 
@@ -328,7 +328,7 @@ call on the spatial fit asks whether the field has absorbed it.
 moran_i(fit, coords)
 ```
 
-On the spatial fit's residuals Moran's I is -0.0002 (p = 0.27): the field has
+On the spatial fit's residuals Moran's I is -0.0002 (p = 0.28): the field has
 taken up the regional pattern.
 
 The PIT residuals give the same check from the simulation side: they come from
@@ -344,7 +344,7 @@ z_pit <- qnorm(pmin(pmax(pit, eps), 1 - eps))
 moran_i(z_pit, coords)
 ```
 
-On these residuals Moran's I is -0.0006 (p = 0.45), the same reading.
+On these residuals Moran's I is -0.0007 (p = 0.46), the same reading.
 
 An empirical semivariogram shows the same contrast as a function of distance.
 `tulpa_variogram()` bins half the squared differences of residual pairs by
@@ -384,7 +384,7 @@ durbin_watson(z_pit, time = d$year)
 ```
 
 The year has no effect in the simulation, and the test finds no
-autocorrelation (DW = 1.98, p = 0.84). A trend over years that the model left out would push the
+autocorrelation (DW = 2.00, p = 0.98). A trend over years that the model left out would push the
 statistic below 2; [Temporal models](temporal-models.html) shows how to add one.
 
 ## Sampler diagnostics
@@ -531,7 +531,7 @@ tab
 ```
 
 Both criteria rank the full model first. Dropping the covariate costs 112.4
-elpd (standard error 16.9) and dropping the field 200.3 (standard error 24.4),
+elpd (standard error 17.0) and dropping the field 200.6 (standard error 24.4),
 each several standard errors away from zero. A gap within about two standard
 errors of zero would not separate the models.
 
