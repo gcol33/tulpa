@@ -1244,7 +1244,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   w <- as.numeric(fit$weights)
   ng <- nrow(theta_grid)
   lp_theta <- as.numeric(fit$log_hyperprior)
-  logm <- as.numeric(fit$log_marginal) + lp_theta
+  logm <- as.numeric(fit$log_marginal)
   p_fix <- as.integer(fit$n_fixed)
   beta_names <- c(colnames(X) %||% paste0("beta", seq_len(p)),
                   if (!is.null(X_zi))
