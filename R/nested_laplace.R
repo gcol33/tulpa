@@ -1418,6 +1418,25 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # (`.subspace_closure()`). One cell, not `n_grid`: the closure is a SELECTION
 # decision, and the selection is made once. Off by default, so a fit that did
 # not ask for closure retains nothing extra (gcol33/tulpa#862).
+# The MODAL cell of an outer grid: the solved cell of highest posterior
+# density, the largest `log_marginal` (the hyperprior folded in) among the
+# cells that carry weight. Not the cell of largest weight: a weight is a
+# density times its cell's width, so on an uneven grid the widest cell wins,
+# and an outermost cell, which owns the tail past its node, can carry the most
+# mass while sitting a node or more past the mode. Every inner-layer read at
+# "the modal cell" -- the inner skew probe and the subspace-debias bands it
+# feeds, the coupling closure's precision, the diagnostic warm starts -- takes
+# its cell from here. NULL when no cell has a finite log marginal.
+.nl_modal_cell <- function(res) {
+  lm <- as.numeric(res$log_marginal)
+  if (!length(lm)) return(NULL)
+  ok <- is.finite(lm)
+  w <- res$weights
+  if (length(w) == length(lm)) ok <- ok & is.finite(w) & w > 0
+  if (!any(ok)) return(NULL)
+  which(ok)[which.max(lm[ok])]
+}
+
 # The MODAL cell's joint posterior precision, assembled from the per-cell CSC
 # scratch the inner solves return under `store_Q`. This is what the
 # subspace-debias coupling closure reads (`.subspace_closure()`): a coordinate
@@ -1438,10 +1457,8 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
   Q_x <- res$Q_csc_x_per_grid
   n_x <- res$Q_csc_n
   if (is.null(Q_p) || is.null(Q_i) || is.null(Q_x) || is.null(n_x)) return(NULL)
-  lm <- res$log_marginal
-  if (is.null(lm) || !any(is.finite(lm))) return(NULL)
-  k <- which.max(replace(lm, !is.finite(lm), -Inf))
-  if (k > length(Q_p) || length(Q_p[[k]]) != n_x + 1L) return(NULL)
+  k <- .nl_modal_cell(res)
+  if (is.null(k) || k > length(Q_p) || length(Q_p[[k]]) != n_x + 1L) return(NULL)
   L <- Matrix::sparseMatrix(i = Q_i[[k]], p = Q_p[[k]], x = Q_x[[k]],
                             dims = c(n_x, n_x), index1 = FALSE)
   L + Matrix::t(L) - Matrix::Diagonal(n_x, Matrix::diag(L))

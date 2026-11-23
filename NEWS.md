@@ -12,6 +12,16 @@
   checkpoint fixture the resumed grid went from 606 cells against the plain
   fit's 612 to 612, with weights and posterior means equal to the plain fit's
   (#1299).
+* The inner-layer reads at "the modal cell" of a joint nested-Laplace grid --
+  the inner skew probe and the subspace-debias bands it feeds, and the
+  diagnostic warm starts -- take the cell of highest posterior density, the
+  cell the coupling closure's precision already came from. They took the cell
+  of largest weight, which on an uneven grid is the widest cell: on a
+  14-group binomial random-intercept fit the outermost node (log SD 0.92),
+  which owns the tail past it, carried weight 0.30 against 0.23 at the
+  density mode (log SD 0.41; outer mode 0.64), and the probe read every group
+  there, with max |gamma3| 0.485 against 0.222 at the mode (#1300).
+
 * A free-covariance block without a hyperprior density (`hyperprior =
   "flat"` on a random-slope fit) integrates each of its log-Cholesky
   coordinates flat over the span its placed nodes tile, the support rule every

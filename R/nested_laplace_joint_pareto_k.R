@@ -304,34 +304,31 @@
     out
 }
 
-# Modal grid cell in user-facing theta space, the chain seed for
-# .joint_is_solve_reordered: the same highest-weight cell whose converged latent
-# mode .joint_modal_mode broadcasts as the warm start, so the re-ordered batch's
-# first cell sits where that warm mode is exact. Returns NULL when the grid /
-# weights are unusable (caller falls back to centroid seeding).
+# Modal grid cell (`.nl_modal_cell()`) in user-facing theta space: the cell the
+# inner skew probe re-solves at, and the chain seed for
+# .joint_is_solve_reordered, the same cell whose converged latent mode
+# .joint_modal_mode broadcasts as the warm start, so the re-ordered batch's
+# first cell sits where that warm mode is exact. Returns NULL when the grid is
+# unusable (caller falls back to centroid seeding).
 .joint_modal_theta <- function(res) {
     tg <- res$theta_grid
-    w  <- res$weights
-    if (is.null(tg) || !is.matrix(tg) || is.null(w) ||
-        length(w) != nrow(tg) || !any(is.finite(w))) {
-        return(NULL)
-    }
-    as.numeric(tg[which.max(w), ])
+    if (is.null(tg) || !is.matrix(tg)) return(NULL)
+    k <- .nl_modal_cell(res)
+    if (is.null(k) || k > nrow(tg)) return(NULL)
+    as.numeric(tg[k, ])
 }
 
 # Modal-cell latent mode for warm-starting the diagnostic solves: the converged
-# inner mode at the highest-weight grid cell. Broadcast as the `x_init` for
-# every re-evaluation draw (the bulk of the importance weight sits near the
-# posterior mode, so those draws warm-start well). Returns NULL when modes were
-# not stored, so the caller falls back to the kernel's cold default.
+# inner mode at the modal grid cell. Broadcast as the `x_init` for every
+# re-evaluation draw (the bulk of the importance weight sits near the posterior
+# mode, so those draws warm-start well). Returns NULL when modes were not
+# stored, so the caller falls back to the kernel's cold default.
 .joint_modal_mode <- function(res) {
     modes <- res$modes
-    w     <- res$weights
-    if (is.null(modes) || !is.matrix(modes) || is.null(w) ||
-        length(w) != nrow(modes) || !any(is.finite(w))) {
-        return(NULL)
-    }
-    m <- as.numeric(modes[which.max(w), ])
+    if (is.null(modes) || !is.matrix(modes)) return(NULL)
+    k <- .nl_modal_cell(res)
+    if (is.null(k) || k > nrow(modes)) return(NULL)
+    m <- as.numeric(modes[k, ])
     if (length(m) == 0L || any(!is.finite(m))) return(NULL)
     m
 }
