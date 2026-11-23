@@ -173,20 +173,28 @@ test_that("the band selector reaches a random-effect coordinate", {
   # selector reaches an RE coordinate at all is decided by the materiality gate,
   # and a fixture has to clear it with room.
   #
-  # Measured across seeds 21-28 on this shape: the margin below the gate is
-  # 0.036 / 0.007 at seeds 21 / 22 and NEGATIVE at the other six, where no RE
-  # coordinate is selected. Nothing may be sized on that -- the assertion here
-  # is a regression guard on one seed, not a statement about how often the
-  # selector fires. It fails on the MARGIN first, so a numerical change upstream
-  # of the inner diagnostics is caught before it silently empties the selection:
-  # gcol33/tulpa#836 was this test's predecessor sitting 5e-6 from the gate.
+  # The window is narrow by construction: the probe reads every coordinate at
+  # the modal cell (`.nl_modal_cell()`), where its skew sets both readings,
+  # rel_ess near 1 - 0.2 gamma3^2 on this shape, so clearing `gate - 0.02`
+  # needs |gamma3| above about 0.35 on some coordinate while `gamma3_ok` caps
+  # every one at 0.5. Most fixtures miss it: across seeds 21-50, b0 in
+  # {-3.5, -3, -2.5} and 3 or 4 per group (180 fits), the RE SD posterior
+  # either collapses (no coordinate material) or sits high enough that the
+  # most skewed group leaves gamma3_ok; 9 clear both, and this one (seed 40,
+  # 4 per group, b0 = -3) has the most room on the cubic: min rel_ess 0.9591
+  # (0.016 under `gate - 0.02`), all 14 coordinates material, max |gamma3|
+  # 0.433 (0.067 under the cap), 13 RE coordinates selected. Nothing may be
+  # sized on that -- the assertion here is a regression guard on one seed, not
+  # a statement about how often the selector fires. It fails on the MARGIN
+  # first, so a numerical change upstream of the inner diagnostics is caught
+  # before it silently empties the selection: gcol33/tulpa#836 was this test's
+  # predecessor sitting 5e-6 from the gate.
   G <- 14L
   gate <- tulpa:::.nl_diag("inner_k_material_ess")
-  d <- rsd_data(seed = 21L, G = G, per = 3L, b0 = -3.5, sd_re = 1.5)
+  d <- rsd_data(seed = 40L, G = G, per = 4L, b0 = -3, sd_re = 1.5)
   # The margins above were measured under a diffuse fixed-effect prior; the
-  # front door's N(0, 2.5) default (gcol33/tulpa#869) pulls the b0 = -3.5
-  # intercept in and halves the margin, so the fixture keeps the prior it was
-  # sized under.
+  # front door's N(0, 2.5) default (gcol33/tulpa#869) pulls the low intercept
+  # in, so the fixture keeps the diffuse prior it was sized under.
   fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial",
                mode = "re_cov_nested",
                beta_prior = list(mean = 0, sd = 100),
