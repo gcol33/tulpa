@@ -1,5 +1,18 @@
 # tulpa 0.8.0
 
+* A nested-Laplace fit resumed from its checkpoint lays the grid the
+  uninterrupted fit lays with the default cheap-pass screen on. A cell read
+  from the file stood in for its screen as well as its full solve: it entered
+  the screen at its full log-marginal, was never dropped, and warmed the
+  screening chain with its converged mode. A cell an earlier refinement round
+  had dropped, and a later round solved at the same coordinate, was then kept
+  in the earlier round on resume, and every later round laid different
+  levels. A stored cell is now screened like any other and dropped where the
+  screen drops it, and replaces only the full solve. On the RE-covariance
+  checkpoint fixture the resumed grid went from 606 cells against the plain
+  fit's 612 to 612, with weights and posterior means equal to the plain fit's
+  (#1299).
+
 * The remaining posterior summaries of a nested grid fit read each cell at
   its mode plus its leading-order mean shift, where the latent draws are
   centred: `temporal()`, `field_effects()` on an areal field read off the

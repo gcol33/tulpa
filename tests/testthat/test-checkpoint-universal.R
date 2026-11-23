@@ -126,16 +126,22 @@ test_that("RE-cov nested checkpoint == un-checkpointed + resumes", {
   re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = Z)
   fit <- function(ck = NULL)
     tulpa_re_cov_nested(y, rep(1L, N), X, re_term, family = "binomial",
-                        control = list(diagnose_k = FALSE, checkpoint = ck,
-                                       prune = FALSE))
+                        control = list(diagnose_k = FALSE, checkpoint = ck))
   path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
 
+  # The default cheap-pass screen is on. A resumed grid still screens every
+  # cell, a stored one included, so it keeps and drops the cells the
+  # uninterrupted fit did and every refinement round lays the same levels.
   f0 <- fit()
   f1 <- fit(list(path = path, resume = FALSE))
   expect_equal(f1$weights, f0$weights, tolerance = 1e-9)
   expect_equal(f1$posterior$mean, f0$posterior$mean, tolerance = 1e-9)
+  sz <- file.size(path)
   f2 <- fit(list(path = path, resume = TRUE))
+  expect_identical(NROW(f2$theta_grid), NROW(f0$theta_grid))
+  expect_equal(f2$weights, f0$weights, tolerance = 1e-9)
   expect_equal(f2$posterior$mean, f0$posterior$mean, tolerance = 1e-9)
+  expect_equal(file.size(path), sz)  # the resume solved nothing
 
   y2 <- rbinom(N, 1L, plogis(eta + 0.6))
   expect_error(

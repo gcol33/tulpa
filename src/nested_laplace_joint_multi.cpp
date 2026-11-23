@@ -2680,7 +2680,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
         nl_screen_iterations(blocks, screen_iters, max_iter),
-        tulpa::NlResumeRefill(), screen_log_offset,
+        screen_log_offset,
         screen_only
     );
     pattern_guard.check("the joint nested-Laplace outer grid");
@@ -3299,7 +3299,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
         nl_screen_iterations(blocks, screen_iters, max_iter),
-        tulpa::NlResumeRefill(), screen_log_offset,
+        screen_log_offset,
         screen_only
     );
     pattern_guard.check("the sparse joint nested-Laplace outer grid");

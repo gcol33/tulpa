@@ -323,25 +323,16 @@ Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k);
 // compiled once, and a call through std::function costs nothing beside the
 // Laplace solve it makes per cell.
 //
-// `ckpt` (default nullptr) enables grid-cell checkpoint/resume: cells whose
-// hyperparameter coordinate was completed in a prior pass / killed run are
-// loaded from disk and skipped, and every freshly solved cell is appended.
-// See nested_laplace_checkpoint.h.
+// `ckpt` (default nullptr) enables grid-cell checkpoint/resume: a cell whose
+// hyperparameter coordinate was completed in a prior pass / killed run is
+// loaded from disk in place of its full solve, and every freshly solved cell is
+// appended. A loaded cell is still screened, and dropped where the screen drops
+// it, so the kept set does not depend on what the file holds. See
+// nested_laplace_checkpoint.h.
 using NlCellSolve = std::function<LaplaceResult(
     int k, const std::vector<double>& warm, SparseCholeskySolver* solver)>;
 using NlCheapEval = std::function<LaplaceResult(
     int k, const std::vector<double>& warm, int n_steps, int worker)>;
-
-// Refill hook for per-cell state the checkpoint payload does not carry.
-// Called once per checkpoint-loaded cell, with the cell index, the mode the
-// payload restored and a solver to factorize against. A caller holding per-cell
-// state OUTSIDE `LaplaceResult` -- the per-row predictive variance the
-// single-block driver packs into its own buffer -- has nowhere else to fill it,
-// because a loaded cell never reaches `solve_at_theta`. Without the hook that
-// buffer keeps whatever it was initialised to, and a 0 there reads as zero
-// predictive variance rather than as an absent value. Empty = no refill.
-using NlResumeRefill = std::function<void(
-    int k, const std::vector<double>& mode, SparseCholeskySolver* solver)>;
 
 // Engine default for the number of inner Newton steps per cell in the cheap
 // screening sweep, used when the caller supplies no `screen_iters`. See the
@@ -459,10 +450,6 @@ Rcpp::List run_nested_laplace_grid(
     // Inner Newton steps per cell in the cheap screening sweep. Appended last
     // so every existing positional call site keeps its meaning.
     int screen_iters = CHEAP_SCREEN_ITERS,
-    // Per-cell state to reconstruct for a checkpoint-loaded cell. See
-    // NlResumeRefill; the default is empty, so a caller keeping nothing
-    // outside `LaplaceResult` is unaffected.
-    const NlResumeRefill& resume_refill = NlResumeRefill(),
     // Per-cell log hyperprior + log cell measure the screen ranks with, and the
     // mass of the grid the cells join (ScreenOffset); empty ranks on the
     // kernel's log-marginal alone.

@@ -388,7 +388,6 @@ Rcpp::List run_nested_laplace_grid(
     GridCheckpoint* ckpt,
     const std::vector<double>& x_init_per_cell,
     int screen_iters,
-    const NlResumeRefill& resume_refill,
     const ScreenOffset& screen_log_offset,
     bool screen_only
 ) {
@@ -496,11 +495,16 @@ Rcpp::List run_nested_laplace_grid(
             x_init_per_cell.begin() + static_cast<size_t>(k + 1) * n_x);
     };
 
-    // Checkpoint preload. A cell whose hyperparameter
-    // coordinate was completed in a prior pass / killed run is filled straight
-    // from disk and flagged done, so every solve site below skips it and the
-    // warm-start chain reads its stored mode. `record(k)` appends a freshly
-    // solved cell. Both are no-ops when `ckpt == nullptr`.
+    // Checkpoint preload. A cell whose hyperparameter coordinate was completed
+    // in a prior pass / killed run is filled straight from disk and flagged
+    // done: it stands in for the cell's FULL solve, so every full-solve site
+    // below skips it and the warm-start chain reads its stored mode. It does
+    // not stand in for the cell's screen. The screen is the same function of
+    // the grid with or without a checkpoint -- every cell screened along the
+    // same chain, the same cells dropped, the same bound -- so a resumed grid
+    // keeps and drops exactly the cells the uninterrupted one did, and a
+    // stored cell the screen drops is reported dropped. `record(k)` appends a
+    // freshly solved cell. Both are no-ops when `ckpt == nullptr`.
     std::vector<unsigned char> ckpt_done(n_grid, 0);
     int n_loaded = 0;
     if (ckpt) {
@@ -509,19 +513,6 @@ Rcpp::List run_nested_laplace_grid(
                 cell_results[k] = ckpt->get(k);
                 ckpt_done[k] = 1;
                 n_loaded++;
-            }
-        }
-        // State the payload cannot carry is rebuilt here, after the whole
-        // preload so the hook sees a fully populated `cell_results`, and
-        // serially against one solver -- the same shape the serial solve path
-        // below takes. It costs one factorization at the restored mode per
-        // loaded cell, against the full solve resume exists to avoid.
-        nl_checkpoint_add_loaded(n_loaded);
-        if (n_loaded && resume_refill) {
-            SparseCholeskySolver refill_solver;
-            for (int k = 0; k < n_grid; k++) {
-                if (ckpt_done[k])
-                    resume_refill(k, cell_results[k].mode, &refill_solver);
             }
         }
     }
@@ -584,6 +575,12 @@ Rcpp::List run_nested_laplace_grid(
     // n_cells_pruned is reported back to the caller for the R-side toggle.
     std::vector<unsigned char> pruned(n_grid, 0);
     int n_cells_pruned = 0;
+    // Cells the run still has to solve in full: kept, and not on disk.
+    auto n_to_solve = [&]() {
+        int n = 0;
+        for (int k = 0; k < n_grid; k++) n += (!pruned[k] && !ckpt_done[k]);
+        return n;
+    };
     // Cells the kept-set floor put back after the tolerance dropped them.
     int n_floor_restored = 0;
     int n_min_keep = std::min(n_grid, CHEAP_SCREEN_MIN_KEEP);
@@ -640,18 +637,6 @@ Rcpp::List run_nested_laplace_grid(
                 cheap_dec[k] = cr.newton_decrement;
             };
 
-            // A completed (checkpoint-loaded) cell needs no screening: its
-            // true log-marginal ranks it and its stored mode warms the chain,
-            // and it is never pruned (handled in the marking loop). Shared by
-            // both the serial and per-tile parallel sweeps.
-            auto use_loaded_for_chain = [&](int k, std::vector<double>& warm) {
-                cheap_lm[k] = cell_results[k].log_marginal;
-                if (std::isfinite(cell_results[k].log_marginal) &&
-                    static_cast<int>(cell_results[k].mode.size()) == n_x) {
-                    warm = cell_results[k].mode;
-                }
-            };
-
             // Whether the cheap screen can parallelize: the same tile metadata
             // the full parallel pass uses, plus more than one outer thread. A
             // single global chain is load-bearing for rank faithfulness (a
@@ -671,7 +656,6 @@ Rcpp::List run_nested_laplace_grid(
                 // (the historical behaviour; worker slot 0).
                 std::vector<double> warm = pilot_mode;
                 for (int k = 0; k < n_grid; k++) {
-                    if (ckpt_done[k]) { use_loaded_for_chain(k, warm); continue; }
                     LaplaceResult cr =
                         cheap_at(k, warm, screen_steps, /*worker=*/0);
                     record_screen(k, cr);
@@ -718,11 +702,6 @@ Rcpp::List run_nested_laplace_grid(
                             tile_root_mode[t] = warm;
                             continue;
                         }
-                        if (ckpt_done[kp]) {
-                            use_loaded_for_chain(kp, warm);
-                            tile_root_mode[t] = warm;
-                            continue;
-                        }
                         LaplaceResult cr =
                             cheap_at(kp, warm, screen_steps, /*worker=*/0);
                         record_screen(kp, cr);
@@ -754,10 +733,6 @@ Rcpp::List run_nested_laplace_grid(
                         std::vector<double> warm = tile_root_mode[t];
                         for (int k : tile_cells[t]) {
                             if (k == kp) continue;  // root screened in Phase A
-                            if (ckpt_done[k]) {
-                                use_loaded_for_chain(k, warm);
-                                continue;
-                            }
                             LaplaceResult cr =
                                 cheap_at(k, warm, screen_steps, worker);
                             record_screen(k, cr);
@@ -814,7 +789,6 @@ Rcpp::List run_nested_laplace_grid(
                                    : -std::numeric_limits<double>::infinity();
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) continue;
-                if (ckpt_done[k]) continue;  // completed cells are never pruned
                 double w = (std::isfinite(screen_lm[k]) && Z > 0.0)
                            ? std::exp(screen_lm[k] - m) / Z
                            : 0.0;
@@ -836,14 +810,6 @@ Rcpp::List run_nested_laplace_grid(
                 if (drop) {
                     pruned[k] = 1;
                     n_cells_pruned++;
-                    LaplaceResult r;
-                    r.mode = pilot_mode;
-                    r.log_marginal =
-                        -std::numeric_limits<double>::infinity();
-                    r.n_iter = 0;
-                    r.converged = false;
-                    r.log_det_Q = 0.0;
-                    cell_results[k] = r;
                 }
             }
 
@@ -911,19 +877,17 @@ Rcpp::List run_nested_laplace_grid(
         // Pruned and checkpoint-loaded cells get no full solve, so they are
         // not part of the ETA denominator; revise it down to the survivors
         // actually solved this run.
-        if (progress) progress->set_total(n_grid - n_cells_pruned - n_loaded);
+        if (progress) progress->set_total(n_to_solve());
     }
 
     // A screened read: the screen's own log-marginal for every cell it ranked,
-    // none pruned, no full solve, so the surface is one quantity throughout.
-    // The pilot keeps the mode of the full solve it already carries (the warm
-    // start a placement reads) but reports its screened log-marginal; a
-    // checkpoint-loaded cell keeps its full solve, which the screen ranked it
-    // by.
+    // none pruned, no full solve, so the surface is one quantity throughout,
+    // a checkpoint-loaded cell included. The pilot keeps the mode of the full
+    // solve it already carries (the warm start a placement reads) but reports
+    // its screened log-marginal.
     const bool screen_read = screen_only && prune_active;
     if (screen_read) {
         for (int k = 0; k < n_grid; k++) {
-            if (ckpt_done[k]) continue;
             if (k == k_pilot) {
                 if (std::isfinite(cheap_lm[k]))
                     cell_results[k].log_marginal = cheap_lm[k];
@@ -1226,7 +1190,11 @@ Rcpp::List run_nested_laplace_grid(
                 n_cells_pruned--;
             }
             n_repaired += static_cast<int>(fix.size());
-            if (progress) progress->set_total(n_grid - n_cells_pruned - n_loaded);
+            // A repaired cell already on disk is restored, not solved.
+            fix.erase(std::remove_if(fix.begin(), fix.end(),
+                                     [&](int k) { return ckpt_done[k] != 0; }),
+                      fix.end());
+            if (progress) progress->set_total(n_to_solve());
             const int team =
                 tulpa_omp_team_size_req(n_threads_outer,
                                         static_cast<int>(fix.size()));
@@ -1266,6 +1234,25 @@ Rcpp::List run_nested_laplace_grid(
     }
 
     if (progress) progress->finish();
+
+    // A dropped cell reports no posterior mass. Written only once the screen,
+    // the floor and the repair have settled the kept set, so a checkpoint-loaded
+    // cell that one of them puts back still holds its stored solve.
+    int n_loaded_used = 0;
+    for (int k = 0; k < n_grid; ++k) {
+        if (pruned[k]) {
+            LaplaceResult r;
+            r.mode = pilot_mode;
+            r.log_marginal = -std::numeric_limits<double>::infinity();
+            r.n_iter = 0;
+            r.converged = false;
+            r.log_det_Q = 0.0;
+            cell_results[k] = r;
+        } else if (ckpt_done[k] && (!screen_read || k == k_pilot)) {
+            n_loaded_used++;
+        }
+    }
+    nl_checkpoint_add_loaded(n_loaded_used);
 
     for (int k = 0; k < n_grid; ++k)
         cell_results[k].device_cpu_recovered = cell_results[k].device_cpu_recovered || cell_cpu_recovery[k];
