@@ -343,7 +343,8 @@
     nst <- object$nested
     if (is.list(nst) && is.matrix(nst$modes) &&
         length(nst$weights) == nrow(nst$modes)) {
-      return(list(modes = nst$modes, weights = as.numeric(nst$weights),
+      return(list(modes = nst$modes, centres = .nested_grid_latent_means(nst),
+                  weights = as.numeric(nst$weights),
                   theta = nst$theta_grid, solve = object$field_solve,
                   prior = NULL, store = nst))
     }

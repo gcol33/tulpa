@@ -534,7 +534,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 # already-built block list (icar / car_proper / rw1 / rw2 / ar1, each optionally
 # carrying a per-row svc_weight), fit the one-arm joint nested-Laplace model and
 # return the pieces both wrappers assemble into a tulpa_fit: the joint fit, the
-# per-field weighted-mode posterior means, the per-field hyperparameter
+# per-field posterior means (weighted cell centres), the per-field hyperparameter
 # summaries, and the fixed-effect draws. The hyperparameter summaries are
 # generic over the outer-grid axes: sigma = 1/sqrt(tau) from the `b<b>.tau`
 # axis, and (when present) the second axis `b<b>.rho` -- which the caller labels
@@ -579,7 +579,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 # already-built block list (icar / car_proper / rw1 / rw2 / ar1, each optionally
 # carrying a per-row svc_weight), fit the one-arm joint nested-Laplace model and
 # return the pieces both wrappers assemble into a tulpa_fit: the joint fit, the
-# per-field weighted-mode posterior means, the per-field hyperparameter
+# per-field posterior means (weighted cell centres), the per-field hyperparameter
 # summaries, and the fixed-effect draws. The hyperparameter summaries are
 # generic over the outer-grid axes: sigma = 1/sqrt(tau) from the `b<b>.tau`
 # axis, and (when present) the second axis `b<b>.rho` -- which the caller labels
@@ -660,18 +660,19 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # car_proper / bym2 / mcar), so temporal blocks are absent from it.
   field_starts <- al$block_start
   w <- jfit$weights
+  centres <- .nested_grid_latent_means(jfit)
 
-  # Weighted-mode posterior mean of each field (sum_k w_k m_k restricted to the
-  # field's latent block).
+  # Posterior mean of each field: sum_k w_k m_k over the cells' centres (mode
+  # plus leading-order mean shift), restricted to the field's latent block.
   fields <- lapply(seq_along(blocks), function(b) {
     n_u <- blocks[[b]]$n_spatial_units %||% blocks[[b]]$n_times
     cols <- field_starts[b] + seq_len(n_u)
     list(name = block_names[b],
-         mean = as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE])))
+         mean = as.numeric(crossprod(w, centres[, cols, drop = FALSE])))
   })
   names(fields) <- block_names
 
-  # The same weighted-mode field means, read back per OBSERVATION rather than
+  # The same field means, read back per OBSERVATION rather than
   # per unit -- the posterior-mean field contribution to eta, so
   # posterior_predict() / simulate() / WAIC / LOO see it instead of a
   # fixed-effects-only linear predictor (gcol33/tulpa#795). Field-major MCAR
@@ -687,13 +688,13 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     if (identical(blk$type, "mcar")) {
       for (a in seq_len(blk$n_fields)) {
         cols   <- field_starts[b] + (a - 1L) * n_u + seq_len(n_u)
-        mean_a <- as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE]))
+        mean_a <- as.numeric(crossprod(w, centres[, cols, drop = FALSE]))
         wt     <- blk$field_weight[[a]][[1L]]
         field_eta_contrib <- field_eta_contrib + wt * mean_a[idx]
       }
     } else {
       cols   <- field_starts[b] + seq_len(n_u)
-      mean_b <- as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE]))
+      mean_b <- as.numeric(crossprod(w, centres[, cols, drop = FALSE]))
       wt     <- if (!is.null(blk$svc_weight)) blk$svc_weight[[1L]] else rep(1, N)
       field_eta_contrib <- field_eta_contrib + wt * mean_b[idx]
     }
@@ -809,12 +810,14 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     w  <- jfit$weights
     tg <- jfit$theta_grid
     fs <- jfit$arm_layout$field_starts[1L]
-    # p field posterior means (weighted mode), one per design column, sliced from
-    # the coupled p * n_units latent block (field-major layout).
+    # p field posterior means (weighted cell centres,
+    # `.nested_grid_latent_means()`), one per design column, sliced from the
+    # coupled p * n_units latent block (field-major layout).
+    centres <- .nested_grid_latent_means(jfit)
     spatial_fields <- lapply(seq_len(p_fields), function(a) {
       cols <- fs + (a - 1L) * n_units + seq_len(n_units)
       list(name = mb$field_names[a],
-           mean = as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE])))
+           mean = as.numeric(crossprod(w, centres[, cols, drop = FALSE])))
     })
     names(spatial_fields) <- mb$field_names
     # Sigma derived quantities, marginalized over the log-Cholesky outer grid:

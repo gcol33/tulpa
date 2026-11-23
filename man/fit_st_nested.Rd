@@ -158,7 +158,8 @@ blocks of one nested-Laplace fit (\code{\link[=tulpa_nested_laplace]{tulpa_neste
 \code{prior}), which integrates the spatial hyperparameter(s), the temporal
 precision and (for \code{ar1}) the temporal autocorrelation on its outer grid.
 The fixed-effect posterior is the grid-marginalised mixture; the spatial and
-temporal field posterior means are the grid-weighted latent modes.
+temporal field posterior means are the grid-weighted per-cell latent
+centres (each cell's mode plus its leading-order mean shift).
 }
 \examples{
 \donttest{

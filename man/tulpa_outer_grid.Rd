@@ -28,6 +28,11 @@ span each axis's outer measure integrates (including levels a
 refinement pass added); \code{NULL} when the fit records none.}
 \item{\code{modes}}{numeric matrix \verb{[n_cells x n_latent]}, each cell's inner
 Laplace mode, or \code{NULL} when the fit keeps none.}
+\item{\code{means}}{numeric matrix \verb{[n_cells x n_latent]}, each cell's centre:
+its mode plus the leading-order shift of its posterior mean from the
+mode under \code{control$skew_correct}, the mode where the fit carries no
+shift. The draws and every posterior summary are centred here.
+\code{NULL} when the fit keeps no modes.}
 \item{\code{n_fixed}}{how many leading columns of \code{modes} are fixed effects.}
 }
 }
@@ -38,8 +43,8 @@ the inner Laplace solve at that value. This returns that grid, cell by cell,
 so the integration can be inspected or reused (a discrete hyperparameter
 posterior for \code{\link[=sbc_discrete]{sbc_discrete()}}, a grid-marginalized latent field).
 
-The per-cell latent modes average to the grid-marginalized posterior mean of
-any latent coordinate: \code{colSums(g$weights * g$modes)}. Columns
+The per-cell latent centres average to the grid-marginalized posterior mean
+of any latent coordinate: \code{colSums(g$weights * g$means)}. Columns
 \code{seq_len(g$n_fixed)} are the fixed effects and the rest the latent field and
 random effects, in the order the fit's latent vector stores them.
 }
@@ -60,7 +65,7 @@ fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             control = list(progress = FALSE))
 g <- tulpa_outer_grid(fit)
 cbind(g$nodes, weight = g$weights)
-field_hat <- colSums(g$weights * g$modes)[-seq_len(g$n_fixed)]
+field_hat <- colSums(g$weights * g$means)[-seq_len(g$n_fixed)]
 }
 }
 \seealso{

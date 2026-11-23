@@ -229,10 +229,14 @@
     tcrossprod(matrix(lam_draws[s, , ], K, F_)))) / nrow(dr)
   dimnames(factor_cov) <- list(levs, levs)
 
-  # Linear predictor at each outer cell's mode, in the rows of `data`.
+  # Linear predictor at each outer cell's centre (`.nested_grid_latent_means()`,
+  # where the latent draws are centred), in the rows of `data`. The predictor
+  # is bilinear in the loadings and scores, so it is evaluated at the centre
+  # rather than shifted, and `fitted_eta_shift` stays empty.
   X_block <- .lf_block_design(X, resp_idx, cols_per_level, ends[K])
-  fitted_eta <- t(vapply(seq_len(nrow(jfit$modes)), function(g) {
-    m <- jfit$modes[g, ]
+  centres <- .nested_grid_latent_means(jfit)
+  fitted_eta <- t(vapply(seq_len(nrow(centres)), function(g) {
+    m <- centres[g, ]
     eta <- as.numeric(X_block %*% m[beta_cols])
     for (f in seq_len(F_)) {
       lam <- numeric(K)

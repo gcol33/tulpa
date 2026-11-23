@@ -470,7 +470,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 # Joint posterior draws of block `b` (an st_interaction block) of a nested
 # fit: `ndraws` rows, each a grid cell drawn by weight and the latent vector
 # from that cell's inner Gaussian (`.inner_constraint()`), by
-# .joint_draw_cell().
+# .joint_draw_cell(), about the cell's centre (`.nested_grid_latent_means()`).
 .st_interaction_draws <- function(fit, b, ndraws) {
   Qp <- fit$Q_csc_p_per_grid
   Qi <- fit$Q_csc_i_per_grid
@@ -483,6 +483,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
   off <- fit$block_latent_offsets
   cols <- .nl_block_cols(off, n_x, b, length(off) - 1L)
   cons <- .inner_constraint(fit)
+  centres <- .nested_grid_latent_means(fit)
   w <- as.numeric(fit$weights)
   ok <- which(is.finite(w) & w > 0 &
                 vapply(seq_along(Qp), function(k) length(Qp[[k]]) == n_x + 1L,
@@ -496,7 +497,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
       k <- ok[i]
       z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x,
                             .inner_constraint_cell(cons, k), n_i)
-      t(fit$modes[k, cols] + z[cols, , drop = FALSE])
+      t(centres[k, cols] + z[cols, , drop = FALSE])
     })
   attr(out, "cells") <- NULL
   out

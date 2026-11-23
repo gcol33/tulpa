@@ -585,7 +585,8 @@
       attr(tab, "retained_mass")    <- iv$mass
       return(tab)
     }
-    # The per-cell modes averaged over the grid, restricted to the cells whose
+    # The per-cell centres (`.nested_grid_latent_means()`) averaged over the
+    # grid, restricted to the cells whose
     # inner solve reached a mode. A stalled cell reports the vector its Newton
     # started from, so averaging it in reports a number that estimates nothing;
     # with no readable cell left the estimate is NA and `interval_declined` says
@@ -605,7 +606,8 @@
       return(tab)
     }
     w <- w_all[ok] / sum(w_all[ok])
-    tab$estimate <- as.numeric(crossprod(w, object$modes[ok, idx, drop = FALSE]))
+    centres <- .nested_grid_latent_means(object)
+    tab$estimate <- as.numeric(crossprod(w, centres[ok, idx, drop = FALSE]))
     return(tab)
   }
 
@@ -1856,8 +1858,9 @@ ranef.tulpa_fit <- function(object, ...) {
     }
   }
 
-  # Nested-Laplace fit: the BLUPs are the RE tail of each grid cell's latent mode,
-  # grid-marginalized against the outer weights. Only emit when the tail width
+  # Nested-Laplace fit: the BLUPs are the RE tail of each grid cell's latent
+  # centre (`.nested_grid_latent_means()`), grid-marginalized against the outer
+  # weights. Only emit when the tail width
   # after the fixed block matches the RE layout exactly (else the tail is a latent
   # field, not identifiable random effects -- same guard as the sampler branch).
   # SE is left NA: the between-grid spread alone understates the posterior SD (it
@@ -1902,7 +1905,8 @@ ranef.tulpa_fit <- function(object, ...) {
     }
     if (n_tail > 0L && n_tail == length(re_names)) {
       w   <- object$weights / sum(object$weights)
-      est <- as.numeric(crossprod(w, M[, (p + 1L):ncol(M), drop = FALSE]))
+      C   <- .nested_grid_latent_means(object)
+      est <- as.numeric(crossprod(w, C[, (p + 1L):ncol(C), drop = FALSE]))
       return(data.frame(
         term = re_names, estimate = est,
         sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,

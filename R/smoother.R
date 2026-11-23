@@ -192,9 +192,11 @@ smooth_effects <- function(object, term = 1L) {
          ").", call. = FALSE)
   }
 
+  # Each cell at its leading-order posterior mean, as the latent draws are.
+  centres <- .nested_grid_latent_means(object)
   on  <- is.finite(w) & w > 0
   wn  <- w[on] / sum(w[on])
-  est <- as.numeric(crossprod(wn, modes[on, cols, drop = FALSE]))
+  est <- as.numeric(crossprod(wn, centres[on, cols, drop = FALSE]))
   out <- data.frame(x = sm[[term]]$nodes, estimate = est)
   attr(out, "var") <- sm[[term]]$var
   out

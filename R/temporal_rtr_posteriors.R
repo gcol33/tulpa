@@ -245,10 +245,11 @@ temporal <- function(object, component = "all", summary = FALSE,
 
 # A nested-Laplace fit carries no phi_temporal draws: the field is a block of
 # each outer-grid cell's latent vector, and the cell's Laplace approximation
-# is a Gaussian with that cell's mode (`object$modes`, one row per cell) and
-# its marginal variance (`object$grid_field_var`, retained for the temporal
-# field by `.nl_attach_grid_hessians()`). The posterior is their mixture over
-# the grid weights. Reading the cell modes alone carried only the spread
+# is a Gaussian at that cell's centre (its mode plus its leading-order mean
+# shift, `.nested_grid_latent_means()`, one row per cell) with its marginal
+# variance (`object$grid_field_var`, retained for the temporal field by
+# `.nl_attach_grid_hessians()`). The posterior is their mixture over the grid
+# weights, centred where the latent draws are. Reading the cell modes alone carried only the spread
 # BETWEEN cells: sd ~0.05 against an exact ~0.13-0.48, and 95% intervals that
 # covered the truth 57% of the time (gcol33/tulpa#904).
 #
@@ -262,7 +263,7 @@ temporal <- function(object, component = "all", summary = FALSE,
 .NL_TEMPORAL_DRAW_N <- 2000L
 
 .nl_field_mixture <- function(object, cols) {
-  M <- object$modes
+  M <- .nested_grid_latent_means(object)
   w <- object$weights
   if (!is.matrix(M) || is.null(w) || length(w) != nrow(M)) return(NULL)
   if (!length(cols) || max(cols) > ncol(M)) return(NULL)
@@ -334,7 +335,8 @@ temporal <- function(object, component = "all", summary = FALSE,
 # latent columns of each component, and the result holds one draw matrix per
 # entry, with the grid cell of each row as `"cells"`. Each row is a cell drawn
 # by its weight and the latent vector drawn from that cell's Gaussian
-# N(mode_k, Q_k^-1) conditioned on the fit's constraint rows, by
+# N(m_k, Q_k^-1) about the cell's centre m_k, conditioned on the fit's
+# constraint rows, by
 # `.field_latent_draws()` -- the draw predict() takes, off the cell's precision
 # solved again (or stored), so every row carries the cell's whole covariance
 # whatever the field's width. A fit that keeps no record of its inner solve is

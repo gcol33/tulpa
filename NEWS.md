@@ -1,5 +1,19 @@
 # tulpa 0.8.0
 
+* The remaining posterior summaries of a nested grid fit read each cell at
+  its mode plus its leading-order mean shift, where the latent draws are
+  centred: `temporal()`, `field_effects()` on an areal field read off the
+  latent block and on an SPDE field, `smooth_effects()`, the field means of
+  `fit_st_nested()` and of an inline `spatial()` / `temporal()` field,
+  `spatiotemporal_effects()` draws, the per-cell predictor of a
+  `latent_factor()` fit, and the mode-average fallbacks of `coef()` and
+  `ranef()`. `tulpa_outer_grid()` returns the cell centres as `means` beside
+  the `modes`. On a Poisson RW1 fixture (30 times, 3 counts each, mean about
+  0.3) the `temporal()` mean sat up to 4.9 Monte Carlo SEs from the mean of
+  20000 latent draws and now sits within 1.8; on a Poisson ICAR + RW1
+  `fit_st_nested()` fixture `temporal_effects` moved from 8.8 to 1.8 and
+  `spatial_effects` from 5.8 to 1.9 (#1297).
+
 * A `prior_sigma` stated on a block (the field's own PC anchor) pins the
   joint door's second placement attempt the way a door-level `prior_sigma`
   does: the escalated door prior would have replaced that block's density on

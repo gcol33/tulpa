@@ -132,7 +132,8 @@ test_that("nested_laplace ICAR: the grid-weighted field per unit", {
   fe <- field_effects(fit)
   expect_equal(nrow(fe), K)
   expect_true(all(fe$source %in% c("mode", "mixture")))
-  M <- fit$modes
+  # Each cell at its centre, the mode plus its leading-order mean shift.
+  M <- .nested_grid_latent_means(fit)
   w <- as.numeric(fit$weights)
   keep <- is.finite(w) & w > 0 & is.finite(rowSums(M))
   ref <- crossprod(w[keep] / sum(w[keep]),

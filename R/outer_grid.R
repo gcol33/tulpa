@@ -7,8 +7,8 @@
 #' so the integration can be inspected or reused (a discrete hyperparameter
 #' posterior for [sbc_discrete()], a grid-marginalized latent field).
 #'
-#' The per-cell latent modes average to the grid-marginalized posterior mean of
-#' any latent coordinate: `colSums(g$weights * g$modes)`. Columns
+#' The per-cell latent centres average to the grid-marginalized posterior mean
+#' of any latent coordinate: `colSums(g$weights * g$means)`. Columns
 #' `seq_len(g$n_fixed)` are the fixed effects and the rest the latent field and
 #' random effects, in the order the fit's latent vector stores them.
 #'
@@ -31,6 +31,11 @@
 #'       refinement pass added); `NULL` when the fit records none.}
 #'     \item{`modes`}{numeric matrix `[n_cells x n_latent]`, each cell's inner
 #'       Laplace mode, or `NULL` when the fit keeps none.}
+#'     \item{`means`}{numeric matrix `[n_cells x n_latent]`, each cell's centre:
+#'       its mode plus the leading-order shift of its posterior mean from the
+#'       mode under `control$skew_correct`, the mode where the fit carries no
+#'       shift. The draws and every posterior summary are centred here.
+#'       `NULL` when the fit keeps no modes.}
 #'     \item{`n_fixed`}{how many leading columns of `modes` are fixed effects.}
 #'   }
 #' @seealso [tulpa_hyper_draws()] for continuous draws of the hyperparameters,
@@ -53,7 +58,7 @@
 #'                             control = list(progress = FALSE))
 #' g <- tulpa_outer_grid(fit)
 #' cbind(g$nodes, weight = g$weights)
-#' field_hat <- colSums(g$weights * g$modes)[-seq_len(g$n_fixed)]
+#' field_hat <- colSums(g$weights * g$means)[-seq_len(g$n_fixed)]
 #' }
 #' @export
 tulpa_outer_grid <- function(fit) {
@@ -71,6 +76,7 @@ tulpa_outer_grid <- function(fit) {
          "cells (", nrow(nodes), ") do not match.", call. = FALSE)
   }
   modes <- src[["modes"]]
+  aligned <- is.matrix(modes) && nrow(modes) == length(w)
   # A spatial lengthscale is reported in the coordinates' own units.
   ks <- .hyper_axis_data_scale(fit, colnames(nodes))
   nodes <- sweep(nodes, 2L, ks, "*")
@@ -86,7 +92,8 @@ tulpa_outer_grid <- function(fit) {
     log_marginal = if (length(src[["log_marginal"]]) == length(w))
                      as.numeric(src[["log_marginal"]]),
     support      = support,
-    modes        = if (is.matrix(modes) && nrow(modes) == length(w)) modes,
+    modes        = if (aligned) modes,
+    means        = if (aligned) .nested_grid_latent_means(src),
     n_fixed      = as.integer(src[["n_fixed"]] %||% fit[["n_fixed"]] %||% 0L)
   )
 }

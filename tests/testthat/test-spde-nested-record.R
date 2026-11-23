@@ -50,7 +50,9 @@ test_that("field_effects() on a nested SPDE fit is the grid's Gaussian mixture",
   on <- rec$weights > 0
   expect_true(all(is.finite(rec$grid_field_var[on, ])))
   w <- rec$weights[on] / sum(rec$weights[on])
-  mu <- rec$modes[on, mesh, drop = FALSE]
+  # Each cell's component sits at its centre, the mode plus its leading-order
+  # mean shift.
+  mu <- tulpa:::.nested_grid_latent_means(rec)[on, mesh, drop = FALSE]
   expect_equal(fe$estimate, as.numeric(crossprod(w, mu)), tolerance = 1e-10)
   # Law of total variance over the cells.
   tv <- as.numeric(crossprod(w, rec$grid_field_var[on, , drop = FALSE])) +

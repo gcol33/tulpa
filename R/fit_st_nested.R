@@ -47,9 +47,11 @@
 # ICAR / proper-CAR coordinate, BYM2's cell-dependent mix of its two
 # components); an NNGP block's coordinates are the field at its locations; an
 # HSGP field is its basis coordinates projected through each cell's spectral
-# loading at the observations.
+# loading at the observations. Each cell is read at its leading-order
+# posterior mean (`.nested_grid_latent_means()`); every loading is linear in
+# the cell's coordinates, so it carries the centre through.
 .st_field_means <- function(fit, spatial_type, sp_block, N) {
-  M <- fit$modes
+  M <- .nested_grid_latent_means(fit)
   n_x <- ncol(M)
   w <- as.numeric(fit$weights)
   tg <- fit$theta_grid
@@ -97,7 +99,8 @@
 #' `prior`), which integrates the spatial hyperparameter(s), the temporal
 #' precision and (for `ar1`) the temporal autocorrelation on its outer grid.
 #' The fixed-effect posterior is the grid-marginalised mixture; the spatial and
-#' temporal field posterior means are the grid-weighted latent modes.
+#' temporal field posterior means are the grid-weighted per-cell latent
+#' centres (each cell's mode plus its leading-order mean shift).
 #'
 #' @param y Response vector.
 #' @param X Fixed-effects design matrix (`nrow(X) == length(y)`).
