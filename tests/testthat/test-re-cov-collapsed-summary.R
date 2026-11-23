@@ -1,9 +1,8 @@
 # A slope SD the data hold weakly puts the log-Cholesky mode down a funnel
 # (log L22 near -10, curvature along it near zero), and a Gaussian laid there
 # reaches design nodes of zero weight and scales that overflow when squared. A
-# zero-weight node carries no mass, so it enters no moment; and the nested door
-# lays such a block's nodes in the marginal-SD / partial-correlation
-# coordinates, where the mode is interior.
+# zero-weight node carries no mass, so it enters no moment; and the joint door
+# places such a block's axes at the posterior.
 
 test_that("a zero-weight node with an overflowing value leaves the moments finite", {
   m <- tulpa:::.nl_wtd_mean_sd(c(1, 3, 1e200), c(0.5, 0.5, 0))
@@ -31,7 +30,6 @@ test_that("a weakly held slope SD is placed where the posterior mass is", {
   db <- data.frame(y = yy, x = xx, g = factor(gg))
   fn <- tulpa(y ~ x + (1 + x | g), data = db, family = "binomial",
               mode = "laplace", control = list(diagnose_k = FALSE))
-  expect_identical(fn$placement$coordinate, "sd_partial_correlation")
   expect_true(all(is.finite(fn$log_marginal)))
   expect_lt(diff(range(fn$theta_grid[, 3])), 20)
   h <- summary(fn)$hyperparameters

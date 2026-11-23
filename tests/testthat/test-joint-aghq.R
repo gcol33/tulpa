@@ -20,12 +20,11 @@ skip_on_cran()
 }
 
 .jaq_compare <- function(d, nq, re_terms, L_list, blocks) {
-  core <- .re_cov_theta_fit(
+  core <- .eb_theta_fit(
     y = d$y, n_trials = rep(1L, d$n), X = d$X, re_terms = re_terms,
     family = "binomial", phi = 1, prior_sigma = NULL, eta = NULL,
     log_prior_theta = NULL, beta_prior = list(mean = 0, sd = 2.5),
-    n_quad = nq, max_iter = 100L, tol = 1e-8, n_threads = 1L, caller = "t",
-    need_scale = FALSE)
+    n_quad = nq, max_iter = 100L, tol = 1e-8, n_threads = 1L, caller = "t")
   fit <- tulpa_nested_laplace_joint(
     list(y = .jaq_arm(d)), prior = blocks,
     control = list(n_quad = nq, diagnose_k = FALSE, axis_refine = "none",

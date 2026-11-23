@@ -3,65 +3,20 @@
 # Bias-2 fix (the `Marginalize Derived Quantities` principle): rather than
 # report each Sigma at its mode (the plug-in MAP, biased low for skewed
 # variance-component marginals at small G), integrate the Laplace marginal
-# likelihood over the joint Sigma-grid and report a marginalized median and
-# interval for every Sigma and its derived scale / correlation parameters.
+# likelihood over the covariance coordinates and report a marginalized median
+# and interval for every Sigma and its derived scale / correlation parameters.
 #
-# Composition: the inner solve at each grid point is the multi-RE Laplace fit
-# (tulpa_laplace, which returns the Laplace log-marginal at SUPPLIED covariances);
-# the grid is the nested_laplace + CCD recipe over the stacked covariance
-# parameters; the summary reuses the same weighted-quantile machinery as the
-# spatial/temporal nested-Laplace surface.
+# The integration is the joint nested-Laplace door: a covariance fit is a
+# one-arm fit there, each covariance block its latent blocks (see
+# `.re_cov_joint_blocks()`). This file holds the covariance layout, its
+# coordinates and prior, the derived-quantity summaries shared with the Gibbs
+# sampler and the joint door, and the map from the joint fit's cells back onto
+# the layout.
 #
 # A model may carry several random-effect terms (e.g. `(1 + x | g) + (1 | h)`),
 # each with its own covariance block, and a block may be CORRELATED (a full
 # `Sigma`, `(1 + x | g)`) or UNCORRELATED (a diagonal `Sigma`, `(1 + x || g)`).
-# Each block contributes its own parameters to the joint integration grid; a
-# single-term model is the length-1 case of the same path.
-
-# Node checkpoint/resume for the CCD / grid integration.
-# `checkpoint = list(path =, resume =)`. Nodes are deterministic given the
-# fingerprint (which folds the data, layout and the node grid), so each node is
-# keyed by its integer index. The store is a single RDS rewritten atomically
-# (temp + rename) after each completed node, so a kill leaves either the prior
-# complete state or the new one -- never a torn file. A present file whose
-# fingerprint disagrees errors rather than resuming onto a stale result; an
-# unreadable file (corrupt) re-solves from scratch. Returns NULL when no path is
-# given, so the caller wires it unconditionally.
-.re_cov_node_checkpoint <- function(checkpoint, fingerprint) {
-  spec <- .nl_checkpoint_args(list(checkpoint = checkpoint))
-  path <- spec$path
-  if (!nzchar(path)) return(NULL)
-  resume <- isTRUE(spec$resume)
-  store  <- list()
-  if (file.exists(path)) {
-    if (!resume) {
-      file.remove(path)
-    } else {
-      obj <- tryCatch(readRDS(path), error = function(e) NULL)
-      if (!is.null(obj)) {
-        if (!identical(obj$fingerprint, fingerprint)) {
-          stop("`checkpoint`: '", path, "' was written for different data, ",
-               "layout, or integration grid (fingerprint mismatch). Use a ",
-               "fresh path or set checkpoint$resume = FALSE to start over.",
-               call. = FALSE)
-        }
-        store <- obj$nodes
-      }
-    }
-  }
-  e <- new.env(parent = emptyenv())
-  e$store <- store
-  list(
-    has  = function(key) !is.null(e$store[[key]]),
-    get  = function(key) e$store[[key]],
-    save = function(key, value) {
-      e$store[[key]] <- value
-      tmp <- paste0(path, ".tmp")
-      saveRDS(list(fingerprint = fingerprint, nodes = e$store), tmp)
-      file.rename(tmp, path)
-    }
-  )
-}
+# A single-term model is the length-1 case of the same path.
 
 # log-Cholesky <-> matrix helpers ---------------------------------------------
 # theta packs the lower Cholesky factor L (Sigma = L L') in column-major
@@ -336,9 +291,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 # `.NL_HYPERPRIOR` holds, and a random-effect covariance takes the same anchor
 # through the PC + LKJ prior below (gcol33/tulpa#730).
 #
-# .re_cov_theta_fit() is shared by tulpa_re_cov_nested() and tulpa_eb(), whose
-# test suites assert the two compute the SAME theta_hat from the SAME objective
-# (test-eb.R, "tulpa_eb() and tulpa_re_cov_nested() find the same theta_hat") --
+# tulpa_eb() and tulpa_re_cov_nested() read one mode from `.eb_theta_fit()`
+# (test-eb.R, "tulpa_eb() and tulpa_re_cov_nested() find the same theta_hat"),
 # so the two must always resolve to the same hyperprior, never one per function.
 # `hyperprior = "proper"` (the default for both) builds the PC + LKJ prior from
 # `prior_sigma` / `eta` (re_cov_pc_lkj_prior()). `hyperprior = "flat"` is the
@@ -447,17 +401,22 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
                                     support = .NL_SUPPORT_KINDS) {
   support <- match.arg(support)
   D   <- .re_cov_derived_matrix_multi(Sig_node_list, layout)
-  posterior <- .re_cov_summarize_columns(D, w, support)
+  list(posterior = .re_cov_summarize_columns(D, w, support),
+       Sigma_mean = .re_cov_sigma_mean(Sig_node_list, w, layout))
+}
+
+# The `w`-weighted mean of each block's Sigma over the cells / draws of
+# `Sig_node_list`: a matrix for one block, a list named by block label for
+# several.
+.re_cov_sigma_mean <- function(Sig_node_list, w, layout) {
   M <- length(layout)
   Sig_mean <- lapply(seq_len(M), function(m) {
     Sig_m <- lapply(Sig_node_list, `[[`, m)
     Reduce(`+`, Map(function(S, wi) S * wi, Sig_m, w))
   })
-  Sigma_mean <- if (M == 1L) Sig_mean[[1L]] else
-    stats::setNames(Sig_mean,
-                    vapply(seq_len(M), function(m)
-                      .re_cov_block_label(layout[[m]], m), character(1)))
-  list(posterior = posterior, Sigma_mean = Sigma_mean)
+  if (M == 1L) return(Sig_mean[[1L]])
+  stats::setNames(Sig_mean, vapply(seq_len(M), function(m)
+    .re_cov_block_label(layout[[m]], m), character(1)))
 }
 
 .re_cov_summarize_columns <- function(D, w, support) {
@@ -542,25 +501,6 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   }
   if (!length(parts)) return(NULL)
   do.call(rbind, parts)
-}
-
-# One warning per fit for the integration nodes whose solve ran but whose
-# marginal fixed-effect precision could not be formed (tulpa_laplace() signals
-# each as a `tulpa_hbeta_unformed` condition). Such a node is dropped from the
-# fixed-effect mixture and its weight redistributed
-# (.re_cov_nested_beta_draws()), so the count travels with the share of the
-# posterior weight it held.
-.re_cov_report_hbeta <- function(unformed, w, caller) {
-  n_bad <- sum(unformed)
-  if (!n_bad) return(invisible(NULL))
-  warning(sprintf(paste0(
-    "%s(): the marginal fixed-effect precision could not be formed from the ",
-    "joint curvature at %d of %d integration nodes (a singular random-effect ",
-    "block is the usual cause). They held %s of the posterior weight and are ",
-    "left out of the fixed-effect mixture."),
-    caller, n_bad, length(unformed),
-    format(signif(sum(w[unformed]), 3))), call. = FALSE)
-  invisible(NULL)
 }
 
 # Posterior beta draws for the nested-Laplace mixture. Each grid node k carries
@@ -693,32 +633,6 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   out
 }
 
-# Marginal variance of every random-effect coefficient from an inner solve's
-# per-(term, group) covariance blocks (`cov_blocks` from tulpa_laplace(
-# return_re_cov = TRUE), term-major then group order). Returns one value per
-# (term, group, coefficient) -- the order the latent tail of the mode uses -- or
-# NULL when the blocks are absent or do not describe this layout, so a caller
-# reports no within-node spread rather than a mislabelled one.
-.re_cov_block_variances <- function(cov_blocks, layout) {
-  if (!is.list(cov_blocks)) return(NULL)
-  n_blocks <- sum(vapply(layout, function(b) as.integer(b$n_groups), integer(1)))
-  if (length(cov_blocks) != n_blocks) return(NULL)
-  out <- numeric(.re_cov_n_re(layout))
-  pos <- 0L; at <- 0L
-  for (m in seq_along(layout)) {
-    bl <- layout[[m]]
-    for (g in seq_len(bl$n_groups)) {
-      B <- cov_blocks[[pos + g]]
-      if (!is.matrix(B) || nrow(B) != bl$nc) return(NULL)
-      out[at + seq_len(bl$nc)] <- diag(B)
-      at <- at + bl$nc
-    }
-    pos <- pos + bl$n_groups
-  }
-  if (!all(is.finite(out))) return(NULL)
-  out
-}
-
 # Total number of random-effect coefficients across the covariance blocks --
 # the width of the latent tail of an inner solve's mode, and of every per-node
 # random-effect matrix keyed by it.
@@ -745,884 +659,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
       .re_cov_block_label(layout[[m]], m), character(1)))
 }
 
-# Shared outer-hyperparameter core: everything up to and including the mode of
-# g(theta) = log_marginal(Sigma(theta)) + log_prior_theta(theta).
+# Marginal-SD / partial-correlation coordinates ------------------------------
 #
-# Both outer drivers need exactly this. `tulpa_re_cov_nested()` goes on to place
-# integration nodes around the mode and marginalize; `tulpa_eb()` stops here and
-# reports the plug-in. Keeping the objective, its inner solve and its optimizer
-# in one place is what makes "EB is the nested integrator's mode" a fact about
-# the code rather than a claim about two implementations that happen to agree --
-# and it is the reason .re_cov_theta_fit() returns the live `inner_fit` closure
-# instead of a value: the EB path re-solves at theta_hat through the SAME closure
-# the optimizer drove, so no second inner-solve configuration can drift from it.
-#
-# Returns the closures and the optimizer result; with `need_scale` its
-# `opt$hessian` is the mode's numerical curvature, which the nested path's
-# placement (`.re_cov_placement()`) reads.
-.re_cov_theta_fit <- function(y, n_trials, X, re_terms,
-                              family, phi, phi2 = NULL,
-                              prior_sigma, eta, log_prior_theta,
-                              beta_prior, n_quad,
-                              max_iter, tol, n_threads,
-                              caller,
-                              need_scale = TRUE,
-                              outer_maxit = 500L,
-                              offset = NULL,
-                              estimate_phi = FALSE,
-                              outer_reltol = NULL,
-                              sigma_init = NULL,
-                              X_zi = NULL, zi_prior_sd = 2.5,
-                              weights = NULL) {
-  re_terms <- .as_re_terms_list(re_terms)
-  if (!is.matrix(X)) X <- as.matrix(X)
-  .require_fixed_effects(X, caller)
-  vd <- .validate_glm_design(y, X, n_trials, caller)
-  n_trials <- vd$n_trials
-  # Zero inflation adds a SECOND linear predictor, so the inner solve's mode is
-  # [beta | beta_zi | RE] rather than [beta | RE]. `p_fix` stays the count
-  # block -- the AGHQ profile below optimizes over it alone -- and `p_fixed` is
-  # the whole fixed prefix anything reading the mode has to skip.
-  if (!is.null(X_zi)) {
-    X_zi <- as.matrix(X_zi)
-    if (nrow(X_zi) != length(y)) {
-      stop(caller, "(): `X_zi` has ", nrow(X_zi), " rows but y has length ",
-           length(y), ".", call. = FALSE)
-    }
-  }
-  p_zi <- if (is.null(X_zi)) 0L else ncol(X_zi)
-  has_zi <- p_zi > 0L
-  layout <- .re_cov_block_layout(re_terms, length(y))
-  # Without random-effect terms the outer objective has no covariance
-  # coordinate; it still has one when the dispersion is estimated, the log phi
-  # of a fixed-effect model, which is then the whole outer vector.
-  if (length(layout) == 0L && !isTRUE(estimate_phi)) {
-    stop(caller, "(): no random-effect terms and no dispersion to estimate. ",
-         "The outer objective is over the random-effect covariances (and, ",
-         "with `estimate_phi = TRUE`, the dispersion), so there is nothing to ",
-         "fit; use tulpa_laplace() for a fixed-effect-only model at a given ",
-         "phi.", call. = FALSE)
-  }
-  k <- sum(vapply(layout, `[[`, integer(1), "k"))
-  if (is.null(log_prior_theta)) {
-    log_prior_theta <- .re_cov_joint_prior(layout, prior_sigma, eta)
-  }
-
-  # The second dispersion reaches the inner solve rather than being defaulted
-  # there. Left unthreaded, `t` fits at the compiled kernel's built-in degrees of
-  # freedom whatever the caller asked for, and `tweedie` fails inside the inner
-  # solve's tryCatch as a generic convergence failure. Both are resolved here:
-  # a phi2 supplied for a family that takes none errors (matching
-  # tulpa_laplace()), and tweedie's variance power is required by name rather
-  # than defaulted, since a silently chosen power is a statistical decision the
-  # caller never made.
-  phi2 <- .phi2_or_stop(family, phi2)
-  if (identical(.family_base(family), "tweedie")) .tweedie_power(phi2)
-
-  # The dispersion rides as one extra coordinate, log phi, appended after the
-  # covariance coordinates. Refused rather than approximated wherever the exact
-  # gradient for it is unavailable: the whole point of estimating phi here is
-  # that the outer objective is differentiated exactly, and a derivative-free
-  # search over a k+1 dimensional simplex is a different (and much worse)
-  # method wearing the same argument.
-  if (isTRUE(estimate_phi)) {
-    if (is.null(.family_dphi(family))) {
-      stop(caller, "(): `estimate_phi = TRUE` is not available for family '",
-           family, "'. The dispersion derivative of the Laplace log-marginal ",
-           "is registered for: ",
-           paste(.dispersion_families(), collapse = ", "),
-           ". Families without a free dispersion (poisson, binomial, ",
-           "truncated_poisson) have nothing to estimate.", call. = FALSE)
-    }
-    if (n_quad > 1L) {
-      stop(caller, "(): `estimate_phi = TRUE` needs the joint-field Laplace ",
-           "inner solve (`n_quad = 1`). The adaptive Gauss-Hermite path runs ",
-           "through a compiled per-group oracle that the dispersion gradient ",
-           "does not reach.", call. = FALSE)
-    }
-    if (!is.finite(phi) || phi <= 0) {
-      stop(caller, "(): `phi` is the starting value for the dispersion when ",
-           "`estimate_phi = TRUE`, so it must be finite and positive.",
-           call. = FALSE)
-    }
-  }
-  # Index of the dispersion coordinate within the stacked theta, or NA.
-  phi_idx <- if (isTRUE(estimate_phi)) k + 1L else NA_integer_
-  # Split a stacked theta into its covariance half and the dispersion it
-  # implies. One definition, so the objective, the gradient and the reported
-  # estimate cannot disagree about which coordinate is which.
-  theta_split <- function(theta) {
-    if (is.na(phi_idx)) return(list(re = theta, phi = phi))
-    list(re = theta[seq_len(k)], phi = exp(theta[[phi_idx]]))
-  }
-
-  # AGHQ refinement (n_quad > 1) replaces the joint-field Laplace inner marginal
-  # with the per-group adaptive Gauss-Hermite marginal (the same debias as
-  # tulpa_re_aghq, applied INSIDE the Sigma integration), profiling the fixed
-  # effects out by an inner optimization + a fixed-effect Laplace term. The
-  # per-group integral only factorizes over ONE shared grouping factor, so AGHQ
-  # is available only then; crossed RE terms keep the joint-field Laplace inner
-  # solve (n_quad = 1).
-  idx1 <- if (length(layout)) layout[[1L]]$idx
-  ng1  <- if (length(layout)) layout[[1L]]$n_groups
-  single_factor <- !is.null(idx1) && all(vapply(layout, function(b)
-    identical(b$idx, idx1) && identical(b$n_groups, ng1), logical(1)))
-  if (n_quad > 1L && !single_factor) {
-    stop("`n_quad > 1` (adaptive Gauss-Hermite refinement of the inner solve) ",
-         "requires a single shared grouping factor; this model has crossed RE ",
-         "terms. Use `n_quad = 1` (the joint-field Laplace inner solve).",
-         call. = FALSE)
-  }
-  use_core <- single_factor && n_quad > 1L
-
-  # The compiled per-group oracle behind the AGHQ inner marginal carries one
-  # linear predictor, so it cannot express the zero-inflation mixture. Refused
-  # rather than run without the mixture, which would fit a different model.
-  if (use_core && has_zi) {
-    stop(caller, "(): `n_quad > 1` (the adaptive Gauss-Hermite inner marginal) ",
-         "does not carry a zero-inflation process -- its compiled per-group ",
-         "oracle has a single linear predictor. Use `n_quad = 1` (the ",
-         "joint-field Laplace inner solve), which does.", call. = FALSE)
-  }
-
-  # cpp_glmm_oracle_make() takes no offset, so the AGHQ inner marginal cannot
-  # carry one. Silently dropping it would fit a different model; say so instead.
-  if (use_core && !is.null(offset) && any(offset != 0)) {
-    stop(caller, "(): `n_quad > 1` (the adaptive Gauss-Hermite inner marginal) ",
-         "does not support an offset -- the compiled per-group oracle carries ",
-         "no offset term. Use `n_quad = 1` (the joint-field Laplace inner ",
-         "solve), which does.", call. = FALSE)
-  }
-  # Observation weights scale each row's log-likelihood inside the joint-field
-  # inner solve (tulpa_laplace() validates them). The per-group oracle has no
-  # weight channel, so the same refusal as the offset.
-  if (use_core && !is.null(weights) && any(weights != 1)) {
-    stop(caller, "(): `n_quad > 1` (the adaptive Gauss-Hermite inner marginal) ",
-         "does not support observation weights -- the compiled per-group ",
-         "oracle carries no weight term. Use `n_quad = 1` (the joint-field ",
-         "Laplace inner solve), which does.", call. = FALSE)
-  }
-
-  # Inner solve: Laplace log-marginal at the supplied per-block covariances.
-  # Failures at extreme grid edges (non-finite / non-convergent) return -Inf so
-  # the cell gets zero weight rather than aborting the integration.
-  # `phi_` defaults to the fixed dispersion, so every caller that conditions on
-  # it is unchanged; the dispersion-estimating path passes exp(log phi) from the
-  # theta vector instead.
-  inner_logmarg <- function(L_list, phi_ = phi) {
-    val <- tryCatch(
-      tulpa_laplace(
-        y = y, n_trials = n_trials, X = X,
-        re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi_, phi2 = phi2, return_hessian = FALSE,
-        beta_prior = beta_prior, offset = offset, weights = weights,
-        X_zi = X_zi, zi_prior_sd = zi_prior_sd,
-        max_iter = max_iter, tol = tol, n_threads = n_threads
-      )$log_marginal,
-      error = function(e) -Inf
-    )
-    if (length(val) != 1L || !is.finite(val)) -Inf else val
-  }
-
-  # Inner solve that also keeps the joint posterior precision, which the exact
-  # gradient differentiates through. Separate from inner_logmarg because the
-  # extra factor costs memory the objective-only path has no use for.
-  # `return_hessian = FALSE`: the exact gradient reads H_joint and the mode, not
-  # the marginal fixed-effect block, and this runs at every trial theta the
-  # optimizer visits -- including extremes where the Schur legitimately declines
-  # and would warn about a fit nobody reports.
-  inner_fit_grad <- function(L_list, phi_ = phi) {
-    tryCatch(
-      tulpa_laplace(
-        y = y, n_trials = n_trials, X = X,
-        re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi_, phi2 = phi2, return_hessian = FALSE,
-        return_joint_hessian = TRUE,
-        beta_prior = beta_prior, offset = offset, weights = weights,
-        X_zi = X_zi, zi_prior_sd = zi_prior_sd,
-        max_iter = max_iter, tol = tol, n_threads = n_threads
-      ),
-      error = function(e) NULL
-    )
-  }
-
-  # Full inner solve at the integration nodes: the Laplace log-marginal plus the
-  # fixed-effect mode and its MARGINAL covariance (solve(H_beta)). Paid O(n_grid)
-  # times, not per outer step.
-  #
-  # `re_cov = TRUE` additionally asks for the per-(term, group) marginal
-  # covariance blocks Cov(b_g | y, Sigma). The nested driver requests them at its
-  # integration nodes so the per-group posterior can be marginalized over the
-  # Sigma grid with its within-node curvature (ranef()); it costs one triangular
-  # solve per random-effect coefficient against the factor the log-determinant
-  # already built, so it is off wherever nobody reads the blocks (tulpa_eb()'s
-  # re-solve at theta_hat, which reports the mode).
-  #
-  # `compute_skew` / `debias` are the two inner-layer extras the subspace debias
-  # needs: the first turns the node solve into the reliability
-  # probe the selector reads, the second hands it the selected index set so the
-  # flagged coordinates come back as Metropolis draws instead of a Gaussian.
-  # Both default off, so every existing caller solves exactly what it did.
-  inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE,
-                        compute_skew = FALSE, skew_idx = NULL, debias = NULL,
-                        joint_hessian = FALSE) {
-    tryCatch(
-      tulpa_laplace(
-        y = y, n_trials = n_trials, X = X,
-        re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi_, phi2 = phi2, return_hessian = TRUE,
-        return_re_cov = isTRUE(re_cov),
-        return_joint_hessian = isTRUE(joint_hessian),
-        beta_prior = beta_prior, offset = offset, weights = weights,
-        X_zi = X_zi, zi_prior_sd = zi_prior_sd,
-        max_iter = max_iter, tol = tol, n_threads = n_threads,
-        compute_skew = isTRUE(compute_skew), skew_idx = skew_idx,
-        debias = debias
-      ),
-      error = function(e) NULL
-    )
-  }
-
-  # inner_logmarg at many covariances: `L_lists` is a list of per-block factor
-  # lists, the value one log-marginal per element, -Inf where inner_logmarg
-  # would give -Inf. One compiled call marshals the model once and solves every
-  # point against it, starting each Newton iteration from `x_init` (the latent
-  # mode at the proposal centre, or NULL for a cold start), across
-  # `n_threads_outer` threads. This is the target an importance batch over the
-  # covariances evaluates; inner_logmarg stays the one-point objective the
-  # optimizer calls. The model arguments are the ones the inner solves above
-  # validate on their first call through tulpa_laplace(), so the batch reads
-  # them as validated.
-  inner_logmarg_batch <- function(L_lists, x_init = NULL, n_threads_outer = 1L,
-                                  max_iter_ = max_iter) {
-    if (!length(L_lists)) return(numeric(0))
-    model_args <- .laplace_multi_re_model_args(
-      y = .numeric_response(family, y), n_trials = n_trials, X = X,
-      re_list = .re_cov_build_re_list(L_lists[[1L]], layout), family = family,
-      phi = phi, phi2 = phi2, weights = weights, offset = offset,
-      bp = .normalize_beta_prior(beta_prior, ncol(X)), X_zi = X_zi,
-      zi_prior_sd = zi_prior_sd)
-    batch <- lapply(L_lists, function(L_list)
-      .laplace_multi_re_sigma_list(.re_cov_build_re_list(L_list, layout)))
-    do.call(cpp_laplace_log_marginal_multi_re_batch, c(model_args, list(
-      re_sigma_batch = batch, max_iter = as.integer(max_iter_), tol = tol,
-      n_threads_outer = as.integer(n_threads_outer),
-      x_init = if (is.null(x_init)) NULL else as.numeric(x_init))))
-  }
-
-  # --- pilot init: method-of-moments per block from a Sigma = I fit ----------
-  p_fix   <- ncol(X)
-  p_fixed <- p_fix + p_zi
-  L0_list <- lapply(layout, function(bl) diag(bl$nc))
-  pilot <- tryCatch(
-    tulpa_laplace(
-      y = y, n_trials = n_trials, X = X,
-      re_list = .re_cov_build_re_list(L0_list, layout),
-      family = family, phi = phi, phi2 = phi2, return_hessian = FALSE,
-      beta_prior = beta_prior, offset = offset, weights = weights,
-      X_zi = X_zi, zi_prior_sd = zi_prior_sd,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
-    ),
-    error = function(e) NULL
-  )
-  L_init_list <- L0_list
-  if (!is.null(pilot) && !is.null(pilot$mode)) {
-    # Skip the WHOLE fixed prefix: with zero inflation the mode carries
-    # beta_zi between the count coefficients and the random effects, and
-    # reading it as random-effect values would seed the search from garbage.
-    re_vals <- pilot$mode[-seq_len(p_fixed)]
-    pos <- 0L
-    for (m in seq_along(layout)) {
-      bl  <- layout[[m]]
-      len <- bl$n_groups * bl$nc
-      if (pos + len <= length(re_vals) && bl$n_groups > bl$nc) {
-        U <- matrix(re_vals[pos + seq_len(len)], ncol = bl$nc, byrow = TRUE)
-        S <- stats::cov(U)
-        if (all(is.finite(S))) {
-          if (!bl$full) S <- diag(diag(S), bl$nc)     # diagonal block: drop covs
-          diag(S) <- pmax(diag(S), 1e-3)
-          ev <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
-          if (min(ev) > 1e-8) {
-            L_init_list[[m]] <- if (bl$full) t(chol(S)) else {
-              Lm <- matrix(0, bl$nc, bl$nc); diag(Lm) <- sqrt(diag(S)); Lm
-            }
-          }
-        }
-      }
-      pos <- pos + len
-    }
-  }
-  # A caller-supplied starting SD replaces the pilot's method-of-moments guess.
-  # Worth having because the pilot fits at Sigma = I, which on a design whose
-  # true scale is far from 1 starts the search in a flat region -- and because
-  # it makes a run reproducible from its inputs rather than from a pilot fit.
-  # Diagonal only: it sets each coefficient's scale and leaves any correlation
-  # to be fitted, since a starting correlation is far harder to guess than a
-  # starting scale.
-  if (!is.null(sigma_init)) {
-    s0 <- as.numeric(sigma_init)
-    if (any(!is.finite(s0)) || any(s0 <= 0)) {
-      stop(caller, "(): `control$sigma_init` must be finite and positive.",
-           call. = FALSE)
-    }
-    nc_all <- vapply(layout, `[[`, integer(1), "nc")
-    if (length(s0) == 1L) s0 <- rep(s0, sum(nc_all))
-    if (length(s0) != sum(nc_all)) {
-      stop(sprintf(paste0(
-        "%s(): `control$sigma_init` must have length 1 or %d (one per ",
-        "random-effect coefficient across all blocks); got %d."),
-        caller, sum(nc_all), length(s0)), call. = FALSE)
-    }
-    pos <- 0L
-    for (m in seq_along(layout)) {
-      nc <- layout[[m]]$nc
-      Lm <- matrix(0, nc, nc)
-      diag(Lm) <- s0[pos + seq_len(nc)]
-      L_init_list[[m]] <- Lm
-      pos <- pos + nc
-    }
-  }
-
-  theta0 <- .re_cov_L_list_to_theta(L_init_list, layout)
-  # The supplied `phi` becomes the starting value rather than the fixed value.
-  if (isTRUE(estimate_phi)) theta0 <- c(theta0, log(phi))
-
-  # --- AGHQ inner solve (single shared grouping factor, n_quad > 1) ----------
-  # Replace the joint-field Laplace inner_logmarg / inner_fit with the per-group
-  # adaptive Gauss-Hermite marginal from the shared compiled engine: at a fixed
-  # Sigma, profile the fixed effects beta out by an inner optimization of
-  # sum_g log M_g(beta, Sigma) and add the fixed-effect Laplace correction
-  # (0.5 p log 2pi - 0.5 logdet H_beta + log prior(beta_hat)), so log_marginal
-  # integrates beta exactly as the joint-field path does -- but with each
-  # per-group integral debiased by n_quad-point quadrature. beta is integrated
-  # (not just profiled), so the reported fixed-effect posterior is the marginal
-  # (ML-II) one, not the joint-mode (PQL) estimate.
-  if (use_core) {
-    nc_terms <- vapply(layout, function(b) b$nc, integer(1))
-    full_vec <- vapply(layout, function(b) isTRUE(b$full), logical(1))
-    Zc  <- do.call(cbind, lapply(layout, function(b) b$Z))   # n x sum(nc), stacked
-    orc <- cpp_glmm_oracle_make(family, phi, as.numeric(y), as.numeric(n_trials),
-                                as.matrix(X), as.matrix(Zc), as.integer(idx1), ng1)
-    bp  <- .normalize_beta_prior(beta_prior, p_fix)
-    beta_warm <- if (!is.null(pilot) && !is.null(pilot$mode))
-      pilot$mode[seq_len(p_fix)] else rep(0, p_fix)
-
-    # The fixed-effect profile at each covariance point, compiled
-    # (`cpp_aghq_profile_batch()`, src/aghq_re_profile.h): Newton steps on the
-    # analytic beta-gradient of sum_g log M_g + log prior(beta), the curvature a
-    # central difference of that gradient, and the Laplace-integrated value
-    # F(beta_hat) + (p / 2) log 2 pi - (1 / 2) log |H|. One point is a node or
-    # an optimizer step; a batch is the outer proposal's draws, spread over
-    # `n_threads_outer` threads, each point starting from `beta_warm` so its
-    # value does not depend on the thread that solved it.
-    profile <- function(sc_rows, n_threads_outer = 1L) {
-      cpp_aghq_profile_batch(
-        eta_pts = sc_rows, oracle = orc, nc = nc_terms, full = full_vec,
-        n_quad = as.integer(n_quad), beta_init = beta_warm,
-        prior_mean = bp$mean, prior_sd = bp$sd,
-        n_threads = as.integer(n_threads_outer))
-    }
-    core_solve <- function(L_list) {
-      sc <- .re_cov_L_list_to_theta(L_list, layout)
-      r  <- profile(matrix(sc, nrow = 1L))
-      if (!is.finite(r$log_marginal[1L])) return(NULL)
-      list(log_marginal = r$log_marginal[1L], mode = r$beta[1L, ],
-           H_beta = matrix(r$H[1L, , ], p_fix, p_fix))
-    }
-    # Same signature as the joint-field pair above: the outer objective always
-    # passes the dispersion, so both inner solves have to take it. `phi_` is
-    # deliberately unused here -- `estimate_phi = TRUE` is refused for
-    # `n_quad > 1` further up, so on this path phi never leaves its starting
-    # value and is already baked into the compiled oracle by
-    # cpp_glmm_oracle_make(). It is NOT a value that needs threading through:
-    # rebuilding the oracle per solve would copy X, Z and y for nothing.
-    inner_logmarg <- function(L_list, phi_ = phi) {
-      r <- core_solve(L_list); if (is.null(r)) -Inf else r$log_marginal
-    }
-    # Same signature as the joint-field batch above. There is no latent mode to
-    # warm start from (`x_init` is the joint-field solve's), so every point
-    # starts from `beta_warm`, and the compiled profile runs its own Newton
-    # budget, so `max_iter_` is unused.
-    inner_logmarg_batch <- function(L_lists, x_init = NULL, n_threads_outer = 1L,
-                                    max_iter_ = max_iter) {
-      if (!length(L_lists)) return(numeric(0))
-      sc_rows <- do.call(rbind, lapply(L_lists, .re_cov_L_list_to_theta,
-                                       layout = layout))
-      profile(sc_rows, n_threads_outer)$log_marginal
-    }
-    # `re_cov` is accepted and ignored: this inner solve integrates each group's
-    # random effects out by quadrature rather than conditioning at their mode, so
-    # it produces no per-group mean or covariance to hand back. The driver reads
-    # `re_conditional` (FALSE here) and says so rather than reporting an empty
-    # random-effect table.
-    # The inner-layer extras the joint-field solve carries are refused here
-    # rather than ignored: this solve integrates each group out, so there is no
-    # conditional latent field to score a cubic term on, no joint precision to
-    # read a coupling from, and nothing for a subspace sampler to move. The
-    # front door refuses `control$subspace_debias` at `n_quad > 1` for the same
-    # reason; this is the guard for anything reaching the closure directly.
-    inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE,
-                          compute_skew = FALSE, skew_idx = NULL, debias = NULL,
-                          joint_hessian = FALSE) {
-      if (isTRUE(compute_skew) || !is.null(debias) || isTRUE(joint_hessian)) {
-        stop("the adaptive Gauss-Hermite inner marginal (n_quad > 1) exposes ",
-             "no conditional latent field, so it carries neither the ",
-             "inner-Laplace diagnostics nor the subspace debias. Use ",
-             "n_quad = 1 (the joint-field Laplace inner solve).", call. = FALSE)
-      }
-      core_solve(L_list)
-    }
-  }
-
-  # --- mode of g(theta) = log_marginal(Sigma(theta)) + log_prior ------------
-  # The hyperprior is over the COVARIANCE coordinates; the dispersion enters
-  # unpenalized, which is what makes this the ML-II estimate of phi rather than
-  # a MAP under an undeclared prior. So the prior only ever sees theta's
-  # covariance half.
-  negg <- function(theta) {
-    sp <- theta_split(theta)
-    L_list <- .re_cov_theta_to_L_list(sp$re, layout)
-    -(inner_logmarg(L_list, sp$phi) + log_prior_theta(sp$re))
-  }
-
-  # Analytic outer gradient. Available when the inner solve is the joint-field
-  # Laplace (the AGHQ inner marginal at n_quad > 1 is a different objective, and
-  # its Fisher-identity gradient is not this one) and the family has an exact
-  # curvature derivative. `use_exact_grad` is resolved once here rather than per
-  # outer step so a family without one falls back cleanly instead of alternating
-  # between two objectives.
-  use_exact_grad <- !use_core &&
-    isTRUE(tryCatch(cpp_family_has_curvature_derivative(family),
-                    error = function(e) FALSE)) &&
-    (!has_zi || .laplace_exact_supports_zi(family))
-
-  # Estimating the dispersion is defined by the exact gradient carrying a
-  # log-phi coordinate. Without that gradient the fallbacks would search the
-  # extra dimension derivative-free -- a different and much weaker method under
-  # the same argument -- so refuse instead of silently substituting it.
-  if (isTRUE(estimate_phi) && !use_exact_grad) {
-    stop(caller, "(): `estimate_phi = TRUE` needs the exact outer gradient, ",
-         "which is unavailable for family '", family, "' on this path. ",
-         "The dispersion would otherwise be searched derivative-free, which ",
-         "is a different method than the one this argument selects.",
-         call. = FALSE)
-  }
-  # The gradient's dispersion coordinate covers a mixture through two sources:
-  # the base family's registered phi derivatives on the rows the model leaves
-  # additively separable, and the mixture engine on a genuine mixture's y = 0
-  # rows, where log(pi + (1 - pi) P(Y = 0, phi)) carries phi through P(Y = 0) and
-  # couples it to both predictors. A hurdle needs only the first -- its zero
-  # branch is log(pi), phi-free. Refused where the second is unregistered, so a
-  # family never maximizes along the base derivative under a model it does not
-  # describe.
-  if (isTRUE(estimate_phi) && has_zi &&
-      !isTRUE(tryCatch(cpp_family_has_zi_phi_deriv(family),
-                       error = function(e) FALSE))) {
-    stop(caller, "(): `estimate_phi = TRUE` is not available alongside a ",
-         "zero-inflation process on the family '", family,
-         "'. The mixture's zero branch depends on phi through P(Y = 0), and ",
-         "no dispersion derivative for that branch is registered here, so ",
-         "maximizing would optimize a different objective than the one ",
-         "reported. Condition on `phi`, profile it by refitting over a grid, ",
-         "or use a family whose mixture dispersion IS registered ",
-         "(neg_binomial_2, or any zero-truncated base as a hurdle).",
-         call. = FALSE)
-  }
-
-  # The hyperprior is a closed form in theta with no inner solve behind it, so
-  # its gradient is a central difference costing 2k prior evaluations -- no
-  # Laplace solves. Only the expensive half of the gradient needs to be exact.
-  # Differentiated over the covariance coordinates only, then padded with a zero
-  # for the unpenalized dispersion so it lines up with the stacked gradient.
-  d_log_prior_theta <- function(theta_re, h = 1e-6) {
-    g <- vapply(seq_along(theta_re), function(j) {
-      tp <- theta_re; tp[j] <- tp[j] + h
-      tm <- theta_re; tm[j] <- tm[j] - h
-      (log_prior_theta(tp) - log_prior_theta(tm)) / (2 * h)
-    }, numeric(1))
-    if (is.na(phi_idx)) g else c(g, 0)
-  }
-
-  # Curvature of the same hyperprior, over the covariance coordinates only. The
-  # closed-form outer Hessian is exact for the Laplace marginal but the prior is
-  # user-supplied with no closed form, so its d2/dtheta2 is a second central
-  # difference -- costing only prior evaluations, no inner Laplace solves. h is
-  # larger than the gradient's because a second difference divides by h^2.
-  d2_log_prior_theta <- function(theta_re, h = 1e-4) {
-    kk <- length(theta_re)
-    Hp <- matrix(0, kk, kk)
-    lp0 <- log_prior_theta(theta_re)
-    for (j in seq_len(kk)) {
-      tp <- theta_re; tp[j] <- tp[j] + h
-      tm <- theta_re; tm[j] <- tm[j] - h
-      Hp[j, j] <- (log_prior_theta(tp) - 2 * lp0 + log_prior_theta(tm)) / h^2
-    }
-    if (kk > 1L) for (j in seq_len(kk - 1L)) for (l in (j + 1L):kk) {
-      tpp <- theta_re; tpp[j] <- tpp[j] + h; tpp[l] <- tpp[l] + h
-      tpm <- theta_re; tpm[j] <- tpm[j] + h; tpm[l] <- tpm[l] - h
-      tmp <- theta_re; tmp[j] <- tmp[j] - h; tmp[l] <- tmp[l] + h
-      tmm <- theta_re; tmm[j] <- tmm[j] - h; tmm[l] <- tmm[l] - h
-      Hp[j, l] <- Hp[l, j] <-
-        (log_prior_theta(tpp) - log_prior_theta(tpm) -
-         log_prior_theta(tmp) + log_prior_theta(tmm)) / (4 * h^2)
-    }
-    Hp
-  }
-
-  # Value and gradient of the FULL outer objective, log_marginal + log_prior, at
-  # one theta. Everything downstream -- the optimizer, the marginal correction's
-  # curvature -- reads this, so there is one definition of what is being
-  # differentiated and the prior term cannot be attached twice or dropped once.
-  # Cached because the mode-find asks for value, gradient and curvature at the
-  # same theta and the inner solve is the entire cost.
-  grad_cache <- new.env(parent = emptyenv())
-  eval_grad_at <- function(theta, want_jacobian = FALSE, want_hessian = FALSE) {
-    want_list <- want_jacobian || want_hessian
-    key <- paste(c(signif(theta, 12), if (want_jacobian) "J", if (want_hessian) "H"),
-                 collapse = ",")
-    if (!is.null(grad_cache[[key]])) return(grad_cache[[key]])
-    sp <- theta_split(theta)
-    L_list <- .re_cov_theta_to_L_list(sp$re, layout)
-    fit <- inner_fit_grad(L_list, sp$phi)
-    val <- if (is.null(fit) || !is.finite(fit$log_marginal %||% NA_real_)) NULL else {
-      # The settled-mode gate refuses the GRADIENT, not the value: an inner mode
-      # short of stationarity moves the log marginal only at second order. A
-      # line search evaluates the value alone at its trial points, so the refusal
-      # is kept with the evaluation and signalled where a gradient is read.
-      refused <- NULL
-      r <- withCallingHandlers(.laplace_exact_re_grad(
-        fit = fit, y = y, X = X, n_trials = n_trials, offset = offset,
-        weights = weights,
-        re_list = .re_cov_build_re_list(L_list, layout),
-        layout = layout, L_list = L_list, family = family,
-        # The same phi2 the inner solves ran at: the gradient has to describe
-        # the model the inner solve fitted, not a differently-parameterized one.
-        # NA_real_ is the "no second dispersion" spelling the family kernels
-        # take, so an absent phi2 reaches them as it always did.
-        phi = sp$phi, phi2 = phi2 %||% NA_real_, want_jacobian = want_jacobian,
-        want_hessian = want_hessian, X_zi = X_zi,
-        # Appends the log-phi coordinate, so the returned gradient is stacked in
-        # the same order as theta.
-        want_phi = !is.na(phi_idx)
-      ), tulpa_unsettled_mode = function(w) {
-        refused <<- w
-        invokeRestart("muffleWarning")
-      })
-      if (is.null(r)) {
-        if (is.null(refused)) NULL
-        else list(f = fit$log_marginal + log_prior_theta(sp$re), g = NULL,
-                  refused = refused)
-      } else {
-        # The prior shifts the objective but not the mode, so it enters the
-        # gradient and leaves J alone. H below is the Laplace marginal's exact
-        # curvature over the covariance coordinates; the prior's own curvature is
-        # added where the negative outer Hessian is formed (exact_grad_at).
-        g <- (if (want_list) r$grad else r) + d_log_prior_theta(sp$re)
-        list(f = fit$log_marginal + log_prior_theta(sp$re), g = g,
-             J = if (want_list) r$J else NULL,
-             H = if (want_hessian) r$H else NULL)
-      }
-    }
-    grad_cache[[key]] <- val
-    val
-  }
-
-  negg_exact <- function(theta) {
-    r <- eval_grad_at(theta)
-    if (is.null(r) || !is.finite(r$f)) return(.Machine$double.xmax)
-    -r$f
-  }
-  negg_gr <- function(theta) {
-    r <- eval_grad_at(theta)
-    if (is.null(r)) return(rep(0, length(theta)))
-    if (is.null(r$g)) {
-      warning(r$refused)
-      return(rep(0, length(theta)))
-    }
-    -r$g
-  }
-
-  n_theta <- length(theta0)
-
-  # The dispersion coordinate is bracketed, for the same reason sigma is. As phi
-  # grows the objective FLATTENS rather than turning over -- a negative binomial
-  # becomes a Poisson, a gamma becomes tight around its mean -- so an oversized
-  # early step lands in a region where the gradient is ~0 and an unbounded
-  # search reports convergence at a value with no support in the data: on a
-  # 480-row negative binomial whose profile peaks cleanly at phi = 3, unbounded
-  # BFGS stopped at 3.5e15.
-  phi_lo <- log(1e-6)
-  phi_hi <- log(1e6)
-
-  # No `log_marginal` here on purpose: backing it out of opt$value would be a
-  # second, differently-derived copy of a number both callers already read off an
-  # actual fit -- and one that goes NaN whenever the optimizer's last step hit
-  # the failure sentinel.
-  # `exact_grad_at` is the analytic outer gradient and, on request, the exact
-  # mode Jacobian at a given theta -- NULL when this path has no exact gradient
-  # (the AGHQ inner marginal, or a family whose working weight has no closed-form
-  # eta-derivative). tulpa_eb(marginal = TRUE) uses it to replace the
-  # finite-difference stencil; a NULL sends it back to the stencil.
-  exact_grad_at <- if (!use_exact_grad) NULL else
-    function(theta, want_jacobian = FALSE, want_hessian = FALSE) {
-      r <- eval_grad_at(theta, want_jacobian = want_jacobian,
-                        want_hessian = want_hessian)
-      if (is.null(r)) return(NULL)
-      if (is.null(r$g)) {
-        warning(r$refused)
-        return(NULL)
-      }
-      if (isTRUE(want_hessian)) {
-        # The negative outer Hessian the marginal correction consumes:
-        # -(d2 log_marginal + d2 log_prior). The marginal half is closed-form
-        # (r$H); the prior half is the cheap second difference above. NULL r$H
-        # (a family without a second curvature derivative) hands the Hessian back
-        # to the differencing stencil.
-        if (is.null(r$H)) return(NULL)
-        sp <- theta_split(theta)
-        Hp <- tryCatch(d2_log_prior_theta(sp$re), error = function(e) NULL)
-        if (is.null(Hp)) return(NULL)
-        # The dispersion enters the objective unpenalized, so the prior adds a
-        # zero row/column for log phi -- pad it to match the Laplace Hessian's
-        # phi border (r$H is (k+1)x(k+1) when phi is estimated).
-        if (!is.na(phi_idx) && nrow(r$H) == nrow(Hp) + 1L) {
-          Hp <- rbind(cbind(Hp, rep(0, nrow(Hp))), rep(0, ncol(Hp) + 1L))
-        }
-        if (!all(dim(Hp) == dim(r$H))) return(NULL)
-        Ht <- -(r$H + Hp)
-        return(list(grad = r$g, J = r$J, H = (Ht + t(Ht)) / 2))
-      }
-      if (isTRUE(want_jacobian)) list(grad = r$g, J = r$J) else r$g
-    }
-
-  # --- the mode: the shared outer mode-find ---------------------------------
-  # `.nl_mode_curvature()`, the search the joint door's placement runs, here on
-  # this objective, in these coordinates, at the relative tolerance `reltol` on
-  # the log posterior. Each round's local quadratic is the analytic gradient and
-  # outer Hessian where the family has both (`exact_grad_at`), the analytic
-  # gradient differenced where it has no second curvature derivative, and a
-  # finite-difference stencil of the objective where it has no exact gradient
-  # (the AGHQ inner marginal, or such a family). Every log scale -- a diagonal
-  # block's log SD, a full block's log L_ii -- is boxed to the random-effect SD
-  # bracket and log phi to its own; a strictly-lower log-Cholesky entry keeps
-  # the whole line.
-  reltol <- outer_reltol %||% 1e-10
-  # Each log-scale coordinate with the block and the coefficient it scales.
-  log_scale_idx <- integer(0); log_scale_blk <- integer(0)
-  log_scale_coef <- integer(0); pos <- 0L
-  for (m in seq_along(layout)) {
-    bl <- layout[[m]]
-    at <- if (bl$full) pos + diag(.re_logchol_indices(bl$nc)) else pos + seq_len(bl$k)
-    log_scale_idx  <- c(log_scale_idx, at)
-    log_scale_blk  <- c(log_scale_blk, rep(m, length(at)))
-    log_scale_coef <- c(log_scale_coef, seq_along(at))
-    pos <- pos + bl$k
-  }
-  sd_lo <- log(.re_cov_search("sd_range")[1L])
-  sd_hi <- log(.re_cov_search("sd_range")[2L])
-  lower <- rep(-Inf, n_theta); upper <- rep(Inf, n_theta)
-  lower[log_scale_idx] <- sd_lo; upper[log_scale_idx] <- sd_hi
-  if (!is.na(phi_idx)) { lower[phi_idx] <- phi_lo; upper[phi_idx] <- phi_hi }
-  box <- list(lower = lower, upper = upper, span = upper - lower,
-              trust = rep(.re_cov_search("trust"), n_theta))
-  value_at <- if (use_exact_grad) function(th) -negg_exact(th) else
-    function(th) -negg(th)
-  eval1 <- function(U) {
-    v <- apply(as.matrix(U), 1L, value_at)
-    v[!is.finite(v) | v <= -.Machine$double.xmax] <- -Inf
-    v
-  }
-  fd_step <- rep(1e-3, n_theta)
-  fd_stencil <- function(u) .joint_ccd_fd_stencil(u, eval1, fd_step)
-  exact_stencil <- function(u) {
-    r <- exact_grad_at(u, want_hessian = TRUE)
-    if (!is.null(r)) return(list(grad = r$grad, hess = -r$H))
-    g0 <- exact_grad_at(u)
-    if (is.null(g0)) return(NULL)
-    H <- vapply(seq_len(n_theta), function(j) {
-      up <- u; dn <- u
-      up[j] <- up[j] + fd_step[j]; dn[j] <- dn[j] - fd_step[j]
-      gu <- exact_grad_at(up); gd <- exact_grad_at(dn)
-      if (is.null(gu) || is.null(gd)) return(rep(NA_real_, n_theta))
-      (gu - gd) / (2 * fd_step[j])
-    }, numeric(n_theta))
-    list(grad = g0, hess = 0.5 * (H + t(H)))
-  }
-  find_mode <- function(stencil) .nl_mode_curvature(
-    pmin(pmax(theta0, lower), upper), eval1, box, stencil = stencil,
-    reltol = reltol, max_rounds = as.integer(outer_maxit),
-    max_halve = .re_cov_search("max_halve"))
-  # One warning per fit rather than one per trial theta if the exact gradient is
-  # declined because an inner mode did not settle (.laplace_mode_settled). A
-  # search that walked on a declined gradient is discarded and run again on the
-  # objective's own differences.
-  unsettled <- .new_unsettled_state()
-  mc <- .with_unsettled_report({
-    m <- if (use_exact_grad) find_mode(exact_stencil)
-    if (is.null(m) || !is.null(m$declined) || unsettled$n > 0L) {
-      m <- find_mode(fd_stencil)
-    }
-    m
-  }, caller, unsettled)
-  if (!is.null(mc$declined)) {
-    stop(caller, "(): the outer mode-find over the random-effect ",
-         "covariance(s) found no mode with a usable curvature from its start. ",
-         "Check the data, the hyperprior and `control$sigma_init`.",
-         call. = FALSE)
-  }
-  theta_hat <- mc$par
-  # `opt` keeps optim's record shape: 0 for a converged search, 1 for one the
-  # round cap (`outer_maxit`) stopped, and the outer curvature at the mode the
-  # placement's scale reads, from the gradient where there is one.
-  opt <- list(par = theta_hat, value = -mc$value,
-              convergence = if (identical(mc$status, "not_converged")) 1L else 0L,
-              counts = c(rounds = mc$rounds),
-              hessian = if (need_scale) {
-                if (use_exact_grad && unsettled$n == 0L)
-                  stats::optimHess(theta_hat, negg_exact, negg_gr)
-                else stats::optimHess(theta_hat, negg)
-              })
-
-  # A search the round cap stopped returns wherever it stood, not a maximizer --
-  # for EB that IS the estimate, and for the nested path it is the centre the
-  # integration nodes are placed around.
-  if (!identical(opt$convergence, 0L)) {
-    warning(caller, "(): the outer optimization over the random-effect ",
-            "covariance(s) did not converge in ", outer_maxit, " rounds. ",
-            "The reported estimate is where it stopped. Consider a longer ",
-            "run, a different `re_prior` / `prior_sigma`, or more data per ",
-            "group.", call. = FALSE)
-  }
-
-  # A coordinate pinned at its bracket is a finding, not an estimate. A
-  # dispersion at the upper end means the extra-Poisson variation the parameter
-  # exists to carry is not there; a variance component at the lower end is the
-  # classic empirical-Bayes collapse to sigma = 0. Reported rather than
-  # returned silently, since the number itself looks like any other fit.
-  if (!is.na(phi_idx) && is.finite(theta_hat[[phi_idx]])) {
-    lp <- theta_hat[[phi_idx]]
-    if (lp <= phi_lo + 1e-6 || lp >= phi_hi - 1e-6) {
-      warning(sprintf(paste0(
-        "%s(): the estimated dispersion hit the %s end of its search bracket ",
-        "(phi = %.3g). %s Treat it as a boundary hit, not a fitted value."),
-        caller, if (lp <= phi_lo + 1e-6) "lower" else "upper", exp(lp),
-        if (lp >= phi_hi - 1e-6) {
-          paste("The data show no dispersion beyond what the mean-variance",
-                "relation and the random effects already explain; a family",
-                "without a free dispersion may be the better model.")
-        } else {
-          paste("The dispersion is collapsing, which usually means the",
-                "response is far more variable than the family allows.")
-        }), call. = FALSE)
-    }
-  }
-  # A log scale at the lower end is a SINGULAR covariance, the boundary fit
-  # glmer reports: a diagonal block's SD, or a full block's leading SD, has
-  # collapsed to zero, and a full block's later Cholesky diagonal L_ii at the
-  # floor leaves coefficient i's effect a linear function of the coefficients
-  # before it -- its SD zero, or its multiple correlation with them one. The
-  # outer objective's supremum then lies on the boundary of the covariance
-  # cone, and the box edge is where the search reports it. A log scale at the
-  # upper end is capped rather than fitted.
-  L_hat_b <- .re_cov_theta_to_L_list(theta_split(theta_hat)$re, layout)
-  boundary <- data.frame(block = character(0), coef = integer(0),
-                         end = character(0), sigma = numeric(0),
-                         stringsAsFactors = FALSE)
-  for (a in seq_along(log_scale_idx)) {
-    j <- log_scale_idx[a]
-    if (!is.finite(theta_hat[j])) next
-    at_lo <- theta_hat[j] <= sd_lo + 1e-6
-    at_hi <- theta_hat[j] >= sd_hi - 1e-6
-    if (!(at_lo || at_hi)) next
-    m <- log_scale_blk[a]; i <- log_scale_coef[a]; bl <- layout[[m]]
-    lab <- .re_cov_block_label(bl, m)
-    L <- L_hat_b[[m]]
-    sd_i <- sqrt(sum(L[i, ]^2))
-    boundary[nrow(boundary) + 1L, ] <- list(lab, i, if (at_lo) "lower" else "upper",
-                                            sd_i)
-    what <- if (bl$nc > 1L) sprintf("coefficient %d of block '%s'", i, lab) else
-      sprintf("block '%s'", lab)
-    if (at_lo && bl$full && i > 1L) {
-      mult_cor <- sqrt(max(0, 1 - (L[i, i] / sd_i)^2))
-      warning(sprintf(paste0(
-        "%s(): the random-effect covariance of block '%s' is singular (a ",
-        "boundary fit): the Cholesky diagonal of coefficient %d hit the lower ",
-        "end of the search bracket, so its effect is a linear function of the ",
-        "coefficients before it. Its standard deviation is %.3g and its ",
-        "multiple correlation with them %.6f. The supremum of the marginal ",
-        "likelihood lies on the boundary of the covariance; treat this as a ",
-        "boundary estimate, not a fitted value."),
-        caller, lab, i, sd_i, mult_cor), call. = FALSE)
-      next
-    }
-    detail <- if (at_lo) {
-      paste("The variance component has collapsed: the data carry no",
-            "detectable between-group variation, or the hyperprior is not",
-            "holding it off the boundary.")
-    } else {
-      paste("The between-group variation exceeds the bracket, so the value",
-            "is capped rather than fitted.")
-    }
-    warning(sprintf(paste0(
-      "%s(): the random-effect standard deviation of %s hit the %s end of the ",
-      "search bracket (sigma = %.3g). %s Treat it as a boundary hit, not a ",
-      "fitted value."),
-      caller, what, if (at_lo) "lower" else "upper", sd_i, detail),
-      call. = FALSE)
-  }
-
-  # The dispersion is reported separately from theta_hat's covariance half, and
-  # `theta_hat` is trimmed to the covariance coordinates so every downstream
-  # consumer (.re_cov_theta_to_L_list, the map summary, the marginal correction)
-  # keeps receiving the vector length it was written for. `phi_hat` is the
-  # estimate; `phi` stays the value the caller supplied, which is the start.
-  sp_hat <- theta_split(theta_hat)
-  list(layout = layout, k = k, n_trials = n_trials, X = X, p_fix = p_fix,
-       # The count block and the whole fixed prefix. They differ only under
-       # zero inflation, where the mode is [beta | beta_zi | RE]; callers that
-       # slice the mode or name the fixed effects want `p_fixed`, while the
-       # AGHQ profile optimizes over the count block alone.
-       X_zi = X_zi, p_zi = p_zi, p_fixed = p_fixed,
-       log_prior_theta = log_prior_theta,
-       inner_logmarg = inner_logmarg, inner_fit = inner_fit,
-       inner_logmarg_batch = inner_logmarg_batch,
-       # Does `inner_fit` condition on the random effects (returning their mode
-       # in the latent tail of `$mode`, and their covariance blocks on request)?
-       # TRUE for the joint-field Laplace inner solve, FALSE for the AGHQ one,
-       # which integrates them out per group. The per-group posterior is
-       # reportable exactly when this is TRUE.
-       re_conditional = !use_core,
-       exact_grad_at = exact_grad_at,
-       theta0 = theta0, theta_hat = sp_hat$re, opt = opt,
-       boundary = boundary, singular = any(boundary$end == "lower"),
-       theta_hat_full = theta_hat,
-       phi_hat = if (is.na(phi_idx)) NULL else sp_hat$phi,
-       estimate_phi = isTRUE(estimate_phi))
-}
-
-
-# Placement coordinates --------------------------------------------------------
-#
-# A full block's log-Cholesky coordinates carry a funnel. For c = 2 the slope
-# block is (L21, u = log L22): at fixed L22 the posterior's width along L21 is
-# of the order of L22 itself, so the joint density along L21 = 0 does not decay
-# as u -> -Inf, while the MARGINAL of u carries the factor L22 that the L21
-# width contributes and does. Where the data hold a slope SD weakly the joint
-# mode runs down the neck (u around -10), its curvature along u is close to
-# zero and along L21 close to infinite, and a Gaussian laid at that mode places
-# its nodes nowhere near the mass: its u axis spans hundreds of units and its
-# L21 axis a few thousandths.
-#
+# A full block's log-Cholesky coordinates carry a funnel: where the data hold a
+# slope SD weakly the density along L21 = 0 does not decay as log L22 -> -Inf.
 # The marginal SDs and the canonical partial correlations (Lewandowski,
 # Kurowicka & Joe 2009) parameterize the same Sigma without the neck: on
 # `log sigma_i` the change of variables contributes `sigma_i^(i - 1)`, so the
 # density decays as a scale shrinks, and on `atanh` of each partial correlation
-# the LKJ factor holds it off +/-1. The mode found there is interior and its
-# curvature measures the posterior, so the nested door places a full block's
-# nodes in these coordinates, at the mode and the SD that mode-find measured;
-# every node is mapped back to the log-Cholesky coordinates the inner solve, the
-# prior and the summaries read. A diagonal or scalar block is already on its
-# log-SDs and keeps them.
+# the LKJ factor holds it off +/-1. The joint door's free-covariance placement
+# searches in these coordinates (`R/hyperprior_default.R`).
 #
 # Per full block the coordinates are `log sigma_1..c`, then `atanh z_ij` for the
 # strictly-lower entries in the column-major order of the log-Cholesky packing.
@@ -1699,126 +745,216 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
   out
 }
 
-# Does any block integrate in log-Cholesky coordinates (a full block with a
-# correlation)? Only those are placed in the marginal-SD / partial-correlation
-# coordinates.
-.re_cov_has_full_block <- function(layout) {
-  any(vapply(layout, function(bl) isTRUE(bl$full), logical(1)))
+# The joint nested-Laplace door ---------------------------------------------
+#
+# A random-effect covariance fit is a one-arm fit on the joint door
+# (tulpa_nested_laplace_joint()): the response is the arm, and every covariance
+# block of the layout becomes latent blocks of it. A correlated block is one
+# `miid` block over its coefficients, whose outer axes are the log-Cholesky
+# coordinates of its Sigma; every coefficient of an uncorrelated block, and a
+# scalar block, is a one-field `miid` block, whose one axis is its log SD. Each
+# carries this block's PC + LKJ density as its `logchol_prior`, in those same
+# coordinates. The joint door lays, places, screens and refines the outer grid
+# and solves every cell; this file maps the cells back onto the covariance
+# layout.
+
+# The joint blocks of a covariance layout, and for each layout block the joint
+# blocks it became (`owner`). The prior of each joint block is its layout
+# block's PC + LKJ density (`hyperprior = "proper"`), the zero function
+# (`"flat"`), or the caller's `log_prior_theta`, which states one density over
+# the stacked coordinates and so can only be one joint block's prior.
+.re_cov_joint_blocks <- function(layout, prior_sigma, eta, hyperprior,
+                                 log_prior_theta, caller) {
+  n_joint <- sum(vapply(layout, function(bl) if (bl$full) 1L else bl$nc,
+                        integer(1)))
+  if (!is.null(log_prior_theta) && n_joint > 1L) {
+    stop(caller, "(): a `log_prior_theta` over the stacked coordinates of ",
+         "several covariance blocks (or of an uncorrelated block's several ",
+         "coefficients) couples outer axes the joint door integrates as ",
+         "separate blocks. State each block's prior on its own coordinates: ",
+         "fit with tulpa_nested_laplace_joint(), giving every `miid` block its ",
+         "`logchol_prior`, or use `prior_sigma` / `eta` here.", call. = FALSE)
+  }
+  prior_of <- function(nc, full) {
+    if (!is.null(log_prior_theta)) return(log_prior_theta)
+    if (identical(hyperprior, "flat")) return(NULL)
+    .re_cov_block_logprior(nc, full, prior_sigma, eta)
+  }
+  blocks <- list()
+  owner <- vector("list", length(layout))
+  add <- function(blk) {
+    blocks[[length(blocks) + 1L]] <<- blk
+    length(blocks)
+  }
+  for (m in seq_along(layout)) {
+    bl <- layout[[m]]
+    cols <- lapply(seq_len(bl$nc), function(j) list(as.numeric(bl$Z[, j])))
+    one <- function(fields, nc, full) list(
+      type = "miid", obs_idx = bl$idx, n_groups = bl$n_groups,
+      n_fields = nc, field_weight = fields,
+      logchol_prior = prior_of(nc, full))
+    owner[[m]] <- if (bl$full) {
+      add(one(cols, bl$nc, TRUE))
+    } else {
+      vapply(seq_len(bl$nc), function(j) add(one(cols[j], 1L, FALSE)),
+             integer(1))
+    }
+  }
+  list(blocks = blocks, owner = owner)
 }
 
-# Stacked placement coordinates (one row per point) -> stacked log-Cholesky /
-# log-SD theta and the log-Jacobian of the map, per row.
-.re_cov_place_to_theta <- function(V, layout) {
-  V <- matrix(V, ncol = sum(vapply(layout, `[[`, integer(1), "k")))
-  theta <- V
-  log_jac <- numeric(nrow(V))
-  pos <- 0L
-  for (bl in layout) {
-    cols <- pos + seq_len(bl$k)
-    pos <- pos + bl$k
-    if (!isTRUE(bl$full)) next
-    b <- .re_cpc_batch_to_logchol(V[, cols, drop = FALSE], bl$nc)
-    theta[, cols] <- b$theta
-    log_jac <- log_jac + b$log_jac
-  }
-  list(theta = theta, log_jac = log_jac)
-}
-
-.re_cov_theta_to_place <- function(theta, layout) {
-  out <- theta
-  pos <- 0L
-  for (bl in layout) {
-    cols <- pos + seq_len(bl$k)
-    pos <- pos + bl$k
-    if (isTRUE(bl$full)) out[cols] <- .re_logchol_block_to_cpc(theta[cols], bl$nc)
-  }
+# The joint fit's outer cells in the layout's stacked coordinates: a full
+# block's log-Cholesky packing, a diagonal block's log SDs, block after block.
+.re_cov_joint_theta <- function(fit, layout, owner) {
+  tg <- as.matrix(fit$theta_grid)
+  cn <- colnames(tg)
+  cols <- unlist(lapply(seq_along(layout), function(m) {
+    unlist(lapply(owner[[m]], function(b) {
+      cc <- .hp_logchol_block_cols(cn, .axis_prefix(b))
+      if (is.null(cc)) {
+        stop("the joint fit carries no log-Cholesky axes for block ", b,
+             call. = FALSE)
+      }
+      cc
+    }))
+  }))
+  out <- tg[, cols, drop = FALSE]
+  colnames(out) <- NULL
   out
 }
 
-# Posterior covariance of the outer coordinates from the negative log-posterior
-# Hessian at the mode, regularized to PD; a diagonal scale when the Hessian is
-# unusable, said in a warning.
-.re_cov_proposal_scale <- function(H, k, caller) {
-  post_cov <- tryCatch({
-    if (is.null(H)) stop("no usable curvature at the mode")
-    if (any(!is.finite(H))) stop("non-finite Hessian")
-    Hs <- (H + t(H)) / 2
-    ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
-    if (min(ev) <= 1e-8) stop("non-PD Hessian")
-    .spd_inverse(Hs)
-  }, error = function(e) {
-    warning(caller, "(): outer theta-Hessian not usable (",
-            conditionMessage(e), "); falling back to a diagonal proposal ",
-            "scale. Integration nodes may be mis-placed -- check the outer ",
-            "Pareto-k (fit$pareto_k).", call. = FALSE)
-    diag(0.5^2, k)
+# The posterior table of the covariance layout, read from the joint fit's
+# derived quantities (`hyper_derived`, each read across the cells of its own
+# grid): a full block's rows are its joint block's, a diagonal block's are the
+# scale and variance rows of its coefficients' one-field blocks, renumbered.
+# With several layout blocks each row carries its block's label.
+.re_cov_joint_posterior <- function(fit, layout, owner) {
+  hd <- fit$hyper_derived
+  row <- function(b, p) {
+    r <- hd[hd$parameter == paste0(.axis_prefix(b), p), , drop = FALSE]
+    if (nrow(r) != 1L) {
+      stop("the joint fit reports no `", p, "` for block ", b, call. = FALSE)
+    }
+    r
+  }
+  parts <- lapply(seq_along(layout), function(m) {
+    bl <- layout[[m]]
+    b <- owner[[m]]
+    rows <- if (bl$full) {
+      p <- .re_cov_derived_names(bl$nc, TRUE)
+      out <- do.call(rbind, lapply(p, function(pp) row(b, pp)))
+      out$parameter <- p
+      out
+    } else {
+      sig <- lapply(seq_len(bl$nc), function(j) row(b[j], "sigma_1"))
+      var <- lapply(seq_len(bl$nc), function(j) row(b[j], "Sigma_11"))
+      out <- do.call(rbind, c(sig, var))
+      out$parameter <- .re_cov_derived_names(bl$nc, FALSE)
+      out
+    }
+    if (length(layout) > 1L) {
+      rows$parameter <- paste0(.re_cov_block_label(bl, m), ".", rows$parameter)
+    }
+    rows
   })
-  list(post_cov = post_cov, L_scale = t(chol(post_cov)))
+  out <- do.call(rbind, parts)
+  rownames(out) <- NULL
+  out[, c("parameter", "mean", "sd", "median", "ci_lo", "ci_hi")]
 }
 
-# The box the placement mode-find searches in the placement coordinates: every
-# log sigma inside the bracket of a random-effect SD, every atanh partial
-# correlation inside `pcor_max` (`.RE_COV_SEARCH`), with that search's
-# per-round trust radius.
-.re_cov_place_box <- function(layout) {
-  ls <- log(.re_cov_search("sd_range"))
-  zb <- atanh(.re_cov_search("pcor_max"))
-  lower <- unlist(lapply(layout, function(bl)
-    c(rep(ls[1L], bl$nc), rep(-zb, bl$k - bl$nc))))
-  upper <- unlist(lapply(layout, function(bl)
-    c(rep(ls[2L], bl$nc), rep(zb, bl$k - bl$nc))))
-  list(lower = lower, upper = upper, span = upper - lower,
-       trust = rep(.re_cov_search("trust"), length(lower)))
+# The names of one block's derived quantities, in the order
+# `.re_cov_derived_columns()` forms them.
+.re_cov_derived_names <- function(nc, full) {
+  colnames(.re_cov_derived_columns(nc, full, function(i, j) 1))
 }
 
-# Where the nested door lays its nodes: a Gaussian `center + L_scale z` in the
-# placement coordinates, mapped to theta by `to_theta(V)` (theta rows and the
-# per-row log-Jacobian the node weights carry). Without a full block the
-# placement coordinates ARE theta and the Gaussian is the shared mode-find's
-# own. With one, the mode is found again in the marginal-SD / partial-
-# correlation coordinates, from the shared mode mapped there, on the same
-# objective plus the map's log-Jacobian, by the outer-grid placement's
-# mode-find (`.nl_mode_curvature()`), whose stencils go to the compiled batch
-# one call per round; the covariance is its curvature at the mode.
-.re_cov_placement <- function(core, layout, n_threads, caller) {
-  k <- core$k
-  if (!.re_cov_has_full_block(layout)) {
-    sc <- .re_cov_proposal_scale(core$opt$hessian, k, caller)
-    return(list(coordinate = "log_cholesky", center = core$theta_hat,
-                post_cov = sc$post_cov, L_scale = sc$L_scale,
-                to_theta = function(V) list(theta = matrix(V, ncol = k),
-                                            log_jac = numeric(NROW(V)))))
-  }
-  to_theta <- function(V) .re_cov_place_to_theta(V, layout)
-  log_post <- function(V) {
-    tr <- to_theta(V)
-    L_lists <- lapply(seq_len(nrow(tr$theta)), function(i)
-      .re_cov_theta_to_L_list(tr$theta[i, ], layout))
-    lp <- core$inner_logmarg_batch(L_lists, n_threads_outer = n_threads) +
-      apply(tr$theta, 1L, core$log_prior_theta) + tr$log_jac
-    lp[!is.finite(lp)] <- -Inf
-    lp
-  }
-  v0 <- .re_cov_theta_to_place(core$theta_hat, layout)
-  mc <- .nl_mode_curvature(v0, log_post, .re_cov_place_box(layout))
-  if (!is.null(mc$declined)) {
-    sc <- .re_cov_proposal_scale(NULL, k, caller)
-    return(list(coordinate = "sd_partial_correlation", center = v0,
-                post_cov = sc$post_cov, L_scale = sc$L_scale,
-                to_theta = to_theta, status = mc$declined))
-  }
-  if (!identical(mc$status, "ok")) {
-    warning(caller, "(): the mode-find that places the integration nodes in ",
-            "the marginal-SD / partial-correlation coordinates ",
-            if (identical(mc$status, "boundary")) "ran to its search box"
-            else "did not converge", "; the nodes are centred where it ",
-            "stopped.", call. = FALSE)
-  }
-  list(coordinate = "sd_partial_correlation", center = mc$par,
-       post_cov = mc$cov, L_scale = t(chol(mc$cov)), to_theta = to_theta,
-       status = mc$status, evals = mc$evals)
+# Each cell's Gaussian over [fixed effects | random effects], the random effects
+# ordered as the layout names them (block by block, group by group,
+# coefficient by coefficient): `mode` (cells x latent) and, where the fit kept
+# each cell's precision, `H` (one sparse matrix per cell). `cols` locates the
+# fixed effects of every arm and the random effects in the joint latent vector.
+.re_cov_joint_latent <- function(fit, cols, modes) {
+  Qp <- fit$Q_csc_p_per_grid
+  n_x <- ncol(fit$modes)
+  H <- if (!is.null(Qp)) lapply(seq_along(Qp), function(k) {
+    if (is.null(Qp[[k]])) return(NULL)
+    Q <- Matrix::sparseMatrix(i = fit$Q_csc_i_per_grid[[k]] + 1L,
+                              p = as.integer(Qp[[k]]),
+                              x = fit$Q_csc_x_per_grid[[k]],
+                              dims = c(n_x, n_x), symmetric = TRUE)
+    Q[cols, cols]
+  })
+  list(mode = modes[, cols, drop = FALSE], H = H)
 }
 
+# The joint fit restricted to the cells it solved: a cell the cheap-pass screen
+# left out carries no weight, no mode and no precision, so it leaves the grid,
+# and the debias draws' cell index is carried over to the cells that remain.
+.re_cov_joint_solved_cells <- function(fit) {
+  ng <- length(fit$weights)
+  drop <- fit$prune_mask
+  if (length(drop) != ng || !any(drop)) return(fit)
+  keep <- which(!drop)
+  for (nm in c("theta_grid", "modes", "grid_mean_shift")) {
+    if (is.matrix(fit[[nm]]) && nrow(fit[[nm]]) == ng) {
+      fit[[nm]] <- fit[[nm]][keep, , drop = FALSE]
+    }
+  }
+  for (nm in c("weights", "log_marginal", "log_hyperprior", "Q_csc_p_per_grid",
+               "Q_csc_i_per_grid", "Q_csc_x_per_grid", "grid_hessians",
+               "grid_modes")) {
+    if (length(fit[[nm]]) == ng) fit[nm] <- list(fit[[nm]][keep])
+  }
+  if (!is.null(fit$draw_nodes)) fit$draw_nodes <- match(fit$draw_nodes, keep)
+  for (nm in c("cell_draws", "cell_modes")) {
+    v <- fit$subspace_debias[[nm]]
+    if (is.list(v) && length(v) == ng) fit$subspace_debias[[nm]] <- v[keep]
+    if (is.matrix(v) && nrow(v) == ng) {
+      fit$subspace_debias[[nm]] <- v[keep, , drop = FALSE]
+    }
+  }
+  fit
+}
+
+# A `control$subspace_debias` request with its latent positions stated in this
+# fit's order, restated in the joint latent vector's (`perm`); the probe is not a
+# joint-door setting and is passed as its `skew_idx` instead.
+.re_cov_debias_to_joint <- function(cfg, perm) {
+  if (!is.list(cfg)) return(cfg)
+  if (!is.null(cfg$idx)) cfg$idx <- perm[as.integer(cfg$idx)]
+  cfg$probe <- NULL
+  cfg
+}
+
+# The joint fit's subspace-debias record with every latent position read back
+# into this fit's order.
+.re_cov_debias_from_joint <- function(rec, perm) {
+  if (is.null(rec)) return(rec)
+  back <- function(j) match(as.integer(j), perm)
+  rec$idx <- back(rec$idx)
+  if (length(rec$closure_added)) rec$closure_added <- back(rec$closure_added)
+  if (is.data.frame(rec$bands) && nrow(rec$bands)) {
+    rec$bands$idx <- back(rec$bands$idx)
+  }
+  o <- order(rec$idx)
+  rec$idx <- rec$idx[o]
+  if (is.list(rec$cell_draws)) {
+    rec$cell_draws <- lapply(rec$cell_draws, function(D)
+      if (is.matrix(D) && ncol(D) == length(o)) D[, o, drop = FALSE] else D)
+  }
+  rec
+}
+
+# Which cells the joint fit's mean shift centres (`.nested_grid_shift()`): per
+# cell `"applied"`, else the reason the cell stays at its mode.
+.re_cov_joint_mean_shift_record <- function(fit) {
+  S <- .nested_grid_shift(fit)
+  why <- fit$grid_mean_shift_declined
+  ok <- if (is.matrix(S)) is.finite(rowSums(S)) & rowSums(abs(S)) > 0
+        else rep(FALSE, nrow(fit$modes))
+  ifelse(ok, "applied",
+         if (length(why) == 1L && !is.na(why)) why else "not_formed")
+}
 
 #' Nested-Laplace integration over random-effect covariances
 #'
@@ -1828,93 +964,57 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' random-effect covariances `Sigma` instead of fixing them at point estimates.
 #' Reports weighted posterior summaries (mean, SD, median, 2.5\%/97.5\%) of every
 #' `Sigma` and its derived scale (`sigma_i`) and correlation (`rho_ij`)
-#' parameters, marginalizing the joint posterior over a `Sigma`-grid.
+#' parameters, marginalizing the joint posterior over an outer grid.
 #'
 #' This corrects the plug-in-MAP ("summary") bias: the mode of a skewed
 #' variance-component marginal is biased low relative to its median, so the
 #' headline summary should be the marginalized median, not the mode.
 #'
 #' @details
-#' Each term is one covariance **block**. A correlated block (`(1 + x | g)`) is
-#' a full `Sigma = L L'` parameterized by its lower Cholesky factor in
-#' log-Cholesky coordinates (the log-diagonal and the strictly-lower entries of
-#' `L`, `c(c+1)/2` values for a `c`-coefficient block), which keeps `Sigma`
-#' positive definite for every coordinate. An uncorrelated block
-#' (`(1 + x || g)`) is a diagonal `Sigma` parameterized by its `c` log standard
-#' deviations. A scalar `(1 | g)` term is the degenerate `c = 1` block. Several
-#' blocks stack their parameters into one integration vector; a single-term
-#' model is the length-1 case.
+#' The fit is a one-arm fit on the joint nested-Laplace door
+#' ([tulpa_nested_laplace_joint()]): the response is the arm and each covariance
+#' block is latent blocks of it. A correlated block (`(1 + x | g)`) is one
+#' `miid` block, a full `Sigma = L L'` whose outer axes are the log-Cholesky
+#' coordinates of its lower Cholesky factor (the log-diagonal and the
+#' strictly-lower entries of `L`, `c(c+1)/2` values for a `c`-coefficient
+#' block), which keep `Sigma` positive definite for every coordinate. Each
+#' coefficient of an uncorrelated block (`(1 + x || g)`), and a scalar
+#' `(1 | g)` term, is a one-field `miid` block whose one axis is its log
+#' standard deviation. The joint door lays the outer grid at the posterior,
+#' screens and refines it, and solves the inner Laplace approximation at every
+#' cell; its settings reach it through `control`.
 #'
-#' Integration nodes live in the whitened stacked-parameter space, centred at
-#' the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
-#' mode's posterior covariance (`solve(Hessian)`), so points track the posterior
-#' ridge. When a correlated block is present the nodes are laid in a second set
-#' of coordinates for that block, the log marginal SDs and the `atanh` of the
-#' canonical partial correlations, from a mode-find and a curvature read there,
-#' and mapped back to the log-Cholesky coordinates with the Jacobian of the map
-#' in each node's weight. In log-Cholesky coordinates a slope SD the data hold
-#' weakly makes a funnel: the joint mode runs to `log L_22` near `-10`, where
-#' the curvature along it is close to zero, and a Gaussian laid there spans
-#' hundreds of units on that axis and a few thousandths on `L_21`, away from
-#' the posterior mass. In the marginal-SD coordinates the mode is interior.
-#' `theta_hat` stays the log-Cholesky mode, the estimate [tulpa_eb()] reports.
-#' Two node layouts are available via `integration`:
-#' \itemize{
-#'   \item `"ccd"` (default above three parameters): a central-composite design ([ccd_grid()]) of
-#'     `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks` parameters, with
-#'     the corrected R-INLA design weights ([ccd_weights()]). Scales polynomially
-#'     in `k`, where the tensor grid is exponential.
-#'   \item `"grid"` (default for one to three parameters): the full
-#'     `n_per_axis^k` tensor product with uniform cell weights -- denser and
-#'     more robust to a non-Gaussian whitened posterior, but only tractable for
-#'     small `k`. A scale's posterior on its log coordinate reaches several
-#'     standard deviations of the mode's Gaussian into its left tail, which a
-#'     three-, nine- or fifteen-node CCD does not place a node in.
-#' }
-#' Each node `k` contributes integration weight proportional to
-#' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
-#' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
+#' Each cell carries weight proportional to its measure times
+#' `exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`. The reported median
+#' and 2.5\%/97.5\% interval of each derived quantity are read across the
+#' cells of the grid (the joint door's within-cell read); the `mean` and `sd`
+#' columns are the weighted moments.
 #'
-#' The two layouts also decide how the reported median and 2.5\%/97.5\% interval
-#' of each derived quantity are read off the nodes. A tensor grid's uniform
-#' cells discretize the posterior density, so the cumulative node weights are a
-#' CDF and the summary is the weighted quantile. A CCD is a moment rule: its
-#' nodes sit where they reproduce the integrand's first two moments and carry no
-#' probability mass of their own, so the summary is moment-matched instead --
-#' the first two weighted moments on each quantity's own coordinate (`log` for a
-#' scale or a variance, `atanh` for a correlation, the identity for a covariance)
-#' define a Gaussian there whose quantiles are mapped back. Scale intervals are
-#' therefore positive and asymmetric, and correlation intervals stay inside
-#' `(-1, 1)`. The `mean` and `sd` columns are the weighted moments under either
-#' layout.
-#'
-#' By default (`hyperprior = "proper"`) `log_prior_theta` is the
-#' weakly-informative PC + LKJ hyperprior, built per block by
-#' [re_cov_pc_lkj_prior()] and summed over blocks (PC prior on each marginal SD
-#' via `prior_sigma`, LKJ prior on each correlated block's correlation matrix via
-#' `eta`), expressed in the same parameterization with the exact
+#' By default (`hyperprior = "proper"`) each block carries the
+#' weakly-informative PC + LKJ hyperprior of [re_cov_pc_lkj_prior()] (PC prior
+#' on each marginal SD via `prior_sigma`, LKJ prior on each correlated block's
+#' correlation matrix via `eta`), in the block's own coordinates with the exact
 #' change-of-variables Jacobian. `hyperprior = "flat"` makes it the zero
-#' function, flat in log(theta). The likelihood it multiplies is the inner
-#' Laplace marginal, which integrates the fixed effects out together with the
-#' random effects rather than profiling them, so under `"flat"` the node centre
-#' `theta_hat` is a restricted (REML-type) estimate -- REML for a gaussian
-#' response, agreeing with `glmmTMB(..., REML = TRUE)` rather than with the ML
-#' fit of `lme4::glmer()` otherwise (see [tulpa_eb()]). Supply a custom `log_prior_theta`
-#' function to override either default (then `prior_sigma` / `eta` /
-#' `hyperprior` are ignored); it must act on the full stacked parameter vector.
-#' [tulpa_eb()] shares this same objective and the same default, so
-#' `tulpa_eb()$theta_hat` and `tulpa_re_cov_nested()$theta_hat` stay the same
-#' estimate on the same data under either setting.
+#' function, flat in log(theta); that prior is improper, so the fit then reports
+#' no evidence. A custom `log_prior_theta` replaces either default when the
+#' model has exactly one outer block (one correlated term, or one scalar term);
+#' a density over the stacked coordinates of several blocks couples axes the
+#' joint door integrates as separate blocks and is refused, and each block's
+#' prior is then stated as its `logchol_prior` on
+#' [tulpa_nested_laplace_joint()].
 #'
-#' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
-#'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
-#' @param phi2 Optional second dispersion, threaded into every inner
-#'   [tulpa_laplace()] solve: the Student-t degrees of freedom (`family = "t"`,
-#'   default 4 when `NULL`) or the Tweedie variance power (`family = "tweedie"`,
-#'   required -- a defaulted power would be a statistical decision the caller
-#'   never made). A `phi2` supplied for any other family errors rather than being
-#'   ignored. It is conditioned on: the integration is over the random-effect
-#'   covariances, not over `phi2`.
+#' `theta_hat` and `map` are the empirical-Bayes estimate: the mode of the same
+#' log marginal plus log prior in the stacked coordinates, the estimate
+#' [tulpa_eb()] reports on the same data.
+#'
+#' @param y,n_trials,X,family,phi The response, trials, fixed-effect design,
+#'   family and dispersion of the one arm. `n_trials = NULL` defaults to 1
+#'   (binary / single-trial).
+#' @param phi2 Optional second dispersion: the Student-t degrees of freedom
+#'   (`family = "t"`, default 4 when `NULL`) or the Tweedie variance power
+#'   (`family = "tweedie"`, required). A `phi2` supplied for any other family
+#'   errors rather than being ignored. It is conditioned on: the integration is
+#'   over the random-effect covariances, not over `phi2`.
 #' @param re_terms Either a single random-effect term or a list of them. Each
 #'   term is a list with `idx` (1-based group index per observation),
 #'   `n_groups`, `n_coefs` (`c`), `Z` (the `n_obs x c` RE design, e.g.
@@ -1928,146 +1028,60 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'   `prior_sigma = c(U, alpha)` with `P(sigma_i > U) = alpha` (`NULL`, the
 #'   default, is `c(3, 0.01)`) and LKJ shape `eta` (`NULL` is 2). Ignored when
 #'   `hyperprior = "flat"` or `log_prior_theta` is supplied.
-#' @param hyperprior `"proper"` (default) or `"flat"`. `"proper"` builds the
-#'   PC + LKJ prior from `prior_sigma` / `eta`, the proper prior every other
-#'   scale axis of the engine carries by default. `"flat"` integrates with
-#'   `log_prior_theta` the zero function (flat in log(theta)); that prior is
-#'   improper, so the fit then reports no evidence. Ignored when
-#'   `log_prior_theta` is supplied.
+#' @param hyperprior `"proper"` (default) or `"flat"`, see Details. Ignored
+#'   when `log_prior_theta` is supplied.
 #' @param log_prior_theta Optional `function(theta)` returning a scalar log
-#'   prior density on the full stacked parameter vector, overriding
-#'   `hyperprior` entirely. Default `NULL`, which defers to `hyperprior`.
-#' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
-#'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
-#'   `NULL` (default) takes the engine default `N(0, 2.5^2)`.
+#'   prior density on the coordinates of a model with one outer block,
+#'   overriding `hyperprior`. Default `NULL`, which defers to `hyperprior`.
+#' @param beta_prior Optional Gaussian prior on the fixed effects
+#'   (`list(mean, sd)`). `NULL` (default) takes the engine default
+#'   `N(0, 2.5^2)`.
 #' @param offset Optional observation-level offset on the linear predictor
-#'   (length `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
-#'   with `n_quad > 1`, which errors rather than dropping it.
+#'   (length `length(y)`), e.g. `log(exposure)` for a rate model.
 #' @param weights Optional non-negative observation weights (length
-#'   `length(y)`), each scaling its row's log-likelihood in every inner
-#'   [tulpa_laplace()] solve, so the covariance is integrated under the
-#'   weighted likelihood. Not supported with `n_quad > 1`, which errors rather
-#'   than dropping them.
-#' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
-#'   joint-field Laplace inner solve ([tulpa_laplace()]). `> 1` refines the inner
-#'   marginal with `n_quad`-point adaptive Gauss-Hermite quadrature (the
-#'   [tulpa_re_aghq()] debias applied inside the `Sigma` integration), reducing
-#'   the small-cluster variance attenuation for binary / low-count data. AGHQ
-#'   requires a single shared grouping factor (the per-group integral must
-#'   factorize); with crossed RE terms `n_quad > 1` errors. When AGHQ is used the
-#'   fixed effects are integrated, so the reported fixed-effect posterior is the
-#'   marginal (ML-II) one rather than the joint-mode (PQL) estimate.
+#'   `length(y)`), each scaling its row's log-likelihood, so the covariance is
+#'   integrated under the weighted likelihood.
+#' @param n_quad Quadrature order for the inner marginal. `1` (default) is the
+#'   Laplace approximation at the joint mode. `> 1` integrates each group's
+#'   random effects by `n_quad`-point adaptive Gauss-Hermite quadrature (the
+#'   inner marginal of [tulpa_re_aghq()]) and the fixed effects by a Laplace
+#'   step over the result, reducing the small-cluster variance attenuation for
+#'   binary / low-count data. It needs a single shared grouping factor; with
+#'   crossed RE terms it errors. The groups are integrated out, so such a fit
+#'   reports `ranef_unavailable` in place of per-group effects.
 #' @param X_zi Optional zero-inflation design matrix (`length(y)` rows), making
 #'   the model a two-process mixture: each observation is a structural zero with
 #'   probability `plogis(X_zi beta_zi)` and otherwise follows `family`. Paired
 #'   with a zero-truncated family it is the hurdle model. The random effects
-#'   enter the count predictor only, and the integration runs over the same
-#'   covariance coordinates -- the mixture changes the inner solve, not the
-#'   parameters being integrated over. The ZI coefficients are reported
-#'   alongside the count ones in `coef()` / `vcov()`, so the fixed block is
-#'   `ncol(X) + ncol(X_zi)` wide. Needs `n_quad = 1`: the adaptive
-#'   Gauss-Hermite inner marginal runs through a single-predictor oracle.
+#'   enter the count predictor only. The ZI coefficients are reported alongside
+#'   the count ones in `coef()` / `vcov()`, so the fixed block is
+#'   `ncol(X) + ncol(X_zi)` wide.
 #' @param zi_prior_sd Prior SD on `beta_zi`, keeping the logit identified where
 #'   a level carries no zeros (the likelihood alone would send it to `-Inf`).
 #'   Ignored when `X_zi` is `NULL`.
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
-#'     \item `integration`: node layout, `"auto"` (the default: the tensor
-#'       grid for one to three covariance parameters, the CCD above), `"grid"`
-#'       (full tensor product) or `"ccd"` (central-composite design).
-#'     \item `n_per_axis`: points per parameter axis in the tensor grid
-#'       (default 61 for one parameter, 21 for two, 9 for three, 5 above);
-#'       grid only.
-#'     \item `span`: half-width of the tensor grid in posterior standard
-#'       deviations per whitened axis (default 8 for one parameter, 6 for two,
-#'       4.5 for three, 3 above); grid only. Where the outermost level of an
-#'       axis still carries more than 0.1\% of its marginal, the tensor gains
-#'       a level past it, laid in the rows of the other axes that hold that
-#'       level's mass, until no end does: the left tail of a log-scale
-#'       posterior runs past the span of the Gaussian at the mode.
-#'     \item `prune` (`TRUE`), `prune_tol` (`1e-4`), `prune_log_gap`,
-#'       `screen_iters` (`2`): cheap-pass screening of the tensor grid. Each
-#'       cell is first scored by a `screen_iters`-step inner Newton started
-#'       from the centre cell's mode, and a cell scored below `prune_tol` of
-#'       the grid's mass (or more than `prune_log_gap` nats under it) is left
-#'       out without its full solve. The mass the screened cells may carry is
-#'       bounded by lifting each by the worst screening error measured on a
-#'       solved cell; above 0.01\% of the grid's mass the cells carrying
-#'       the bound are solved. Each
-#'       round of the tensor's growth past its ends is screened against the
-#'       grid it joins. `screen` reports the cells left out, the cells
-#'       repaired, the bound and the screening error. Grid integration with
-#'       the joint-field inner solve (`n_quad = 1`) only; `prune = FALSE`
-#'       solves every cell.
+#'     \item Every control of [tulpa_nested_laplace_joint()] except `n_quad`
+#'       (an argument here) and its retention switches (`store_Q`,
+#'       `keep_grid_hessians`, `hessian`), passed to the joint door:
+#'       `integration`, the screen (`prune`, `prune_tol`, ...), the
+#'       refinement passes, `diagnose_k` / `k_samples`, `skew_correct`,
+#'       `subspace_debias`, `checkpoint`, `max_iter`, `tol`, `n_threads`, ...
+#'       `skew_correct` (`TRUE`) centres each
+#'       cell's joint Gaussian over the fixed and random effects at the
+#'       leading-order posterior mean, `mode + Sigma A' (l''' * s) / 2` (Rue,
+#'       Martino & Chopin 2009, Sec 3.2.3), instead of at the mode; the fixed
+#'       effects, [ranef()], [posterior_predict()] and the WAIC / LOO criteria
+#'       read the cell centres. Which cells were centred is recorded in
+#'       `mean_shift`. `checkpoint = list(path =, resume =)` caches each solved
+#'       cell so a killed run resumes.
 #'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
-#'       node mixture (default 2000), exposed as `draws` for the generic
-#'       `tulpa_fit` methods. The `Sigma` posterior is summarized directly from
-#'       the integration nodes in `posterior`, independent of `n_draws`.
-#'     \item `seed`: optional integer seed for the fixed-effect draw synthesis.
-#'     \item `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
-#'       accuracy diagnostic for the Gaussian proposal over the hyperparameters,
-#'       returned as `pareto_k`. Several proposal candidates are scored and the
-#'       best is kept: `pareto_k_proposal_source` names which one produced the
-#'       reported number and `pareto_k_first_pass` is the k-hat of the proposal
-#'       exactly as the mode-find placed it, before refinement. A large gap
-#'       between the two says the placement is poor even where the verdict is
-#'       fine -- on a small-group binary fit the first pass runs 15 to 49 where
-#'       the reported k-hat is 0.3 to 0.8.
-#'     \item `k_samples`: importance draws for the `diagnose_k` estimate
-#'       (default 500). It is a precision knob: the GPD tail size is held at
-#'       the fraction that default budget implies, so raising it supplies more
-#'       tail ratios for the SAME estimand rather than moving the fit to a
-#'       deeper quantile of the weight distribution (gcol33/tulpa#631).
-#'       Each draw is one inner Laplace solve, so this sets the diagnostic's
-#'       cost; the draws are solved in one compiled batch, each started from
-#'       the mode at the proposal centre.
-#'     \item `k_threads`: thread width for those draws (`NULL`, the default,
-#'       follows `n_threads`; `"auto"` takes the physical performance cores; an
-#'       integer sets it, `1L` forcing serial). Each draw is solved
-#'       single-threaded and from the same start, so the k-hat does not depend
-#'       on the width.
-#'     \item `k_tail_points`: expert override for that tail size, in upper-tail
-#'       order statistics. Silently capped at 20% of the draws, beyond which
-#'       body ratios enter the tail and bias the shape.
-#'     \item `max_iter`, `tol`, `n_threads`: inner-solve controls (see
-#'       [tulpa_laplace()]).
-#'     \item `outer_maxit`: iteration budget for the mode-finding step that
-#'       centres the integration grid, in rounds of the outer mode-find
-#'       (default 500). Exhausting the budget warns, since the nodes are then
-#'       centred on wherever the search stopped.
-#'     \item `checkpoint`: node checkpoint/resume spec `list(path = , resume = )`.
-#'       Each completed CCD / grid node (one inner Laplace solve) is cached to
-#'       `path`; a `resume = TRUE` run loads the finished nodes and re-solves
-#'       only the rest. `resume = FALSE` starts fresh. A file written for
-#'       different data, layout, or grid is rejected (fingerprint mismatch).
-#'       Default `NULL` (off).
-#'     \item `skew_correct`: `TRUE` (default) centres each integration node's
-#'       joint Gaussian over the fixed and random effects at the leading-order
-#'       posterior mean, `mode + Sigma A' (l''' * s) / 2` (the simplified-Laplace
-#'       location term of Rue, Martino & Chopin 2009, Sec 3.2.3), instead of at
-#'       the mode. A log-link count or a logit with few observations per group
-#'       has a skewed latent conditional whose mean sits off its mode, and the
-#'       fixed effects, [ranef()], [posterior_predict()] and the WAIC / LOO
-#'       criteria all read the node centres. `FALSE` keeps the mode. Off at
-#'       `n_quad > 1` and whenever the subspace debias runs. Which nodes were
-#'       centred is recorded in `mean_shift` on the returned fit.
-#'     \item `subspace_debias`: latent Metropolis correction, `FALSE` by
-#'       default. `TRUE` takes the defaults; a list accepts `method` (`"fast"`
-#'       or `"exact"`), `band` (default `"ok"`), `idx`, `probe`, `closure`,
-#'       `closure_max`, `n_iter`, `warmup`, `thin`, and `n_draws`.
-#'       Fast correction samples the joint density on the selected Gaussian
-#'       conditional-mean surface, carries Gaussian nuisance conditionals, and
-#'       keeps the Laplace cell weights. Exact correction uses full-latent
-#'       true-density MH, including the Gaussian nuisance proposal density in
-#'       the ratio, and corrects each cell's integral with the shared unbiased
-#'       t importance estimator. Independent pilots calibrate the particle
-#'       count; the existing PSIS k gate decides whether the correction applies.
-#'       The finite outer design and importance estimates keep the result
-#'       Tier 2. Applied exact correction returns paired fixed-effect, random-
-#'       effect and covariance-node draws, with retained source chains and IS
-#'       diagnostics in `subspace_debias`. Fast empty selections preserve the
-#'       plain fit; exact empty selections use full Gaussian independence MH.
+#'       cell mixture (default 2000), exposed as `draws` for the generic
+#'       `tulpa_fit` methods.
+#'     \item `seed`: optional integer seed for the draw synthesis.
+#'     \item `outer_maxit`: round budget of the mode-find behind `theta_hat`
+#'       (default 500). Exhausting it warns.
 #'   }
 #'
 #' @return A list with:
@@ -2076,50 +1090,40 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'     `Sigma_ij` for a single block, prefixed by the block label
 #'     (`g.sigma_1`, ...) when there are several blocks. Diagonal blocks report
 #'     no `rho`.
-#'   - `map`: the plug-in-mode summary at `theta_hat` (a single `list(Sigma,
-#'     sigma, rho)` for one block, or a named list of them).
+#'   - `map`: the plug-in summary at `theta_hat` (a single `list(Sigma, sigma,
+#'     rho)` for one block, or a named list of them).
 #'   - `Sigma_mean`: the weighted posterior mean of `Sigma` (a matrix for one
 #'     block, or a named list of matrices).
 #'   - `beta`, `draws`, `means`, `param_names`, `process_info`: the fixed-effect
-#'     posterior from the node mixture (drives `coef`/`confint`/`vcov`/`summary`).
+#'     posterior from the cell mixture (drives `coef`/`confint`/`vcov`/`summary`).
 #'   - `re_nodes`, `re_var_nodes`: the per-group random-effect posterior at each
-#'     integration node -- conditional mean and marginal variance of every
-#'     (block, group, coefficient), one row per node. [ranef()] reports the
-#'     `weights`-mixture of them. `NULL` at `n_quad > 1`, whose inner marginal
-#'     integrates each group out instead of conditioning on it; that fit carries
-#'     `ranef_unavailable` (the reason) in their place.
+#'     cell -- mean and marginal variance of every (block, group, coefficient),
+#'     one row per cell. [ranef()] reports the `weights`-mixture of them. `NULL`
+#'     at `n_quad > 1`, whose fit carries `ranef_unavailable` (the reason)
+#'     instead.
 #'   - `re_debias_draws`, `re_debias_idx`: present when the subspace debias
-#'     selected a random-effect coordinate. The sampled draws of those
-#'     coordinates on the node mixture the fixed-effect draws use, and their
-#'     positions within the random-effect block. [ranef()] reports those rows
-#'     empirically and the rest from the Gaussian mixture, recording which in
-#'     its `source` column.
-#'   - `latent_nodes`, `draw_nodes`: each integration node's joint Gaussian
-#'     over the fixed and random effects (`mode`, observed-curvature precision
-#'     `H`), and the node each row of `draws` was taken from.
-#'     [posterior_predict()] and the WAIC / LOO criteria draw each row's random
-#'     effects from that node's conditional given the row's fixed effects.
-#'     `NULL` at `n_quad > 1`.
-#'   - `mean_shift`: per node, `"applied"` where `control$skew_correct`
-#'     centred the node at the leading-order mean, otherwise the reason it
-#'     stayed at the mode. `NULL` when the centring was not requested.
-#'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
-#'     `n_blocks`, `n_coefs` (vector of per-block `c`).
-#'   - `placement`: the coordinates the nodes were laid in (`coordinate`,
-#'     `"log_cholesky"` or `"sd_partial_correlation"`) and the Gaussian there
-#'     (`center`, `cov`). In the marginal-SD / partial-correlation coordinates
-#'     it also carries the mode-find's `status` (`"ok"`, `"not_converged"`,
-#'     `"boundary"`, or `"no_usable_curvature"` when the nodes fell back to a
-#'     diagonal scale at the start) and its inner solves (`evals`).
-#'   - `tensor_extended`: the rounds in which the tensor grew past its ends.
+#'     sampled a random-effect coordinate: its draws on the cell mixture the
+#'     fixed-effect draws use, and its position within the random-effect block.
+#'     [ranef()] reports those rows empirically and the rest from the Gaussian
+#'     mixture.
+#'   - `latent_nodes`, `draw_nodes`: each cell's joint Gaussian over the fixed
+#'     and random effects (`mode`, precision `H`), and the cell each row of
+#'     `draws` was taken from. [posterior_predict()] and the WAIC / LOO criteria
+#'     draw each row's random effects from that cell's conditional given the
+#'     row's fixed effects. `NULL` at `n_quad > 1`.
+#'   - `mean_shift`: per cell, `"applied"` where `control$skew_correct` centred
+#'     the cell at the leading-order mean, otherwise the reason it stayed at the
+#'     mode. `NULL` when the centring was off.
+#'   - `theta_hat`, `theta_grid` (the cells in the stacked coordinates),
+#'     `weights`, `log_marginal` (log marginal plus log prior per cell),
+#'     `log_hyperprior`, `log_evidence`, `n_grid`, `layout`, `n_blocks`,
+#'     `n_coefs` (vector of per-block `c`), and the outer Pareto k-hat fields of
+#'     the joint fit (`pareto_k`, ...).
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
-#'     `idx` are the corrected latent coordinates, `bands` the per-probed-index
-#'     reliability table they were read from, `closure_added` what the coupling
-#'     closure added, and `accept` the per-node Metropolis acceptance rate.
 #'
-#' @seealso [tulpa_laplace()] for the inner solve; [tulpa_nested_laplace()] for
-#'   the analogous outer integration over spatial / temporal prior
-#'   hyperparameters.
+#' @seealso [tulpa_nested_laplace_joint()] for the door the fit runs on;
+#'   [tulpa_eb()] for the plug-in estimate; [tulpa_re_cov_gibbs()] for the exact
+#'   sampler.
 #'
 #' @references
 #' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
@@ -2152,638 +1156,198 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 weights = NULL, n_quad = 1L,
                                 X_zi = NULL, zi_prior_sd = 2.5,
                                 control = list()) {
-  # Perf/numerical knobs live in `control = list()` (matching tulpa() /
-  # tulpa_nested_laplace()); the signature carries only statistical arguments.
-  tulpa_check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
-  .device_session <- .device_start(control)
-  on.exit(cpp_device_end(.device_session), add = TRUE)
+  caller <- "tulpa_re_cov_nested"
+  tulpa_check_control(control, .CONTROL_KEYS$re_cov_nested, caller)
   family <- .canonical_family(family)
   .family_or_stop(family)
   hyperprior <- .hp_choice(match.arg(hyperprior))
   prior_proper <- !is.null(log_prior_theta) || identical(hyperprior, "proper")
-  log_prior_theta <- .re_cov_resolve_hyperprior(hyperprior, log_prior_theta)
-  n_draws     <- as.integer(control$n_draws %||% 2000L)
-  seed        <- control$seed
-  diagnose_k  <- isTRUE(control$diagnose_k %||% TRUE)
-  k_samples   <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
-  k_tail_points <- control$k_tail_points
-  max_iter    <- as.integer(control$max_iter %||% 100L)
-  tol         <- control$tol %||% 1e-8
-  n_threads   <- as.integer(control$n_threads %||% 1L)
-  k_width     <- .tulpa_pareto_k_threads(1L, n_threads, k_samples,
-                                         control$k_threads)
-  checkpoint  <- control$checkpoint
-  sd_cfg      <- .subspace_debias_config(control$subspace_debias, control$cila)
-  skew_correct <- isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
-  n_quad <- .check_n_quad(n_quad)
-  .seed_scoped(seed)
-  # The stream the outer Pareto-k diagnostic draws its proposal sample from:
-  # the one the fit starts on, so the diagnostic's draws do not depend on how
-  # many random numbers the fit consumed first. The subspace debias consumes
-  # them and the plain fit does not, and both score one proposal against one
-  # target, so they read one k-hat from one sample (gcol33/tulpa#934).
-  k_stream    <- .snapshot_seed()
+  n_draws <- as.integer(control$n_draws %||% 2000L)
+  n_quad  <- .check_n_quad(n_quad)
+  if (!is.matrix(X)) X <- as.matrix(X)
+  .require_fixed_effects(X, caller)
+  n_trials <- .validate_glm_design(y, X, n_trials, caller)$n_trials
+  re_terms <- .as_re_terms_list(re_terms)
+  layout <- .re_cov_block_layout(re_terms, length(y))
+  jb <- .re_cov_joint_blocks(layout, prior_sigma, eta, hyperprior,
+                             log_prior_theta, caller)
+  .seed_scoped(control$seed)
 
-  core <- .re_cov_theta_fit(
+  # theta_hat, the empirical-Bayes mode of the same objective; it also
+  # validates the dispersions, the zero-inflation design and the AGHQ
+  # requirements before the grid is solved.
+  eb <- .eb_theta_fit(
     y = y, n_trials = n_trials, X = X, re_terms = re_terms,
     family = family, phi = phi, phi2 = phi2,
-    prior_sigma = prior_sigma, eta = eta, log_prior_theta = log_prior_theta,
+    prior_sigma = prior_sigma, eta = eta,
+    log_prior_theta = .re_cov_resolve_hyperprior(hyperprior, log_prior_theta),
     beta_prior = beta_prior, n_quad = n_quad,
-    max_iter = max_iter, tol = tol, n_threads = n_threads,
-    caller = "tulpa_re_cov_nested", need_scale = TRUE,
-    outer_maxit = as.integer(control$outer_maxit %||% 500L),
+    max_iter = as.integer(control$max_iter %||% 100L),
+    tol = control$tol %||% 1e-8,
+    n_threads = as.integer(control$n_threads %||% 1L),
+    caller = caller, outer_maxit = as.integer(control$outer_maxit %||% 500L),
     offset = offset, X_zi = X_zi, zi_prior_sd = zi_prior_sd,
     weights = weights)
+  theta_hat <- eb$theta_hat
+  phi2 <- .phi2_or_stop(family, phi2)
 
-  layout          <- core$layout
-  k               <- core$k
-  n_trials        <- core$n_trials
-  X               <- core$X
-  # The whole fixed prefix of each node's mode: [beta | beta_zi] under zero
-  # inflation, [beta] otherwise. Every node's H_beta is that size too, so the
-  # per-node covariance and the draw synthesis follow from this one number.
-  p_fix           <- core$p_fixed
-  log_prior_theta <- core$log_prior_theta
-  inner_fit       <- core$inner_fit
-  theta_hat       <- core$theta_hat
-  # The Gaussian the nodes are laid from: the shared mode and its curvature, or,
-  # with a full block, the mode-find in the marginal-SD / partial-correlation
-  # coordinates (`.re_cov_placement()`).
-  place      <- .re_cov_placement(core, layout, n_threads, "tulpa_re_cov_nested")
-  L_scale    <- place$L_scale
-  theta_place <- as.numeric(place$to_theta(place$center)$theta)
-  # The node layout follows the number of covariance coordinates
-  # (`.nl_outer_design()`, defaults in `.NL_OUTER_DESIGN`).
-  design      <- .nl_outer_design(k, control)
-  integration <- design$integration
-  n_per_axis  <- design$n_per_axis
-  span        <- design$span
-  # Cheap-pass screening of the tensor (`.NL_SCREEN`, the joint / registry
-  # doors' rule): validated whatever `prune` says, so a misspecified value is
-  # reported where the user set it.
-  prune        <- isTRUE(control[["prune"]] %||%
-                           .nl_screen("prune")[["re_cov"]])
-  prune_tol    <- .nl_prune_tol_from_control(
-    control,
-    .nl_check_prune_tol(control$prune_tol %||% .nl_screen("prune_tol")))
-  screen_iters <- .nl_check_screen_iters(
-    control$screen_iters %||% .nl_screen("iters"))
+  p <- ncol(X)
+  bp <- .normalize_beta_prior(beta_prior, p)
+  responses <- list(y = Filter(Negate(is.null), list(
+    y = y, X = X, family = family, phi = phi, n_trials = n_trials,
+    offset = offset, beta_prior_mean = bp$mean,
+    beta_prior_prec = if (!is.null(bp)) 1 / bp$sd^2,
+    weights = weights, phi2 = phi2)))
+  blocks <- jb$blocks
+  if (!is.null(X_zi)) {
+    responses <- .joint_arm_zi(responses, as.matrix(X_zi), zi_prior_sd)
+    blocks <- lapply(blocks, .joint_zi_block, n_obs = length(y))
+  }
+  jctl <- control[intersect(names(control), .CONTROL_KEYS$nested_laplace_joint)]
+  jctl$n_quad <- n_quad
+  jctl$progress <- jctl$progress %||% FALSE
+  # Latent positions are stated in this fit's order, [fixed | random effects
+  # block by block, group by group, coefficient by coefficient]; `perm` takes
+  # each to its position in the joint latent vector.
+  p_fixed <- p + if (is.null(X_zi)) 0L else ncol(as.matrix(X_zi))
+  starts <- p_fixed + cumsum(c(0L, vapply(blocks, function(b)
+    as.integer(b$n_groups) * as.integer(b$n_fields), integer(1))))
+  re_map <- .joint_arm_re_map(
+    list(arm_layout = list(block_start = starts[seq_along(blocks)])), blocks,
+    jb$owner, lapply(layout, function(bl)
+      list(n_groups = bl$n_groups, n_coefs = bl$nc)))
+  perm <- c(seq_len(p_fixed), re_map$cols)
+  jctl$subspace_debias <- .re_cov_debias_to_joint(jctl$subspace_debias, perm)
+  if (is.list(control$subspace_debias) && !is.null(control$subspace_debias$probe)) {
+    jctl$skew_idx <- perm[as.integer(control$subspace_debias$probe)]
+  }
+  fit <- tulpa_nested_laplace_joint(
+    responses, prior = blocks, hyperprior = hyperprior,
+    cell_coupling = if (is.null(X_zi)) "separable" else .JOINT_ZI_COUPLING,
+    control = jctl)
+  if (!identical(as.integer(fit$arm_layout$block_start),
+                 as.integer(starts[seq_along(blocks)]))) {
+    stop(caller, "(): the joint fit laid its latent blocks at other positions ",
+         "than the covariance layout implies.", call. = FALSE)
+  }
+  fit <- .re_cov_joint_solved_cells(fit)
+  fit$subspace_debias <- .re_cov_debias_from_joint(fit$subspace_debias, perm)
 
-  # --- subspace debias: which latent directions need the exact sampler? -----
-  # One probe solve at the fitted MAP covariance, scored by the inner-layer
-  # diagnostics, decides S once for the whole fit. Selecting
-  # per node would make the correction's scope a function of the integration
-  # design, and would leave nothing auditable to record; the MAP cell is where
-  # the weight is and is the cell every other inner-layer probe in the engine
-  # re-dispatches at.
-  subspace <- NULL
-  if (!is.null(sd_cfg) && n_quad > 1L) {
-    stop("tulpa_re_cov_nested(): `control$subspace_debias` needs the ",
-         "joint-field Laplace inner solve (`n_quad = 1`). The adaptive ",
-         "Gauss-Hermite inner marginal integrates each group's random effects ",
-         "out, so it exposes no conditional latent field to correct.",
-         call. = FALSE)
-  }
-  if (!is.null(sd_cfg)) {
-    probe_idx <- sd_cfg$probe %||% seq_len(p_fix)
-    probe <- inner_fit(.re_cov_theta_to_L_list(theta_place, layout),
-                       compute_skew = is.null(sd_cfg$idx),
-                       skew_idx = probe_idx,
-                       joint_hessian = !identical(sd_cfg$closure, FALSE))
-    if (is.null(probe)) {
-      stop("tulpa_re_cov_nested(): the subspace-debias probe solve failed at ",
-           "the fitted covariance, so no reliability band could be read. ",
-           "Refit with control$subspace_debias = FALSE, or pin the set with ",
-           "control$subspace_debias = list(idx = ...).", call. = FALSE)
-    }
-    subspace <- .subspace_select(probe, sd_cfg)
-  }
-  debias_arg <- if (!is.null(subspace)) .subspace_debias_request(
-    utils::modifyList(sd_cfg, list(idx = subspace$idx, correct_outer = TRUE)))
-  exact_subspace <- !is.null(sd_cfg) && identical(sd_cfg$method, "exact")
-
-  # --- integration nodes in whitened theta-space ----------------------------
-  if (integration == "ccd") {
-    ccd   <- ccd_grid(k, f_0 = sqrt(k) * 1.1)
-    z     <- ccd$z
-    dnode <- ccd_weights(ccd)
-  } else {
-    tens  <- .nl_aligned_tensor(k, n_per_axis, span)
-    z     <- tens$z
-    dnode <- rep(1, nrow(z))                # uniform tensor-cell weight
-  }
-  place_nodes <- function(z) place$to_theta(ccd_to_theta(z, place$center, L_scale))
-  node_map     <- place_nodes(z)
-  theta_grid   <- node_map$theta
-  node_log_jac <- node_map$log_jac
+  theta_grid <- .re_cov_joint_theta(fit, layout, jb$owner)
+  w <- as.numeric(fit$weights)
   ng <- nrow(theta_grid)
+  lp_theta <- as.numeric(fit$log_hyperprior)
+  logm <- as.numeric(fit$log_marginal) + lp_theta
+  p_fix <- as.integer(fit$n_fixed)
+  beta_names <- c(colnames(X) %||% paste0("beta", seq_len(p)),
+                  if (!is.null(X_zi))
+                    colnames(X_zi) %||% paste0("zi_", seq_len(ncol(X_zi))))
 
-  # --- node checkpoint/resume -----------------------------
-  # Each CCD / grid node is one full inner Laplace solve. `checkpoint =
-  # list(path =, resume =)` caches each completed node so a killed run resumes.
-  # The node grid is deterministic given the fingerprint (which includes
-  # theta_grid), so nodes are keyed by their integer index; the store is an
-  # atomically-rewritten RDS, fingerprint-guarded against resuming onto a file
-  # written for different data / layout / grid. The cells a tensor adds past its
-  # ends follow from the declared grid's own solves, so they are appended under
-  # the indices after it.
-  # The joint-field inner solve also carries the per-group random-effect
-  # posterior, which is what the per-group summary is marginalized from; it is a
-  # node payload, so the fingerprint records it alongside the rest.
-  re_cond <- isTRUE(core$re_conditional)
-  # The inner Laplace is a Gaussian at the joint MODE of [beta | b]. A skewed
-  # latent conditional (a log-link count, a logit with few observations per
-  # group) has its posterior mean off that mode, and every draw of the node
-  # mixture inherits the offset. Each node is therefore centred at the
-  # leading-order mean, mode + Sigma A' (l3 * s) / 2 (`inner_mean_shift`,
-  # src/inner_laplace_skew.h), the centre the `skew_correct` read of the
-  # nested-Laplace doors uses. A subspace-debiased coordinate is already drawn
-  # from the exact conditional about the mode, so the centring stays off when
-  # the debias runs.
-  mean_shift_on <- skew_correct && re_cond && is.null(debias_arg)
-  ckpt <- .re_cov_node_checkpoint(checkpoint, fingerprint = list(
-    y = as.numeric(y), n_trials = as.integer(n_trials), X = X,
-    family = family, phi = phi, weights = weights,
-    layout = lapply(layout, function(b) b[c("k", "nc", "full")]),
-    theta_grid = theta_grid, max_iter = max_iter, tol = tol,
-    beta_prior = beta_prior, n_quad = n_quad, re_cov = re_cond,
-    latent_precision = re_cond, debias = debias_arg,
-    mean_shift = mean_shift_on))
-
-  # --- evaluate inner marginal + derived quantities per cell ----------------
-  # One FULL Laplace solve per node: the log-marginal feeds the integration
-  # weight; the fixed-effect mode + marginal covariance feed the posterior-draw
-  # synthesis. A failed / non-finite node returns NULL (weight 0).
-  #
-  # The latent tail of each node's mode is E(b | y, Sigma_i) and its covariance
-  # blocks are Var(b | y, Sigma_i), so the two together are the node's Gaussian
-  # random-effect posterior. Retained per node (not collapsed here) because the
-  # marginal per-group posterior is the WEIGHTED MIXTURE of them -- summarizing
-  # each node first and averaging the summaries is the plug-in error the nested
-  # path exists to avoid.
+  # A Laplace inner solve conditions on the random effects, so every cell
+  # carries their Gaussian; the AGHQ inner marginal integrates them out.
+  re_cond <- !is.character(fit$ranef_unavailable) && is.matrix(fit$modes) &&
+    ncol(fit$modes) > p_fix
+  # Each cell is centred at its mode plus the leading-order mean shift the
+  # joint fit admits; a selected subspace is drawn about the mode.
+  mean_shift_on <- re_cond && !length(fit$subspace_debias$idx) &&
+    isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
+  if (!mean_shift_on) fit$grid_mean_shift <- NULL
+  modes <- if (re_cond) .nested_grid_latent_means(fit)
   n_re <- .re_cov_n_re(layout)
-  solve_node <- function(i, th) {
-    L_list <- .re_cov_theta_to_L_list(th, layout)
-    unformed <- FALSE
-    key <- as.character(i)
-    if (!is.null(ckpt) && ckpt$has(key)) {
-      fit_i <- ckpt$get(key)
-    } else {
-      fit_i <- withCallingHandlers(
-        inner_fit(L_list, re_cov = re_cond, debias = debias_arg,
-                  joint_hessian = re_cond,
-                  compute_skew = mean_shift_on,
-                  skew_idx = if (mean_shift_on) seq_len(p_fix)),
-        tulpa_hbeta_unformed = function(w) {
-          unformed <<- TRUE
-          invokeRestart("muffleWarning")
-        })
-      if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
-          length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
-        ckpt$save(key, fit_i)
-      }
-    }
-    if (is.null(fit_i) || is.null(fit_i$mode) ||
-        length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) {
-      return(list(unformed = unformed))
-    }
-    rec <- list(unformed = unformed, mode_raw = fit_i$mode)
-    if (mean_shift_on) {
-      ms <- fit_i$inner_mean_shift
-      if (is.numeric(ms) && length(ms) == length(fit_i$mode) &&
-          all(is.finite(ms))) {
-        fit_i$mode <- fit_i$mode + ms
-        rec$mean_shift <- "applied"
-      } else {
-        rec$mean_shift <- fit_i$inner_mean_shift_declined %||% "not_formed"
-      }
-    }
-    rec$lp_theta <- log_prior_theta(th)
-    rec$logm     <- fit_i$log_marginal + rec$lp_theta
-    rec$beta     <- fit_i$mode[seq_len(p_fix)]
-    rec$beta_cov <- if (is.null(fit_i$H_beta)) NULL
-                    else tryCatch(.spd_inverse(fit_i$H_beta), error = function(e) NULL)
-    if (!is.null(debias_arg)) {
-      rec$debias_draws  <- fit_i$debias_draws
-      rec$debias_accept <- fit_i$debias_accept %||% NA_real_
-      rec$debias_importance <- fit_i$debias_importance
-      rec$debias_importance_log_weights <- fit_i$debias_importance_log_weights
-    }
-    if (re_cond && length(fit_i$mode) == p_fix + n_re) {
-      rec$re <- fit_i$mode[p_fix + seq_len(n_re)]
-      # Diagonals of the per-(term, group) covariance blocks, concatenated in the
-      # block layout's own order -- the marginal variance of each random-effect
-      # coefficient at this node.
-      rec$re_var <- .re_cov_block_variances(fit_i$cov_blocks, layout)
-      if (!is.null(fit_i$H_latent)) {
-        rec$latent <- list(mode = fit_i$mode, H = fit_i$H_latent)
-      }
-    }
-    rec
+  rc <- latent <- NULL
+  if (re_cond) {
+    rc <- .joint_re_cells(fit, re_map)
+    latent <- .re_cov_joint_latent(fit, c(seq_len(p_fix), re_map$cols), modes)
   }
-  rec_logm <- function(r) r$logm %||% -Inf
 
-  # --- cheap-pass screen of the tensor --------------------------------------
-  # The joint and registry doors' rule (`.NL_SCREEN`): each candidate cell is
-  # scored by a `screen_iters`-step inner Newton from the centre cell's mode,
-  # one compiled batch, and a cell scored below `prune_tol` of the grid's mass
-  # is left out without its full solve. A cell whose cheap solve failed is
-  # solved, since nothing bounds it. The share of the grid the left-out cells
-  # may carry is the joint door's bound (`.nl_prune_lifted()`: each lifted by
-  # the worst screening error measured on a solved cell), read over the whole
-  # grid as it stands; past `re_cov_gate_mass` the cells carrying it are
-  # solved, heaviest first (`.nl_prune_repair_take()`). Grid integration with
-  # the joint-field inner solve only: the CCD is a moment rule whose nodes all
-  # carry their design weight, and the AGHQ solve has no mode to start a short
-  # Newton from.
-  screen_on <- prune && identical(integration, "grid") && re_cond
-  gate     <- .nl_screen("re_cov_gate_mass")
-  recs     <- vector("list", ng)
-  solved   <- logical(ng)
-  screened <- logical(ng)
-  cheap    <- rep(NA_real_, ng)      # a screened candidate's cheap log weight
-  screen_repaired <- 0L
-  i_ctr <- which.min(rowSums(z^2))
-  lw_full <- function() vapply(recs, rec_logm, numeric(1)) + node_log_jac
-  screen_bound <- function() .nl_prune_lifted(lw_full(), cheap, screened)
-  solve_idx <- function(idx) {
-    for (i in idx) recs[i] <<- list(solve_node(i, theta_grid[i, ]))
-    solved[idx] <<- TRUE
-  }
-  screen_round <- function(cand) {
-    if (!screen_on || length(cand) < 2L) return(solve_idx(cand))
-    if (!solved[i_ctr]) {
-      solve_idx(i_ctr)
-      cand <- setdiff(cand, i_ctr)
-    }
-    x0 <- recs[[i_ctr]]$mode_raw
-    th <- theta_grid[cand, , drop = FALSE]
-    L_lists <- lapply(seq_len(nrow(th)), function(i)
-      .re_cov_theta_to_L_list(th[i, ], layout))
-    lws <- core$inner_logmarg_batch(L_lists, x_init = x0,
-                                    n_threads_outer = n_threads,
-                                    max_iter_ = screen_iters) +
-      apply(th, 1L, log_prior_theta) + node_log_jac[cand]
-    cheap[cand] <<- lws
-    lf <- lw_full()
-    ref <- .tulpa_logsumexp(c(-Inf, lf[solved & is.finite(lf)],
-                              lws[is.finite(lws)]))
-    keep <- !is.finite(lws) | lws - ref >= log(prune_tol)
-    solve_idx(cand[keep])
-    screened[cand[!keep]] <<- TRUE
-    repeat {
-      pb <- screen_bound()
-      if (!(pb$bound > gate)) break
-      take <- .nl_prune_repair_take(pb, gate)
-      screened[take] <<- FALSE
-      solve_idx(take)
-      screen_repaired <<- screen_repaired + length(take)
-    }
-    invisible(NULL)
-  }
-  screen_round(seq_len(ng))
-
-  # A tensor whose outermost level still carries mass grows past it
-  # (`.nl_tensor_edge_cells()`), one level per side and round, until no end
-  # does. The CCD is a moment rule calibrated against the Gaussian it was laid
-  # on, so it keeps its nodes.
-  extend_rounds <- 0L
-  extend_capped <- FALSE
-  screen_sb <- NULL
-  if (identical(integration, "grid")) {
-    repeat {
-      # A screened cell enters the growth rule at its bound: an end level made
-      # of cells each below the screen's cut can still carry the tail mass that
-      # grows the tensor, and reading them as massless would stop the growth
-      # short of the tail.
-      lw_now <- lw_full()
-      if (any(screened)) lw_now[screened] <- screen_bound()$lift[screened]
-      grown <- .nl_tensor_edge_cells(z, lw_now, tens$h)
-      if (is.null(grown) || !any(grown$solve)) break
-      if (extend_rounds >= .nl_diag("edge_extend_max")) {
-        extend_capped <- TRUE
-        break
-      }
-      extend_rounds <- extend_rounds + 1L
-      # A cell the rule leaves unsolved carries no mass and is left out of the
-      # grid, as a screened cell is.
-      z_new <- grown$z[grown$solve, , drop = FALSE]
-      map_new <- place_nodes(z_new)
-      idx <- ng + seq_len(nrow(z_new))
-      z <- rbind(z, z_new)
-      theta_grid <- rbind(theta_grid, map_new$theta)
-      node_log_jac <- c(node_log_jac, map_new$log_jac)
-      recs <- c(recs, vector("list", length(idx)))
-      solved <- c(solved, logical(length(idx)))
-      screened <- c(screened, logical(length(idx)))
-      cheap <- c(cheap, rep(NA_real_, length(idx)))
-      ng <- nrow(theta_grid)
-      screen_round(idx)
-    }
-    if (extend_capped) {
-      warning("tulpa_re_cov_nested(): the integration tensor still carries ",
-              "posterior mass on its outermost level after ",
-              .nl_diag("edge_extend_max"), " extensions per side; ",
-              "the interval ends of a scale whose tail runs past it are cut. ",
-              "Check the hyperprior.", call. = FALSE)
-    }
-    # A screened cell stayed in the tensor's key set while it grew, so the
-    # growth rule did not lay it again; it leaves the grid now, as a cell the
-    # growth rule leaves unsolved does, after the bound it may carry is read.
-    if (screen_on) screen_sb <- screen_bound()
-    if (any(screened)) {
-      kp <- !screened
-      z <- z[kp, , drop = FALSE]
-      theta_grid <- theta_grid[kp, , drop = FALSE]
-      node_log_jac <- node_log_jac[kp]
-      recs <- recs[kp]
-      ng <- nrow(theta_grid)
-    }
-    tens$z <- z
-    dnode <- rep(1, ng)
-  }
-  screen_rec <- list(
-    applied = screen_on, prune_tol = prune_tol, iters = screen_iters,
-    dropped = sum(screened), repaired = screen_repaired,
-    max_error = if (is.null(screen_sb)) 0 else screen_sb$e_max,
-    bound = if (is.null(screen_sb)) 0 else screen_sb$bound)
-  # Each node's absolute measure in theta. The tensor's is its cell volume: the
-  # whitened spacing to the k-th power, scaled by the whitening map's
-  # determinant. The CCD's is its moment-rule weight calibrated against the
-  # Gaussian it was laid on (`.ccd_log_measure()`). Both are measures in the
-  # placement coordinates; the map to theta multiplies each by its Jacobian.
-  re_cov_log_measure <- node_log_jac + if (identical(integration, "grid")) {
-    .nl_aligned_tensor_log_measure(tens, L_scale)
-  } else .ccd_log_measure(ccd, L_scale)
-
-  logm           <- vapply(recs, rec_logm, numeric(1))
-  laplace_logm   <- logm
-  lp_theta_nodes <- vapply(recs, function(r) r$lp_theta %||% NA_real_, numeric(1))
-  hbeta_unformed <- vapply(recs, function(r) isTRUE(r$unformed), logical(1))
-  Sig_node_list  <- lapply(seq_len(ng), function(i)
-    lapply(.re_cov_theta_to_L_list(theta_grid[i, ], layout), tcrossprod))
+  # The fixed effects: the draws the subspace debias took where it ran, else
+  # the cell mixture of each cell's Gaussian at its centre.
   beta_nodes <- matrix(NA_real_, ng, p_fix)
-  # Single-bracket assignment: `x[[i]] <- NULL` deletes element i, so a node
-  # with no covariance keeps its NULL slot.
   beta_cov_nodes <- vector("list", ng)
-  debias_nodes   <- vector("list", ng)
-  debias_accept  <- rep(NA_real_, ng)
-  re_nodes     <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
-  re_var_nodes <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
-  # Each node's joint Gaussian over [beta | b]: its mode and its observed-
-  # curvature precision, whose Schur complement is the H_beta the fixed-effect
-  # draws are taken under. posterior_predict() draws a row's random effects
-  # from the conditional given its beta at the node the row came from.
-  latent_nodes <- if (re_cond) vector("list", ng) else NULL
-  mean_shift_node <- rep(NA_character_, ng)
-  for (i in seq_len(ng)) {
-    r <- recs[[i]]
-    if (is.null(r$logm)) next
-    beta_nodes[i, ] <- r$beta
-    beta_cov_nodes[i] <- list(r$beta_cov)
-    if (!is.null(r$mean_shift)) mean_shift_node[i] <- r$mean_shift
-    if (!is.null(debias_arg)) {
-      debias_nodes[i]  <- list(r$debias_draws)
-      debias_accept[i] <- r$debias_accept
-    }
-    if (re_cond && !is.null(r$re)) {
-      re_nodes[i, ] <- r$re
-      if (!is.null(r$re_var)) re_var_nodes[i, ] <- r$re_var
-      if (!is.null(r$latent)) latent_nodes[[i]] <- r$latent
-    }
+  for (k in seq_len(ng)) {
+    Hk <- fit$grid_hessians[[k]]
+    if (is.null(Hk)) next
+    beta_nodes[k, ] <- if (re_cond) modes[k, seq_len(p_fix)] else fit$grid_modes[[k]]
+    beta_cov_nodes[k] <- list(tryCatch(.spd_inverse(Hk), error = function(e) NULL))
   }
-  # The latent mode at the node nearest the proposal centre (the centre itself
-  # on a CCD or an odd tensor), where the outer Pareto-k's importance draws
-  # start their inner Newton iterations.
-  i_centre <- which.min(rowSums(z^2))
-  x_centre <- if (re_cond) recs[[i_centre]]$mode_raw else NULL
-  # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
-  # evaluated joint exp(logm); log-sum-exp shift for stability. Every failed /
-  # non-finite node carries logm = -Inf; if all nodes fail, max(logm) = -Inf
-  # would give NaN weights, so guard on the finite set and error loudly instead.
-  lw <- log(dnode) + logm + node_log_jac
-  finite_lw <- lw[is.finite(lw)]
-  if (length(finite_lw) == 0L) {
-    stop("tulpa_re_cov_nested(): every integration node returned a non-finite ",
-         "log-marginal (all inner Laplace solves failed). Check the data, the ",
-         "hyperprior, and the Sigma initialisation.", call. = FALSE)
-  }
-  lw <- lw - max(finite_lw)
-  w  <- exp(lw); w[!is.finite(w)] <- 0
-  w  <- w / sum(w)
-  outer_correction <- NULL
-  exact_applied <- FALSE
-  if (exact_subspace) {
-    outer_correction <- .subspace_outer_correction(w,
-      lapply(recs, `[[`, "debias_importance"),
-      lapply(recs, `[[`, "debias_importance_log_weights"))
-    exact_applied <- outer_correction$applied
-    if (exact_applied) {
-      w <- outer_correction$weights
-      at <- which(w > 0)
-      logm[at] <- logm[at] + outer_correction$log_correction[at]
-    }
-  }
-  .re_cov_report_hbeta(hbeta_unformed, w, "tulpa_re_cov_nested")
-
-  # A weighted node whose latent tail was the wrong width, or whose covariance
-  # blocks did not describe the layout, leaves NA in that row and the mixture
-  # drops it. If that took out every weighted node the per-group posterior is
-  # unreportable, and it says so under the same field the AGHQ path uses -- the
-  # Sigma posterior is unaffected, so the fit still stands.
-  ranef_note <- NULL
-  if (re_cond && !any(is.finite(rowSums(re_nodes)) & w > 0)) {
-    re_nodes <- NULL; re_var_nodes <- NULL
-    ranef_note <- paste0(
-      "no integration node returned a per-group random-effect block of the ",
-      "expected width (", n_re, "), so the per-group posterior could not be ",
-      "marginalized. The Sigma posterior is unaffected.")
-  }
-
-  # --- derived quantities, marginalized over the grid -----------------------
-  # The CCD is a moment rule, so its median and interval come from the moments
-  # it reproduces; the tensor grid's uniform cells discretize the density, so
-  # its cumulative weights are a CDF and the weighted quantile is the summary.
-  # `.nl_node_support()` is the one place that reads a producer name into a
-  # support kind, here and on every grid consumer.
-  #
-  # The tensor's cells are boxes of the whitened coordinate `z` of the placement
-  # Gaussian, so each derived quantity is read across them
-  # (`.nl_within_cell_points()`) as the joint door's free-covariance block is,
-  # rather than at the cell centres. The node density the within-cell read is
-  # shaped by is the density in `z`: the posterior in theta times the Jacobian
-  # of the placement map, and every lattice point goes back to theta through
-  # that map.
-  summ <- if (identical(integration, "grid")) {
-    zc <- z
-    colnames(zc) <- paste0("z", seq_len(ncol(z)))
-    wc <- .nl_within_cell_setup(zc, w, logm + node_log_jac, NULL,
-                                rep("unbounded", ncol(z)),
-                                rep(NA_real_, ncol(z)), NULL, "density")
-    pts <- .nl_within_cell_points(wc, zc, w)
-    th_pts <- place$to_theta(ccd_to_theta(pts$theta, place$center,
-                                          L_scale))$theta
-    Sig_pts <- lapply(seq_len(nrow(th_pts)), function(i)
-      lapply(.re_cov_theta_to_L_list(th_pts[i, ], layout), tcrossprod))
-    .re_cov_derived_summary(Sig_pts, pts$w, layout, support = "sample")
+  joint_draws <- fit$joint_latent_draws
+  exact_applied <- identical(fit$weights_source, "subspace_is") &&
+    is.matrix(joint_draws)
+  # The fast debias moves its selected coordinates by a per-cell Metropolis
+  # sample on the conditional-mean surface (`cell_draws`, offsets from the
+  # cell's mode); the rest of each cell's Gaussian follows them.
+  sdb <- fit$subspace_debias
+  fast <- !exact_applied && is.list(sdb$cell_draws) && length(sdb$idx) > 0L
+  ds <- if (exact_applied) {
+    list(draws = `colnames<-`(fit$draws, beta_names), picks = fit$draw_nodes)
   } else {
-    .re_cov_derived_summary(Sig_node_list, w, layout,
-                            support = .nl_node_support(integration))
+    .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w, n_draws, beta_names,
+                              debias_nodes = if (fast) sdb$cell_draws,
+                              debias_idx = if (fast) sdb$idx)
+
   }
-  posterior <- summ$posterior
-
-  # --- plug-in MAP summary (for comparison) ---------------------------------
-  map <- .re_cov_map_summary(theta_hat, layout)
-
-  # --- fixed-effect posterior from the node mixture -------------------------
-  beta_names <- c(colnames(X) %||% paste0("beta", seq_len(core$p_fix)),
-                  if (core$p_zi > 0L)
-                    colnames(core$X_zi) %||% paste0("zi_", seq_len(core$p_zi)))
-  joint_draws <- NULL
-  if (exact_applied) {
-    modes <- do.call(rbind, lapply(recs, function(r)
-      r$mode_raw %||% rep(NA_real_, p_fix + n_re)))
-    ds <- .subspace_joint_draws(debias_nodes, modes, w, n_draws)
-    joint_draws <- ds$draws
-    ds$draws <- joint_draws[, seq_len(p_fix), drop = FALSE]
-    colnames(ds$draws) <- beta_names
-  } else ds <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
-                                  as.integer(n_draws), beta_names,
-                                  debias_nodes = if (is.null(debias_arg) || exact_subspace) NULL
-                                                 else debias_nodes,
-                                  debias_idx = subspace$idx)
   draws <- ds$draws
-  # Random-effect coordinates the selector pulled into S are moved by the
-  # Metropolis sampler at every node, so their posterior is no longer the
-  # Gaussian mixture ranef() otherwise reports -- it is the sampled one, and
-  # reporting the mixture for them would describe a distribution the fit did not
-  # use. Recombined on the SAME node mixture the fixed effects were synthesized
-  # on, so the two tables marginalize one weighted node set.
-  re_debias_draws <- NULL
-  re_debias_idx   <- NULL
-  if (exact_applied && re_cond) {
-    re_debias_idx <- seq_len(n_re)
-    re_debias_draws <- joint_draws[, p_fix + re_debias_idx, drop = FALSE]
-  } else if (!exact_subspace && !is.null(debias_arg) && !is.null(ds) &&
-             re_cond && !is.null(re_nodes)) {
-    cols <- which(subspace$idx > p_fix & subspace$idx <= p_fix + n_re)
-    if (length(cols)) {
-      pos <- as.integer(subspace$idx[cols]) - p_fix
-      got <- .re_cov_debias_coord_draws(
-        ds$picks, debias_nodes, re_nodes[, pos, drop = FALSE], cols)
-      if (!is.null(got)) { re_debias_draws <- got; re_debias_idx <- pos }
-    }
-  }
-  # Per-draw hyperparameter log-prior (the node's log_prior_theta), aligned
-  # with the draw rows: the input power-scaling needs to reweight the
-  # hyperparameter prior (tulpa_powerscale_sensitivity).
-  hyper_lp_draws <- if (is.null(ds)) NULL else lp_theta_nodes[ds$picks]
   beta_mean <- if (is.null(draws)) {
     ok <- is.finite(rowSums(beta_nodes)) & w > 0
-    if (any(ok)) colSums(w[ok] / sum(w[ok]) * beta_nodes[ok, , drop = FALSE])
-    else rep(NA_real_, p_fix)
+    colSums(w[ok] / sum(w[ok]) * beta_nodes[ok, , drop = FALSE])
   } else (.grid_mixture_moments(draws)$mean %||% colMeans(draws))
   names(beta_mean) <- beta_names
-
-  # --- outer Pareto-k-hat: is the Gaussian grid proposal correctable? --------
-  # Importance-sample the hyperparameter posterior with the same Gaussian
-  # proposal (place$center, L_scale) the grid is placed with, in the
-  # placement coordinates; k-hat gauges whether
-  # the nested integration is trustworthy (< 0.7) or the hyperparameter
-  # posterior is too skewed / heavy-tailed for the grid (>= 0.7). Run after the
-  # draw synthesis and with the RNG state restored, so existing draws are
-  # bit-for-bit unchanged whether or not the diagnostic is requested; the
-  # proposal sample comes from `k_stream`, the stream the fit started on.
-  # Its `k_samples` inner solves are the diagnostic's whole cost, so they go to
-  # the compiled batch in one call per proposal, warm-started at the centre
-  # node's mode and spread over `k_width` threads.
-  # A decline says which one it was rather than a bare NA.
-  pareto_k <- NA_real_; k_is_ess <- NA_real_; k_source <- NA_character_
-  k_first  <- NA_real_; k_tp <- NA_integer_
-  k_declined <- if (!isTRUE(diagnose_k)) .k_decline_label(.k_decline("not_requested"))
-                else .k_decline_label(.k_decline("no_varying_axis",
-                                                 "no free covariance coordinate"))
-  if (isTRUE(diagnose_k) && k > 0L) {
-    log_target_batched <- function(V) {
-      tr <- place$to_theta(V)
-      Th <- tr$theta
-      L_lists <- lapply(seq_len(nrow(Th)), function(i)
-        .re_cov_theta_to_L_list(Th[i, ], layout))
-      core$inner_logmarg_batch(L_lists, x_init = x_centre,
-                               n_threads_outer = k_width) +
-        apply(Th, 1L, log_prior_theta) + tr$log_jac
-    }
-    kd <- .with_preserved_seed({
-      if (!is.null(k_stream)) .make_seed_restore(k_stream)()
-      tryCatch(
-        .nested_outer_pareto_k(
-          log_target_batched, theta_hat = place$center, L_scale = L_scale,
-          n_samples = k_samples, tail_points = k_tail_points),
-        error = function(e) NULL)
-    })
-    if (is.null(kd)) {
-      k_declined <- .k_decline_label(.k_decline("degenerate_proposal",
-                                                "the scorer errored"))
-    } else {
-      pareto_k <- kd$pareto_k; k_is_ess <- kd$is_ess
-      k_source   <- kd$proposal_source %||% NA_character_
-      k_first    <- kd$first_pass_k %||% NA_real_
-      k_tp       <- kd$tail_points %||% NA_integer_
-      k_declined <- .k_reason_of(kd)
+  re_debias_draws <- re_debias_idx <- NULL
+  if (exact_applied && re_cond) {
+    re_debias_draws <- joint_draws[, re_map$cols, drop = FALSE]
+    re_debias_idx <- seq_len(n_re)
+  } else if (fast && re_cond && !is.null(rc) && !is.null(ds)) {
+    cols <- which(sdb$idx > p_fix)
+    pos <- sdb$idx[cols] - p_fix
+    if (length(cols)) {
+      got <- .re_cov_debias_coord_draws(ds$picks, sdb$cell_draws,
+                                        rc$mean[, pos, drop = FALSE], cols)
+      if (!is.null(got)) {
+        o <- order(pos)
+        re_debias_draws <- got[, o, drop = FALSE]
+        re_debias_idx <- pos[o]
+      }
     }
   }
 
-  result <- .finalize_fit(list(
+  Sig_nodes <- lapply(seq_len(ng), function(i)
+    lapply(.re_cov_theta_to_L_list(theta_grid[i, ], layout), tcrossprod))
+
+  .finalize_fit(list(
     inference_mode = "structured",
     inference_tier = 2L,
-    posterior   = posterior,
-    map         = map,
-    Sigma_mean  = summ$Sigma_mean,
+    posterior   = .re_cov_joint_posterior(fit, layout, jb$owner),
+    map         = .re_cov_map_summary(theta_hat, layout),
+    Sigma_mean  = .re_cov_sigma_mean(Sig_nodes, w, layout),
     beta        = beta_mean,
     draws       = draws,
-    joint_latent_draws = joint_draws,
-    re = if (exact_applied) re_debias_draws,
+    joint_latent_draws = if (exact_applied)
+      joint_draws[, c(seq_len(p_fix), re_map$cols), drop = FALSE],
+    re          = if (exact_applied) re_debias_draws,
     draws_theta = if (exact_applied) theta_grid[ds$picks, , drop = FALSE],
-    weights_source = if (exact_applied) "subspace_is" else "laplace_grid",
-    target = if (exact_applied)
-      "finite-grid IS approximation to p(x, theta | y), with true conditional MH within cells"
-      else if (!is.null(debias_arg) && !exact_subspace)
-        "Gaussian-conditioned subspace surface with Gaussian nuisance carry and Laplace outer weights"
-      else "Laplace outer-cell weights with Gaussian latent conditionals",
-    draws_kind = if (exact_applied) "mcmc_mixture" else "iid",
-    hyper_log_prior_draws = hyper_lp_draws,
-    pareto_k    = pareto_k,
-    pareto_k_is_ess = k_is_ess,
-    pareto_k_declined = k_declined,
-    pareto_k_proposal_source = k_source,
-    pareto_k_first_pass = k_first,
-    # The GPD tail the shape was fitted on. A raised or capped tail was
-    # invisible on this path (gcol33/tulpa#692).
-    pareto_k_tail_points = k_tp,
-    pareto_k_scope  = "outer (hyperparameter) Gaussian proposal",
-    # Per-node random-effect posterior: mode and marginal variance of every
-    # (term, group, coefficient), one row per integration node. ranef() mixes
-    # them under `weights`. `ranef_unavailable` is the AGHQ inner marginal's
-    # answer instead -- a stated reason, so the accessor reports why rather than
-    # an empty table indistinguishable from a model with no random effects.
-    re_nodes     = re_nodes,
-    re_var_nodes = re_var_nodes,
-    # The sampled per-group coordinates: one column per
-    # random effect the subspace debias selected, `re_debias_idx` giving its
-    # position within the random-effect block. ranef() reports these rows
-    # empirically and the rest from the Gaussian mixture above, saying per row
-    # which it used. Absent when the selected set contains no random effect.
+    weights_source = fit$weights_source %||% "laplace_grid",
+    target      = fit$target %||%
+      "Laplace outer-cell weights with Gaussian latent conditionals",
+    draws_kind  = if (exact_applied) "mcmc_mixture" else "iid",
+    hyper_log_prior_draws = if (!is.null(ds)) lp_theta[ds$picks],
+    pareto_k    = fit$pareto_k,
+    pareto_k_is_ess = fit$pareto_k_is_ess,
+    pareto_k_declined = fit$pareto_k_declined,
+    pareto_k_proposal_source = fit$pareto_k_proposal_source,
+    pareto_k_first_pass = fit$pareto_k_first_pass,
+    pareto_k_tail_points = fit$pareto_k_tail_points,
+    pareto_k_scope = fit$pareto_k_scope,
+    re_nodes     = rc$mean,
+    re_var_nodes = rc$var,
     re_debias_draws = re_debias_draws,
     re_debias_idx   = re_debias_idx,
-    latent_nodes = latent_nodes,
-    draw_nodes   = if (is.null(ds)) NULL else ds$picks,
-    # Per node: "applied" where the latent Gaussian was centred at the
-    # leading-order mean, else the reason it stayed at the mode. NULL when the
-    # centring was not requested.
-    mean_shift  = if (mean_shift_on) mean_shift_node,
-    ranef_unavailable = if (!re_cond) .AGHQ_RANEF_UNAVAILABLE else ranef_note,
-    means       = beta_mean,
-    param_names = beta_names,
+    latent_nodes = if (re_cond) lapply(seq_len(ng), function(k)
+      list(mode = latent$mode[k, ], H = latent$H[[k]])),
+    draw_nodes   = if (!is.null(ds)) ds$picks,
+    mean_shift   = if (mean_shift_on) .re_cov_joint_mean_shift_record(fit),
+    ranef_unavailable = if (!re_cond) .AGHQ_RANEF_UNAVAILABLE,
+    means        = beta_mean,
+    param_names  = beta_names,
     process_info = list(list(name = "fixed_effects", p = p_fix,
                              coef_names = beta_names)),
     n_samples   = if (is.null(draws)) 0L else nrow(draws),
@@ -2791,53 +1355,18 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     N           = length(y),
     theta_hat   = theta_hat,
     theta_grid  = theta_grid,
-    # The coordinates the nodes were laid in ("log_cholesky", or
-    # "sd_partial_correlation" when a full block is present) and the Gaussian
-    # there: its centre and covariance.
-    placement   = list(coordinate = place$coordinate, center = place$center,
-                       cov = place$post_cov, status = place$status,
-                       evals = place$evals),
-    # Rounds in which the tensor grew past its ends (`.nl_tensor_edge_cells()`);
-    # 0 for a CCD and for a tensor whose ends hold no mass.
-    tensor_extended = extend_rounds,
-    # The cheap-pass screen: cells left out without a full solve, cells it
-    # repaired, the bound on the share of the mass the left-out cells may
-    # carry, and the worst screening error measured on a solved cell (nats).
-    screen      = screen_rec,
     weights     = w,
     log_marginal = logm,
-    # The node log-marginals already carry the hyperparameter log-prior, so the
-    # evidence integrates that prior against the nodes' absolute measure.
-    log_hyperprior = lp_theta_nodes,
-    log_evidence = if (!prior_proper) NA_real_
-                   else .nl_outer_log_evidence(logm, re_cov_log_measure),
-    log_evidence_declined = if (!prior_proper) "improper_hyperprior"
-                            else NA_character_,
+    log_hyperprior = lp_theta,
+    log_evidence = if (prior_proper) fit$log_evidence else NA_real_,
+    log_evidence_declined = if (prior_proper) NA_character_
+                            else "improper_hyperprior",
     n_grid      = ng,
     layout      = layout,
     n_blocks    = length(layout),
     n_coefs     = vapply(layout, `[[`, integer(1), "nc"),
-    # The escalation, recorded rather than implicit: which latent coordinates
-    # were sampled exactly, which band each probed coordinate was read at, and
-    # what the coupling closure added on top.
-    subspace_debias = if (is.null(subspace)) NULL else list(
-      method = sd_cfg$method,
-      idx = subspace$idx, bands = subspace$bands, closure_added = subspace$added,
-      selected_by = subspace$selected_by, band_floor = sd_cfg$band,
-      closure = sd_cfg$closure,
-      n_iter = sd_cfg$n_iter, warmup = sd_cfg$warmup, thin = sd_cfg$thin,
-      accept = debias_accept,
-      within_cell_target = if (exact_subspace) "p(x | theta_k, y)"
-        else "joint density on the Gaussian conditional-mean surface",
-      outer = outer_correction,
-      laplace_log_marginal = if (exact_subspace) laplace_logm,
-      source_rows = if (exact_applied) ds$rows,
-      cell_draws = if (exact_applied) debias_nodes,
-      cell_modes = if (exact_applied) modes,
-      declined = if (exact_subspace) outer_correction$declined)
+    subspace_debias = fit$subspace_debias
   ), backend = "re_cov_nested", n_fixed = p_fix, fixed_names = beta_names,
      data = list(y = y, n_trials = n_trials, model_matrix = X,
-                family = family, offset = offset, phi = phi, phi2 = phi2))
-  if (exact_applied) result <- .subspace_attach_diagnostics(result, outer_correction)
-  result
+                 family = family, offset = offset, phi = phi, phi2 = phi2))
 }

@@ -575,21 +575,28 @@ operate on a **list of covariance blocks**: one block per RE term, each either
 A single-term model is the length-1 case of the same path -- no special-casing.
 
 - **`tulpa_re_cov_nested()`** (`R/nested_laplace_re_cov.R`) -- nested-Laplace
-  integration over the joint `Sigma`. A full block parameterizes `Sigma = L L'`
-  in **log-Cholesky** coords (log-diagonal + strict-lower of `L`, `c(c+1)/2`
-  params, **general `c`**, always PD); a diagonal block uses `c` log-SD coords.
-  Per-block params stack into one integration vector. Nodes are centred at the
-  joint marginal-likelihood mode and rotated by the Cholesky of its posterior
-  covariance, and each derived quantity (`sigma_i`, `rho_ij` for full blocks,
-  `Sigma_ij`) is computed per cell then weighted-quantiled -- the "Marginalize
-  Derived Quantities" rule (Bias-2). Inner solve is `tulpa_laplace()` (which is
-  already multi-RE, correlated-or-diagonal) at the supplied covariances; outer
-  is the `nested_laplace` + CCD recipe. Node layout defaults to CCD (`ccd_grid()`
-  + corrected `ccd_weights()`, polynomial in total `k`); tensor product opt-in
-  via `integration = "grid"`. Default `log_prior_theta` is the weakly-informative
-  PC + LKJ hyperprior built **per block** by `re_cov_pc_lkj_prior()` (LKJ only on
-  full blocks; `correlated = FALSE` gives the diagonal log-SD prior) and summed
-  over blocks, with the exact change-of-variables Jacobian.
+  integration over the joint `Sigma`, as a ONE-ARM FIT ON THE JOINT DOOR
+  (gcol33/tulpa#1269). `.re_cov_joint_blocks()` maps the layout: a full block
+  is one `miid` block, `Sigma = L L'` on its **log-Cholesky** axes
+  (log-diagonal + strict-lower of `L`, `c(c+1)/2` params, **general `c`**,
+  always PD); every coefficient of a diagonal block, and a scalar block, is a
+  one-field `miid` block on its log SD. Each carries its layout block's PC + LKJ
+  density (`re_cov_pc_lkj_prior()`, exact change-of-variables Jacobian) as its
+  `logchol_prior`. The joint door places, screens, refines and solves the grid
+  (weights, `phi2`, zero inflation and `n_quad` ride the arm); the result maps
+  the cells back onto the layout: `theta_grid` in the stacked coordinates, the
+  posterior table from the joint fit's within-cell `hyper_derived`, per-cell
+  `latent_nodes` / `re_nodes` read off the stored precisions in
+  `[beta | b]` order, fixed-effect draws from each cell's Gaussian at its
+  skew-corrected centre. A custom stacked `log_prior_theta` is accepted only
+  when the model has one outer block; over several it couples separate joint
+  blocks and is refused. `theta_hat` / `map` are EB's mode
+  (`.eb_theta_fit()`, `R/eb.R`, the objective builder `tulpa_eb()` owns). On
+  the 4-axis `(1 + x | g) + (1 | h)` fixture (seed 21) a dense reference
+  (3.7M cells in log SDs / atanh rho) reads the slope SD 0.192 [0.0089, 0.596]
+  and evidence -308.944; the joint fold reads 0.189 [0.0094, 0.619] and
+  -308.983, the old Hessian-placed 25-node CCD read 0.237 [0.080, 0.703] and
+  -309.323 (`test-re-cov-design.R`).
 - **`tulpa_re_cov_gibbs()`** (`R/re_cov_gibbs.R`) -- the exact debias (Bias-1):
   Metropolis-within-Gibbs (MH on per-(term,group) `b`/`beta` with Laplace-shaped
   proposals, cross-term eta bookkeeping). `Sigma_m | b_m` is an **exact conjugate

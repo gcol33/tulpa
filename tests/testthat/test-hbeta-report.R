@@ -42,30 +42,3 @@ test_that("an unformed H_beta is a classed per-cell condition", {
   expect_true(is.finite(f$log_marginal))
   expect_null(f$H_beta)
 })
-
-test_that("the integration nodes' unformed H_beta are reported once per fit", {
-  w <- c(0.5, 0.2, 0.3)
-  expect_silent(tulpa:::.re_cov_report_hbeta(c(FALSE, FALSE, FALSE), w, "f"))
-  expect_warning(tulpa:::.re_cov_report_hbeta(c(TRUE, FALSE, TRUE), w, "f"),
-                 "at 2 of 3 integration nodes.*held 0.8 of the posterior")
-
-  skip_on_cran()
-  d <- .hb_data()
-  local_mocked_bindings(.laplace_marginal_H_fixed = function(...) NULL,
-                        .package = "tulpa")
-  msgs <- character(0)
-  withCallingHandlers(
-    tulpa_re_cov_nested(d$y, rep(1L, 120), d$X,
-                        re_terms = list(list(idx = d$g, n_groups = 20L, n_coefs = 2L,
-                                             Z = cbind(1, d$x),
-                                             correlated = TRUE)),
-                        family = "binomial",
-                        control = list(integration = "ccd", diagnose_k = FALSE)),
-    warning = function(w) {
-      msgs <<- c(msgs, conditionMessage(w))
-      invokeRestart("muffleWarning")
-    })
-  hb <- grep("marginal fixed-effect precision", msgs, value = TRUE)
-  expect_length(hb, 1L)
-  expect_match(hb, "integration nodes")
-})

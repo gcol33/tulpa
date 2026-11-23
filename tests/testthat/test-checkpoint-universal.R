@@ -114,7 +114,7 @@ test_that("a resumed cell reports the predictive variance, not the buffer's 0", 
 
 # --- RE-covariance nested CCD -----------------------------------------------
 
-test_that("RE-cov nested CCD checkpoint == un-checkpointed + resumes", {
+test_that("RE-cov nested checkpoint == un-checkpointed + resumes", {
   set.seed(1L)
   G <- 40L; npg <- 10L; N <- G * npg
   grp <- rep(seq_len(G), each = npg); x <- rnorm(N)
@@ -126,7 +126,8 @@ test_that("RE-cov nested CCD checkpoint == un-checkpointed + resumes", {
   re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = Z)
   fit <- function(ck = NULL)
     tulpa_re_cov_nested(y, rep(1L, N), X, re_term, family = "binomial",
-                        control = list(diagnose_k = FALSE, checkpoint = ck))
+                        control = list(diagnose_k = FALSE, checkpoint = ck,
+                                       prune = FALSE))
   path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
 
   f0 <- fit()

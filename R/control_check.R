@@ -233,11 +233,7 @@ tulpa_check_control <- function(control, allowed, where) {
     hyper_grid = c("adaptive_grid", "adaptive_grid_edge_thresh",
                    "adaptive_grid_max_passes", "var_of_means_consistency",
                    "var_of_means_min_ess", progress),
-    re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
-                      "max_iter", "tol", "n_threads", "diagnose_k",
-                      "k_samples", "k_threads", "k_tail_points", "checkpoint",
-                      "outer_maxit", "subspace_debias", "skew_correct",
-                      "prune", "prune_tol", "prune_log_gap", "screen_iters"),
+    re_cov_nested = c("n_draws", "seed", "outer_maxit"),
     re_cov_gibbs = c("n_iter", "warmup", "thin", "seed", "max_iter", "tol",
                      "n_threads"),
     # EB stops at the maximizer, so beyond the inner-solve knobs and the outer
@@ -318,6 +314,13 @@ tulpa_check_control <- function(control, allowed, where) {
                               "sigma_re_scale", "prior_sigma_scale")
   # fit_spde()'s nested path is the joint door, which reads its control whole.
   keys$spde <- keys$nested_laplace_joint
+  # tulpa_re_cov_nested() is a one-arm fit on the joint door: it reads the joint
+  # door's control except `n_quad` (its signature argument) and the retention
+  # switches its own read of the cells depends on.
+  keys$re_cov_nested <- union(
+    keys$re_cov_nested,
+    setdiff(keys$nested_laplace_joint,
+            c("n_quad", "store_Q", "keep_grid_hessians", "hessian")))
   keys <- lapply(keys, function(x) union(x, "device"))
   keys$tulpa <- sort(unique(setdiff(c(
     keys$nested_laplace, keys$nested_laplace_joint, keys$spde,

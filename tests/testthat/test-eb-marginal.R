@@ -114,12 +114,12 @@ test_that("H_theta matches an independently differenced Hessian", {
   # scale anchor (gcol33/tulpa#730), and core must target the same objective
   # for H_theta to match: log_prior_theta = NULL with prior_sigma and eta NULL
   # resolves to that same PC + LKJ prior.
-  core <- .re_cov_theta_fit(
+  core <- .eb_theta_fit(
     y = d$y, n_trials = NULL, X = d$X, re_terms = list(d$re),
     family = "poisson", phi = 1.0, prior_sigma = NULL, eta = NULL,
     log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
     max_iter = 100L, tol = 1e-8, n_threads = 1L,
-    caller = "test", need_scale = FALSE, outer_maxit = 500L, offset = NULL)
+    caller = "test", outer_maxit = 500L, offset = NULL)
 
   # optimHess differences the objective with its own scheme and step, so
   # agreement is evidence about the quantity, not about the stencil reproducing
@@ -135,12 +135,12 @@ test_that("H_theta matches an independently differenced Hessian", {
 test_that("J matches a direct central difference of the inner mode", {
   skip_on_cran()
   d <- .em_sim(1L)
-  core <- .re_cov_theta_fit(
+  core <- .eb_theta_fit(
     y = d$y, n_trials = NULL, X = d$X, re_terms = list(d$re),
     family = "poisson", phi = 1.0, prior_sigma = NULL, eta = NULL,
     log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
     max_iter = 100L, tol = 1e-8, n_threads = 1L,
-    caller = "test", need_scale = FALSE, outer_maxit = 500L, offset = NULL)
+    caller = "test", outer_maxit = 500L, offset = NULL)
   f1 <- tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = TRUE)
   skip_if(is.null(f1$cov_marginal), "correction did not form on this seed")
 
@@ -318,12 +318,12 @@ test_that("the three routes agree on H_theta with an estimated dispersion", {
   # This is the estimated-dispersion analogue of the RE-only route-equivalence
   # the closed Hessian was validated against.
   d <- .em_sim_nb(7L)
-  core <- .re_cov_theta_fit(
+  core <- .eb_theta_fit(
     y = d$y, n_trials = NULL, X = d$X, re_terms = list(d$re),
     family = "neg_binomial_2", phi = 1.5, prior_sigma = c(3, 0.05), eta = 2,
     log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
     max_iter = 100L, tol = 1e-10, n_threads = 1L, caller = "test",
-    need_scale = FALSE, outer_maxit = 500L, offset = NULL, estimate_phi = TRUE)
+    outer_maxit = 500L, offset = NULL, estimate_phi = TRUE)
 
   chi <- core$theta_hat_full
   k1  <- length(chi)

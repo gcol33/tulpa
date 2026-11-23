@@ -26,8 +26,9 @@ tulpa_re_cov_nested(
 )
 }
 \arguments{
-\item{y, n_trials, X, family, phi}{Passed to \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the inner
-solve. \code{n_trials = NULL} defaults to 1 (binary / single-trial).}
+\item{y, n_trials, X, family, phi}{The response, trials, fixed-effect design,
+family and dispersion of the one arm. \code{n_trials = NULL} defaults to 1
+(binary / single-trial).}
 
 \item{re_terms}{Either a single random-effect term or a list of them. Each
 term is a list with \code{idx} (1-based group index per observation),
@@ -38,13 +39,11 @@ defaults to \code{TRUE}). An optional \code{label} / \code{group_var} names the 
 the output. Any \code{L} / \code{cov} / \code{sigma} field is ignored -- \code{Sigma} is what
 this function integrates over.}
 
-\item{phi2}{Optional second dispersion, threaded into every inner
-\code{\link[=tulpa_laplace]{tulpa_laplace()}} solve: the Student-t degrees of freedom (\code{family = "t"},
-default 4 when \code{NULL}) or the Tweedie variance power (\code{family = "tweedie"},
-required -- a defaulted power would be a statistical decision the caller
-never made). A \code{phi2} supplied for any other family errors rather than being
-ignored. It is conditioned on: the integration is over the random-effect
-covariances, not over \code{phi2}.}
+\item{phi2}{Optional second dispersion: the Student-t degrees of freedom
+(\code{family = "t"}, default 4 when \code{NULL}) or the Tweedie variance power
+(\code{family = "tweedie"}, required). A \code{phi2} supplied for any other family
+errors rather than being ignored. It is conditioned on: the integration is
+over the random-effect covariances, not over \code{phi2}.}
 
 \item{prior_sigma, eta}{Hyperparameters of the PC + LKJ prior used when
 \code{hyperprior = "proper"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}):
@@ -52,51 +51,40 @@ covariances, not over \code{phi2}.}
 default, is \code{c(3, 0.01)}) and LKJ shape \code{eta} (\code{NULL} is 2). Ignored when
 \code{hyperprior = "flat"} or \code{log_prior_theta} is supplied.}
 
-\item{hyperprior}{\code{"proper"} (default) or \code{"flat"}. \code{"proper"} builds the
-PC + LKJ prior from \code{prior_sigma} / \code{eta}, the proper prior every other
-scale axis of the engine carries by default. \code{"flat"} integrates with
-\code{log_prior_theta} the zero function (flat in log(theta)); that prior is
-improper, so the fit then reports no evidence. Ignored when
-\code{log_prior_theta} is supplied.}
+\item{hyperprior}{\code{"proper"} (default) or \code{"flat"}, see Details. Ignored
+when \code{log_prior_theta} is supplied.}
 
 \item{log_prior_theta}{Optional \verb{function(theta)} returning a scalar log
-prior density on the full stacked parameter vector, overriding
-\code{hyperprior} entirely. Default \code{NULL}, which defers to \code{hyperprior}.}
+prior density on the coordinates of a model with one outer block,
+overriding \code{hyperprior}. Default \code{NULL}, which defers to \code{hyperprior}.}
 
-\item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
-every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}).
-\code{NULL} (default) takes the engine default \code{N(0, 2.5^2)}.}
+\item{beta_prior}{Optional Gaussian prior on the fixed effects
+(\code{list(mean, sd)}). \code{NULL} (default) takes the engine default
+\code{N(0, 2.5^2)}.}
 
 \item{offset}{Optional observation-level offset on the linear predictor
-(length \code{length(y)}), e.g. \code{log(exposure)} for a rate model. Not supported
-with \code{n_quad > 1}, which errors rather than dropping it.}
+(length \code{length(y)}), e.g. \code{log(exposure)} for a rate model.}
 
 \item{weights}{Optional non-negative observation weights (length
-\code{length(y)}), each scaling its row's log-likelihood in every inner
-\code{\link[=tulpa_laplace]{tulpa_laplace()}} solve, so the covariance is integrated under the
-weighted likelihood. Not supported with \code{n_quad > 1}, which errors rather
-than dropping them.}
+\code{length(y)}), each scaling its row's log-likelihood, so the covariance is
+integrated under the weighted likelihood.}
 
-\item{n_quad}{Quadrature order for the inner marginal. \code{1} (default) uses the
-joint-field Laplace inner solve (\code{\link[=tulpa_laplace]{tulpa_laplace()}}). \verb{> 1} refines the inner
-marginal with \code{n_quad}-point adaptive Gauss-Hermite quadrature (the
-\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} debias applied inside the \code{Sigma} integration), reducing
-the small-cluster variance attenuation for binary / low-count data. AGHQ
-requires a single shared grouping factor (the per-group integral must
-factorize); with crossed RE terms \code{n_quad > 1} errors. When AGHQ is used the
-fixed effects are integrated, so the reported fixed-effect posterior is the
-marginal (ML-II) one rather than the joint-mode (PQL) estimate.}
+\item{n_quad}{Quadrature order for the inner marginal. \code{1} (default) is the
+Laplace approximation at the joint mode. \verb{> 1} integrates each group's
+random effects by \code{n_quad}-point adaptive Gauss-Hermite quadrature (the
+inner marginal of \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}) and the fixed effects by a Laplace
+step over the result, reducing the small-cluster variance attenuation for
+binary / low-count data. It needs a single shared grouping factor; with
+crossed RE terms it errors. The groups are integrated out, so such a fit
+reports \code{ranef_unavailable} in place of per-group effects.}
 
 \item{X_zi}{Optional zero-inflation design matrix (\code{length(y)} rows), making
 the model a two-process mixture: each observation is a structural zero with
 probability \verb{plogis(X_zi beta_zi)} and otherwise follows \code{family}. Paired
 with a zero-truncated family it is the hurdle model. The random effects
-enter the count predictor only, and the integration runs over the same
-covariance coordinates -- the mixture changes the inner solve, not the
-parameters being integrated over. The ZI coefficients are reported
-alongside the count ones in \code{coef()} / \code{vcov()}, so the fixed block is
-\code{ncol(X) + ncol(X_zi)} wide. Needs \code{n_quad = 1}: the adaptive
-Gauss-Hermite inner marginal runs through a single-predictor oracle.}
+enter the count predictor only. The ZI coefficients are reported alongside
+the count ones in \code{coef()} / \code{vcov()}, so the fixed block is
+\code{ncol(X) + ncol(X_zi)} wide.}
 
 \item{zi_prior_sd}{Prior SD on \code{beta_zi}, keeping the logit identified where
 a level carries no zeros (the likelihood alone would send it to \code{-Inf}).
@@ -105,101 +93,26 @@ Ignored when \code{X_zi} is \code{NULL}.}
 \item{control}{A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above). Recognized entries:
 \itemize{
-\item \code{integration}: node layout, \code{"auto"} (the default: the tensor
-grid for one to three covariance parameters, the CCD above), \code{"grid"}
-(full tensor product) or \code{"ccd"} (central-composite design).
-\item \code{n_per_axis}: points per parameter axis in the tensor grid
-(default 61 for one parameter, 21 for two, 9 for three, 5 above);
-grid only.
-\item \code{span}: half-width of the tensor grid in posterior standard
-deviations per whitened axis (default 8 for one parameter, 6 for two,
-4.5 for three, 3 above); grid only. Where the outermost level of an
-axis still carries more than 0.1\\% of its marginal, the tensor gains
-a level past it, laid in the rows of the other axes that hold that
-level's mass, until no end does: the left tail of a log-scale
-posterior runs past the span of the Gaussian at the mode.
-\item \code{prune} (\code{TRUE}), \code{prune_tol} (\code{1e-4}), \code{prune_log_gap},
-\code{screen_iters} (\code{2}): cheap-pass screening of the tensor grid. Each
-cell is first scored by a \code{screen_iters}-step inner Newton started
-from the centre cell's mode, and a cell scored below \code{prune_tol} of
-the grid's mass (or more than \code{prune_log_gap} nats under it) is left
-out without its full solve. The mass the screened cells may carry is
-bounded by lifting each by the worst screening error measured on a
-solved cell; above 0.01\\% of the grid's mass the cells carrying
-the bound are solved. Each
-round of the tensor's growth past its ends is screened against the
-grid it joins. \code{screen} reports the cells left out, the cells
-repaired, the bound and the screening error. Grid integration with
-the joint-field inner solve (\code{n_quad = 1}) only; \code{prune = FALSE}
-solves every cell.
+\item Every control of \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} except \code{n_quad}
+(an argument here) and its retention switches (\code{store_Q},
+\code{keep_grid_hessians}, \code{hessian}), passed to the joint door:
+\code{integration}, the screen (\code{prune}, \code{prune_tol}, ...), the
+refinement passes, \code{diagnose_k} / \code{k_samples}, \code{skew_correct},
+\code{subspace_debias}, \code{checkpoint}, \code{max_iter}, \code{tol}, \code{n_threads}, ...
+\code{skew_correct} (\code{TRUE}) centres each
+cell's joint Gaussian over the fixed and random effects at the
+leading-order posterior mean, \verb{mode + Sigma A' (l''' * s) / 2} (Rue,
+Martino & Chopin 2009, Sec 3.2.3), instead of at the mode; the fixed
+effects, \code{\link[=ranef]{ranef()}}, \code{\link[=posterior_predict]{posterior_predict()}} and the WAIC / LOO criteria
+read the cell centres. Which cells were centred is recorded in
+\code{mean_shift}. \code{checkpoint = list(path =, resume =)} caches each solved
+cell so a killed run resumes.
 \item \code{n_draws}: posterior draws of the fixed effects synthesized from the
-node mixture (default 2000), exposed as \code{draws} for the generic
-\code{tulpa_fit} methods. The \code{Sigma} posterior is summarized directly from
-the integration nodes in \code{posterior}, independent of \code{n_draws}.
-\item \code{seed}: optional integer seed for the fixed-effect draw synthesis.
-\item \code{diagnose_k}: if \code{TRUE} (default), compute the outer Pareto k-hat
-accuracy diagnostic for the Gaussian proposal over the hyperparameters,
-returned as \code{pareto_k}. Several proposal candidates are scored and the
-best is kept: \code{pareto_k_proposal_source} names which one produced the
-reported number and \code{pareto_k_first_pass} is the k-hat of the proposal
-exactly as the mode-find placed it, before refinement. A large gap
-between the two says the placement is poor even where the verdict is
-fine -- on a small-group binary fit the first pass runs 15 to 49 where
-the reported k-hat is 0.3 to 0.8.
-\item \code{k_samples}: importance draws for the \code{diagnose_k} estimate
-(default 500). It is a precision knob: the GPD tail size is held at
-the fraction that default budget implies, so raising it supplies more
-tail ratios for the SAME estimand rather than moving the fit to a
-deeper quantile of the weight distribution (gcol33/tulpa#631).
-Each draw is one inner Laplace solve, so this sets the diagnostic's
-cost; the draws are solved in one compiled batch, each started from
-the mode at the proposal centre.
-\item \code{k_threads}: thread width for those draws (\code{NULL}, the default,
-follows \code{n_threads}; \code{"auto"} takes the physical performance cores; an
-integer sets it, \code{1L} forcing serial). Each draw is solved
-single-threaded and from the same start, so the k-hat does not depend
-on the width.
-\item \code{k_tail_points}: expert override for that tail size, in upper-tail
-order statistics. Silently capped at 20\% of the draws, beyond which
-body ratios enter the tail and bias the shape.
-\item \code{max_iter}, \code{tol}, \code{n_threads}: inner-solve controls (see
-\code{\link[=tulpa_laplace]{tulpa_laplace()}}).
-\item \code{outer_maxit}: iteration budget for the mode-finding step that
-centres the integration grid, in rounds of the outer mode-find
-(default 500). Exhausting the budget warns, since the nodes are then
-centred on wherever the search stopped.
-\item \code{checkpoint}: node checkpoint/resume spec \code{list(path = , resume = )}.
-Each completed CCD / grid node (one inner Laplace solve) is cached to
-\code{path}; a \code{resume = TRUE} run loads the finished nodes and re-solves
-only the rest. \code{resume = FALSE} starts fresh. A file written for
-different data, layout, or grid is rejected (fingerprint mismatch).
-Default \code{NULL} (off).
-\item \code{skew_correct}: \code{TRUE} (default) centres each integration node's
-joint Gaussian over the fixed and random effects at the leading-order
-posterior mean, \verb{mode + Sigma A' (l''' * s) / 2} (the simplified-Laplace
-location term of Rue, Martino & Chopin 2009, Sec 3.2.3), instead of at
-the mode. A log-link count or a logit with few observations per group
-has a skewed latent conditional whose mean sits off its mode, and the
-fixed effects, \code{\link[=ranef]{ranef()}}, \code{\link[=posterior_predict]{posterior_predict()}} and the WAIC / LOO
-criteria all read the node centres. \code{FALSE} keeps the mode. Off at
-\code{n_quad > 1} and whenever the subspace debias runs. Which nodes were
-centred is recorded in \code{mean_shift} on the returned fit.
-\item \code{subspace_debias}: latent Metropolis correction, \code{FALSE} by
-default. \code{TRUE} takes the defaults; a list accepts \code{method} (\code{"fast"}
-or \code{"exact"}), \code{band} (default \code{"ok"}), \code{idx}, \code{probe}, \code{closure},
-\code{closure_max}, \code{n_iter}, \code{warmup}, \code{thin}, and \code{n_draws}.
-Fast correction samples the joint density on the selected Gaussian
-conditional-mean surface, carries Gaussian nuisance conditionals, and
-keeps the Laplace cell weights. Exact correction uses full-latent
-true-density MH, including the Gaussian nuisance proposal density in
-the ratio, and corrects each cell's integral with the shared unbiased
-t importance estimator. Independent pilots calibrate the particle
-count; the existing PSIS k gate decides whether the correction applies.
-The finite outer design and importance estimates keep the result
-Tier 2. Applied exact correction returns paired fixed-effect, random-
-effect and covariance-node draws, with retained source chains and IS
-diagnostics in \code{subspace_debias}. Fast empty selections preserve the
-plain fit; exact empty selections use full Gaussian independence MH.
+cell mixture (default 2000), exposed as \code{draws} for the generic
+\code{tulpa_fit} methods.
+\item \code{seed}: optional integer seed for the draw synthesis.
+\item \code{outer_maxit}: round budget of the mode-find behind \code{theta_hat}
+(default 500). Exhausting it warns.
 }}
 }
 \value{
@@ -210,45 +123,35 @@ A list with:
 \code{Sigma_ij} for a single block, prefixed by the block label
 (\code{g.sigma_1}, ...) when there are several blocks. Diagonal blocks report
 no \code{rho}.
-\item \code{map}: the plug-in-mode summary at \code{theta_hat} (a single \code{list(Sigma, sigma, rho)} for one block, or a named list of them).
+\item \code{map}: the plug-in summary at \code{theta_hat} (a single \code{list(Sigma, sigma, rho)} for one block, or a named list of them).
 \item \code{Sigma_mean}: the weighted posterior mean of \code{Sigma} (a matrix for one
 block, or a named list of matrices).
 \item \code{beta}, \code{draws}, \code{means}, \code{param_names}, \code{process_info}: the fixed-effect
-posterior from the node mixture (drives \code{coef}/\code{confint}/\code{vcov}/\code{summary}).
+posterior from the cell mixture (drives \code{coef}/\code{confint}/\code{vcov}/\code{summary}).
 \item \code{re_nodes}, \code{re_var_nodes}: the per-group random-effect posterior at each
-integration node -- conditional mean and marginal variance of every
-(block, group, coefficient), one row per node. \code{\link[=ranef]{ranef()}} reports the
-\code{weights}-mixture of them. \code{NULL} at \code{n_quad > 1}, whose inner marginal
-integrates each group out instead of conditioning on it; that fit carries
-\code{ranef_unavailable} (the reason) in their place.
+cell -- mean and marginal variance of every (block, group, coefficient),
+one row per cell. \code{\link[=ranef]{ranef()}} reports the \code{weights}-mixture of them. \code{NULL}
+at \code{n_quad > 1}, whose fit carries \code{ranef_unavailable} (the reason)
+instead.
 \item \code{re_debias_draws}, \code{re_debias_idx}: present when the subspace debias
-selected a random-effect coordinate. The sampled draws of those
-coordinates on the node mixture the fixed-effect draws use, and their
-positions within the random-effect block. \code{\link[=ranef]{ranef()}} reports those rows
-empirically and the rest from the Gaussian mixture, recording which in
-its \code{source} column.
-\item \code{latent_nodes}, \code{draw_nodes}: each integration node's joint Gaussian
-over the fixed and random effects (\code{mode}, observed-curvature precision
-\code{H}), and the node each row of \code{draws} was taken from.
-\code{\link[=posterior_predict]{posterior_predict()}} and the WAIC / LOO criteria draw each row's random
-effects from that node's conditional given the row's fixed effects.
-\code{NULL} at \code{n_quad > 1}.
-\item \code{mean_shift}: per node, \code{"applied"} where \code{control$skew_correct}
-centred the node at the leading-order mean, otherwise the reason it
-stayed at the mode. \code{NULL} when the centring was not requested.
-\item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
-\code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
-\item \code{placement}: the coordinates the nodes were laid in (\code{coordinate},
-\code{"log_cholesky"} or \code{"sd_partial_correlation"}) and the Gaussian there
-(\code{center}, \code{cov}). In the marginal-SD / partial-correlation coordinates
-it also carries the mode-find's \code{status} (\code{"ok"}, \code{"not_converged"},
-\code{"boundary"}, or \code{"no_usable_curvature"} when the nodes fell back to a
-diagonal scale at the start) and its inner solves (\code{evals}).
-\item \code{tensor_extended}: the rounds in which the tensor grew past its ends.
+sampled a random-effect coordinate: its draws on the cell mixture the
+fixed-effect draws use, and its position within the random-effect block.
+\code{\link[=ranef]{ranef()}} reports those rows empirically and the rest from the Gaussian
+mixture.
+\item \code{latent_nodes}, \code{draw_nodes}: each cell's joint Gaussian over the fixed
+and random effects (\code{mode}, precision \code{H}), and the cell each row of
+\code{draws} was taken from. \code{\link[=posterior_predict]{posterior_predict()}} and the WAIC / LOO criteria
+draw each row's random effects from that cell's conditional given the
+row's fixed effects. \code{NULL} at \code{n_quad > 1}.
+\item \code{mean_shift}: per cell, \code{"applied"} where \code{control$skew_correct} centred
+the cell at the leading-order mean, otherwise the reason it stayed at the
+mode. \code{NULL} when the centring was off.
+\item \code{theta_hat}, \code{theta_grid} (the cells in the stacked coordinates),
+\code{weights}, \code{log_marginal} (log marginal plus log prior per cell),
+\code{log_hyperprior}, \code{log_evidence}, \code{n_grid}, \code{layout}, \code{n_blocks},
+\code{n_coefs} (vector of per-block \code{c}), and the outer Pareto k-hat fields of
+the joint fit (\code{pareto_k}, ...).
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
-\code{idx} are the corrected latent coordinates, \code{bands} the per-probed-index
-reliability table they were read from, \code{closure_added} what the coupling
-closure added, and \code{accept} the per-node Metropolis acceptance rate.
 }
 }
 \description{
@@ -257,83 +160,48 @@ several terms together), integrate the Laplace marginal likelihood over the
 random-effect covariances \code{Sigma} instead of fixing them at point estimates.
 Reports weighted posterior summaries (mean, SD, median, 2.5\\%/97.5\\%) of every
 \code{Sigma} and its derived scale (\code{sigma_i}) and correlation (\code{rho_ij})
-parameters, marginalizing the joint posterior over a \code{Sigma}-grid.
+parameters, marginalizing the joint posterior over an outer grid.
 
 This corrects the plug-in-MAP ("summary") bias: the mode of a skewed
 variance-component marginal is biased low relative to its median, so the
 headline summary should be the marginalized median, not the mode.
 }
 \details{
-Each term is one covariance \strong{block}. A correlated block (\code{(1 + x | g)}) is
-a full \verb{Sigma = L L'} parameterized by its lower Cholesky factor in
-log-Cholesky coordinates (the log-diagonal and the strictly-lower entries of
-\code{L}, \code{c(c+1)/2} values for a \code{c}-coefficient block), which keeps \code{Sigma}
-positive definite for every coordinate. An uncorrelated block
-(\code{(1 + x || g)}) is a diagonal \code{Sigma} parameterized by its \code{c} log standard
-deviations. A scalar \code{(1 | g)} term is the degenerate \code{c = 1} block. Several
-blocks stack their parameters into one integration vector; a single-term
-model is the length-1 case.
+The fit is a one-arm fit on the joint nested-Laplace door
+(\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}): the response is the arm and each covariance
+block is latent blocks of it. A correlated block (\code{(1 + x | g)}) is one
+\code{miid} block, a full \verb{Sigma = L L'} whose outer axes are the log-Cholesky
+coordinates of its lower Cholesky factor (the log-diagonal and the
+strictly-lower entries of \code{L}, \code{c(c+1)/2} values for a \code{c}-coefficient
+block), which keep \code{Sigma} positive definite for every coordinate. Each
+coefficient of an uncorrelated block (\code{(1 + x || g)}), and a scalar
+\code{(1 | g)} term, is a one-field \code{miid} block whose one axis is its log
+standard deviation. The joint door lays the outer grid at the posterior,
+screens and refines it, and solves the inner Laplace approximation at every
+cell; its settings reach it through \code{control}.
 
-Integration nodes live in the whitened stacked-parameter space, centred at
-the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
-mode's posterior covariance (\code{solve(Hessian)}), so points track the posterior
-ridge. When a correlated block is present the nodes are laid in a second set
-of coordinates for that block, the log marginal SDs and the \code{atanh} of the
-canonical partial correlations, from a mode-find and a curvature read there,
-and mapped back to the log-Cholesky coordinates with the Jacobian of the map
-in each node's weight. In log-Cholesky coordinates a slope SD the data hold
-weakly makes a funnel: the joint mode runs to \verb{log L_22} near \code{-10}, where
-the curvature along it is close to zero, and a Gaussian laid there spans
-hundreds of units on that axis and a few thousandths on \code{L_21}, away from
-the posterior mass. In the marginal-SD coordinates the mode is interior.
-\code{theta_hat} stays the log-Cholesky mode, the estimate \code{\link[=tulpa_eb]{tulpa_eb()}} reports.
-Two node layouts are available via \code{integration}:
-\itemize{
-\item \code{"ccd"} (default above three parameters): a central-composite design (\code{\link[=ccd_grid]{ccd_grid()}}) of
-\verb{1 + 2k + 2^(k-q)} points for the total \code{k = sum_blocks} parameters, with
-the corrected R-INLA design weights (\code{\link[=ccd_weights]{ccd_weights()}}). Scales polynomially
-in \code{k}, where the tensor grid is exponential.
-\item \code{"grid"} (default for one to three parameters): the full
-\code{n_per_axis^k} tensor product with uniform cell weights -- denser and
-more robust to a non-Gaussian whitened posterior, but only tractable for
-small \code{k}. A scale's posterior on its log coordinate reaches several
-standard deviations of the mode's Gaussian into its left tail, which a
-three-, nine- or fifteen-node CCD does not place a node in.
-}
-Each node \code{k} contributes integration weight proportional to
-\code{Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}, following
-the INLA convention \verb{int ~ sum_k Delta_k pi(theta_k)}.
+Each cell carries weight proportional to its measure times
+\code{exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}. The reported median
+and 2.5\\%/97.5\\% interval of each derived quantity are read across the
+cells of the grid (the joint door's within-cell read); the \code{mean} and \code{sd}
+columns are the weighted moments.
 
-The two layouts also decide how the reported median and 2.5\\%/97.5\\% interval
-of each derived quantity are read off the nodes. A tensor grid's uniform
-cells discretize the posterior density, so the cumulative node weights are a
-CDF and the summary is the weighted quantile. A CCD is a moment rule: its
-nodes sit where they reproduce the integrand's first two moments and carry no
-probability mass of their own, so the summary is moment-matched instead --
-the first two weighted moments on each quantity's own coordinate (\code{log} for a
-scale or a variance, \code{atanh} for a correlation, the identity for a covariance)
-define a Gaussian there whose quantiles are mapped back. Scale intervals are
-therefore positive and asymmetric, and correlation intervals stay inside
-\verb{(-1, 1)}. The \code{mean} and \code{sd} columns are the weighted moments under either
-layout.
-
-By default (\code{hyperprior = "proper"}) \code{log_prior_theta} is the
-weakly-informative PC + LKJ hyperprior, built per block by
-\code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} and summed over blocks (PC prior on each marginal SD
-via \code{prior_sigma}, LKJ prior on each correlated block's correlation matrix via
-\code{eta}), expressed in the same parameterization with the exact
+By default (\code{hyperprior = "proper"}) each block carries the
+weakly-informative PC + LKJ hyperprior of \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} (PC prior
+on each marginal SD via \code{prior_sigma}, LKJ prior on each correlated block's
+correlation matrix via \code{eta}), in the block's own coordinates with the exact
 change-of-variables Jacobian. \code{hyperprior = "flat"} makes it the zero
-function, flat in log(theta). The likelihood it multiplies is the inner
-Laplace marginal, which integrates the fixed effects out together with the
-random effects rather than profiling them, so under \code{"flat"} the node centre
-\code{theta_hat} is a restricted (REML-type) estimate -- REML for a gaussian
-response, agreeing with \code{glmmTMB(..., REML = TRUE)} rather than with the ML
-fit of \code{lme4::glmer()} otherwise (see \code{\link[=tulpa_eb]{tulpa_eb()}}). Supply a custom \code{log_prior_theta}
-function to override either default (then \code{prior_sigma} / \code{eta} /
-\code{hyperprior} are ignored); it must act on the full stacked parameter vector.
-\code{\link[=tulpa_eb]{tulpa_eb()}} shares this same objective and the same default, so
-\code{tulpa_eb()$theta_hat} and \code{tulpa_re_cov_nested()$theta_hat} stay the same
-estimate on the same data under either setting.
+function, flat in log(theta); that prior is improper, so the fit then reports
+no evidence. A custom \code{log_prior_theta} replaces either default when the
+model has exactly one outer block (one correlated term, or one scalar term);
+a density over the stacked coordinates of several blocks couples axes the
+joint door integrates as separate blocks and is refused, and each block's
+prior is then stated as its \code{logchol_prior} on
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}.
+
+\code{theta_hat} and \code{map} are the empirical-Bayes estimate: the mode of the same
+log marginal plus log prior in the stacked coordinates, the estimate
+\code{\link[=tulpa_eb]{tulpa_eb()}} reports on the same data.
 }
 \examples{
 \donttest{
@@ -359,7 +227,7 @@ based on vines and extended onion method. \emph{Journal of Multivariate
 Analysis} 100(9):1989-2001.
 }
 \seealso{
-\code{\link[=tulpa_laplace]{tulpa_laplace()}} for the inner solve; \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for
-the analogous outer integration over spatial / temporal prior
-hyperparameters.
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} for the door the fit runs on;
+\code{\link[=tulpa_eb]{tulpa_eb()}} for the plug-in estimate; \code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}} for the exact
+sampler.
 }

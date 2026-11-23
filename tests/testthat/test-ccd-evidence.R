@@ -46,21 +46,42 @@ skip_on_cran()
   data.frame(y = y, x = x, g = factor(grp))
 }
 
-test_that("logLik() of a CCD re_cov fit matches a dense tensor grid", {
+# The same model on the joint door with every axis stated as a dense tensor
+# over the span the default fit's cells cover, widened by half on each side,
+# every cell solved: its evidence is the reference.
+.ccde_dense_evidence <- function(fit, d, n_per_axis) {
+  tg <- fit$theta_grid
+  ax <- lapply(seq_len(ncol(tg)), function(j) {
+    r <- range(tg[, j]); h <- diff(r) / 2
+    seq(r[1] - h, r[2] + h, length.out = n_per_axis)
+  })
+  G <- as.matrix(expand.grid(ax))
+  nc <- if (ncol(tg) == 1L) 1L else 2L
+  colnames(G) <- if (nc == 1L) "L11" else c("L11", "L21", "L22")
+  g <- as.integer(d$g); N <- nrow(d)
+  w <- if (nc == 1L) list(list(rep(1, N))) else list(list(rep(1, N)), list(d$x))
+  blk <- list(type = "miid", obs_idx = g, n_groups = nlevels(d$g), n_fields = nc,
+              field_weight = w, logchol_prior = re_cov_pc_lkj_prior(nc),
+              logchol_grid = G)
+  tulpa_nested_laplace_joint(
+    list(y = list(y = d$y, X = cbind(1, d$x), family = "poisson")),
+    prior = list(blk),
+    control = list(progress = FALSE, diagnose_k = FALSE, axis_refine = "none",
+                   var_of_means_consistency = FALSE, prune = FALSE,
+                   auto_recenter = FALSE, max_grid_cells = 1e5))$log_evidence
+}
+
+test_that("logLik() of a re_cov fit matches a dense tensor grid", {
   d <- .ccde_slope_data()
   fit <- function(f, ctl) tulpa(f, data = d, family = "poisson", mode = "laplace",
                                 control = c(list(diagnose_k = FALSE), ctl))
-  slope_ccd <- fit(y ~ x + (1 + x | g), list())
-  slope_ref <- fit(y ~ x + (1 + x | g),
-                   list(integration = "grid", n_per_axis = 9L, span = 4.5))
-  expect_true(is.finite(as.numeric(logLik(slope_ccd))))
-  expect_null(attr(logLik(slope_ccd), "declined"))
-  expect_lt(abs(as.numeric(logLik(slope_ccd)) - as.numeric(logLik(slope_ref))),
+  slope <- fit(y ~ x + (1 + x | g), list())
+  expect_true(is.finite(as.numeric(logLik(slope))))
+  expect_null(attr(logLik(slope), "declined"))
+  expect_lt(abs(as.numeric(logLik(slope)) - .ccde_dense_evidence(slope, d, 21L)),
             0.1)
-  int_ccd <- fit(y ~ x + (1 | g), list(re_cov = "nested", integration = "ccd"))
-  int_ref <- fit(y ~ x + (1 | g), list(re_cov = "nested", integration = "grid",
-                                       n_per_axis = 81L, span = 8))
-  expect_lt(abs(as.numeric(logLik(int_ccd)) - as.numeric(logLik(int_ref))),
+  int <- fit(y ~ x + (1 | g), list(re_cov = "nested"))
+  expect_lt(abs(as.numeric(logLik(int)) - .ccde_dense_evidence(int, d, 201L)),
             0.05)
 })
 

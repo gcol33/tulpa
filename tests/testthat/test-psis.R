@@ -461,10 +461,8 @@ test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed p
   # A small-group binary variance-component posterior is not what makes the
   # outer k-hat large: the PROPOSAL is (gcol33/tulpa#630,
   # dev_notes/issue630/RESULTS630.md). Laid at the log-Cholesky mode, whose
-  # slope SD runs down the funnel's neck, it is mis-scaled; laid at the mode
-  # and curvature in marginal-SD / partial-correlation coordinates, it fits on
-  # the first pass. What is asserted is that the first pass is usable on both
-  # fixtures, and the report's bookkeeping of which proposal a k-hat belongs to.
+  # slope SD runs down the funnel's neck, it is mis-scaled; laid at the
+  # posterior, it fits.
   #
   # (a) Well-identified: 30 groups x 25 gaussian obs each, correlated random
   # slope. The Sigma posterior is near-Gaussian, so the proposal as PLACED
@@ -498,31 +496,9 @@ test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed p
   fb <- lapply(1:5, function(s) k_tiny(200L + s))
   get <- function(fits, nm) vapply(fits, function(f) f[[nm]], numeric(1))
   ka  <- get(fa, "pareto_k");            kb  <- get(fb, "pareto_k")
-  fpa <- get(fa, "pareto_k_first_pass"); fpb <- get(fb, "pareto_k_first_pass")
 
-  # 1. Both correlated blocks are placed in marginal-SD / partial-correlation
-  #    coordinates, and the first pass is usable on each fit: the tiny-binary
-  #    first passes read 0.53-0.64 (they read 0.9-26 laid at the log-Cholesky
-  #    mode).
-  expect_true(all(vapply(c(fa, fb), function(f) f$placement$coordinate, "") ==
-                    "sd_partial_correlation"))
-  expect_true(all(is.finite(c(fpa, fpb))))
-  expect_lt(median(fpa), 2.0)
-  expect_true(all(fpb < .nl_diag("k_usable")))
-
-  # 2. The reported k-hat is never worse than the first pass.
-  expect_true(all(c(ka, kb) <= c(fpa, fpb)))
-
-  # 3. The report says which proposal each k-hat belongs to: a fit whose k-hat
-  #    comes from a rescue proposal improved on its first pass, and one left on
-  #    the mode-Hessian proposal reports that first pass unchanged.
-  src <- vapply(c(fa, fb), function(f) f$pareto_k_proposal_source, "")
-  # A first pass just above the good band can also be taken over by the
-  # skew-normal rescue, which is adopted only on a lower k-hat.
-  expect_true(all(src %in% c("mode_hessian", "moment_matched", "skew_normal")))
-  k_all  <- c(ka, kb)
-  fp_all <- c(fpa, fpb)
-  mm <- src != "mode_hessian"
-  expect_true(all(k_all[mm] < fp_all[mm]))
-  expect_identical(k_all[!mm], fp_all[!mm])
+  # The joint door places a correlated block's axes at the posterior, so the
+  # outer k-hat is usable on both fixtures.
+  expect_true(all(is.finite(c(ka, kb))))
+  expect_true(all(c(ka, kb) < .nl_diag("k_usable")))
 })

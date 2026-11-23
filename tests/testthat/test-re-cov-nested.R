@@ -24,7 +24,7 @@ sim_corr_recov <- function(seed, G = 60L, npg = 12L, beta = c(-0.3, 0.7),
 # importance-sample inner solves from each fit.
 .rcn_ctl <- function(...) c(list(diagnose_k = FALSE), list(...))
 
-# The default-CCD fits of the five interval-coverage data sets. The first one
+# The default fits of the five interval-coverage data sets. The first one
 # doubles as the fit whose structure the next block reads, since every shape
 # property there holds on any data set.
 .rcn_cover_seeds <- 100L + seq_len(5L)
@@ -236,32 +236,12 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   fx <- .rcn_cover_fits()[[1L]]
   d <- fx$d; re_term <- fx$re_term; res <- fx$res
 
-  # default layout at k = c(c+1)/2 = 3: the aligned tensor (`.nl_outer_design()`),
-  # grown past any end that still carries mass. The cells laid are the grid's
-  # plus those the cheap-pass screen left out.
-  n3 <- .nl_outer_design(3L)$n_per_axis
-  laid <- res$n_grid + res$screen$dropped
-  expect_gte(laid, n3^3L)
-  expect_identical(laid == n3^3L, res$tensor_extended == 0L)
-  res_ccd <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                                 family = "binomial",
-                                 control = .rcn_ctl(integration = "ccd"))
-  # the CCD opt-in: 1 centre + 2k axial + 2^k factorial
-  expect_equal(res_ccd$n_grid, 1L + 2L * 3L + 2L^3L)  # = 15
+  # one cell per row of the stacked log-Cholesky coordinates, weights a
+  # distribution over them
+  expect_identical(dim(res$theta_grid), c(res$n_grid, 3L))
   expect_equal(sum(res$weights), 1, tolerance = 1e-10)
   expect_true(all(res$weights >= 0))
-
-  # tensor grid is opt-in via integration = "grid": n_per_axis^k cells, and
-  # three points per axis over +/- 3 SDs leave mass on their ends, so the
-  # tensor grows past them; the CCD keeps its 15.
-  res_grid <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                                  family = "binomial",
-                                  control = .rcn_ctl(integration = "grid",
-                                                     n_per_axis = 3L, span = 3))
-  expect_gt(res_grid$tensor_extended, 0L)
-  expect_gt(res_grid$n_grid + res_grid$screen$dropped, 3L^3L)
-  expect_identical(res_ccd$tensor_extended, 0L)
-  expect_equal(sum(res_grid$weights), 1, tolerance = 1e-10)
+  expect_length(res$log_marginal, res$n_grid)
 
   # posterior table shape: sigma_1, sigma_2, rho_12, Sigma_11/12/22
   expect_setequal(res$posterior$parameter,
@@ -322,7 +302,7 @@ test_that("the median is a more central summary than the mode under skew", {
   re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
                              family = "binomial",
-                             control = .rcn_ctl())   # default CCD integration
+                             control = .rcn_ctl())
   s1 <- res$posterior[res$posterior$parameter == "Sigma_11", ]
   # right-skewed: mean >= median, and both finite/positive
   expect_gte(s1$mean, s1$median - 1e-6)
@@ -335,10 +315,10 @@ test_that("tulpa_re_cov_nested integrates a diagonal (uncorrelated) block", {
   rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z,
              correlated = FALSE)
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             control = .rcn_ctl(integration = "ccd"))
+                             control = .rcn_ctl())
 
-  # diagonal block: k = c = 2 -> CCD 1 + 2k + 2^k = 9 nodes
-  expect_equal(res$n_grid, 1L + 2L * 2L + 2L^2L)
+  # diagonal block: one log-SD coordinate per coefficient
+  expect_identical(ncol(res$theta_grid), 2L)
   # no correlation reported; only diagonal variances
   expect_setequal(res$posterior$parameter,
                   c("sigma_1", "sigma_2", "Sigma_11", "Sigma_22"))
@@ -380,7 +360,7 @@ test_that("tulpa_re_cov_nested integrates several terms as separate blocks", {
   expect_equal(res$n_blocks, 2L)
   expect_equal(unname(res$n_coefs), c(2L, 1L))
   # stacked integration dimension k = 3 (full g) + 1 (scalar h) = 4
-  # CCD(k=4): 1 + 2*4 + fractional factorial -- just check it ran with > 4 nodes
+  expect_identical(ncol(res$theta_grid), 4L)
   expect_gt(res$n_grid, 4L)
   expect_setequal(res$posterior$parameter,
                   c("g.sigma_1", "g.sigma_2", "g.rho_12",
@@ -421,43 +401,3 @@ test_that("n_quad > 1 (AGHQ inner solve) recovers Sigma on a single factor", {
   expect_gte(covered[["sigma_2"]], 2L)
 })
 
-test_that("a CCD fit reports a scale interval that is not the node extent", {
-  skip_on_cran()
-  d <- sim_corr_recov(77L, G = 60L, npg = 12L)
-  rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
-  # The design this reads is the one the marginal likelihood alone places, so
-  # the prior is stated flat.
-  res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             hyperprior = "flat",
-                             control = .rcn_ctl(integration = "ccd"))
-  # theta axis 1 is log(L_11) = log(sigma_1), so the design's extent on sigma_1
-  # is exp(range(theta_grid[, 1])). The reported interval covers strictly more.
-  # Measured on log(sigma_1): nodes [-0.32935, 0.26114], interval [-0.33464,
-  # 0.26504]. Under the default pc_lkj prior the same data give nodes
-  # [-0.33816, 0.24291] and interval [-0.34293, 0.24240], whose upper end sits
-  # inside the outermost node (`dev_notes/issue730/re_cov_ccd_interval.R`). Under
-  # either prior the interval is the Gaussian of the design-weighted moments of
-  # log(sigma_1), m +- z s.
-  th  <- as.numeric(res$theta_grid[, 1L])
-  ax  <- range(th)
-  w   <- res$weights / sum(res$weights)
-  m   <- sum(w * th)
-  s   <- sqrt(sum(w * th^2) - m^2)
-  row <- res$posterior[res$posterior$parameter == "sigma_1", ]
-  expect_lt(log(row$ci_lo), ax[1L])
-  expect_gt(log(row$ci_hi), ax[2L])
-  expect_equal(log(c(row$ci_lo, row$ci_hi)), m + stats::qnorm(c(0.025, 0.975)) * s,
-               tolerance = 1e-10)
-  expect_gt(row$ci_lo, 0)
-  # A correlation interval stays inside (-1, 1).
-  rr <- res$posterior[res$posterior$parameter == "rho_12", ]
-  expect_gt(rr$ci_lo, -1)
-  expect_lt(rr$ci_hi, 1)
-  # It is a Gaussian interval on log(sigma), so it is symmetric about the
-  # reported median in that coordinate -- which a quantile read off scattered
-  # node positions would not be.
-  expect_equal(log(row$ci_hi) - log(row$median),
-               log(row$median) - log(row$ci_lo))
-  expect_equal(atanh(rr$ci_hi) - atanh(rr$median),
-               atanh(rr$median) - atanh(rr$ci_lo))
-})

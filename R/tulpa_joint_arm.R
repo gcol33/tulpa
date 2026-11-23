@@ -162,8 +162,7 @@
   responses <- stats::setNames(list(arm), .JOINT_ARM_NAME)
   if (!is.null(bundle$X_zi)) {
     responses <- .joint_arm_zi(responses, bundle$X_zi, zi_prior_sd)
-    all_blocks <- lapply(all_blocks, .joint_block_widen_arms,
-                         n_arms = length(responses))
+    all_blocks <- lapply(all_blocks, .joint_zi_block, n_obs = N)
   }
   out <- list(
     responses  = responses,
@@ -223,6 +222,23 @@
   )
   responses[[1L]] <- arm
   c(responses, list(zi = zi))
+}
+
+# A one-arm block spec on the two arms of a zero-inflated response
+# (`.joint_arm_zi()`), whose latent blocks enter the count predictor only. The
+# zero arm's `field_coef = 0` takes a block's index-loaded entry out of it; a
+# block loaded through per-field row weights (`field_weight`: `miid`, `mcar`)
+# is read by every arm its weights reach, so its zero-arm weights are zero.
+#' @keywords internal
+.joint_zi_block <- function(blk, n_obs) {
+  blk <- .joint_block_widen_arms(blk, n_arms = 2L)
+  if (!is.null(blk$field_weight)) {
+    blk$field_weight <- lapply(blk$field_weight, function(fw) {
+      fw[[2L]] <- numeric(n_obs)
+      fw
+    })
+  }
+  blk
 }
 
 # A one-arm block spec stated for `n_arms` arms that read the same rows: every
@@ -290,8 +306,9 @@
 # Where each random effect of a one-arm joint fit sits in its latent vector, in
 # the order the fit's random-effect layout names them (term by term, group by
 # group, coefficient by coefficient), and the `iid` block whose cell `sigma`
-# scales it (0 for an `miid` coefficient, which is the effect itself). NULL for
-# a fit without random-effect blocks.
+# scales it (0 for an `miid` coefficient, which is the effect itself). A term
+# is one block over all its coefficients, or one block per coefficient. NULL
+# for a fit without random-effect blocks.
 #' @keywords internal
 .joint_arm_re_map <- function(fit, blocks, re_block_index, re_terms) {
   starts <- fit$arm_layout$block_start
@@ -303,14 +320,16 @@
     bi <- re_block_index[[m]]
     ng <- as.integer(rt$n_groups)
     nc <- as.integer(rt$n_coefs %||% 1L)
-    miid <- length(bi) == 1L && identical(blocks[[bi]]$type, "miid")
+    shared <- length(bi) == 1L
     for (g in seq_len(ng)) for (j in seq_len(nc)) {
-      if (miid) {
-        cols <- c(cols, starts[bi] + (j - 1L) * ng + g)
+      b <- if (shared) bi else bi[j]
+      field <- if (shared) j - 1L else 0L
+      if (identical(blocks[[b]]$type, "miid")) {
+        cols <- c(cols, starts[b] + field * ng + g)
         scale_block <- c(scale_block, 0L)
       } else {
-        cols <- c(cols, starts[bi[j]] + g)
-        scale_block <- c(scale_block, bi[j])
+        cols <- c(cols, starts[b] + g)
+        scale_block <- c(scale_block, b)
       }
     }
   }

@@ -44,6 +44,22 @@
   L22 to 0.03 by round 15, where the profile's Newton step is about 1
   (#1296).
 
+* `tulpa_re_cov_nested()` is a one-arm fit on the joint nested-Laplace door: a
+  correlated term is one `miid` block on its log-Cholesky axes, every other
+  coefficient a one-field `miid` block on its log SD, each carrying the PC + LKJ
+  prior as its `logchol_prior`. Its own node design, CCD, tensor growth, screen
+  and placement are gone, and with them `control$n_per_axis` / `control$span`;
+  `control$integration` and the screening knobs now reach the joint door. On
+  the correlated fixtures of the recovery tests (seeds 101-105) every median
+  moved by at most 0.036 posterior SDs. On the diagonal fixture (seed 7) the
+  intercept SD's median moved from 0.647 to 0.635, which a dense 81 x 81 grid
+  reads as 0.635. On the two-term `(1 + x | g) + (1 | h)` fixture (seed 21) the
+  slope SD reads 0.189 [0.0094, 0.619] and the evidence -308.98, where it read
+  0.237 [0.080, 0.703] and -309.32; a dense 4-axis reference reads 0.192
+  [0.0089, 0.596] and -308.94. `theta_hat` is the `tulpa_eb()` estimate, found
+  by the objective builder `tulpa_eb()` owns. A stacked `log_prior_theta` is
+  accepted for a model with one outer block and refused over several (#1269).
+
 * WAIC, LOO, DIC and `posterior_predict()` on a zero-inflated fit through
   the joint nested-Laplace door draw the linear predictor from the grid's
   latent mixture: the count coefficients, the structural-zero coefficients and
