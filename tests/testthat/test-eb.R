@@ -453,12 +453,12 @@ test_that("a slope SD whose supremum is at zero is reported as a singular fit", 
     list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h"))
 
   expect_warning(
-    core <- .re_cov_theta_fit(
+    core <- .eb_theta_fit(
       y = y, n_trials = rep(1L, N), X = X, re_terms = re_terms,
       family = "binomial", phi = 1, prior_sigma = NULL, eta = NULL,
       log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
       max_iter = 100L, tol = 1e-8, n_threads = 1L, caller = "test",
-      need_scale = FALSE, outer_maxit = 100L, offset = NULL),
+      outer_maxit = 100L, offset = NULL),
     "singular")
   expect_identical(core$opt$convergence, 0L)
   expect_lt(core$opt$counts[["rounds"]], 100L)
