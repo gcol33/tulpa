@@ -61,6 +61,18 @@ test_that("the RE-covariance redirect and EB take the same choice", {
               mode = "laplace")
   expect_true(all(ff$log_hyperprior == 0))
   expect_true(all(is.finite(fp$log_hyperprior) & fp$log_hyperprior != 0))
+  # Flat in log SD, the intercept SD's marginal likelihood stays level as the
+  # SD goes to zero, so the posterior is improper: the fit integrates over the
+  # span its placed nodes tile, states that span, and declines the evidence
+  # with every outer axis named.
+  expect_true(is.na(ff$log_evidence))
+  expect_identical(ff$log_evidence_declined, "improper_hyperprior")
+  expect_true(length(ff$log_evidence_declined_axes) > 0L)
+  expect_true(all(ff$log_evidence_declined_axes == "flat_hyperprior"))
+  expect_true(all(vapply(ff$axis_support, function(s)
+    length(s) == 2L && all(is.finite(s)), logical(1))))
+  expect_true(is.finite(fp$log_evidence))
+  expect_null(fp$log_evidence_declined_axes)
 
   terms <- list(idx = as.integer(d$g), n_groups = 16L, n_coefs = 1L,
                 correlated = FALSE)

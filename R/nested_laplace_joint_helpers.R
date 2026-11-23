@@ -570,6 +570,19 @@
         # -- deciding by axis NAME would opt a caller's stated nodes into being
         # extended (gcol33/tulpa#658).
         mode <- .joint_axis_refine_mode(axis_refine, a)
+        # A free-covariance block that folds no density (a flat hyperprior)
+        # carries the flat measure on its CPC coordinates, a log SD or an atanh
+        # partial correlation, which is improper on each of them: the support
+        # is a prior choice, the span the block's declared nodes tile, as it is
+        # for every other flat axis. Refinement then resolves that span and does
+        # not follow the posterior out of it: the marginal likelihood stays
+        # level as an SD goes to zero, so under a flat measure that tail never
+        # decays, and the edge-closing steps, each up to twice the last, would
+        # run a log SD to where exp() underflows to a zero level on a log axis.
+        if (identical(mode, "extend") && !block_declared &&
+            .hp_is_logchol_col(bare) && !a %in% folded_axes) {
+            mode <- .nl_axis_refine("stated")
+        }
         refine_priority <- if (copy) 1L
                            else if (startsWith(a, "phi_")) 2L
                            else 100L

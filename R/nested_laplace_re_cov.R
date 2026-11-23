@@ -996,8 +996,13 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' correlation matrix via `eta`), in the block's own coordinates with the exact
 #' change-of-variables Jacobian. `hyperprior = "flat"` makes it the zero
 #' function, flat in log(theta); that prior is improper, so the fit then reports
-#' no evidence. A custom `log_prior_theta` replaces either default when the
-#' model has exactly one outer block (one correlated term, or one scalar term);
+#' no evidence (`log_evidence_declined_axes` names the outer axes without a
+#' proper density). Its support is a prior choice: each block's coordinates are
+#' integrated flat over the span the placed nodes tile (`axis_support`), and
+#' refinement resolves that span without following the posterior past it,
+#' since a marginal likelihood that stays level as a standard deviation goes to
+#' zero leaves the flat posterior's tail undecayed. A custom `log_prior_theta`
+#' replaces either default when the model has exactly one outer block (one correlated term, or one scalar term);
 #' a density over the stacked coordinates of several blocks couples axes the
 #' joint door integrates as separate blocks and is refused, and each block's
 #' prior is then stated as its `logchol_prior` on
@@ -1116,7 +1121,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #'     mode. `NULL` when the centring was off.
 #'   - `theta_hat`, `theta_grid` (the cells in the stacked coordinates),
 #'     `weights`, `log_marginal` (log marginal plus log prior per cell),
-#'     `log_hyperprior`, `log_evidence`, `n_grid`, `layout`, `n_blocks`,
+#'     `log_hyperprior`, `log_evidence`, `log_evidence_declined_axes`,
+#'     `axis_support` (the span integrated on each outer axis, keyed by the
+#'     joint door's axis label), `n_grid`, `layout`, `n_blocks`,
 #'     `n_coefs` (vector of per-block `c`), and the outer Pareto k-hat fields of
 #'     the joint fit (`pareto_k`, ...).
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
@@ -1361,6 +1368,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     log_evidence = if (prior_proper) fit$log_evidence else NA_real_,
     log_evidence_declined = if (prior_proper) NA_character_
                             else "improper_hyperprior",
+    log_evidence_declined_axes = fit$log_evidence_declined_axes,
+    axis_support = fit$axis_support,
     n_grid      = ng,
     layout      = layout,
     n_blocks    = length(layout),

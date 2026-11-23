@@ -12,6 +12,17 @@
   checkpoint fixture the resumed grid went from 606 cells against the plain
   fit's 612 to 612, with weights and posterior means equal to the plain fit's
   (#1299).
+* A free-covariance block without a hyperprior density (`hyperprior =
+  "flat"` on a random-slope fit) integrates each of its log-Cholesky
+  coordinates flat over the span its placed nodes tile, the support rule every
+  other flat axis takes, and refinement resolves that span without leaving it.
+  On a binomial `(1 + x | g)` fit with 16 groups the intercept SD's marginal
+  likelihood stays level as the SD goes to zero, so the edge-closing steps,
+  each up to twice the last, ran its log SD to -419, where the cell measure
+  read a zero level on a log axis and the fit stopped with an error. It now
+  completes on 79 cells, declines the evidence as `"improper_hyperprior"`,
+  and `tulpa_re_cov_nested()` carries the joint fit's
+  `log_evidence_declined_axes` and `axis_support` (#1298).
 
 * The remaining posterior summaries of a nested grid fit read each cell at
   its mode plus its leading-order mean shift, where the latent draws are

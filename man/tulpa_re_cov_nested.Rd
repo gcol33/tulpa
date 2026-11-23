@@ -148,7 +148,9 @@ the cell at the leading-order mean, otherwise the reason it stayed at the
 mode. \code{NULL} when the centring was off.
 \item \code{theta_hat}, \code{theta_grid} (the cells in the stacked coordinates),
 \code{weights}, \code{log_marginal} (log marginal plus log prior per cell),
-\code{log_hyperprior}, \code{log_evidence}, \code{n_grid}, \code{layout}, \code{n_blocks},
+\code{log_hyperprior}, \code{log_evidence}, \code{log_evidence_declined_axes},
+\code{axis_support} (the span integrated on each outer axis, keyed by the
+joint door's axis label), \code{n_grid}, \code{layout}, \code{n_blocks},
 \code{n_coefs} (vector of per-block \code{c}), and the outer Pareto k-hat fields of
 the joint fit (\code{pareto_k}, ...).
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
@@ -192,8 +194,13 @@ on each marginal SD via \code{prior_sigma}, LKJ prior on each correlated block's
 correlation matrix via \code{eta}), in the block's own coordinates with the exact
 change-of-variables Jacobian. \code{hyperprior = "flat"} makes it the zero
 function, flat in log(theta); that prior is improper, so the fit then reports
-no evidence. A custom \code{log_prior_theta} replaces either default when the
-model has exactly one outer block (one correlated term, or one scalar term);
+no evidence (\code{log_evidence_declined_axes} names the outer axes without a
+proper density). Its support is a prior choice: each block's coordinates are
+integrated flat over the span the placed nodes tile (\code{axis_support}), and
+refinement resolves that span without following the posterior past it,
+since a marginal likelihood that stays level as a standard deviation goes to
+zero leaves the flat posterior's tail undecayed. A custom \code{log_prior_theta}
+replaces either default when the model has exactly one outer block (one correlated term, or one scalar term);
 a density over the stacked coordinates of several blocks couples axes the
 joint door integrates as separate blocks and is refused, and each block's
 prior is then stated as its \code{logchol_prior} on
